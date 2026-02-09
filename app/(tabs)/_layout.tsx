@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Colors, Typography } from '../../constants/theme';
 import { Platform } from 'react-native';
+import { Text } from 'react-native';
 
 export default function TabsLayout() {
   return (
@@ -17,7 +18,7 @@ export default function TabsLayout() {
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: Typography.weights.medium,
         },
         headerStyle: {
@@ -33,66 +34,44 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          href: null,
           title: 'Home',
-          tabBarLabel: 'Home',
           headerTitle: 'TMLSN',
-          tabBarIcon: ({ color }) => (
-            <HomeIcon color={color} />
-          ),
         }}
       />
       <Tabs.Screen
         name="nutrition"
         options={{
-          title: 'Nutrition',
-          tabBarLabel: 'Nutrition',
-          headerTitle: 'Nutrition Tracker',
+          title: 'Calorie',
+          tabBarLabel: 'Calorie',
+          headerTitle: 'Calorie',
           tabBarIcon: ({ color }) => (
-            <NutritionIcon color={color} />
+            <Text style={{ fontSize: 24, color }}>🍎</Text>
           ),
         }}
       />
       <Tabs.Screen
         name="workout"
         options={{
-          title: 'Workout',
-          tabBarLabel: 'Workout',
+          title: 'Workout Tracker',
+          tabBarLabel: 'Workout Tracker',
           headerTitle: 'Workout Tracker',
           tabBarIcon: ({ color }) => (
-            <WorkoutIcon color={color} />
+            <Text style={{ fontSize: 24, color }}>💪</Text>
           ),
         }}
       />
       <Tabs.Screen
         name="prompts"
         options={{
-          title: 'Prompts',
-          tabBarLabel: 'Prompts',
-          headerTitle: 'Prompt Vault',
+          title: 'Newsletter prompts',
+          tabBarLabel: 'Newsletter prompts',
+          headerTitle: 'Newsletter prompts',
           tabBarIcon: ({ color }) => (
-            <PromptsIcon color={color} />
+            <Text style={{ fontSize: 24, color }}>📝</Text>
           ),
         }}
       />
     </Tabs>
   );
 }
-
-// Simple icon components (using Unicode symbols for MVP)
-import { Text } from 'react-native';
-
-const HomeIcon = ({ color }: { color: string }) => (
-  <Text style={{ fontSize: 24, color }}>🏠</Text>
-);
-
-const NutritionIcon = ({ color }: { color: string }) => (
-  <Text style={{ fontSize: 24, color }}>🍎</Text>
-);
-
-const WorkoutIcon = ({ color }: { color: string }) => (
-  <Text style={{ fontSize: 24, color }}>💪</Text>
-);
-
-const PromptsIcon = ({ color }: { color: string }) => (
-  <Text style={{ fontSize: 24, color }}>📝</Text>
-);
