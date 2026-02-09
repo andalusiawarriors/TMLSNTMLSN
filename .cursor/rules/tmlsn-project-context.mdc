@@ -1,0 +1,66 @@
+---
+description: TMLSN project features, requirements, and alignment—reference this doc to stay aligned with the product vision and specs
+alwaysApply: true
+---
+
+# TMLSN Project Context
+
+Reference: `tmlsn_all_documentation (1).md` — the canonical spec for features and requirements.
+
+## One-Line Definition
+
+TMLSN starts as useful tools (nutrition, workout tracking, prompt vault), then becomes an integrated operating system—where an AI version of us coaches the user using their real data, constraints, and prompt-backed action plans, while also notifying them when new newsletter and YouTube content drops.
+
+## Product Thesis
+
+Apps are becoming "hosts": one place that bundles tools + content + coaching. TMLSN direction: start with tools, evolve into an integrated system. **MVP focus:** ship useful tools fast that connect to content strategy and provide a clear upgrade path.
+
+## MVP Scope (V1.0)
+
+### Layer A: Tools (MVP)
+- **Calorie/Nutrition Tracker:** Calories, P/C/F, electrolytes (Mg, Ca, Na, K), meal structure (B/L/D/Snacks), water intake, metric/US units, food database integration.
+- **Workout Tracker:** Exercise name, sets, reps, weight; rest timer (toggle, countdown, push on complete); pre-loaded TMLSN Split; free-form logging; progressive overload history.
+- **Prompt Vault:** Text storage, copy-to-clipboard, source link attribution, weekly content cadence, user usage history.
+
+### Layer B: Prompts (MVP)
+- Actionable advice must be backed by a usable prompt. App = execution engine: post explains, app provides prompt, user saves/runs/reuses.
+
+### Layer C: Notifications (MVP)
+- **Distribution only:** Newsletter and YouTube drop alerts. No behavioral/coaching triggers in MVP.
+
+### Layer D: Content (MVP)
+- Mastering Aesthetics course in-app or deep-linked with session context.
+
+### Layer E: Coaching
+- Future scope. AI coach, constraint-aware, data-integrated.
+
+## Design (Duo-Tone)
+
+| Element | Hex | Usage |
+|---------|-----|-------|
+| Primary Dark Background | #2F3031 | Backgrounds, cards, nav |
+| Primary Light/Text | #C6C6C6 | Text, secondary surfaces |
+| Accent Red | #FF0000 | Critical alerts, urgency (sparingly) |
+| Accent Blue | #0000FF | Success, completion, selected states (sparingly) |
+
+- Card-based layout, generous negative space.
+- San Francisco (iOS) or clean sans-serif. Data values: bold 18–22pt for trackers.
+
+## Data & Monetization
+
+- **Free:** Standalone tools, siloed data, prompt vault, distribution notifications.
+- **Paid tiers:** Mastering Aesthetics ($9.99/mo), Full System/AI ($19.99/mo). Data aggregation, trends, AI coach gated by subscription.
+- **Data continuity:** User data must survive upgrade; schema supports siloed (free) and integrated (paid) access.
+
+## Tech Stack (per docs)
+
+- **Frontend:** iOS native (SwiftUI) — docs specify iOS; implementations may use Expo/React Native.
+- **Backend:** Node.js (Express) or Python (FastAPI); PostgreSQL; USDA/Edamam for food DB.
+- **Notifications:** FCM/APNS for distribution alerts.
+
+## Key Conventions
+
+1. **Prompt Vault:** Copy-to-clipboard is primary action; source link above prompt text.
+2. **Rest Timer:** Toggle per set; recommended duration by exercise; push notification on completion.
+3. **TMLSN Split:** At least one complete pre-loaded workout plan required.
+4. **Unit handling:** Metric (g, kg, mL) and US (oz, lbs, cups, tsp/tbsp).
