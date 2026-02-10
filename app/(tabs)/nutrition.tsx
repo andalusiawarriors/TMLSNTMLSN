@@ -258,111 +258,39 @@ export default function NutritionScreen() {
             TMLSN CAL
           </Text>
         </View>
-        {/* Macro Summary */}
-        <Card>
-          <Text style={styles.cardTitle}>Today's Macros</Text>
-          {settings && todayLog && (
-            <View style={styles.macrosContainer}>
-              <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{todayLog.calories}</Text>
-                <Text style={styles.macroGoal}>/ {settings.dailyGoals.calories}</Text>
-                <Text style={styles.macroLabel}>Calories</Text>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${calculateProgress(todayLog.calories, settings.dailyGoals.calories)}%`,
-                        backgroundColor: Colors.accentBlue,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
+        {/* Calories left – big card */}
+        {settings && todayLog && (
+          <>
+            <Card style={styles.caloriesLeftCard}>
+              <Text style={styles.caloriesLeftValue}>
+                {Math.max(0, settings.dailyGoals.calories - todayLog.calories)}
+              </Text>
+              <Text style={styles.caloriesLeftLabel}>Calories left</Text>
+            </Card>
 
-              <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{todayLog.protein}g</Text>
-                <Text style={styles.macroGoal}>/ {settings.dailyGoals.protein}g</Text>
-                <Text style={styles.macroLabel}>Protein</Text>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${calculateProgress(todayLog.protein, settings.dailyGoals.protein)}%`,
-                        backgroundColor: Colors.accentBlue,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{todayLog.carbs}g</Text>
-                <Text style={styles.macroGoal}>/ {settings.dailyGoals.carbs}g</Text>
-                <Text style={styles.macroLabel}>Carbs</Text>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${calculateProgress(todayLog.carbs, settings.dailyGoals.carbs)}%`,
-                        backgroundColor: Colors.accentBlue,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.macroItem}>
-                <Text style={styles.macroValue}>{todayLog.fat}g</Text>
-                <Text style={styles.macroGoal}>/ {settings.dailyGoals.fat}g</Text>
-                <Text style={styles.macroLabel}>Fat</Text>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        width: `${calculateProgress(todayLog.fat, settings.dailyGoals.fat)}%`,
-                        backgroundColor: Colors.accentBlue,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
+            {/* Protein, Carbs, Fat left – three cards in a row */}
+            <View style={styles.threeCardsRow}>
+              <Card style={styles.macroLeftCard}>
+                <Text style={styles.macroLeftValue}>
+                  {Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g
+                </Text>
+                <Text style={styles.macroLeftLabel}>Protein left</Text>
+              </Card>
+              <Card style={styles.macroLeftCard}>
+                <Text style={styles.macroLeftValue}>
+                  {Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g
+                </Text>
+                <Text style={styles.macroLeftLabel}>Carbs left</Text>
+              </Card>
+              <Card style={styles.macroLeftCard}>
+                <Text style={styles.macroLeftValue}>
+                  {Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g
+                </Text>
+                <Text style={styles.macroLeftLabel}>Fat left</Text>
+              </Card>
             </View>
-          )}
-        </Card>
-
-        {/* Water Tracking */}
-        <Card>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Water Intake</Text>
-            <Text style={styles.waterValue}>
-              {todayLog?.water || 0} / {settings?.dailyGoals.water || 128} oz
-            </Text>
-          </View>
-          <View style={styles.waterButtons}>
-            <TouchableOpacity
-              style={styles.waterButton}
-              onPress={() => handleAddWater(8)}
-            >
-              <Text style={styles.waterButtonText}>+8 oz</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.waterButton}
-              onPress={() => handleAddWater(16)}
-            >
-              <Text style={styles.waterButtonText}>+16 oz</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.waterButton}
-              onPress={() => handleAddWater(32)}
-            >
-              <Text style={styles.waterButtonText}>+32 oz</Text>
-            </TouchableOpacity>
-          </View>
-        </Card>
+          </>
+        )}
 
         {/* Meals List */}
         <Card>
@@ -624,6 +552,50 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
     marginBottom: Spacing.md,
+    letterSpacing: HeadingLetterSpacing,
+  },
+  caloriesLeftCard: {
+    paddingVertical: Spacing.xl,
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  caloriesLeftValue: {
+    fontFamily: Font.extraBold,
+    fontSize: Typography.h1 + 8,
+    fontWeight: Typography.weights.bold,
+    color: Colors.primaryLight,
+    letterSpacing: HeadingLetterSpacing,
+  },
+  caloriesLeftLabel: {
+    fontFamily: Font.regular,
+    fontSize: Typography.body,
+    color: Colors.primaryLight,
+    marginTop: Spacing.xs,
+    letterSpacing: HeadingLetterSpacing,
+  },
+  threeCardsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  macroLeftCard: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    marginVertical: 0,
+  },
+  macroLeftValue: {
+    fontFamily: Font.bold,
+    fontSize: Typography.dataValue,
+    fontWeight: Typography.weights.bold,
+    color: Colors.primaryLight,
+    letterSpacing: HeadingLetterSpacing,
+  },
+  macroLeftLabel: {
+    fontFamily: Font.regular,
+    fontSize: Typography.label,
+    color: Colors.primaryLight,
+    marginTop: Spacing.xs,
     letterSpacing: HeadingLetterSpacing,
   },
   cardHeader: {
