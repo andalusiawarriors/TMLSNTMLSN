@@ -73,6 +73,13 @@ export interface WorkoutExerciseTemplate {
   restTimer: number; // recommended rest in seconds
 }
 
+// User-created routine template (saved to My Routines)
+export interface SavedRoutine {
+  id: string;
+  name: string;
+  exercises: { id: string; name: string; restTimer: number }[];
+}
+
 // Prompt Vault Types
 export interface Prompt {
   id: string;
