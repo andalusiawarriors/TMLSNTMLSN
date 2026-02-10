@@ -12,9 +12,12 @@ export interface NutritionLog {
   meals: Meal[];
 }
 
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
 export interface Meal {
   id: string;
   name: string;
+  mealType?: MealType; // optional for backwards compatibility with existing logs
   time: string;
   calories: number;
   protein: number;

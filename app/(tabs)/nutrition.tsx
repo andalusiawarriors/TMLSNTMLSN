@@ -18,23 +18,32 @@ import {
   getTodayNutritionLog,
   saveNutritionLog,
   getUserSettings,
+  saveUserSettings,
 } from '../../utils/storage';
-import { NutritionLog, Meal, UserSettings } from '../../types';
+import { NutritionLog, Meal, MealType, UserSettings } from '../../types';
 import { generateId, getTodayDateString } from '../../utils/helpers';
 
 export default function NutritionScreen() {
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
-  const [showWaterLog, setShowWaterLog] = useState(false);
+  const [showEditGoals, setShowEditGoals] = useState(false);
 
   // Add Meal Form State
+  const [mealType, setMealType] = useState<MealType>('breakfast');
   const [mealName, setMealName] = useState('');
   const [calories, setCalories] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
   const [mealImage, setMealImage] = useState<string | undefined>();
+
+  // Edit Goals Form State
+  const [editCalories, setEditCalories] = useState('');
+  const [editProtein, setEditProtein] = useState('');
+  const [editCarbs, setEditCarbs] = useState('');
+  const [editFat, setEditFat] = useState('');
+  const [editWater, setEditWater] = useState('');
 
   useEffect(() => {
     loadData();
@@ -74,6 +83,7 @@ export default function NutritionScreen() {
     const newMeal: Meal = {
       id: generateId(),
       name: mealName,
+      mealType,
       time: new Date().toISOString(),
       calories: parseFloat(calories) || 0,
       protein: parseFloat(protein) || 0,
@@ -98,6 +108,7 @@ export default function NutritionScreen() {
     }
 
     // Reset form
+    setMealType('breakfast');
     setMealName('');
     setCalories('');
     setProtein('');
@@ -106,6 +117,53 @@ export default function NutritionScreen() {
     setMealImage(undefined);
     setShowAddMeal(false);
   };
+
+  const openEditGoals = () => {
+    if (settings) {
+      setEditCalories(String(settings.dailyGoals.calories));
+      setEditProtein(String(settings.dailyGoals.protein));
+      setEditCarbs(String(settings.dailyGoals.carbs));
+      setEditFat(String(settings.dailyGoals.fat));
+      setEditWater(String(settings.dailyGoals.water));
+    }
+    setShowEditGoals(true);
+  };
+
+  const handleSaveGoals = async () => {
+    if (!settings) return;
+    const updated: UserSettings = {
+      ...settings,
+      dailyGoals: {
+        calories: parseInt(editCalories, 10) || settings.dailyGoals.calories,
+        protein: parseInt(editProtein, 10) || settings.dailyGoals.protein,
+        carbs: parseInt(editCarbs, 10) || settings.dailyGoals.carbs,
+        fat: parseInt(editFat, 10) || settings.dailyGoals.fat,
+        water: parseInt(editWater, 10) || settings.dailyGoals.water,
+      },
+    };
+    await saveUserSettings(updated);
+    setSettings(updated);
+    setShowEditGoals(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const MEAL_TYPE_LABELS: Record<MealType, string> = {
+    breakfast: 'Breakfast',
+    lunch: 'Lunch',
+    dinner: 'Dinner',
+    snack: 'Snack',
+  };
+  const MEAL_TYPE_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+  const mealsByType = (todayLog?.meals ?? []).reduce<Record<MealType, Meal[]>>(
+    (acc, meal) => {
+      const type = meal.mealType ?? 'snack';
+      if (!acc[type]) acc[type] = [];
+      acc[type].push(meal);
+      return acc;
+    },
+    { breakfast: [], lunch: [], dinner: [], snack: [] }
+  );
 
   const handleAddWater = async (amount: number) => {
     if (todayLog) {
@@ -276,18 +334,32 @@ export default function NutritionScreen() {
 
         {/* Meals List */}
         <Card>
-          <Text style={styles.cardTitle}>Today's Meals</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Today's Meals</Text>
+            <TouchableOpacity onPress={openEditGoals}>
+              <Text style={styles.editGoalsLink}>Edit goals</Text>
+            </TouchableOpacity>
+          </View>
           {todayLog?.meals.length === 0 ? (
             <Text style={styles.emptyText}>No meals logged yet</Text>
           ) : (
-            todayLog?.meals.map((meal) => (
-              <View key={meal.id} style={styles.mealItem}>
-                <Text style={styles.mealName}>{meal.name}</Text>
-                <Text style={styles.mealMacros}>
-                  {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fat}g F
-                </Text>
-              </View>
-            ))
+            MEAL_TYPE_ORDER.map((type) => {
+              const list = mealsByType[type];
+              if (!list.length) return null;
+              return (
+                <View key={type} style={styles.mealSection}>
+                  <Text style={styles.mealSectionTitle}>{MEAL_TYPE_LABELS[type]}</Text>
+                  {list.map((meal) => (
+                    <View key={meal.id} style={styles.mealItem}>
+                      <Text style={styles.mealName}>{meal.name}</Text>
+                      <Text style={styles.mealMacros}>
+                        {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fat}g F
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })
           )}
         </Card>
 
@@ -308,7 +380,30 @@ export default function NutritionScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Add Meal</Text>
-            
+
+            <Text style={styles.inputLabel}>Meal type</Text>
+            <View style={styles.mealTypeRow}>
+              {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.mealTypeChip,
+                    mealType === type && styles.mealTypeChipActive,
+                  ]}
+                  onPress={() => setMealType(type)}
+                >
+                  <Text
+                    style={[
+                      styles.mealTypeChipText,
+                      mealType === type && styles.mealTypeChipTextActive,
+                    ]}
+                  >
+                    {MEAL_TYPE_LABELS[type]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <Input
               label="Meal Name"
               value={mealName}
@@ -376,6 +471,68 @@ export default function NutritionScreen() {
               <Button
                 title="Add Meal"
                 onPress={handleAddMeal}
+                style={styles.modalButton}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Edit Goals Modal */}
+      <Modal
+        visible={showEditGoals}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowEditGoals(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Daily goals</Text>
+            <Input
+              label="Calories"
+              value={editCalories}
+              onChangeText={setEditCalories}
+              keyboardType="numeric"
+              placeholder="2500"
+            />
+            <Input
+              label="Protein (g)"
+              value={editProtein}
+              onChangeText={setEditProtein}
+              keyboardType="numeric"
+              placeholder="150"
+            />
+            <Input
+              label="Carbs (g)"
+              value={editCarbs}
+              onChangeText={setEditCarbs}
+              keyboardType="numeric"
+              placeholder="250"
+            />
+            <Input
+              label="Fat (g)"
+              value={editFat}
+              onChangeText={setEditFat}
+              keyboardType="numeric"
+              placeholder="80"
+            />
+            <Input
+              label="Water (oz)"
+              value={editWater}
+              onChangeText={setEditWater}
+              keyboardType="numeric"
+              placeholder="128"
+            />
+            <View style={styles.modalButtons}>
+              <Button
+                title="Cancel"
+                onPress={() => setShowEditGoals(false)}
+                variant="secondary"
+                style={styles.modalButton}
+              />
+              <Button
+                title="Save"
+                onPress={handleSaveGoals}
                 style={styles.modalButton}
               />
             </View>
@@ -459,11 +616,26 @@ const styles = StyleSheet.create({
     color: Colors.accentBlue,
     fontWeight: Typography.weights.semiBold,
   },
+  editGoalsLink: {
+    fontSize: Typography.body,
+    color: Colors.accentBlue,
+    fontWeight: Typography.weights.semiBold,
+  },
   emptyText: {
     fontSize: Typography.body,
     color: Colors.primaryLight,
     textAlign: 'center',
     paddingVertical: Spacing.lg,
+  },
+  mealSection: {
+    marginBottom: Spacing.md,
+  },
+  mealSectionTitle: {
+    fontSize: Typography.label,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.xs,
+    textTransform: 'capitalize',
   },
   mealItem: {
     paddingVertical: Spacing.md,
@@ -501,6 +673,34 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weights.bold,
     color: Colors.white,
     marginBottom: Spacing.lg,
+  },
+  inputLabel: {
+    fontSize: Typography.label,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.xs,
+  },
+  mealTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  mealTypeChip: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.primaryLight + '20',
+  },
+  mealTypeChipActive: {
+    backgroundColor: Colors.accentBlue,
+  },
+  mealTypeChipText: {
+    fontSize: Typography.body,
+    color: Colors.primaryLight,
+  },
+  mealTypeChipTextActive: {
+    color: Colors.white,
+    fontWeight: Typography.weights.semiBold,
   },
   photoButtons: {
     flexDirection: 'row',
