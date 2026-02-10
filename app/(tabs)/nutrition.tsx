@@ -25,7 +25,7 @@ import { NutritionLog, Meal, MealType, UserSettings } from '../../types';
 import { generateId, getTodayDateString } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// EB Garamond for Calorie tab
+// EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
   regular: 'EBGaramond_400Regular',
   medium: 'EBGaramond_500Medium',
@@ -34,7 +34,18 @@ const Font = {
   extraBold: 'EBGaramond_800ExtraBold',
 } as const;
 
+// DM Mono for calories/macro cards (as in tab bar)
+const CardFont = {
+  family: 'DMMono_500Medium',
+  letterSpacing: -0.1,
+} as const;
+
 const HeadingLetterSpacing = -1;
+const CARD_LABEL_COLOR = '#C6C6C6';
+const CARD_NUMBER_COLOR = '#FFFFFF';
+const CARD_UNIFIED_HEIGHT = 100;
+const MAIN_CARD_RING_SIZE = 56;
+const SMALL_CARD_RING_SIZE = 28;
 
 export default function NutritionScreen() {
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
@@ -258,35 +269,49 @@ export default function NutritionScreen() {
             TMLSN CAL
           </Text>
         </View>
-        {/* Calories left – big card */}
+        {/* Calories left – big card: text left (centered vertically), ring right */}
         {settings && todayLog && (
           <>
-            <Card style={styles.caloriesLeftCard}>
-              <Text style={styles.caloriesLeftValue}>
-                {Math.max(0, settings.dailyGoals.calories - todayLog.calories)}
-              </Text>
-              <Text style={styles.caloriesLeftLabel}>Calories left</Text>
+            <Card style={[styles.caloriesLeftCard, { minHeight: CARD_UNIFIED_HEIGHT }]}>
+              <View style={styles.caloriesLeftContent}>
+                <View style={styles.caloriesLeftTextWrap}>
+                  <Text style={styles.caloriesLeftValue}>
+                    {Math.max(0, settings.dailyGoals.calories - todayLog.calories)}
+                  </Text>
+                  <Text style={styles.caloriesLeftLabel}>Calories left</Text>
+                </View>
+                <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2 }]} />
+              </View>
             </Card>
 
-            {/* Protein, Carbs, Fat left – three cards in a row */}
+            {/* Protein, Carbs, Fat left – three cards: same height, text top-left, ring bottom center */}
             <View style={styles.threeCardsRow}>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Protein left</Text>
+              <Card style={[styles.macroLeftCard, { minHeight: CARD_UNIFIED_HEIGHT }]}>
+                <View style={styles.macroLeftTextWrap}>
+                  <Text style={styles.macroLeftValue}>
+                    {Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g
+                  </Text>
+                  <Text style={styles.macroLeftLabel}>Protein left</Text>
+                </View>
+                <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
               </Card>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Carbs left</Text>
+              <Card style={[styles.macroLeftCard, { minHeight: CARD_UNIFIED_HEIGHT }]}>
+                <View style={styles.macroLeftTextWrap}>
+                  <Text style={styles.macroLeftValue}>
+                    {Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g
+                  </Text>
+                  <Text style={styles.macroLeftLabel}>Carbs left</Text>
+                </View>
+                <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
               </Card>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Fat left</Text>
+              <Card style={[styles.macroLeftCard, { minHeight: CARD_UNIFIED_HEIGHT }]}>
+                <View style={styles.macroLeftTextWrap}>
+                  <Text style={styles.macroLeftValue}>
+                    {Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g
+                  </Text>
+                  <Text style={styles.macroLeftLabel}>Fat left</Text>
+                </View>
+                <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
               </Card>
             </View>
           </>
@@ -555,23 +580,40 @@ const styles = StyleSheet.create({
     letterSpacing: HeadingLetterSpacing,
   },
   caloriesLeftCard: {
-    paddingVertical: Spacing.xl,
-    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,
+    justifyContent: 'center',
+  },
+  caloriesLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+  },
+  caloriesLeftTextWrap: {
+    justifyContent: 'center',
+    flex: 1,
   },
   caloriesLeftValue: {
-    fontFamily: Font.extraBold,
+    fontFamily: CardFont.family,
     fontSize: Typography.h1 + 8,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
+    letterSpacing: CardFont.letterSpacing,
   },
   caloriesLeftLabel: {
-    fontFamily: Font.regular,
+    fontFamily: CardFont.family,
     fontSize: Typography.body,
-    color: Colors.primaryLight,
+    color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: CardFont.letterSpacing,
+  },
+  mainCardRing: {
+    borderWidth: 2,
+    borderColor: CARD_LABEL_COLOR,
+    backgroundColor: Colors.primaryDark,
+    marginLeft: Spacing.md,
   },
   threeCardsRow: {
     flexDirection: 'row',
@@ -581,22 +623,34 @@ const styles = StyleSheet.create({
   macroLeftCard: {
     flex: 1,
     paddingVertical: Spacing.md,
-    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
     marginVertical: 0,
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+  },
+  macroLeftTextWrap: {
+    alignSelf: 'flex-start',
   },
   macroLeftValue: {
-    fontFamily: Font.bold,
+    fontFamily: CardFont.family,
     fontSize: Typography.dataValue,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
+    letterSpacing: CardFont.letterSpacing,
   },
   macroLeftLabel: {
-    fontFamily: Font.regular,
+    fontFamily: CardFont.family,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
+    color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: CardFont.letterSpacing,
+  },
+  smallCardRing: {
+    borderWidth: 2,
+    borderColor: CARD_LABEL_COLOR,
+    backgroundColor: Colors.primaryDark,
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
   },
   cardHeader: {
     flexDirection: 'row',
