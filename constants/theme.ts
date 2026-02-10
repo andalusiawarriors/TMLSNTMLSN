@@ -3,6 +3,7 @@
 export const Colors = {
   // Duo-tone Foundation
   primaryDark: '#2F3031',     // Primary backgrounds, cards, nav bars
+  primaryDarkLighter: '#3D3E3F', // Lighter shade for tab bar pill
   primaryLight: '#C6C6C6',    // Primary text, disabled states, secondary backgrounds
   
   // Accent Colors (use sparingly)

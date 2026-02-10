@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +23,18 @@ import {
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings } from '../../types';
 import { generateId, getTodayDateString } from '../../utils/helpers';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// EB Garamond for Calorie tab
+const Font = {
+  regular: 'EBGaramond_400Regular',
+  medium: 'EBGaramond_500Medium',
+  semiBold: 'EBGaramond_600SemiBold',
+  bold: 'EBGaramond_700Bold',
+  extraBold: 'EBGaramond_800ExtraBold',
+} as const;
+
+const HeadingLetterSpacing = -1;
 
 export default function NutritionScreen() {
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
@@ -223,9 +236,28 @@ export default function NutritionScreen() {
     return Math.min(Math.round((current / goal) * 100), 100);
   };
 
+  const insets = useSafeAreaInsets();
+  const headerHeight = 44;
+  const contentTopPadding = ((insets.top + headerHeight) / 2 + Spacing.md) * 1.2;
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingTop: contentTopPadding },
+        ]}
+      >
+        <View style={styles.pageHeaderRow}>
+          <Image
+            source={require('../../assets/tmlsn-calories-logo.png')}
+            style={styles.pageHeaderLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.pageHeading}>
+            TMLSN CAL
+          </Text>
+        </View>
         {/* Macro Summary */}
         <Card>
           <Text style={styles.cardTitle}>Today's Macros</Text>
@@ -367,6 +399,7 @@ export default function NutritionScreen() {
           title="+ Add Meal"
           onPress={() => setShowAddMeal(true)}
           style={styles.addButton}
+          textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
         />
       </ScrollView>
 
@@ -409,6 +442,7 @@ export default function NutritionScreen() {
               value={mealName}
               onChangeText={setMealName}
               placeholder="e.g., Breakfast, Chicken Salad"
+              fontFamily={Font.regular}
             />
 
             <View style={styles.photoButtons}>
@@ -417,12 +451,14 @@ export default function NutritionScreen() {
                 onPress={takePhoto}
                 variant="secondary"
                 style={styles.photoButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="🖼️ Choose Photo"
                 onPress={pickImage}
                 variant="secondary"
                 style={styles.photoButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
 
@@ -432,6 +468,7 @@ export default function NutritionScreen() {
               onChangeText={setCalories}
               keyboardType="numeric"
               placeholder="500"
+              fontFamily={Font.regular}
             />
 
             <View style={styles.macroRow}>
@@ -442,6 +479,7 @@ export default function NutritionScreen() {
                 keyboardType="numeric"
                 placeholder="30"
                 containerStyle={styles.macroInput}
+                fontFamily={Font.regular}
               />
               <Input
                 label="Carbs (g)"
@@ -450,6 +488,7 @@ export default function NutritionScreen() {
                 keyboardType="numeric"
                 placeholder="40"
                 containerStyle={styles.macroInput}
+                fontFamily={Font.regular}
               />
               <Input
                 label="Fat (g)"
@@ -458,6 +497,7 @@ export default function NutritionScreen() {
                 keyboardType="numeric"
                 placeholder="15"
                 containerStyle={styles.macroInput}
+                fontFamily={Font.regular}
               />
             </View>
 
@@ -467,11 +507,13 @@ export default function NutritionScreen() {
                 onPress={() => setShowAddMeal(false)}
                 variant="secondary"
                 style={styles.modalButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="Add Meal"
                 onPress={handleAddMeal}
                 style={styles.modalButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
           </View>
@@ -494,6 +536,7 @@ export default function NutritionScreen() {
               onChangeText={setEditCalories}
               keyboardType="numeric"
               placeholder="2500"
+              fontFamily={Font.regular}
             />
             <Input
               label="Protein (g)"
@@ -501,6 +544,7 @@ export default function NutritionScreen() {
               onChangeText={setEditProtein}
               keyboardType="numeric"
               placeholder="150"
+              fontFamily={Font.regular}
             />
             <Input
               label="Carbs (g)"
@@ -508,6 +552,7 @@ export default function NutritionScreen() {
               onChangeText={setEditCarbs}
               keyboardType="numeric"
               placeholder="250"
+              fontFamily={Font.regular}
             />
             <Input
               label="Fat (g)"
@@ -515,6 +560,7 @@ export default function NutritionScreen() {
               onChangeText={setEditFat}
               keyboardType="numeric"
               placeholder="80"
+              fontFamily={Font.regular}
             />
             <Input
               label="Water (oz)"
@@ -522,6 +568,7 @@ export default function NutritionScreen() {
               onChangeText={setEditWater}
               keyboardType="numeric"
               placeholder="128"
+              fontFamily={Font.regular}
             />
             <View style={styles.modalButtons}>
               <Button
@@ -529,11 +576,13 @@ export default function NutritionScreen() {
                 onPress={() => setShowEditGoals(false)}
                 variant="secondary"
                 style={styles.modalButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="Save"
                 onPress={handleSaveGoals}
                 style={styles.modalButton}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
           </View>
@@ -546,16 +595,36 @@ export default function NutritionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.black,
+    backgroundColor: Colors.primaryDark,
   },
   contentContainer: {
-    padding: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+  },
+  pageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  pageHeaderLogo: {
+    height: (Typography.h2 + 10) * 1.2 * 1.1,
+    width: (Typography.h2 + 10) * 1.2 * 1.1,
+  },
+  pageHeading: {
+    fontFamily: Font.extraBold,
+    fontSize: Typography.h2 * 1.2 * 1.1,
+    fontWeight: Typography.weights.semiBold,
+    color: Colors.primaryLight,
+    letterSpacing: HeadingLetterSpacing,
   },
   cardTitle: {
+    fontFamily: Font.extraBold,
     fontSize: Typography.h2,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.white,
+    color: Colors.primaryLight,
     marginBottom: Spacing.md,
+    letterSpacing: HeadingLetterSpacing,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -570,15 +639,18 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   macroValue: {
+    fontFamily: Font.bold,
     fontSize: Typography.dataValue,
     fontWeight: Typography.weights.bold,
-    color: Colors.white,
+    color: Colors.primaryLight,
   },
   macroGoal: {
+    fontFamily: Font.regular,
     fontSize: Typography.body,
     color: Colors.primaryLight,
   },
   macroLabel: {
+    fontFamily: Font.regular,
     fontSize: Typography.label,
     color: Colors.primaryLight,
     marginTop: Spacing.xs,
@@ -595,9 +667,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   waterValue: {
+    fontFamily: Font.bold,
     fontSize: Typography.dataValue,
     fontWeight: Typography.weights.bold,
-    color: Colors.accentBlue,
+    color: Colors.primaryLight,
   },
   waterButtons: {
     flexDirection: 'row',
@@ -612,16 +685,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   waterButtonText: {
+    fontFamily: Font.semiBold,
     fontSize: Typography.body,
-    color: Colors.accentBlue,
+    color: Colors.primaryLight,
     fontWeight: Typography.weights.semiBold,
   },
   editGoalsLink: {
+    fontFamily: Font.semiBold,
     fontSize: Typography.body,
-    color: Colors.accentBlue,
+    color: Colors.primaryLight,
     fontWeight: Typography.weights.semiBold,
   },
   emptyText: {
+    fontFamily: Font.regular,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     textAlign: 'center',
@@ -631,11 +707,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   mealSectionTitle: {
+    fontFamily: Font.extraBold,
     fontSize: Typography.label,
     fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
     marginBottom: Spacing.xs,
     textTransform: 'capitalize',
+    letterSpacing: HeadingLetterSpacing,
   },
   mealItem: {
     paddingVertical: Spacing.md,
@@ -643,12 +721,14 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.primaryLight + '20',
   },
   mealName: {
+    fontFamily: Font.semiBold,
     fontSize: Typography.body,
     fontWeight: Typography.weights.semiBold,
-    color: Colors.white,
+    color: Colors.primaryLight,
     marginBottom: Spacing.xs,
   },
   mealMacros: {
+    fontFamily: Font.regular,
     fontSize: Typography.label,
     color: Colors.primaryLight,
   },
@@ -669,15 +749,19 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
   },
   modalTitle: {
+    fontFamily: Font.extraBold,
     fontSize: Typography.h1,
     fontWeight: Typography.weights.bold,
-    color: Colors.white,
+    color: Colors.primaryLight,
     marginBottom: Spacing.lg,
+    letterSpacing: HeadingLetterSpacing,
   },
   inputLabel: {
+    fontFamily: Font.extraBold,
     fontSize: Typography.label,
     color: Colors.primaryLight,
     marginBottom: Spacing.xs,
+    letterSpacing: HeadingLetterSpacing,
   },
   mealTypeRow: {
     flexDirection: 'row',
@@ -695,11 +779,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentBlue,
   },
   mealTypeChipText: {
+    fontFamily: Font.regular,
     fontSize: Typography.body,
     color: Colors.primaryLight,
   },
   mealTypeChipTextActive: {
-    color: Colors.white,
+    fontFamily: Font.semiBold,
+    color: Colors.primaryLight,
     fontWeight: Typography.weights.semiBold,
   },
   photoButtons: {
