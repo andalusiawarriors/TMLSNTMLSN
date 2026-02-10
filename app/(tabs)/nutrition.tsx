@@ -256,6 +256,11 @@ export default function NutritionScreen() {
   const headerHeight = 44;
   const contentTopPadding = ((insets.top + headerHeight) / 2 + Spacing.md) * 1.2;
 
+  // Calories left card: 191×74 dp, radius 29÷3 ≈ 10 (screenshot values ÷ 3)
+  const CALORIES_CARD_WIDTH = 191;
+  const CALORIES_CARD_HEIGHT = 74;
+  const CALORIES_CARD_RADIUS = Math.round(29 / 3); // 10
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -277,7 +282,7 @@ export default function NutritionScreen() {
         {/* Calories left – big card: text left (centered vertically), ring right */}
         {settings && todayLog && (
           <>
-            <Card style={[styles.caloriesLeftCard, { width: 573, height: 221, borderRadius: 29 }]}>
+            <Card style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS }]}>
               <View style={styles.caloriesLeftContent}>
                 <View style={styles.caloriesLeftTextWrap}>
                   <Text style={styles.caloriesLeftValue}>
