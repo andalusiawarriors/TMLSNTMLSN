@@ -43,9 +43,14 @@ const CardFont = {
 const HeadingLetterSpacing = -1;
 const CARD_LABEL_COLOR = '#C6C6C6';
 const CARD_NUMBER_COLOR = '#FFFFFF';
-const CARD_UNIFIED_HEIGHT = 100;
+const CARD_UNIFIED_HEIGHT = Math.round(100 * 1.2); // 20% taller, all cards same height (120)
 const MAIN_CARD_RING_SIZE = 56;
 const SMALL_CARD_RING_SIZE = 28;
+// Card fonts: 50% of base; macro labels (Calories left, Protein left, etc.) another 10% smaller (45% total)
+const CARD_VALUE_FONT_SIZE = Math.round((Typography.h1 + 8) * 0.5); // 20
+const CARD_LABEL_FONT_SIZE = Math.round(Typography.body * 0.45);   // 8 (Calories left)
+const MACRO_VALUE_FONT_SIZE = Math.round(Typography.dataValue * 0.5); // 10
+const MACRO_LABEL_FONT_SIZE = Math.round(Typography.label * 0.45);   // 6 (Protein left, etc.)
 
 export default function NutritionScreen() {
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
@@ -317,36 +322,9 @@ export default function NutritionScreen() {
           </>
         )}
 
-        {/* Meals List */}
-        <Card>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Today's Meals</Text>
-            <TouchableOpacity onPress={openEditGoals}>
-              <Text style={styles.editGoalsLink}>Edit goals</Text>
-            </TouchableOpacity>
-          </View>
-          {todayLog?.meals.length === 0 ? (
-            <Text style={styles.emptyText}>No meals logged yet</Text>
-          ) : (
-            MEAL_TYPE_ORDER.map((type) => {
-              const list = mealsByType[type];
-              if (!list.length) return null;
-              return (
-                <View key={type} style={styles.mealSection}>
-                  <Text style={styles.mealSectionTitle}>{MEAL_TYPE_LABELS[type]}</Text>
-                  {list.map((meal) => (
-                    <View key={meal.id} style={styles.mealItem}>
-                      <Text style={styles.mealName}>{meal.name}</Text>
-                      <Text style={styles.mealMacros}>
-                        {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fat}g F
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              );
-            })
-          )}
-        </Card>
+        {/* Recently uploaded – title + card same size as calories left */}
+        <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
+        <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
 
         <Button
           title="+ Add Meal"
@@ -597,14 +575,14 @@ const styles = StyleSheet.create({
   },
   caloriesLeftValue: {
     fontFamily: CardFont.family,
-    fontSize: Typography.h1 + 8,
+    fontSize: CARD_VALUE_FONT_SIZE,
     fontWeight: '500',
     color: CARD_NUMBER_COLOR,
     letterSpacing: CardFont.letterSpacing,
   },
   caloriesLeftLabel: {
     fontFamily: CardFont.family,
-    fontSize: Typography.body,
+    fontSize: CARD_LABEL_FONT_SIZE,
     color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
     letterSpacing: CardFont.letterSpacing,
@@ -633,14 +611,14 @@ const styles = StyleSheet.create({
   },
   macroLeftValue: {
     fontFamily: CardFont.family,
-    fontSize: Typography.dataValue,
+    fontSize: MACRO_VALUE_FONT_SIZE,
     fontWeight: '500',
     color: CARD_NUMBER_COLOR,
     letterSpacing: CardFont.letterSpacing,
   },
   macroLeftLabel: {
     fontFamily: CardFont.family,
-    fontSize: Typography.label,
+    fontSize: MACRO_LABEL_FONT_SIZE,
     color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
     letterSpacing: CardFont.letterSpacing,
@@ -651,6 +629,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
     alignSelf: 'center',
     marginTop: Spacing.sm,
+  },
+  recentlyUploadedTitle: {
+    fontFamily: CardFont.family,
+    fontSize: Typography.body,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: CardFont.letterSpacing,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  recentlyUploadedCard: {
+    marginBottom: Spacing.sm,
   },
   cardHeader: {
     flexDirection: 'row',
