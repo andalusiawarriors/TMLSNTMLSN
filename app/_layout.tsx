@@ -9,6 +9,7 @@ import {
   EBGaramond_700Bold,
   EBGaramond_800ExtraBold,
 } from '@expo-google-fonts/eb-garamond';
+import { DMMono_500Medium } from '@expo-google-fonts/dm-mono';
 import { registerForPushNotifications } from '../utils/notifications';
 import { Colors } from '../constants/theme';
 
@@ -19,7 +20,8 @@ export default function RootLayout() {
     EBGaramond_600SemiBold,
     EBGaramond_700Bold,
     EBGaramond_800ExtraBold,
-    });
+    DMMono_500Medium,
+  });
 
   useEffect(() => {
     // Register for push notifications on app start
