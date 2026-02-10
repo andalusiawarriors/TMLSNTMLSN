@@ -277,7 +277,7 @@ export default function NutritionScreen() {
         {/* Calories left – big card: text left (centered vertically), ring right */}
         {settings && todayLog && (
           <>
-            <Card style={[styles.caloriesLeftCard, { minHeight: CARD_UNIFIED_HEIGHT }]}>
+            <Card style={[styles.caloriesLeftCard, { width: 573, height: 221, borderRadius: 29 }]}>
               <View style={styles.caloriesLeftContent}>
                 <View style={styles.caloriesLeftTextWrap}>
                   <Text style={styles.caloriesLeftValue}>
