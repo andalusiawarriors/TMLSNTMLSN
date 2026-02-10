@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals } from '../types';
+import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine } from '../types';
 
 // Storage Keys
 const KEYS = {
@@ -8,6 +8,7 @@ const KEYS = {
   PROMPTS: '@tmlsn/prompts',
   USER_SETTINGS: '@tmlsn/user_settings',
   WORKOUT_SPLITS: '@tmlsn/workout_splits',
+  SAVED_ROUTINES: '@tmlsn/saved_routines',
 };
 
 // Default Values
@@ -92,6 +93,29 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
   } catch (error) {
     console.error('Error getting recent workouts:', error);
     return [];
+  }
+};
+
+// Saved Routines (templates for My Routines)
+export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.SAVED_ROUTINES);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('Error getting saved routines:', error);
+    return [];
+  }
+};
+
+export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => {
+  try {
+    const routines = await getSavedRoutines();
+    const updated = routines.filter((r) => r.id !== routine.id);
+    updated.push(routine);
+    await AsyncStorage.setItem(KEYS.SAVED_ROUTINES, JSON.stringify(updated));
+  } catch (error) {
+    console.error('Error saving routine:', error);
+    throw error;
   }
 };
 

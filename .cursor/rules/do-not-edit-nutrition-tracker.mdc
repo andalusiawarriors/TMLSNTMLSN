@@ -1,0 +1,22 @@
+---
+description: Do not modify the calorie/nutrition tracker unless the user explicitly asks to.
+alwaysApply: true
+---
+
+# Calorie/Nutrition Tracker Ownership
+
+**Do not modify the nutrition (calorie) tracker unless the user explicitly asks to change or add something in it.**  
+Person 1 owns that feature; Person 2 owns the workout tracker. Only edit nutrition when the current user’s request is clearly about the nutrition/calorie tracker.
+
+## Do not touch (unless user explicitly asks for nutrition changes)
+
+- **Screen:** `app/(tabs)/nutrition.tsx`
+- **Types:** Nutrition-related types in `types/index.ts` (`NutritionLog`, `Meal`, `DailyGoals`)
+- **Files** whose primary purpose is the nutrition/calorie tracker (e.g. `components/nutrition/*`, `utils/nutrition*.ts`)
+
+## Always allowed
+
+- Workout tracker: `app/(tabs)/workout.tsx`, `constants/workoutSplits.ts`, workout types and components.
+- Shared files when the change is for workout or general app behavior (avoid changing nutrition-specific logic unless the user asked for it).
+
+**If the user explicitly asks to change the nutrition/calorie tracker (e.g. “add meal photos”, “fix the nutrition screen”), go ahead and edit it.**

@@ -166,7 +166,7 @@ export default function TabsLayout() {
         options={{
           title: 'WORKOUT TRACKER',
           tabBarLabel: 'WORKOUT TRACKER',
-          headerTitle: 'WORKOUT TRACKER',
+          headerShown: false,
           tabBarIcon: () => null,
           tabBarButton: (props) => {
             const { children, accessibilityState, ...rest } = props;

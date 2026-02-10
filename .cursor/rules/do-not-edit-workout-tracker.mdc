@@ -1,0 +1,23 @@
+---
+description: Do not modify the workout tracker unless the user explicitly asks to.
+alwaysApply: true
+---
+
+# Workout Tracker Ownership
+
+**Do not modify the workout tracker unless the user explicitly asks to change or add something in it.**  
+Person 2 owns that feature; Person 1 owns the nutrition tracker. Only edit workout when the current user's request is clearly about the workout tracker.
+
+## Do not touch (unless user explicitly asks for workout changes)
+
+- **Screen:** `app/(tabs)/workout.tsx`
+- **Constants:** `constants/workoutSplits.ts`
+- **Types:** Workout-related types in `types/index.ts` (`WorkoutSession`, `Exercise`, `Set`, `WorkoutSplit`, `WorkoutExerciseTemplate`)
+- **Files** whose primary purpose is the workout tracker (e.g. `components/workout/*`, `utils/workout*.ts`)
+
+## Always allowed
+
+- Nutrition tracker: `app/(tabs)/nutrition.tsx`, nutrition types and components.
+- Shared files when the change is for nutrition or general app behavior (avoid changing workout-specific logic unless the user asked for it).
+
+**If the user explicitly asks to change the workout tracker (e.g. "add rest timer", "fix the workout screen", "update the TMLSN split"), go ahead and edit it.**
