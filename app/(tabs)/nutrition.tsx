@@ -426,7 +426,7 @@ export default function NutritionScreen() {
             resizeMode="contain"
           />
           <Text style={styles.pageHeading}>
-            TMLSN CAL
+            tmlsn cal.
           </Text>
         </View>
         {/* Macro cards carousel – swipe left to reveal flipped layout */}
@@ -807,9 +807,8 @@ const styles = StyleSheet.create({
   pageHeading: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h2 * 1.2 * 1.1,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: CardFont.letterSpacing * 0.95 * 0.95,
   },
   cardTitle: {
     fontFamily: Font.extraBold,
