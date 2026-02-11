@@ -6,7 +6,7 @@ import { Platform, Text, Image, View, Pressable, StyleSheet } from 'react-native
 const PILL_LABEL_COLOR = '#C6C6C6';
 const TAB_LABEL_STYLE = {
   fontSize: 11,
-  fontFamily: 'DMMono_500Medium',
+  fontFamily: 'DMMono_400Regular',
   letterSpacing: -0.1,
   color: PILL_LABEL_COLOR,
   marginTop: 6,
@@ -90,7 +90,7 @@ export default function TabsLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontFamily: 'DMMono_500Medium',
+          fontFamily: 'DMMono_400Regular',
           letterSpacing: -0.1,
           color: PILL_LABEL_COLOR,
           textShadowColor: 'rgba(0, 0, 0, 0.5)',

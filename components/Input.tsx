@@ -1,11 +1,11 @@
 import React from 'react';
-import { TextInput, Text, View, StyleSheet, TextInputProps, ViewStyle } from 'react-native';
+import { TextInput, Text, View, StyleSheet, TextInputProps, StyleProp, ViewStyle } from 'react-native';
 import { Colors, Typography, BorderRadius, Spacing } from '../constants/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
-  containerStyle?: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
   fontFamily?: string;
 }
 

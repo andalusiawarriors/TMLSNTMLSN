@@ -11,11 +11,12 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import { TMLSN_SPLITS } from '../../constants/workoutSplits';
 import {
   getRecentWorkouts,
@@ -28,13 +29,14 @@ import { generateId, formatDuration } from '../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// EB Garamond – same as Calorie tab
+// EB Garamond – same as Calorie tab; DB Mono for body/UI text
 const Font = {
   regular: 'EBGaramond_400Regular',
   medium: 'EBGaramond_500Medium',
   semiBold: 'EBGaramond_600SemiBold',
   bold: 'EBGaramond_700Bold',
   extraBold: 'EBGaramond_800ExtraBold',
+  mono: 'DMMono_400Regular',
 } as const;
 
 const HeadingLetterSpacing = -1;
@@ -62,9 +64,12 @@ export default function WorkoutScreen() {
   const [restTimerNotificationId, setRestTimerNotificationId] = useState<string | null>(null);
 
   // Exercise Entry State
-  const [weight, setWeight] = useState('');
-  const [reps, setReps] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [editingCell, setEditingCell] = useState<{
+    exerciseIndex: number;
+    setIndex: number;
+    field: 'weight' | 'reps';
+  } | null>(null);
 
   useEffect(() => {
     loadWorkouts();
@@ -73,6 +78,7 @@ export default function WorkoutScreen() {
   useEffect(() => {
     if (!activeWorkout) {
       setElapsedSeconds(0);
+      setEditingCell(null);
       return;
     }
     const startMs = new Date(activeWorkout.date).getTime();
@@ -258,19 +264,16 @@ export default function WorkoutScreen() {
   };
 
   const addSet = (exerciseIndex: number) => {
-    if (!activeWorkout || !weight || !reps) {
-      Alert.alert('Error', 'Please enter weight and reps');
-      return;
-    }
+    if (!activeWorkout) return;
 
     const exercise = activeWorkout.exercises[exerciseIndex];
     if (!exercise) return;
 
     const newSet: Set = {
       id: generateId(),
-      weight: parseFloat(weight),
-      reps: parseInt(reps),
-      completed: true,
+      weight: 0,
+      reps: 0,
+      completed: false,
     };
 
     const updatedExercise = {
@@ -290,9 +293,39 @@ export default function WorkoutScreen() {
       startRestTimer(exercise.restTimer, updatedExercise.sets.length, exerciseIndex);
     }
 
-    setWeight('');
-    setReps('');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const updateSet = (exerciseIndex: number, setIndex: number, updates: { weight?: number; reps?: number; completed?: boolean }) => {
+    if (!activeWorkout) return;
+    const exercise = activeWorkout.exercises[exerciseIndex];
+    if (!exercise || !exercise.sets[setIndex]) return;
+
+    const updatedSets = [...exercise.sets];
+    updatedSets[setIndex] = {
+      ...updatedSets[setIndex],
+      ...(updates.weight !== undefined && { weight: updates.weight }),
+      ...(updates.reps !== undefined && { reps: updates.reps }),
+      ...(updates.completed !== undefined && { completed: updates.completed }),
+    };
+
+    const updatedExercises = [...activeWorkout.exercises];
+    updatedExercises[exerciseIndex] = { ...exercise, sets: updatedSets };
+
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
+  };
+
+  const removeSet = (exerciseIndex: number, setIndex: number) => {
+    if (!activeWorkout) return;
+    const exercise = activeWorkout.exercises[exerciseIndex];
+    if (!exercise || !exercise.sets[setIndex]) return;
+
+    const updatedSets = exercise.sets.filter((_, i) => i !== setIndex);
+    const updatedExercises = [...activeWorkout.exercises];
+    updatedExercises[exerciseIndex] = { ...exercise, sets: updatedSets };
+
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number) => {
@@ -326,8 +359,6 @@ export default function WorkoutScreen() {
     
     if (currentExerciseIndex < activeWorkout.exercises.length - 1) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
-      setWeight('');
-      setReps('');
     } else {
       // All exercises complete
       Alert.alert(
@@ -443,7 +474,7 @@ export default function WorkoutScreen() {
           onPress={startFreeformWorkout}
           activeOpacity={0.8}
         >
-          <Text style={styles.startEmptyButtonText}>+ Start Empty Workout</Text>
+          <Text style={styles.startEmptyButtonText}>+ start empty workout</Text>
         </TouchableOpacity>
 
         {/* Routines section */}
@@ -457,7 +488,7 @@ export default function WorkoutScreen() {
           onPress={openRoutineBuilder}
           activeOpacity={0.8}
         >
-          <Text style={styles.newRoutineButtonText}>+ New Routine</Text>
+          <Text style={styles.newRoutineButtonText}>+ new routine</Text>
         </TouchableOpacity>
 
         {/* Info bubble – press and hold to reorder */}
@@ -504,7 +535,7 @@ export default function WorkoutScreen() {
                   onPress={() => startWorkoutFromSplit(split)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.tmlsnRoutineStartButtonText}>Start Routine</Text>
+                  <Text style={styles.tmlsnRoutineStartButtonText}>start routine</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -523,7 +554,7 @@ export default function WorkoutScreen() {
         {myRoutinesExpanded && (
           <View style={styles.dropdownList}>
             {savedRoutines.length === 0 ? (
-              <Text style={styles.emptyText}>No routines yet. Create one with New Routine.</Text>
+              <Text style={styles.emptyText}>No routines yet. Create one with new routine.</Text>
             ) : (
               savedRoutines.map((routine) => (
                 <TouchableOpacity
@@ -659,7 +690,7 @@ export default function WorkoutScreen() {
               { paddingTop: contentTopPadding },
             ]}
           >
-            {/* Log Workout – top bar: timer, down arrow (back), Finish */}
+            {/* Workout – top bar: back arrow, timer, clock, Workout title, blue Finish */}
             <View style={styles.logTopBar}>
               <View style={styles.logTopLeft}>
                 <TouchableOpacity
@@ -670,7 +701,8 @@ export default function WorkoutScreen() {
                   <Text style={styles.logBackArrow}>▼</Text>
                 </TouchableOpacity>
                 <Text style={styles.logTimer}>{formatElapsed(elapsedSeconds)}</Text>
-                <Text style={styles.logTitle}>Log Workout</Text>
+                <Text style={styles.logTitle}>Workout</Text>
+                <Text style={styles.logClockIcon}>🕐</Text>
               </View>
               <TouchableOpacity
                 style={styles.finishButton}
@@ -690,38 +722,43 @@ export default function WorkoutScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Summary: Duration, Volume, Sets */}
+            {/* Summary: Volume, Sets, muscle icons (reference design) */}
             <View style={styles.summaryRow}>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Duration</Text>
-                <Text style={styles.summaryValue}>{formatElapsed(elapsedSeconds)}</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Volume</Text>
-                <Text style={styles.summaryValue}>{totalVolume} lbs</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Sets</Text>
-                <Text style={styles.summaryValue}>{totalSets}</Text>
+              <Text style={styles.summaryVolumeText}>Volume {totalVolume} kg</Text>
+              <Text style={styles.summarySetsText}>Sets {totalSets}</Text>
+              <View style={styles.summaryIconsRow}>
+                <Text style={styles.summaryIcon}>👤</Text>
+                <Text style={styles.summaryIcon}>👤</Text>
               </View>
             </View>
 
-            {/* Global rest timer (when active) */}
+            {/* Global rest timer (when active) – large countdown, -15/+15/Skip (reference design) */}
             {restTimerActive && restTimeRemaining > 0 && (
-              <View style={styles.restTimerBanner}>
-                <Text style={styles.restTimerBannerIcon}>🕐</Text>
-                <Text style={styles.restTimerBannerText}>
-                  Rest: {formatDuration(restTimeRemaining)}
-                </Text>
-                <TouchableOpacity onPress={skipRestTimer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.restTimerBannerSkip}>Skip</Text>
-                </TouchableOpacity>
+              <View style={styles.restTimerPanel}>
+                <Text style={styles.restTimerCountdown}>{formatDuration(restTimeRemaining)}</Text>
+                <View style={styles.restTimerButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.restTimerAdjustButton}
+                    onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
+                  >
+                    <Text style={styles.restTimerAdjustButtonText}>-15</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.restTimerAdjustButton}
+                    onPress={() => setRestTimeRemaining((prev) => prev + 15)}
+                  >
+                    <Text style={styles.restTimerAdjustButtonText}>+15</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.restTimerSkipButton} onPress={skipRestTimer}>
+                    <Text style={styles.restTimerSkipButtonText}>Skip</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
-            {/* Exercise blocks – one card per exercise */}
+            {/* Exercise blocks – no card divider, continuous flow */}
             {activeWorkout.exercises.map((exercise, exerciseIndex) => (
-              <Card key={exercise.id} style={styles.exerciseBlock}>
+              <View key={exercise.id} style={styles.exerciseBlock}>
                 <View style={styles.exerciseBlockHeader}>
                   <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
                   <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -739,60 +776,118 @@ export default function WorkoutScreen() {
                 {/* Set table */}
                 <View style={styles.setTable}>
                   <View style={styles.setTableHeader}>
-                    <Text style={styles.setTableHeaderCell}>SET</Text>
-                    <Text style={styles.setTableHeaderCell}>PREVIOUS</Text>
-                    <Text style={styles.setTableHeaderCell}>LBS</Text>
-                    <Text style={styles.setTableHeaderCell}>REPS</Text>
-                    <Text style={styles.setTableHeaderCell}>✓</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol1]}>SET</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol2]}>PREVIOUS</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol3]}>KG</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol4]}>REPS</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol5]}>RPE</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol6]}>✓</Text>
                   </View>
                   {exercise.sets.map((set, setIndex) => (
-                    <View key={set.id} style={styles.setTableRow}>
-                      <Text style={styles.setTableCell}>{setIndex + 1}</Text>
-                      <Text style={styles.setTableCell}>
-                        {setIndex > 0
-                          ? `${exercise.sets[setIndex - 1].weight}×${exercise.sets[setIndex - 1].reps}`
-                          : '—'}
-                      </Text>
-                      <Text style={styles.setTableCell}>{set.weight}</Text>
-                      <Text style={styles.setTableCell}>{set.reps}</Text>
-                      <Text style={styles.setTableCell}>✓</Text>
-                    </View>
+                    <Swipeable
+                      key={set.id}
+                      renderRightActions={() => (
+                        <TouchableOpacity
+                          style={styles.setRowDeleteAction}
+                          onPress={() => removeSet(exerciseIndex, setIndex)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.setRowDeleteText}>Delete</Text>
+                        </TouchableOpacity>
+                      )}
+                      friction={2}
+                      rightThreshold={40}
+                    >
+                      <View
+                        style={[styles.setTableRow, set.completed && styles.setTableRowCompleted]}
+                      >
+                        <Text style={[styles.setTableCell, styles.setTableCol1, set.completed && styles.setTableCellCompleted]}>
+                          {setIndex + 1}
+                        </Text>
+                        <Text style={[styles.setTableCell, styles.setTableCol2, set.completed && styles.setTableCellCompleted]}>
+                          {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
+                            ? `${exercise.sets[setIndex - 1].weight}×${exercise.sets[setIndex - 1].reps}`
+                            : '—'}
+                        </Text>
+                        <View style={[styles.setTableInputCell, styles.setTableCol3]}>
+                          {(set.weight > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight')) ? (
+                            <Input
+                              value={String(set.weight)}
+                              onChangeText={(text) => updateSet(exerciseIndex, setIndex, { weight: parseFloat(text) || 0 })}
+                              onBlur={() => setEditingCell(null)}
+                              autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight'}
+                              keyboardType="numeric"
+                              placeholder="—"
+                              containerStyle={StyleSheet.flatten([set.completed ? styles.setTableInputWhenCompleted : styles.setTableInput, styles.setTableInputMinimal])}
+                              style={[styles.setTableInputText, styles.setTableInputNoBox, set.completed && styles.setTableInputTextCompleted]}
+                              placeholderTextColor={set.completed ? 'rgba(255,255,255,0.7)' : Colors.primaryLight}
+                              fontFamily={Font.mono}
+                            />
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'weight' })}
+                              style={styles.setTableDashCell}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <View style={[styles.setTableInputCell, styles.setTableCol4]}>
+                          {(set.reps > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps')) ? (
+                            <Input
+                              value={String(set.reps)}
+                              onChangeText={(text) => updateSet(exerciseIndex, setIndex, { reps: parseInt(text, 10) || 0 })}
+                              onBlur={() => setEditingCell(null)}
+                              autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps'}
+                              keyboardType="numeric"
+                              placeholder="—"
+                              containerStyle={StyleSheet.flatten([set.completed ? styles.setTableInputWhenCompleted : styles.setTableInput, styles.setTableInputMinimal])}
+                              style={[styles.setTableInputText, styles.setTableInputNoBox, set.completed && styles.setTableInputTextCompleted]}
+                              placeholderTextColor={set.completed ? 'rgba(255,255,255,0.7)' : Colors.primaryLight}
+                              fontFamily={Font.mono}
+                            />
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'reps' })}
+                              style={styles.setTableDashCell}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.setTableRpeCell, styles.setTableCol5, set.completed && styles.setTableRpeCellCompleted]}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.setTableRpeText, set.completed && styles.setTableRpeTextCompleted]}>
+                            RPE
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.setTableTickCell, styles.setTableCol6]}
+                          onPress={() => updateSet(exerciseIndex, setIndex, { completed: !set.completed })}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={[styles.setTableCell, set.completed && styles.setTableTickCompleted]}>
+                            ✓
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Swipeable>
                   ))}
                 </View>
 
-                {/* Add set row – weight, reps, Add Set */}
-                <View style={styles.addSetRow}>
-                  <View style={styles.addSetInputWrap}>
-                    <Text style={styles.addSetLabel}>LBS</Text>
-                    <Input
-                      value={weight}
-                      onChangeText={setWeight}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      containerStyle={styles.addSetInput}
-                      fontFamily={Font.regular}
-                    />
-                  </View>
-                  <View style={styles.addSetInputWrap}>
-                    <Text style={styles.addSetLabel}>REPS</Text>
-                    <Input
-                      value={reps}
-                      onChangeText={setReps}
-                      keyboardType="numeric"
-                      placeholder="0"
-                      containerStyle={styles.addSetInput}
-                      fontFamily={Font.regular}
-                    />
-                  </View>
-                  <TouchableOpacity
-                    style={styles.addSetButtonBlock}
-                    onPress={() => addSet(exerciseIndex)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.addSetButtonBlockText}>+ Add Set</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
+                {/* Add set – button adds a new row to the table; KG/REPS edited in the table */}
+                <TouchableOpacity
+                  style={styles.addSetButtonBlock}
+                  onPress={() => addSet(exerciseIndex)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.addSetButtonBlockText}>+ add set</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </ScrollView>
         </Animated.View>
@@ -820,7 +915,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   startEmptyButton: {
-    backgroundColor: Colors.primaryDarkLighter,
+    backgroundColor: Colors.primaryDark,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
@@ -828,12 +923,13 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.card,
   },
   startEmptyButtonText: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    letterSpacing: -0.72,
     textAlign: 'center',
   },
   routinesHeader: {
@@ -843,27 +939,27 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   routinesTitle: {
-    fontFamily: Font.extraBold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
   },
   newRoutineButton: {
     alignSelf: 'stretch',
-    backgroundColor: Colors.primaryDarkLighter,
+    backgroundColor: Colors.primaryDark,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.card,
   },
   newRoutineButtonText: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    letterSpacing: -0.72,
     textAlign: 'center',
   },
   bubbleButton: {
@@ -875,18 +971,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 56,
+    ...Shadows.card,
   },
   bubbleButtonIcon: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: 20,
     color: Colors.primaryLight,
+    letterSpacing: -0.72,
     marginBottom: Spacing.xs,
   },
   bubbleButtonLabel: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    letterSpacing: -0.72,
   },
   infoBubble: {
     flexDirection: 'row',
@@ -897,28 +995,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.lg,
     gap: Spacing.sm,
+    ...Shadows.card,
   },
   infoBubbleIcon: {
     fontSize: 16,
   },
   infoBubbleText: {
     flex: 1,
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.label,
+    letterSpacing: -0.72,
     color: '#1a1a1a',
   },
   infoBubbleClose: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
+    letterSpacing: -0.72,
     color: '#1a1a1a',
     padding: Spacing.xs,
   },
   sectionTitle: {
-    fontFamily: Font.extraBold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
     marginBottom: Spacing.sm,
   },
   splitCardBlock: {
@@ -928,12 +1028,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.primaryLight + '20',
+    ...Shadows.card,
   },
   splitCardName: {
-    fontFamily: Font.bold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
     marginBottom: Spacing.sm,
   },
   splitExerciseRow: {
@@ -947,13 +1048,15 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   splitExerciseName: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
   },
   splitExerciseRest: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.label,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
   },
   addExerciseToRoutineButton: {
@@ -964,12 +1067,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
     alignItems: 'center',
+    ...Shadows.card,
   },
   addExerciseToRoutineText: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    letterSpacing: -0.72,
   },
   dropdownHeader: {
     flexDirection: 'row',
@@ -980,16 +1084,16 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   dropdownChevron: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.label,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
   },
   dropdownTitle: {
-    fontFamily: Font.extraBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
   },
   dropdownList: {
     marginLeft: Spacing.sm,
@@ -999,11 +1103,11 @@ const styles = StyleSheet.create({
     borderLeftColor: Colors.primaryLight + '30',
   },
   tmlsnRoutineCard: {
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
+    backgroundColor: Colors.primaryDark,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
     marginBottom: Spacing.md,
-    overflow: 'hidden',
+    ...Shadows.card,
   },
   tmlsnRoutineCardHeader: {
     flexDirection: 'row',
@@ -1012,15 +1116,16 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   tmlsnRoutineCardTitle: {
-    fontFamily: Font.bold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
     flex: 1,
   },
   tmlsnRoutineExerciseList: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.label,
+    letterSpacing: -0.72,
     color: Colors.primaryLight + 'cc',
     marginBottom: Spacing.md,
     lineHeight: 18,
@@ -1034,10 +1139,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tmlsnRoutineStartButtonText: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
+    letterSpacing: -0.72,
     color: '#2f3031',
-    fontWeight: Typography.weights.semiBold,
   },
   routineItem: {
     paddingVertical: Spacing.sm,
@@ -1047,15 +1152,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight + '15',
   },
   routineItemName: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
     marginBottom: 2,
   },
   routineItemDetail: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.label,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
   },
   pageHeaderRow: {
@@ -1069,11 +1175,10 @@ const styles = StyleSheet.create({
     width: (Typography.h2 + 10) * 1.2 * 1.1,
   },
   pageHeading: {
-    fontFamily: Font.extraBold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2 * 1.2 * 1.1,
-    fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
   },
   cardTitle: {
     fontFamily: Font.extraBold,
@@ -1278,86 +1383,119 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   logBackArrow: {
-    fontFamily: Font.regular,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     lineHeight: Typography.dataValue,
+    letterSpacing: -0.72,
   },
   logTimer: {
-    fontFamily: Font.bold,
+    fontFamily: Font.mono,
     fontSize: Typography.dataValue,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
   },
   logTitle: {
-    fontFamily: Font.extraBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
+  },
+  logClockIcon: {
+    fontSize: 16,
+    marginLeft: Spacing.xs,
   },
   finishButton: {
-    backgroundColor: Colors.primaryDarkLighter,
+    backgroundColor: Colors.accentBlue,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.md,
   },
   finishButtonText: {
-    fontFamily: Font.semiBold,
+    fontFamily: Font.mono,
     fontSize: Typography.body,
-    color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    color: Colors.white,
+    letterSpacing: -0.72,
   },
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.lg,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.primaryLight + '15',
-    borderRadius: BorderRadius.md,
-  },
-  summaryItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryLabel: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.xs,
-  },
-  summaryValue: {
-    fontFamily: Font.bold,
-    fontSize: Typography.dataValue,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
-  },
-  restTimerBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primaryLight + '20',
-    borderRadius: BorderRadius.sm,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.md,
     gap: Spacing.sm,
   },
-  restTimerBannerIcon: {
-    fontSize: 16,
+  summaryVolumeText: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
+    color: Colors.primaryLight,
   },
-  restTimerBannerText: {
+  summarySetsText: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
+    color: Colors.primaryLight,
+  },
+  summaryIconsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  summaryIcon: {
+    fontSize: 18,
+    opacity: 0.9,
+  },
+  restTimerPanel: {
+    marginBottom: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    alignItems: 'center',
+    backgroundColor: Colors.primaryDark,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.card,
+  },
+  restTimerCountdown: {
+    fontFamily: Font.bold,
+    fontSize: 48,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.md,
+  },
+  restTimerButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  restTimerAdjustButton: {
+    backgroundColor: Colors.primaryDarkLighter,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    ...Shadows.card,
+  },
+  restTimerAdjustButtonText: {
     fontFamily: Font.semiBold,
     fontSize: Typography.body,
     color: Colors.primaryLight,
   },
-  restTimerBannerSkip: {
+  restTimerSkipButton: {
+    backgroundColor: Colors.accentBlue,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    ...Shadows.card,
+  },
+  restTimerSkipButtonText: {
     fontFamily: Font.semiBold,
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
+    fontSize: Typography.body,
+    color: Colors.white,
   },
   exerciseBlock: {
     marginBottom: Spacing.lg,
+    backgroundColor: Colors.primaryDark,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    ...Shadows.card,
   },
   exerciseBlockHeader: {
     flexDirection: 'row',
@@ -1366,10 +1504,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   exerciseBlockName: {
-    fontFamily: Font.bold,
+    fontFamily: Font.mono,
     fontSize: Typography.h2,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.72,
     flex: 1,
   },
   exerciseBlockMenu: {
@@ -1379,8 +1517,9 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   notesPlaceholder: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
     color: Colors.primaryLight + '99',
     marginBottom: Spacing.sm,
   },
@@ -1394,74 +1533,144 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   restTimerRowText: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
   },
   setTable: {
     marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '25',
-    borderRadius: BorderRadius.sm,
-    overflow: 'hidden',
+    marginHorizontal: -Spacing.lg,
   },
   setTableHeader: {
     flexDirection: 'row',
-    backgroundColor: Colors.primaryLight + '20',
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   setTableHeaderCell: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.label,
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
     flex: 1,
     textAlign: 'center',
   },
+  setTableCol1: { minWidth: 28 },
+  setTableCol2: { marginLeft: 32, minWidth: 72 },
+  setTableCol3: { marginLeft: 32, minWidth: 28 },
+  setTableCol4: { marginLeft: 32, minWidth: 40 },
+  setTableCol5: { marginLeft: 32, minWidth: 28 },
+  setTableCol6: { marginLeft: 32, minWidth: 24 },
   setTableRow: {
     flexDirection: 'row',
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.primaryLight + '15',
+    paddingHorizontal: Spacing.md,
+  },
+  setRowDeleteAction: {
+    backgroundColor: Colors.accentRed,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    minHeight: 52,
+  },
+  setRowDeleteText: {
+    fontFamily: Font.semiBold,
+    fontSize: Typography.body,
+    color: Colors.white,
+    fontWeight: Typography.weights.semiBold,
+  },
+  setTableRowCompleted: {
+    // no background – same as panel
   },
   setTableCell: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
     flex: 1,
     textAlign: 'center',
   },
-  addSetRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
+  setTableCellCompleted: {
+    color: '#ffffff',
   },
-  addSetInputWrap: {
+  setTableRpeCell: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
   },
-  addSetLabel: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
+  setTableRpeCellCompleted: {
+    // no background – same as panel
+  },
+  setTableRpeText: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
     color: Colors.primaryLight,
-    marginBottom: Spacing.xs,
   },
-  addSetInput: {
+  setTableRpeTextCompleted: {
+    color: Colors.white,
+  },
+  setTableTickCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setTableTickCompleted: {
+    color: '#ffffff',
+  },
+  setTableInputTextCompleted: {
+    color: '#ffffff',
+  },
+  setTableInputCell: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  setTableInputMinimal: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
     marginBottom: 0,
   },
-  addSetButtonBlock: {
-    backgroundColor: Colors.primaryDarkLighter,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
+  setTableDashCell: {
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 100,
+  },
+  setTableInputText: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    letterSpacing: -0.72,
+    color: Colors.primaryLight,
+  },
+  setTableInputNoBox: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  setTableInput: {
+    marginBottom: 0,
+    minHeight: 36,
+  },
+  setTableInputWhenCompleted: {
+    marginBottom: 0,
+    minHeight: 36,
+  },
+  addSetButtonBlock: {
+    width: 368,
+    height: 39,
+    alignSelf: 'center',
+    backgroundColor: '#C6C6C6',
+    marginTop: Spacing.sm,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.card,
   },
   addSetButtonBlockText: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
+    fontFamily: Font.mono,
+    fontSize: 12,
+    color: '#2F3031',
+    letterSpacing: -0.72,
   },
 });
