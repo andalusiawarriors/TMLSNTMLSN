@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,10 @@ import {
   Modal,
   Alert,
   Image,
+  Dimensions,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Animated,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
@@ -25,7 +29,7 @@ import { NutritionLog, Meal, MealType, UserSettings } from '../../types';
 import { generateId, getTodayDateString } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// EB Garamond for Calorie tab
+// EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
   regular: 'EBGaramond_400Regular',
   medium: 'EBGaramond_500Medium',
@@ -34,13 +38,117 @@ const Font = {
   extraBold: 'EBGaramond_800ExtraBold',
 } as const;
 
+// DM Mono for calories/macro cards (as in tab bar)
+const CardFont = {
+  family: 'DMMono_500Medium',
+  letterSpacing: -0.1,
+} as const;
+
 const HeadingLetterSpacing = -1;
+const CARD_LABEL_COLOR = '#C6C6C6';
+const CARD_NUMBER_COLOR = '#FFFFFF';
+const CARD_UNIFIED_HEIGHT = Math.round(100 * 1.2); // 20% taller, all cards same height (120)
+const MAIN_CARD_RING_SIZE = 100;
+const SMALL_CARD_RING_SIZE = Math.round(61 * 0.95); // 5% smaller (58)
+// Card fonts: 50% of base; macro labels (Calories left, Protein left, etc.) another 10% smaller (45% total)
+const CARD_VALUE_FONT_SIZE = Math.round((Typography.h1 + 8) * 0.5); // 20
+const CARD_LABEL_FONT_SIZE = Math.round(Typography.body * 0.45);   // 8 (Calories left)
+const MACRO_VALUE_FONT_SIZE = Math.round(Typography.dataValue * 0.5); // 10
+const MACRO_LABEL_FONT_SIZE = Math.round(Typography.label * 0.45);   // 6 (Protein left, etc.)
 
 export default function NutritionScreen() {
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
+  const [cardPage, setCardPage] = useState(0);
+  const [showEaten, setShowEaten] = useState(false);
+  const cardScaleAnim = useRef(new Animated.Value(1)).current;
+  // Per-card text animations (0=cal, 1=protein, 2=carbs, 3=fat, 4=sodium, 5=potassium, 6=magnesium)
+  const textAnims = useRef(
+    Array.from({ length: 7 }, () => new Animated.Value(0))
+  ).current;
+  const STAGGER_DELAY = 25; // ms between each card
+
+  // Per-digit scroll-wheel: quick blur then new numbers float in from above
+  const getDigitAnimStyle = (cardIndex: number, charIndex: number) => {
+    const anim = textAnims[cardIndex];
+    const o = Math.min(charIndex * 0.15, 0.48);
+    // Enter: float down from -1.5dp above into place
+    const eStart = -1 + o + 0.001;
+    const eEnd = Math.min(-1 + o + 0.5, -0.005);
+    // Exit: drift down 1.5dp while blurring out
+    const xStart = Math.max(o + 0.005, 0.005);
+    const xEnd = Math.min(o + 0.5, 0.995);
+    return {
+      transform: [
+        { translateY: anim.interpolate({
+          inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
+          outputRange: [-1.5, -1.5, 0, 0, 0, 1.5, 1.5],
+          extrapolate: 'clamp' as const,
+        }) },
+      ],
+      opacity: anim.interpolate({
+        inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
+        outputRange: [0.35, 0.35, 1, 1, 1, 0.35, 0.35],
+        extrapolate: 'clamp' as const,
+      }),
+    };
+  };
+
+  // Ghost opacity: invisible at rest, appears during quick blur phase
+  const getGhostOpacity = (cardIndex: number, charIndex: number, peak: number) => {
+    const anim = textAnims[cardIndex];
+    const o = Math.min(charIndex * 0.15, 0.48);
+    const eStart = -1 + o + 0.001;
+    const eEnd = Math.min(-1 + o + 0.5, -0.005);
+    const xStart = Math.max(o + 0.005, 0.005);
+    const xEnd = Math.min(o + 0.5, 0.995);
+    return anim.interpolate({
+      inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
+      outputRange: [peak, peak, 0, 0, 0, peak, peak],
+      extrapolate: 'clamp' as const,
+    });
+  };
+
+  // Render value text as individually animated characters with soft gaussian blur ghosts
+  const renderScrollDigits = (
+    text: string,
+    cardIndex: number,
+    mainStyle: any,
+    goalText?: string,
+    goalStyle?: any,
+  ) => {
+    const chars: { char: string; cStyle: any; idx: number }[] = [];
+    let idx = 0;
+    text.split('').forEach(c => chars.push({ char: c, cStyle: mainStyle, idx: idx++ }));
+    if (goalText && goalStyle) {
+      goalText.split('').forEach(c => chars.push({ char: c, cStyle: goalStyle, idx: idx++ }));
+    }
+    return (
+      <View style={{ flexDirection: 'row' }}>
+        {chars.map(({ char, cStyle, idx: i }) => (
+          <Animated.View key={i} style={getDigitAnimStyle(cardIndex, i)}>
+            {/* Soft blur: ghost copies at different offsets, only visible during transition */}
+            <Animated.View style={{ position: 'absolute', top: -3.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.1) }} pointerEvents="none">
+              <Text style={cStyle}>{char}</Text>
+            </Animated.View>
+            <Animated.View style={{ position: 'absolute', top: -1.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.22) }} pointerEvents="none">
+              <Text style={cStyle}>{char}</Text>
+            </Animated.View>
+            {/* Main character */}
+            <Text style={cStyle}>{char}</Text>
+            <Animated.View style={{ position: 'absolute', top: 1.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.22) }} pointerEvents="none">
+              <Text style={cStyle}>{char}</Text>
+            </Animated.View>
+            <Animated.View style={{ position: 'absolute', top: 3.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.1) }} pointerEvents="none">
+              <Text style={cStyle}>{char}</Text>
+            </Animated.View>
+          </Animated.View>
+        ))}
+      </View>
+    );
+  };
 
   // Add Meal Form State
   const [mealType, setMealType] = useState<MealType>('breakfast');
@@ -240,6 +348,69 @@ export default function NutritionScreen() {
   const headerHeight = 44;
   const contentTopPadding = ((insets.top + headerHeight) / 2 + Spacing.md) * 1.2;
 
+  // Calories left card: 349×136 dp, radius 16
+  const CALORIES_CARD_WIDTH = 349;
+  const CALORIES_CARD_HEIGHT = 136;
+  const CALORIES_CARD_RADIUS = 16;
+
+  // Macro cards (Protein, Carbs, Fat): 112×140 dp, radius 16
+  const MACRO_CARD_WIDTH = 112;
+  const MACRO_CARD_HEIGHT = 140;
+  const MACRO_CARD_RADIUS = 16;
+
+  // Carousel (horizontal paging between normal and flipped card layouts)
+  const CAROUSEL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
+  const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const page = Math.round(offsetX / CAROUSEL_WIDTH);
+    setCardPage(page);
+  };
+
+  const onCardPressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.timing(cardScaleAnim, {
+      toValue: 0.99,
+      duration: 80,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const onCardPressOut = () => {
+    Animated.spring(cardScaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 120,
+      friction: 8,
+    }).start();
+    // Staggered scroll: each card exits one after another, then enters
+    textAnims.forEach(a => a.stopAnimation());
+    const exitAnims = textAnims.map((anim, i) =>
+      Animated.sequence([
+        Animated.delay(i * STAGGER_DELAY),
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: 20,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    Animated.parallel(exitAnims).start(() => {
+      setShowEaten(prev => !prev);
+      textAnims.forEach(a => a.setValue(-1));
+      const enterAnims = textAnims.map((anim, i) =>
+        Animated.sequence([
+          Animated.delay(i * STAGGER_DELAY),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: 20,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      Animated.parallel(enterAnims).start();
+    });
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -258,70 +429,164 @@ export default function NutritionScreen() {
             TMLSN CAL
           </Text>
         </View>
-        {/* Calories left – big card */}
+        {/* Macro cards carousel – swipe left to reveal flipped layout */}
         {settings && todayLog && (
           <>
-            <Card style={styles.caloriesLeftCard}>
-              <Text style={styles.caloriesLeftValue}>
-                {Math.max(0, settings.dailyGoals.calories - todayLog.calories)}
-              </Text>
-              <Text style={styles.caloriesLeftLabel}>Calories left</Text>
-            </Card>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={handleCarouselScroll}
+              scrollEventThrottle={16}
+              style={{ width: CAROUSEL_WIDTH }}
+            >
+              {/* Page 1: Big card top, 3 small cards bottom */}
+              <View style={{ width: CAROUSEL_WIDTH }}>
+                <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                  <Animated.View style={{ transform: [{ scale: cardScaleAnim }] }}>
+                    <Card style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
+                      <View style={styles.caloriesLeftContent}>
+                        <View style={styles.caloriesLeftTextWrap}>
+                          {showEaten
+                            ? renderScrollDigits(String(todayLog.calories), 0, styles.caloriesLeftValue, `/${settings.dailyGoals.calories}`, styles.caloriesEatenGoal)
+                            : renderScrollDigits(String(Math.max(0, settings.dailyGoals.calories - todayLog.calories)), 0, styles.caloriesLeftValue)
+                          }
+                          <Animated.View style={getDigitAnimStyle(0, 7)}>
+                            <Text style={styles.caloriesLeftLabel}>{showEaten ? 'calories eaten' : 'calories left'}</Text>
+                          </Animated.View>
+                        </View>
+                        <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2 }]} />
+                      </View>
+                    </Card>
+                  </Animated.View>
+                </TouchableOpacity>
+                <Animated.View style={[styles.threeCardsRow, { transform: [{ scale: cardScaleAnim }] }]}>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits(String(todayLog.protein), 1, styles.macroLeftValue, `/${settings.dailyGoals.protein}g`, styles.macroEatenGoal)
+                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`, 1, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(1, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'protein eaten' : 'protein left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits(String(todayLog.carbs), 2, styles.macroLeftValue, `/${settings.dailyGoals.carbs}g`, styles.macroEatenGoal)
+                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`, 2, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(2, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'carbs eaten' : 'carbs left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits(String(todayLog.fat), 3, styles.macroLeftValue, `/${settings.dailyGoals.fat}g`, styles.macroEatenGoal)
+                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`, 3, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(3, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'fat eaten' : 'fat left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
 
-            {/* Protein, Carbs, Fat left – three cards in a row */}
-            <View style={styles.threeCardsRow}>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Protein left</Text>
-              </Card>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Carbs left</Text>
-              </Card>
-              <Card style={styles.macroLeftCard}>
-                <Text style={styles.macroLeftValue}>
-                  {Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g
-                </Text>
-                <Text style={styles.macroLeftLabel}>Fat left</Text>
-              </Card>
+              {/* Page 2: Electrolytes top, Health Score bottom (flipped layout) */}
+              <View style={{ width: CAROUSEL_WIDTH }}>
+                <Animated.View style={[styles.threeCardsRow, { transform: [{ scale: cardScaleAnim }] }]}>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits('0', 4, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
+                          : renderScrollDigits('—mg', 4, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(4, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'sodium eaten' : 'sodium left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits('0', 5, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
+                          : renderScrollDigits('—mg', 5, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(5, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'potassium eaten' : 'potassium left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                      <View style={styles.macroLeftTextWrap}>
+                        {showEaten
+                          ? renderScrollDigits('0', 6, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
+                          : renderScrollDigits('—mg', 6, styles.macroLeftValue)
+                        }
+                        <Animated.View style={getDigitAnimStyle(6, 7)}>
+                          <Text style={styles.macroLeftLabel}>{showEaten ? 'magnesium eaten' : 'magnesium left'}</Text>
+                        </Animated.View>
+                      </View>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                    </Card>
+                  </TouchableOpacity>
+                </Animated.View>
+                <TouchableOpacity onPressIn={onCardPressIn} onPressOut={() => {
+                  Animated.spring(cardScaleAnim, { toValue: 1, useNativeDriver: true, tension: 120, friction: 8 }).start();
+                }} activeOpacity={1}>
+                  <Animated.View style={{ transform: [{ scale: cardScaleAnim }] }}>
+                    <Card style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
+                      <View style={styles.healthScoreHeaderRow}>
+                        <Text style={styles.healthScoreTitle}>health score</Text>
+                      </View>
+                      {(!todayLog?.meals?.length) && (
+                        <View style={styles.healthScoreNaWrap} pointerEvents="none">
+                          <Text style={styles.healthScoreNa} numberOfLines={1}>
+                            N/A
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.healthScoreBarTrack}>
+                        <View style={styles.healthScoreBarFill} />
+                      </View>
+                    </Card>
+                  </Animated.View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            {/* Pagination dots */}
+            <View style={styles.paginationDots}>
+              <View style={[styles.dot, cardPage === 0 && styles.dotActive]} />
+              <View style={[styles.dot, cardPage === 1 && styles.dotActive]} />
             </View>
           </>
         )}
 
-        {/* Meals List */}
-        <Card>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Today's Meals</Text>
-            <TouchableOpacity onPress={openEditGoals}>
-              <Text style={styles.editGoalsLink}>Edit goals</Text>
-            </TouchableOpacity>
-          </View>
-          {todayLog?.meals.length === 0 ? (
-            <Text style={styles.emptyText}>No meals logged yet</Text>
-          ) : (
-            MEAL_TYPE_ORDER.map((type) => {
-              const list = mealsByType[type];
-              if (!list.length) return null;
-              return (
-                <View key={type} style={styles.mealSection}>
-                  <Text style={styles.mealSectionTitle}>{MEAL_TYPE_LABELS[type]}</Text>
-                  {list.map((meal) => (
-                    <View key={meal.id} style={styles.mealItem}>
-                      <Text style={styles.mealName}>{meal.name}</Text>
-                      <Text style={styles.mealMacros}>
-                        {meal.calories} cal • {meal.protein}g P • {meal.carbs}g C • {meal.fat}g F
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              );
-            })
-          )}
-        </Card>
+        {/* Recently uploaded – title + card same size as calories left */}
+        <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
+        <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
 
         <Button
           title="+ Add Meal"
@@ -555,48 +820,175 @@ const styles = StyleSheet.create({
     letterSpacing: HeadingLetterSpacing,
   },
   caloriesLeftCard: {
-    paddingVertical: Spacing.xl,
-    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingLeft: 22, // 22 from left edge of card to number
+    paddingRight: 22, // 22 from circle right edge to card right edge
     marginBottom: Spacing.sm,
+    justifyContent: 'center',
+  },
+  caloriesLeftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+  },
+  caloriesLeftTextWrap: {
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    flex: 1,
+    overflow: 'hidden',
   },
   caloriesLeftValue: {
-    fontFamily: Font.extraBold,
-    fontSize: Typography.h1 + 8,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    fontFamily: CardFont.family,
+    fontSize: 36,
+    fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
+    letterSpacing: 36 * -0.03, // -3% letter spacing (-1.08)
   },
   caloriesLeftLabel: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    marginTop: Spacing.xs,
-    letterSpacing: HeadingLetterSpacing,
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    marginTop: -3, // raised by 10 more (7 - 10)
+    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12, // -12% letter spacing
+  },
+  caloriesEatenGoal: {
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
+  },
+  mainCardRing: {
+    borderWidth: 9,
+    borderColor: 'rgba(198, 198, 198, 0.8)', // #C6C6C6, 80% opacity, ring stroke
+    backgroundColor: 'transparent',
+    marginLeft: Spacing.md,
+    marginRight: 0,
   },
   threeCardsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
+    alignSelf: 'center',
   },
   macroLeftCard: {
     flex: 1,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
+    paddingTop: 17.5,
+    paddingBottom: 17.5,
+    paddingHorizontal: 11,
     marginVertical: 0,
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+  },
+  macroLeftTextWrap: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+    overflow: 'hidden',
   },
   macroLeftValue: {
-    fontFamily: Font.bold,
-    fontSize: Typography.dataValue,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    fontFamily: CardFont.family,
+    fontSize: 16,
+    fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
+    letterSpacing: CardFont.letterSpacing,
   },
   macroLeftLabel: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
+    fontFamily: CardFont.family,
+    fontSize: 10,
+    color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: 10 * -0.12, // -12%
+  },
+  macroEatenGoal: {
+    fontFamily: CardFont.family,
+    fontSize: 10,
+    color: CARD_LABEL_COLOR,
+    letterSpacing: 10 * -0.12,
+  },
+  smallCardRing: {
+    borderWidth: 6 * 0.99, // 1% less stroke (~5.94)
+    borderColor: 'rgba(198, 198, 198, 0.8)', // #C6C6C6, 80% opacity, inside stroke
+    backgroundColor: 'transparent',
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
+  },
+  healthScoreCard: {
+    justifyContent: 'flex-start',
+    paddingTop: 24,
+    paddingLeft: 16,
+    overflow: 'visible',
+  },
+  healthScoreHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  healthScoreTitle: {
+    fontFamily: CardFont.family,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    letterSpacing: 15 * -0.12, // -12%
+  },
+  healthScoreNaWrap: {
+    position: 'absolute',
+    top: 24,
+    right: 15, // matches bar right edge (349 - 15 - 319 = 15)
+    alignItems: 'flex-end',
+  },
+  healthScoreNa: {
+    fontFamily: CardFont.family,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    letterSpacing: 0, // no negative spacing – prevents last-char clipping
+  },
+  healthScoreBarTrack: {
+    position: 'absolute',
+    top: 48,
+    left: (349 - 319) / 2, // 15 – center 319-wide bar in 349 card
+    width: 319,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(198, 198, 198, 0.2)', // darker uncomplete track
+    overflow: 'hidden',
+  },
+  healthScoreBarFill: {
+    width: '0%', // placeholder – 0% filled for now
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#C6C6C6',
+  },
+  paginationDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.sm,
+    gap: 6,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: 'rgba(198, 198, 198, 0.3)',
+  },
+  dotActive: {
+    backgroundColor: 'rgba(198, 198, 198, 0.9)',
+  },
+  recentlyUploadedTitle: {
+    fontFamily: CardFont.family,
+    fontSize: Typography.body,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: CardFont.letterSpacing,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  recentlyUploadedCard: {
+    marginBottom: Spacing.sm,
   },
   cardHeader: {
     flexDirection: 'row',
