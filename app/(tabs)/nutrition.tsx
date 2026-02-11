@@ -948,7 +948,7 @@ const styles = StyleSheet.create({
   healthScoreBarTrack: {
     position: 'absolute',
     top: 48,
-    left: (349 - 319) / 2, // 15 – center 319-wide bar in 349 card
+    left: 15, // center 319-wide bar in 349 card
     width: 319,
     height: 6,
     borderRadius: 3,
