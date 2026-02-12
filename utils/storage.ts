@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine } from '../types';
+import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine, SavedFood } from '../types';
 
 // Storage Keys
 const KEYS = {
@@ -9,6 +9,7 @@ const KEYS = {
   USER_SETTINGS: '@tmlsn/user_settings',
   WORKOUT_SPLITS: '@tmlsn/workout_splits',
   SAVED_ROUTINES: '@tmlsn/saved_routines',
+  SAVED_FOODS: '@tmlsn/saved_foods',
 };
 
 // Default Values
@@ -116,6 +117,45 @@ export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => 
   } catch (error) {
     console.error('Error saving routine:', error);
     throw error;
+  }
+};
+
+// Saved Foods Storage Functions
+export const getSavedFoods = async (): Promise<SavedFood[]> => {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.SAVED_FOODS);
+    const foods: SavedFood[] = data ? JSON.parse(data) : [];
+    return foods.sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
+  } catch (error) {
+    console.error('Error getting saved foods:', error);
+    return [];
+  }
+};
+
+export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'useCount'>): Promise<void> => {
+  try {
+    const foods = await getSavedFoods();
+    const normalised = food.name.trim().toLowerCase();
+    const existing = foods.find((f) => f.name.trim().toLowerCase() === normalised);
+    if (existing) {
+      existing.lastUsed = new Date().toISOString();
+      existing.useCount += 1;
+      existing.calories = food.calories;
+      existing.protein = food.protein;
+      existing.carbs = food.carbs;
+      existing.fat = food.fat;
+      if (food.brand) existing.brand = food.brand;
+    } else {
+      foods.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        name: food.name, brand: food.brand, calories: food.calories,
+        protein: food.protein, carbs: food.carbs, fat: food.fat,
+        lastUsed: new Date().toISOString(), useCount: 1,
+      });
+    }
+    await AsyncStorage.setItem(KEYS.SAVED_FOODS, JSON.stringify(foods));
+  } catch (error) {
+    console.error('Error saving food:', error);
   }
 };
 
