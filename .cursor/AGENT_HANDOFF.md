@@ -37,7 +37,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- *(none)*
+- `app/(tabs)/workout.tsx` – main menu redesign (header, swipeable widget, achievements/streak)
 
 ---
 

@@ -10,6 +10,8 @@ import {
   Image,
   Animated,
   Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -40,6 +42,10 @@ const Font = {
 } as const;
 
 const HeadingLetterSpacing = -1;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const BUTTON_WIDTH = Math.min(333, SCREEN_WIDTH - 48);
+const PROGRESS_CARD_WIDTH = Math.min(333, SCREEN_WIDTH - 48);
+const ACHIEVEMENT_BUTTON_SIZE = Math.min(155, (SCREEN_WIDTH - 48 - 23) / 2);
 
 export default function WorkoutScreen() {
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
@@ -53,6 +59,7 @@ export default function WorkoutScreen() {
   const [showReorderHint, setShowReorderHint] = useState(true);
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
+  const [swipePageIndex, setSwipePageIndex] = useState(0);
   const [editingRoutine, setEditingRoutine] = useState<{
     name: string;
     exercises: { id: string; name: string; restTimer: number }[];
@@ -458,38 +465,79 @@ export default function WorkoutScreen() {
           { paddingTop: contentTopPadding },
         ]}
       >
+        {/* Header: profile + tmlsn tracker. */}
         <View style={styles.pageHeaderRow}>
           <Image
             source={require('../../assets/tmlsn-calories-logo.png')}
             style={styles.pageHeaderLogo}
             resizeMode="contain"
           />
-          <Text style={styles.pageHeading}>
-            WORKOUT TRACKER
-          </Text>
-        </View>
-        {/* + Start Empty Workout – primary CTA */}
-        <TouchableOpacity
-          style={styles.startEmptyButton}
-          onPress={startFreeformWorkout}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startEmptyButtonText}>+ start empty workout</Text>
-        </TouchableOpacity>
-
-        {/* Routines section */}
-        <View style={styles.routinesHeader}>
-          <Text style={styles.routinesTitle}>Routines</Text>
+          <Text style={styles.pageHeading}>tmlsn tracker.</Text>
         </View>
 
-        {/* New Routine – same thickness as Start Empty Workout, + at start of text */}
-        <TouchableOpacity
-          style={styles.newRoutineButton}
-          onPress={openRoutineBuilder}
-          activeOpacity={0.8}
+        {/* Swipeable widget: 3 buttons | progress card */}
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+            setSwipePageIndex(page);
+          }}
+          style={styles.swipeWidget}
+          contentContainerStyle={styles.swipeWidgetContent}
         >
-          <Text style={styles.newRoutineButtonText}>+ new routine</Text>
-        </TouchableOpacity>
+          {/* Page 0: 3 buttons */}
+          <View style={styles.swipePage}>
+            <TouchableOpacity
+              style={styles.mainMenuButton}
+              onPress={() => setTmlsnExpanded(!tmlsnExpanded)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mainMenuButton}
+              onPress={() => setMyRoutinesExpanded(!myRoutinesExpanded)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.mainMenuButtonText}>your routines.</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.mainMenuButton}
+              onPress={startFreeformWorkout}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.mainMenuButtonText}>start empty workout</Text>
+            </TouchableOpacity>
+          </View>
+          {/* Page 1: progress card */}
+          <View style={styles.swipePage}>
+            <TouchableOpacity
+              style={styles.progressCard}
+              activeOpacity={0.8}
+              onPress={() => setShowHistory(true)}
+            >
+              <Text style={styles.mainMenuButtonText}>progress</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Swipe dots */}
+        <View style={styles.swipeDots}>
+          <View style={[styles.swipeDot, swipePageIndex === 0 && styles.swipeDotActive]} />
+          <View style={[styles.swipeDot, swipePageIndex === 1 && styles.swipeDotActive]} />
+        </View>
+
+        {/* Achievements and Streak */}
+        <View style={styles.achievementsRow}>
+          <TouchableOpacity style={styles.achievementButton} activeOpacity={0.8}>
+            <Text style={styles.mainMenuButtonText}>achievements</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.achievementButton} activeOpacity={0.8}>
+            <Text style={styles.mainMenuButtonText}>streak</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Info bubble – press and hold to reorder */}
         {showReorderHint && (
@@ -505,15 +553,7 @@ export default function WorkoutScreen() {
           </View>
         )}
 
-        {/* TMLSN workouts – dropdown under Routines */}
-        <TouchableOpacity
-          style={styles.dropdownHeader}
-          onPress={() => setTmlsnExpanded(!tmlsnExpanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.dropdownChevron}>{tmlsnExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownTitle}>TMLSN workouts ({TMLSN_SPLITS.length})</Text>
-        </TouchableOpacity>
+        {/* TMLSN workouts – expanded when tmlsn routines tapped */}
         {tmlsnExpanded && (
           <View style={styles.dropdownList}>
             {TMLSN_SPLITS.map((split) => (
@@ -542,19 +582,18 @@ export default function WorkoutScreen() {
           </View>
         )}
 
-        {/* My Routines – collapsible; saved routines from builder */}
-        <TouchableOpacity
-          style={styles.dropdownHeader}
-          onPress={() => setMyRoutinesExpanded(!myRoutinesExpanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.dropdownChevron}>{myRoutinesExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownTitle}>My Routines ({savedRoutines.length})</Text>
-        </TouchableOpacity>
+        {/* My Routines – expanded when your routines tapped */}
         {myRoutinesExpanded && (
           <View style={styles.dropdownList}>
+            <TouchableOpacity
+              style={styles.newRoutineButton}
+              onPress={openRoutineBuilder}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.newRoutineButtonText}>+ new routine</Text>
+            </TouchableOpacity>
             {savedRoutines.length === 0 ? (
-              <Text style={styles.emptyText}>No routines yet. Create one with new routine.</Text>
+              <Text style={styles.emptyText}>No routines yet. Create one above.</Text>
             ) : (
               savedRoutines.map((routine) => (
                 <TouchableOpacity
@@ -573,6 +612,42 @@ export default function WorkoutScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Progress / History modal */}
+      <Modal
+        visible={showHistory}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowHistory(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowHistory(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>progress</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={styles.editGoalsLink}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.historyList}>
+              {recentWorkouts.length === 0 ? (
+                <Text style={styles.emptyText}>No workouts yet. Start one to see your progress.</Text>
+              ) : (
+                recentWorkouts.map((w) => (
+                  <View key={w.id} style={styles.workoutItem}>
+                    <Text style={styles.workoutName}>{w.name}</Text>
+                    <Text style={styles.workoutDetail}>{w.duration} min · {w.exercises.length} exercises</Text>
+                    <Text style={styles.workoutDate}>{new Date(w.date).toLocaleDateString()}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Routine builder overlay – same layout as log workout, no timer; Save top right */}
       {showRoutineBuilder && (
@@ -1167,18 +1242,101 @@ const styles = StyleSheet.create({
   pageHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
     gap: Spacing.sm,
   },
   pageHeaderLogo: {
-    height: (Typography.h2 + 10) * 1.2 * 1.1,
-    width: (Typography.h2 + 10) * 1.2 * 1.1,
+    height: 44,
+    width: 44,
   },
   pageHeading: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2 * 1.2 * 1.1,
+    fontFamily: Font.bold,
+    fontSize: 28,
+    lineHeight: 64,
+    letterSpacing: -1,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    textAlign: 'center',
+  },
+  swipeWidget: {
+    marginBottom: Spacing.sm,
+  },
+  swipeWidgetContent: {
+    alignItems: 'center',
+  },
+  swipePage: {
+    width: SCREEN_WIDTH,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mainMenuButton: {
+    width: BUTTON_WIDTH,
+    height: 69,
+    borderRadius: 38,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 13.6,
+    elevation: 4,
+  },
+  mainMenuButtonText: {
+    fontFamily: Font.mono,
+    fontSize: 16,
+    lineHeight: 16,
+    letterSpacing: 0,
+    color: '#C6C6C6',
+    textAlign: 'center',
+  },
+  progressCard: {
+    width: PROGRESS_CARD_WIDTH,
+    height: 198,
+    borderRadius: 38,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 13.6,
+    elevation: 4,
+  },
+  swipeDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  swipeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primaryLight + '40',
+  },
+  swipeDotActive: {
+    backgroundColor: Colors.primaryLight,
+  },
+  achievementsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 23,
+    marginBottom: Spacing.lg,
+  },
+  achievementButton: {
+    width: ACHIEVEMENT_BUTTON_SIZE,
+    height: ACHIEVEMENT_BUTTON_SIZE,
+    borderRadius: 38,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.25,
+    shadowRadius: 13.6,
+    elevation: 4,
   },
   cardTitle: {
     fontFamily: Font.extraBold,
@@ -1328,6 +1486,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'flex-end',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'flex-end',
+  },
   modalContent: {
     backgroundColor: Colors.primaryDark,
     borderTopLeftRadius: BorderRadius.xl,
@@ -1335,13 +1498,21 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     maxHeight: '80%',
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
   modalTitle: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h1,
     fontWeight: Typography.weights.bold,
     color: Colors.primaryLight,
-    marginBottom: Spacing.lg,
     letterSpacing: HeadingLetterSpacing,
+  },
+  historyList: {
+    maxHeight: 400,
   },
   splitOption: {
     paddingVertical: Spacing.md,
