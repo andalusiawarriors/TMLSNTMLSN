@@ -1,33 +1,53 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   Alert,
   Image,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  Animated,
+  ActivityIndicator,
+  FlatList,
+  TextInput,
+  Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedReaction,
+  withTiming,
+  withSpring,
+} from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
+import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import {
   getTodayNutritionLog,
   saveNutritionLog,
   getUserSettings,
   saveUserSettings,
+  getSavedFoods,
+  saveSavedFood,
 } from '../../utils/storage';
-import { NutritionLog, Meal, MealType, UserSettings } from '../../types';
+import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString } from '../../utils/helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
+import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -62,93 +82,55 @@ export default function NutritionScreen() {
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [cardPage, setCardPage] = useState(0);
-  const [showEaten, setShowEaten] = useState(false);
-  const cardScaleAnim = useRef(new Animated.Value(1)).current;
-  // Per-card text animations (0=cal, 1=protein, 2=carbs, 3=fat, 4=sodium, 5=potassium, 6=magnesium)
-  const textAnims = useRef(
-    Array.from({ length: 7 }, () => new Animated.Value(0))
-  ).current;
-  const STAGGER_DELAY = 25; // ms between each card
 
-  // Per-digit scroll-wheel: quick blur then new numbers float in from above
-  const getDigitAnimStyle = (cardIndex: number, charIndex: number) => {
-    const anim = textAnims[cardIndex];
-    const o = Math.min(charIndex * 0.15, 0.48);
-    // Enter: float down from -1.5dp above into place
-    const eStart = -1 + o + 0.001;
-    const eEnd = Math.min(-1 + o + 0.5, -0.005);
-    // Exit: drift down 1.5dp while blurring out
-    const xStart = Math.max(o + 0.005, 0.005);
-    const xEnd = Math.min(o + 0.5, 0.995);
-    return {
-      transform: [
-        { translateY: anim.interpolate({
-          inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
-          outputRange: [-1.5, -1.5, 0, 0, 0, 1.5, 1.5],
-          extrapolate: 'clamp' as const,
-        }) },
-      ],
-      opacity: anim.interpolate({
-        inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
-        outputRange: [0.35, 0.35, 1, 1, 1, 0.35, 0.35],
-        extrapolate: 'clamp' as const,
-      }),
-    };
-  };
+  const cardScale = useSharedValue(1);
+  const cardScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cardScale.value }],
+  }));
 
-  // Ghost opacity: invisible at rest, appears during quick blur phase
-  const getGhostOpacity = (cardIndex: number, charIndex: number, peak: number) => {
-    const anim = textAnims[cardIndex];
-    const o = Math.min(charIndex * 0.15, 0.48);
-    const eStart = -1 + o + 0.001;
-    const eEnd = Math.min(-1 + o + 0.5, -0.005);
-    const xStart = Math.max(o + 0.005, 0.005);
-    const xEnd = Math.min(o + 0.5, 0.995);
-    return anim.interpolate({
-      inputRange: [-1, eStart, eEnd, 0, xStart, xEnd, 1],
-      outputRange: [peak, peak, 0, 0, 0, peak, peak],
-      extrapolate: 'clamp' as const,
-    });
-  };
+  const fabScale = useSharedValue(1);
+  const fabScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: fabScale.value }],
+  }));
 
-  // Render value text as individually animated characters with soft gaussian blur ghosts
-  const renderScrollDigits = (
-    text: string,
-    cardIndex: number,
-    mainStyle: any,
-    goalText?: string,
-    goalStyle?: any,
-  ) => {
-    const chars: { char: string; cStyle: any; idx: number }[] = [];
-    let idx = 0;
-    text.split('').forEach(c => chars.push({ char: c, cStyle: mainStyle, idx: idx++ }));
-    if (goalText && goalStyle) {
-      goalText.split('').forEach(c => chars.push({ char: c, cStyle: goalStyle, idx: idx++ }));
-    }
-    return (
-      <View style={{ flexDirection: 'row' }}>
-        {chars.map(({ char, cStyle, idx: i }) => (
-          <Animated.View key={i} style={getDigitAnimStyle(cardIndex, i)}>
-            {/* Soft blur: ghost copies at different offsets, only visible during transition */}
-            <Animated.View style={{ position: 'absolute', top: -3.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.1) }} pointerEvents="none">
-              <Text style={cStyle}>{char}</Text>
-            </Animated.View>
-            <Animated.View style={{ position: 'absolute', top: -1.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.22) }} pointerEvents="none">
-              <Text style={cStyle}>{char}</Text>
-            </Animated.View>
-            {/* Main character */}
-            <Text style={cStyle}>{char}</Text>
-            <Animated.View style={{ position: 'absolute', top: 1.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.22) }} pointerEvents="none">
-              <Text style={cStyle}>{char}</Text>
-            </Animated.View>
-            <Animated.View style={{ position: 'absolute', top: 3.5, left: 0, right: 0, opacity: getGhostOpacity(cardIndex, i, 0.1) }} pointerEvents="none">
-              <Text style={cStyle}>{char}</Text>
-            </Animated.View>
-          </Animated.View>
-        ))}
-      </View>
-    );
-  };
+  const isEaten = useSharedValue(0);
+  const rollTrigger = useSharedValue(0);
+
+  const leftLabelOp = useSharedValue(1);
+  const eatenLabelOp = useSharedValue(0);
+
+  useAnimatedReaction(
+    () => isEaten.value,
+    (curr) => {
+      leftLabelOp.value = withTiming(curr === 0 ? 1 : 0, { duration: 150 });
+      eatenLabelOp.value = withTiming(curr === 1 ? 1 : 0, { duration: 150 });
+    },
+  );
+
+  const leftLabelStyle = useAnimatedStyle(() => ({ opacity: leftLabelOp.value }));
+  const eatenLabelStyle = useAnimatedStyle(() => ({ opacity: eatenLabelOp.value }));
+
+  // ── New food-logging state ──
+  const [showChoicePopup, setShowChoicePopup] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'ai' | 'barcode' | 'label'>('ai');
+  const cameraRef = useRef<any>(null);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [aiPhotoBase64, setAiPhotoBase64] = useState<string | null>(null);
+  const [aiDescription, setAiDescription] = useState('');
+  const [showAiDescribe, setShowAiDescribe] = useState(false);
+  const [showSavedFoods, setShowSavedFoods] = useState(false);
+  const [savedFoodsList, setSavedFoodsList] = useState<SavedFood[]>([]);
+  const [showFoodSearch, setShowFoodSearch] = useState(false);
+  const [foodSearchQuery, setFoodSearchQuery] = useState('');
+  const [foodSearchResults, setFoodSearchResults] = useState<ParsedNutrition[]>([]);
+  const [foodSearchLoading, setFoodSearchLoading] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Tab-bar pill dimensions for FAB positioning
+  const PILL_BOTTOM = Platform.OS === 'ios' ? 28 : 12;
+  const PILL_HEIGHT = Platform.OS === 'ios' ? Math.round(64 * 1.1) : Math.round(56 * 1.1);
 
   // Add Meal Form State
   const [mealType, setMealType] = useState<MealType>('breakfast');
@@ -166,8 +148,19 @@ export default function NutritionScreen() {
   const [editFat, setEditFat] = useState('');
   const [editWater, setEditWater] = useState('');
 
+  // Reload from storage whenever this tab is focused (e.g. after reload or switching tabs) so progress is never lost
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
+
+  // Also reload when app comes back from background (e.g. after switching apps)
   useEffect(() => {
-    loadData();
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') loadData();
+    });
+    return () => sub.remove();
   }, []);
 
   const loadData = async () => {
@@ -193,6 +186,20 @@ export default function NutritionScreen() {
     }
     
     setSettings(userSettings);
+  };
+
+  // ── Form helpers ──
+  const resetMealForm = () => {
+    setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
+  };
+
+  const fillAndShowForm = (data: ParsedNutrition) => {
+    setMealName(data.brand ? `${data.name} (${data.brand})` : data.name);
+    setCalories(String(data.calories || ''));
+    setProtein(String(data.protein || ''));
+    setCarbs(String(data.carbs || ''));
+    setFat(String(data.fat || ''));
+    setShowAddMeal(true);
   };
 
   const handleAddMeal = async () => {
@@ -228,15 +235,139 @@ export default function NutritionScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
+    // Save to "saved foods" for quick re-logging
+    await saveSavedFood({
+      name: mealName,
+      calories: parseFloat(calories) || 0,
+      protein: parseFloat(protein) || 0,
+      carbs: parseFloat(carbs) || 0,
+      fat: parseFloat(fat) || 0,
+    });
+
     // Reset form
+    resetMealForm();
     setMealType('breakfast');
-    setMealName('');
-    setCalories('');
-    setProtein('');
-    setCarbs('');
-    setFat('');
-    setMealImage(undefined);
     setShowAddMeal(false);
+  };
+
+  // ── Choice popup handlers ──
+  const handleChoiceSavedFoods = async () => {
+    setShowChoicePopup(false);
+    const foods = await getSavedFoods();
+    setSavedFoodsList(foods);
+    setShowSavedFoods(true);
+  };
+
+  const handleChoiceFoodDatabase = () => {
+    setShowChoicePopup(false);
+    setFoodSearchQuery('');
+    setFoodSearchResults([]);
+    setShowFoodSearch(true);
+  };
+
+  const handleChoiceScanFood = async () => {
+    setShowChoicePopup(false);
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        Alert.alert('Camera Required', 'Camera permission is needed to scan food.');
+        return;
+      }
+    }
+    setCameraMode('ai');
+    setCameraLoading(false);
+    setShowAiDescribe(false);
+    setAiPhotoBase64(null);
+    setAiDescription('');
+    setShowCamera(true);
+  };
+
+  const handleChoiceManual = () => {
+    setShowChoicePopup(false);
+    resetMealForm();
+    setShowAddMeal(true);
+  };
+
+  // ── Barcode handler ──
+  const handleBarCodeScanned = async (result: BarcodeScanningResult) => {
+    if (cameraMode !== 'barcode' || cameraLoading) return;
+    setCameraLoading(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const food = await searchByBarcode(result.data);
+    setCameraLoading(false);
+    if (food) {
+      setShowCamera(false);
+      fillAndShowForm(food);
+    } else {
+      Alert.alert('Not Found', 'Could not find that barcode. Try searching manually.', [
+        { text: 'Search', onPress: () => { setShowCamera(false); handleChoiceFoodDatabase(); } },
+        { text: 'OK' },
+      ]);
+    }
+  };
+
+  // ── Camera shutter (AI / Label) ──
+  const handleCameraShutter = async () => {
+    if (!cameraRef.current || cameraLoading) return;
+    setCameraLoading(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7, base64: true });
+      if (!photo?.base64) { setCameraLoading(false); return; }
+      if (cameraMode === 'label') {
+        const parsed = await readNutritionLabel(photo.base64);
+        setCameraLoading(false);
+        if (parsed) { setShowCamera(false); fillAndShowForm(parsed); }
+        else Alert.alert('Could not read label', 'Try again with better lighting or angle.');
+      } else {
+        setCameraLoading(false);
+        setAiPhotoBase64(photo.base64);
+        setShowAiDescribe(true);
+      }
+    } catch (e) {
+      setCameraLoading(false);
+      console.warn('Camera capture error:', e);
+    }
+  };
+
+  // ── AI submit with description ──
+  const handleAiSubmit = async () => {
+    if (!aiPhotoBase64) return;
+    setCameraLoading(true);
+    const parsed = await analyzeFood(aiPhotoBase64, 'image/jpeg', aiDescription || undefined);
+    setCameraLoading(false);
+    if (parsed) {
+      setShowCamera(false);
+      setShowAiDescribe(false);
+      fillAndShowForm(parsed);
+    } else {
+      Alert.alert('Analysis Failed', 'Could not analyze the photo. Try again.');
+    }
+  };
+
+  // ── Food database search (debounced) ──
+  const handleFoodSearch = useCallback((query: string) => {
+    setFoodSearchQuery(query);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (!query.trim()) { setFoodSearchResults([]); return; }
+    searchTimeoutRef.current = setTimeout(async () => {
+      setFoodSearchLoading(true);
+      const results = await searchFoods(query);
+      setFoodSearchResults(results);
+      setFoodSearchLoading(false);
+    }, 500);
+  }, []);
+
+  const handleSelectFood = (food: ParsedNutrition) => {
+    setShowFoodSearch(false);
+    fillAndShowForm(food);
+  };
+
+  const handleSelectSavedFood = (food: SavedFood) => {
+    setShowSavedFoods(false);
+    fillAndShowForm({
+      name: food.name, brand: food.brand || '', calories: food.calories,
+      protein: food.protein, carbs: food.carbs, fat: food.fat, servingSize: '',
+    });
   };
 
   const openEditGoals = () => {
@@ -368,47 +499,13 @@ export default function NutritionScreen() {
 
   const onCardPressIn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.timing(cardScaleAnim, {
-      toValue: 0.99,
-      duration: 80,
-      useNativeDriver: true,
-    }).start();
+    cardScale.value = withTiming(0.99, { duration: 80 });
   };
 
   const onCardPressOut = () => {
-    Animated.spring(cardScaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 120,
-      friction: 8,
-    }).start();
-    // Staggered scroll: each card exits one after another, then enters
-    textAnims.forEach(a => a.stopAnimation());
-    const exitAnims = textAnims.map((anim, i) =>
-      Animated.sequence([
-        Animated.delay(i * STAGGER_DELAY),
-        Animated.timing(anim, {
-          toValue: 1,
-          duration: 20,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    Animated.parallel(exitAnims).start(() => {
-      setShowEaten(prev => !prev);
-      textAnims.forEach(a => a.setValue(-1));
-      const enterAnims = textAnims.map((anim, i) =>
-        Animated.sequence([
-          Animated.delay(i * STAGGER_DELAY),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 20,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      Animated.parallel(enterAnims).start();
-    });
+    cardScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 });
+    isEaten.value = isEaten.value === 0 ? 1 : 0;
+    rollTrigger.value = rollTrigger.value + 1;
   };
 
   return (
@@ -442,120 +539,148 @@ export default function NutritionScreen() {
             >
               {/* Page 1: Big card top, 3 small cards bottom */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
-                  <Animated.View style={{ transform: [{ scale: cardScaleAnim }] }}>
+                <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
+                  <Animated.View style={cardScaleStyle}>
                     <Card style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
                       <View style={styles.caloriesLeftContent}>
                         <View style={styles.caloriesLeftTextWrap}>
-                          {showEaten
-                            ? renderScrollDigits(String(todayLog.calories), 0, styles.caloriesLeftValue, `/${settings.dailyGoals.calories}`, styles.caloriesEatenGoal)
-                            : renderScrollDigits(String(Math.max(0, settings.dailyGoals.calories - todayLog.calories)), 0, styles.caloriesLeftValue)
-                          }
-                          <Animated.View style={getDigitAnimStyle(0, 7)}>
-                            <Text style={styles.caloriesLeftLabel}>{showEaten ? 'calories eaten' : 'calories left'}</Text>
-                          </Animated.View>
+                          <BlurRollNumber
+                            leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
+                            eatenValue={String(todayLog.calories)}
+                            eatenSuffix={`/${settings.dailyGoals.calories}`}
+                            isEaten={isEaten}
+                            trigger={rollTrigger}
+                            textStyle={styles.caloriesLeftValue}
+                            suffixStyle={styles.caloriesEatenGoal}
+                            height={40}
+                          />
+                          <View>
+                            <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
+                            <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesLeftLabel}>calories eaten</Text></Animated.View>
+                          </View>
                         </View>
                         <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2 }]} />
                       </View>
                     </Card>
                   </Animated.View>
-                </TouchableOpacity>
-                <Animated.View style={[styles.threeCardsRow, { transform: [{ scale: cardScaleAnim }] }]}>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                </Pressable>
+                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits(String(todayLog.protein), 1, styles.macroLeftValue, `/${settings.dailyGoals.protein}g`, styles.macroEatenGoal)
-                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`, 1, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(1, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'protein eaten' : 'protein left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber
+                          leftValue={`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`}
+                          eatenValue={String(todayLog.protein)}
+                          eatenSuffix={`/${settings.dailyGoals.protein}g`}
+                          isEaten={isEaten}
+                          trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
+                          height={20}
+                        />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>protein left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>protein eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                  </Pressable>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits(String(todayLog.carbs), 2, styles.macroLeftValue, `/${settings.dailyGoals.carbs}g`, styles.macroEatenGoal)
-                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`, 2, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(2, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'carbs eaten' : 'carbs left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber
+                          leftValue={`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`}
+                          eatenValue={String(todayLog.carbs)}
+                          eatenSuffix={`/${settings.dailyGoals.carbs}g`}
+                          isEaten={isEaten}
+                          trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
+                          height={20}
+                        />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>carbs left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>carbs eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                  </Pressable>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits(String(todayLog.fat), 3, styles.macroLeftValue, `/${settings.dailyGoals.fat}g`, styles.macroEatenGoal)
-                          : renderScrollDigits(`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`, 3, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(3, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'fat eaten' : 'fat left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber
+                          leftValue={`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`}
+                          eatenValue={String(todayLog.fat)}
+                          eatenSuffix={`/${settings.dailyGoals.fat}g`}
+                          isEaten={isEaten}
+                          trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
+                          height={20}
+                        />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>fat left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>fat eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
+                  </Pressable>
                 </Animated.View>
               </View>
 
               {/* Page 2: Electrolytes top, Health Score bottom (flipped layout) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <Animated.View style={[styles.threeCardsRow, { transform: [{ scale: cardScaleAnim }] }]}>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits('0', 4, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
-                          : renderScrollDigits('—mg', 4, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(4, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'sodium eaten' : 'sodium left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
+                          isEaten={isEaten} trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>sodium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>sodium eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                  </Pressable>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits('0', 5, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
-                          : renderScrollDigits('—mg', 5, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(5, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'potassium eaten' : 'potassium left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
+                          isEaten={isEaten} trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>potassium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>potassium eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPressIn={onCardPressIn} onPressOut={onCardPressOut} activeOpacity={1}>
+                  </Pressable>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
-                        {showEaten
-                          ? renderScrollDigits('0', 6, styles.macroLeftValue, '/—mg', styles.macroEatenGoal)
-                          : renderScrollDigits('—mg', 6, styles.macroLeftValue)
-                        }
-                        <Animated.View style={getDigitAnimStyle(6, 7)}>
-                          <Text style={styles.macroLeftLabel}>{showEaten ? 'magnesium eaten' : 'magnesium left'}</Text>
-                        </Animated.View>
+                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
+                          isEaten={isEaten} trigger={rollTrigger}
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>magnesium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>magnesium eaten</Text></Animated.View>
+                        </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
-                  </TouchableOpacity>
+                  </Pressable>
                 </Animated.View>
-                <TouchableOpacity onPressIn={onCardPressIn} onPressOut={() => {
-                  Animated.spring(cardScaleAnim, { toValue: 1, useNativeDriver: true, tension: 120, friction: 8 }).start();
-                }} activeOpacity={1}>
-                  <Animated.View style={{ transform: [{ scale: cardScaleAnim }] }}>
+                <Pressable onPressIn={onCardPressIn} onPressOut={() => {
+                  cardScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 });
+                }}>
+                  <Animated.View style={cardScaleStyle}>
                     <Card style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
                       <View style={styles.healthScoreHeaderRow}>
                         <Text style={styles.healthScoreTitle}>health score</Text>
@@ -572,7 +697,7 @@ export default function NutritionScreen() {
                       </View>
                     </Card>
                   </Animated.View>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </ScrollView>
 
@@ -587,16 +712,184 @@ export default function NutritionScreen() {
         {/* Recently uploaded – title + card same size as calories left */}
         <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
         <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
-
-        <Button
-          title="+ Add Meal"
-          onPress={() => setShowAddMeal(true)}
-          style={styles.addButton}
-          textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-        />
       </ScrollView>
 
-      {/* Add Meal Modal */}
+      {/* Floating Action Button (FAB) — 24px above tab bar pill, same press animation as cards */}
+      <Pressable
+        style={[styles.fabTouchable, { bottom: PILL_BOTTOM + PILL_HEIGHT + 24 }]}
+        onPressIn={() => { fabScale.value = withTiming(0.99, { duration: 80 }); }}
+        onPressOut={() => { fabScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 }); }}
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowChoicePopup(true); }}
+      >
+        <Animated.View style={[styles.fab, fabScaleStyle]}>
+          <View style={styles.fabPlusH} />
+          <View style={styles.fabPlusV} />
+        </Animated.View>
+      </Pressable>
+
+      {/* Choice Popup — 4 cards: saved foods, food database, scan food, manual entry — positioned just above FAB */}
+      <Modal visible={showChoicePopup} animationType="fade" transparent onRequestClose={() => setShowChoicePopup(false)}>
+        <Pressable style={styles.popupOverlay} onPress={() => setShowChoicePopup(false)}>
+          <View style={[styles.popupGridWrap, { paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + 56 + 16 }]}>
+          <View style={styles.popupGrid}>
+            <View style={styles.popupGridRow}>
+              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceSavedFoods} activeOpacity={0.85}>
+                <Text style={styles.popupCardLabel}>saved foods</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceFoodDatabase} activeOpacity={0.85}>
+                <Text style={styles.popupCardLabel}>food database</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.popupGridRow}>
+              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceScanFood} activeOpacity={0.85}>
+                <Text style={styles.popupCardLabel}>scan food</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceManual} activeOpacity={0.85}>
+                <Text style={styles.popupCardLabel}>manual entry</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Unified Camera — AI / Barcode / Food Label */}
+      <Modal visible={showCamera} animationType="slide" onRequestClose={() => { setShowCamera(false); setShowAiDescribe(false); }}>
+        <View style={styles.scannerContainer}>
+          {permission?.granted && !showAiDescribe && (
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              barcodeScannerSettings={
+                cameraMode === 'barcode'
+                  ? { barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128'] }
+                  : { barcodeTypes: [] }
+              }
+              onBarcodeScanned={cameraMode === 'barcode' && !cameraLoading ? handleBarCodeScanned : undefined}
+            />
+          )}
+          {showAiDescribe && (
+            <View style={styles.aiDescribeOverlay}>
+              <Text style={styles.aiDescribeTitle}>Describe your food</Text>
+              <Text style={styles.aiDescribeHint}>Optional — helps the AI estimate better</Text>
+              <TextInput
+                style={styles.aiDescribeInput}
+                placeholder="e.g. grilled chicken breast with rice"
+                placeholderTextColor="#888"
+                value={aiDescription}
+                onChangeText={setAiDescription}
+                multiline
+              />
+              <TouchableOpacity style={styles.aiDescribeButton} onPress={handleAiSubmit} disabled={cameraLoading}>
+                {cameraLoading ? <ActivityIndicator color="#2F3031" /> : <Text style={styles.aiDescribeButtonText}>Analyze</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowAiDescribe(false); setAiPhotoBase64(null); }} style={{ marginTop: 12 }}>
+                <Text style={{ color: '#C6C6C6', fontFamily: CardFont.family, fontSize: 14 }}>Retake</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.cameraTopBar}>
+            <TouchableOpacity onPress={() => { setShowCamera(false); setShowAiDescribe(false); }}>
+              <Text style={styles.cameraCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          {!showAiDescribe && (
+            <View style={styles.cameraModeRow}>
+              {(['ai', 'barcode', 'label'] as const).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.cameraModeBubble, cameraMode === mode && styles.cameraModeBubbleActive]}
+                  onPress={() => setCameraMode(mode)}
+                >
+                  <Text style={[styles.cameraModeBubbleText, cameraMode === mode && styles.cameraModeBubbleTextActive]}>
+                    {mode === 'ai' ? 'Scan Food (AI)' : mode === 'barcode' ? 'Barcode' : 'Food Label'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {!showAiDescribe && cameraMode !== 'barcode' && (
+            <View style={styles.cameraShutterRow}>
+              {cameraLoading ? (
+                <ActivityIndicator size="large" color="#C6C6C6" />
+              ) : (
+                <TouchableOpacity style={styles.shutterButton} onPress={handleCameraShutter}>
+                  <View style={styles.shutterButtonInner} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+          {!showAiDescribe && cameraMode === 'barcode' && cameraLoading && (
+            <View style={styles.cameraShutterRow}>
+              <ActivityIndicator size="large" color="#C6C6C6" />
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* Saved Foods Modal */}
+      <Modal visible={showSavedFoods} animationType="slide" transparent onRequestClose={() => setShowSavedFoods(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Saved Foods</Text>
+            {savedFoodsList.length === 0 ? (
+              <Text style={styles.emptyText}>No saved foods yet. Foods you log will appear here.</Text>
+            ) : (
+              <FlatList
+                data={savedFoodsList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectSavedFood(item)}>
+                    <Text style={styles.foodSearchName}>{item.name}</Text>
+                    {item.brand ? <Text style={styles.foodSearchBrand}>{item.brand}</Text> : null}
+                    <Text style={styles.foodSearchMacros}>
+                      {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+            <Button title="Close" onPress={() => setShowSavedFoods(false)} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Food Database Search Modal */}
+      <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => setShowFoodSearch(false)}>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+            <Text style={styles.modalTitle}>Food Database</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search foods…"
+              placeholderTextColor="#888"
+              value={foodSearchQuery}
+              onChangeText={handleFoodSearch}
+              autoFocus
+            />
+            {foodSearchLoading && <ActivityIndicator style={{ marginVertical: 12 }} color="#C6C6C6" />}
+            <FlatList
+              data={foodSearchResults}
+              keyExtractor={(_, i) => String(i)}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
+                  <Text style={styles.foodSearchName}>{item.name}</Text>
+                  {item.brand ? <Text style={styles.foodSearchBrand}>{item.brand}</Text> : null}
+                  <Text style={styles.foodSearchMacros}>
+                    {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
+                    {item.servingSize ? ` · ${item.servingSize}` : ''}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
+            />
+            <Button title="Close" onPress={() => setShowFoodSearch(false)} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Meal Form Modal (Add Meal) */}
       <Modal
         visible={showAddMeal}
         animationType="slide"
@@ -1094,6 +1387,217 @@ const styles = StyleSheet.create({
     fontFamily: Font.regular,
     fontSize: Typography.label,
     color: Colors.primaryLight,
+  },
+  // ── FAB ──
+  fabTouchable: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 56,
+    height: 56,
+    zIndex: 100,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#C6C6C6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabPlusH: {
+    position: 'absolute',
+    width: 24,
+    height: 3.6,
+    borderRadius: 1.8,
+    backgroundColor: '#2F3031',
+  },
+  fabPlusV: {
+    position: 'absolute',
+    width: 3.6,
+    height: 24,
+    borderRadius: 1.8,
+    backgroundColor: '#2F3031',
+  },
+  // ── Choice Popup ──
+  popupOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  popupGridWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  popupGrid: {
+    gap: 12,
+  },
+  popupGridRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  popupCard: {
+    width: 140,
+    height: 112,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primaryDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.card,
+  },
+  popupCardLabel: {
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
+    textAlign: 'center',
+  },
+  // ── Camera ──
+  scannerContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  cameraTopBar: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    zIndex: 10,
+  },
+  cameraCloseText: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 16,
+    color: '#C6C6C6',
+  },
+  cameraModeRow: {
+    position: 'absolute',
+    bottom: 140,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cameraModeBubble: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  cameraModeBubbleActive: {
+    backgroundColor: '#C6C6C6',
+  },
+  cameraModeBubbleText: {
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
+  },
+  cameraModeBubbleTextActive: {
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
+    color: '#2F3031',
+  },
+  cameraShutterRow: {
+    position: 'absolute',
+    bottom: 60,
+    alignSelf: 'center',
+  },
+  shutterButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 4,
+    borderColor: '#C6C6C6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  shutterButtonInner: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#C6C6C6',
+  },
+  // ── AI Describe ──
+  aiDescribeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#2F3031',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    zIndex: 5,
+  },
+  aiDescribeTitle: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 20,
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  aiDescribeHint: {
+    fontFamily: 'DMMono_400Regular',
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 20,
+  },
+  aiDescribeInput: {
+    width: '100%',
+    minHeight: 80,
+    backgroundColor: '#3D3E3F',
+    borderRadius: 12,
+    padding: 14,
+    color: '#FFFFFF',
+    fontFamily: 'DMMono_400Regular',
+    fontSize: 15,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  aiDescribeButton: {
+    backgroundColor: '#C6C6C6',
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  aiDescribeButtonText: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 16,
+    color: '#2F3031',
+  },
+  // ── Food search items ──
+  searchInput: {
+    backgroundColor: '#3D3E3F',
+    borderRadius: 10,
+    padding: 12,
+    color: '#FFFFFF',
+    fontFamily: 'DMMono_400Regular',
+    fontSize: 15,
+    marginBottom: 12,
+  },
+  foodSearchItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(198,198,198,0.15)',
+  },
+  foodSearchName: {
+    fontFamily: 'DMMono_500Medium',
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  foodSearchBrand: {
+    fontFamily: 'DMMono_400Regular',
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  foodSearchMacros: {
+    fontFamily: 'DMMono_400Regular',
+    fontSize: 12,
+    color: '#C6C6C6',
+    marginTop: 4,
   },
   addButton: {
     marginTop: Spacing.md,

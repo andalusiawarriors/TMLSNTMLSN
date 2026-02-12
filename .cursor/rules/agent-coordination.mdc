@@ -1,0 +1,46 @@
+---
+description: Agents must coordinate via the handoff file so work is joined, not parallel—avoid merge conflicts
+alwaysApply: true
+---
+
+# Agent coordination (joined work, no parallel merge issues)
+
+Agents must act as **one joined effort**, not parallel workers. Use the handoff file so everyone sees what’s in progress and what was just changed.
+
+## Before you edit
+
+1. **Read** `.cursor/AGENT_HANDOFF.md` first.
+2. Check **Current focus**: if another area/agent is working on something that overlaps your task (same files or same feature), do not start parallel edits. Either:
+   - work on a different area that doesn’t overlap, or
+   - add your work to the same focus and note what you’re doing in the handoff.
+3. Note **Recently touched**: avoid re-editing those files for unrelated changes unless necessary (reduces merge risk).
+
+## When you start work
+
+1. **Claim first, then edit.** Update **Current focus** in `AGENT_HANDOFF.md` *immediately* (before making file edits): set Area/agent, what you’re doing, and list **Files I’m editing** (the main paths you’ll touch). That way any other agent running at the same time will see your claim and exact files and can avoid them.
+2. If you’ll touch **Merge-sensitive / shared** files (e.g. `types/index.ts`, `_layout.tsx`), include them in “Files I’m editing” so others do not edit those files until you’re done.
+
+## When other agents are already working (concurrent, they haven’t finished)
+
+1. **Read the handoff first.** If **Current focus** is already set, check **Files I’m editing**. If your task would edit any of those files or the same area, **do not start overlapping work.**
+2. **Tell the user** that another agent may still be working on that area and suggest:
+   - running agents **sequentially** (wait for the other to finish and clear/update the handoff), or
+   - assigning **non-overlapping** tasks (e.g. one agent on nutrition only, another on prompt vault only).
+3. You may **only proceed** if your work does not overlap (different feature, different files) or the user explicitly says to run in parallel anyway. If you proceed in a non-overlapping area, still claim your focus so the handoff stays accurate.
+4. **Optional:** If you have access to `git status`, check whether files you’re about to edit already have uncommitted changes; that can mean another agent (or the user) is working on them—proceed with caution or ask the user.
+
+## When you finish or pause
+
+1. Update **Recently touched** with the files or areas you changed.
+2. Clear **Current focus** (or update it) so the next agent knows the work is done or handed off.
+
+## Ownership still applies
+
+Respect `.cursor/rules/do-not-edit-nutrition-tracker.mdc` and `do-not-edit-workout-tracker.mdc`. Even when working in your allowed area, still read and update the handoff so agents stay joined and merge-safe.
+
+## Summary
+
+- **Read handoff first** → see what’s in progress and recently touched.
+- **Claim focus as soon as you start** (before editing files) → other agents see you’re working and can avoid overlapping.
+- **If focus is already claimed and overlaps your task** → do not start; tell the user and suggest sequential runs or non-overlapping tasks.
+- **Update handoff when you finish** → next agent has a clear picture; no surprise merges.
