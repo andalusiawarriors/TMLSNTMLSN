@@ -99,6 +99,8 @@ export interface UserSettings {
   volumeUnit: 'oz' | 'ml';
   notificationsEnabled: boolean;
   restTimerSound: boolean;
+  defaultRestTimer?: number; // seconds, for new exercises (workout)
+  defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
 }
 
 // Saved Food (for quick re-logging)

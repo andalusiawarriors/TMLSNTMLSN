@@ -37,7 +37,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/workout.tsx` – main menu redesign (header, swipeable widget, achievements/streak)
+- `app/(tabs)/workout/` – TMLSN routines + your routines as separate screens: `_layout.tsx`, `index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx`
 
 ---
 
