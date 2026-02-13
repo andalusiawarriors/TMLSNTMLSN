@@ -52,16 +52,16 @@ export const BorderRadius = {
 export const Shadows = {
   card: {
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   button: {
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   }
 };

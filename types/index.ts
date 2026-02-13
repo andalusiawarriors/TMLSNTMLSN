@@ -101,6 +101,19 @@ export interface UserSettings {
   restTimerSound: boolean;
 }
 
+// Saved Food (for quick re-logging)
+export interface SavedFood {
+  id: string;
+  name: string;
+  brand?: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  lastUsed: string;
+  useCount: number;
+}
+
 // Notification Types
 export interface ContentNotification {
   id: string;
