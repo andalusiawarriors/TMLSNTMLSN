@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,23 +10,28 @@ import {
   Image,
   Animated,
   Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { Card } from '../../components/Card';
-import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
-import { TMLSN_SPLITS } from '../../constants/workoutSplits';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { Card } from '../../../components/Card';
+import { Button } from '../../../components/Button';
+import { Input } from '../../../components/Input';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import {
   getRecentWorkouts,
   saveWorkoutSession,
   getSavedRoutines,
-  saveSavedRoutine,
-} from '../../utils/storage';
-import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../types';
-import { generateId, formatDuration } from '../../utils/helpers';
-import { scheduleRestTimerNotification } from '../../utils/notifications';
+  getUserSettings,
+} from '../../../utils/storage';
+import { logStreakWorkout } from '../../../utils/streak';
+import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
+import { generateId, formatDuration } from '../../../utils/helpers';
+import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // EB Garamond – same as Calorie tab; DB Mono for body/UI text
@@ -41,23 +46,41 @@ const Font = {
 
 const HeadingLetterSpacing = -1;
 
+const formatRoutineTitle = (name: string) => {
+  const lower = name.toLowerCase();
+  const words = lower.split(' ');
+  const lastWord = words[words.length - 1];
+  if (lastWord.length === 1 && /[a-z]/.test(lastWord)) {
+    words[words.length - 1] = lastWord.toUpperCase();
+  }
+  return words.join(' ');
+};
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
+const PROGRESS_CARD_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
+const MAIN_MENU_BUTTON_HEIGHT = 69;
+const MAIN_MENU_BUTTON_GAP = 15;
+const PROGRESS_CARD_HEIGHT = 237;
+const THREE_BUTTON_STACK_HEIGHT = MAIN_MENU_BUTTON_HEIGHT * 3 + MAIN_MENU_BUTTON_GAP * 3; // 252
+const SWIPE_PAGE_HEIGHT = THREE_BUTTON_STACK_HEIGHT; // same height for both pages so y-axis aligns during swipe
+const SWIPE_WIDGET_PADDING_TOP = 12;
+const SWIPE_WIDGET_EXTRA_HEIGHT = 0;
 export default function WorkoutScreen() {
+  const router = useRouter();
+  const { startSplitId, startRoutineId } = useLocalSearchParams<{
+    startSplitId?: string;
+    startRoutineId?: string;
+  }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
   const [activeWorkout, setActiveWorkout] = useState<WorkoutSession | null>(null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [showSplitSelection, setShowSplitSelection] = useState(false);
   const [showExerciseEntry, setShowExerciseEntry] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [tmlsnExpanded, setTmlsnExpanded] = useState(false);
-  const [myRoutinesExpanded, setMyRoutinesExpanded] = useState(false);
-  const [showReorderHint, setShowReorderHint] = useState(true);
-  const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
-  const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
-  const [editingRoutine, setEditingRoutine] = useState<{
-    name: string;
-    exercises: { id: string; name: string; restTimer: number }[];
-  }>({ name: 'New Routine', exercises: [] });
-  
+  const [swipePageIndex, setSwipePageIndex] = useState(0);
+  const [swipeViewWidth, setSwipeViewWidth] = useState(SCREEN_WIDTH);
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+
   // Rest Timer State
   const [restTimerActive, setRestTimerActive] = useState(false);
   const [restTimeRemaining, setRestTimeRemaining] = useState(0);
@@ -74,6 +97,37 @@ export default function WorkoutScreen() {
   useEffect(() => {
     loadWorkouts();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      getUserSettings().then((s) => setWeightUnit(s.weightUnit));
+    }, [])
+  );
+
+  const lastProcessedSplitId = useRef<string | null>(null);
+  const lastProcessedRoutineId = useRef<string | null>(null);
+  useEffect(() => {
+    if (startSplitId && startSplitId !== lastProcessedSplitId.current) {
+      const split = TMLSN_SPLITS.find((s) => s.id === startSplitId);
+      if (split) {
+        lastProcessedSplitId.current = startSplitId;
+        startWorkoutFromSplit(split);
+        router.setParams({});
+      }
+    }
+  }, [startSplitId]);
+  useEffect(() => {
+    if (startRoutineId && startRoutineId !== lastProcessedRoutineId.current) {
+      getSavedRoutines().then((routines) => {
+        const routine = routines.find((r) => r.id === startRoutineId);
+        if (routine) {
+          lastProcessedRoutineId.current = startRoutineId;
+          startWorkoutFromSavedRoutine(routine);
+          router.setParams({});
+        }
+      });
+    }
+  }, [startRoutineId]);
 
   useEffect(() => {
     if (!activeWorkout) {
@@ -108,16 +162,12 @@ export default function WorkoutScreen() {
   }, [restTimerActive, restTimeRemaining]);
 
   const loadWorkouts = async () => {
-    const [workouts, routines] = await Promise.all([
-      getRecentWorkouts(10),
-      getSavedRoutines(),
-    ]);
+    const workouts = await getRecentWorkouts(10);
     setRecentWorkouts(workouts);
-    setSavedRoutines(routines);
   };
 
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
-    slideAnim.setValue(0);
+    slideAnim.setValue(1);
     const exercises: Exercise[] = split.exercises.map((template) => ({
       id: generateId(),
       name: template.name,
@@ -142,7 +192,7 @@ export default function WorkoutScreen() {
   };
 
   const startWorkoutFromSavedRoutine = (routine: SavedRoutine) => {
-    slideAnim.setValue(0);
+    slideAnim.setValue(1);
     const exercises: Exercise[] = routine.exercises.map((ex) => ({
       id: generateId(),
       name: ex.name,
@@ -165,65 +215,8 @@ export default function WorkoutScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const openRoutineBuilder = () => {
-    setEditingRoutine({ name: 'New Routine', exercises: [] });
-    setShowRoutineBuilder(true);
-  };
-
-  const addExerciseToRoutine = (name: string, restTimer: number = 120) => {
-    setEditingRoutine((prev) => ({
-      ...prev,
-      exercises: [
-        ...prev.exercises,
-        { id: generateId(), name, restTimer },
-      ],
-    }));
-  };
-
-  const removeExerciseFromRoutine = (id: string) => {
-    setEditingRoutine((prev) => ({
-      ...prev,
-      exercises: prev.exercises.filter((e) => e.id !== id),
-    }));
-  };
-
-  const saveRoutine = async () => {
-    if (editingRoutine.exercises.length === 0) {
-      Alert.alert('No exercises', 'Add at least one exercise to save the routine.');
-      return;
-    }
-    let name = editingRoutine.name.trim();
-    if (!name || name === 'New Routine') {
-      Alert.prompt(
-        'Routine name',
-        'Enter a name for this routine',
-        (text) => {
-          if (text?.trim()) {
-            saveRoutineWithName(text.trim());
-          }
-        }
-      );
-      return;
-    }
-    saveRoutineWithName(name);
-  };
-
-  const saveRoutineWithName = async (name: string) => {
-    const routine: SavedRoutine = {
-      id: generateId(),
-      name,
-      exercises: editingRoutine.exercises.map((e) => ({ ...e })),
-    };
-    await saveSavedRoutine(routine);
-    await loadWorkouts();
-    setShowRoutineBuilder(false);
-    setEditingRoutine({ name: 'New Routine', exercises: [] });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Saved', `"${name}" saved to My Routines.`);
-  };
-
   const startFreeformWorkout = () => {
-    slideAnim.setValue(0);
+    slideAnim.setValue(1);
     const newWorkout: WorkoutSession = {
       id: generateId(),
       date: new Date().toISOString(),
@@ -386,8 +379,9 @@ export default function WorkoutScreen() {
     };
 
     await saveWorkoutSession(completedWorkout);
+    await logStreakWorkout();
     await loadWorkouts();
-    
+
     setActiveWorkout(null);
     setShowExerciseEntry(false);
     setCurrentExerciseIndex(0);
@@ -416,9 +410,20 @@ export default function WorkoutScreen() {
     setRestTimeRemaining(0);
   };
 
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(1)).current;
   const windowHeight = Dimensions.get('window').height;
   const PAN_DOWN_DURATION = 280;
+  const PAN_UP_DURATION = 350;
+
+  useEffect(() => {
+    if (activeWorkout) {
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: PAN_UP_DURATION,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [activeWorkout?.id]);
 
   const runPanDownAnimation = () => {
     Animated.timing(slideAnim, {
@@ -446,8 +451,7 @@ export default function WorkoutScreen() {
   };
 
   const insets = useSafeAreaInsets();
-  const headerHeight = 44;
-  const contentTopPadding = ((insets.top + headerHeight) / 2 + Spacing.md) * 1.2;
+  const contentTopPadding = insets.top + Spacing.sm;
 
   return (
     <View style={styles.container}>
@@ -455,216 +459,145 @@ export default function WorkoutScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: contentTopPadding },
+          {
+            paddingTop: contentTopPadding,
+            paddingBottom: Math.max(Spacing.md, insets.bottom + 100),
+          },
         ]}
       >
+        {/* Header: profile + tmlsn tracker. + settings */}
         <View style={styles.pageHeaderRow}>
           <Image
-            source={require('../../assets/tmlsn-calories-logo.png')}
+            source={require('../../../assets/tmlsn-calories-logo.png')}
             style={styles.pageHeaderLogo}
             resizeMode="contain"
           />
-          <Text style={styles.pageHeading}>
-            WORKOUT TRACKER
-          </Text>
-        </View>
-        {/* + Start Empty Workout – primary CTA */}
-        <TouchableOpacity
-          style={styles.startEmptyButton}
-          onPress={startFreeformWorkout}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.startEmptyButtonText}>+ start empty workout</Text>
-        </TouchableOpacity>
-
-        {/* Routines section */}
-        <View style={styles.routinesHeader}>
-          <Text style={styles.routinesTitle}>Routines</Text>
-        </View>
-
-        {/* New Routine – same thickness as Start Empty Workout, + at start of text */}
-        <TouchableOpacity
-          style={styles.newRoutineButton}
-          onPress={openRoutineBuilder}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.newRoutineButtonText}>+ new routine</Text>
-        </TouchableOpacity>
-
-        {/* Info bubble – press and hold to reorder */}
-        {showReorderHint && (
-          <View style={styles.infoBubble}>
-            <Text style={styles.infoBubbleIcon}>👆</Text>
-            <Text style={styles.infoBubbleText}>Press and hold a routine to reorder</Text>
-            <TouchableOpacity
-              onPress={() => setShowReorderHint(false)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Text style={styles.infoBubbleClose}>✕</Text>
-            </TouchableOpacity>
+          <View style={styles.pageHeaderTitleWrap}>
+            <Text style={styles.pageHeading}>tmlsn tracker.</Text>
           </View>
-        )}
-
-        {/* TMLSN workouts – dropdown under Routines */}
-        <TouchableOpacity
-          style={styles.dropdownHeader}
-          onPress={() => setTmlsnExpanded(!tmlsnExpanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.dropdownChevron}>{tmlsnExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownTitle}>TMLSN workouts ({TMLSN_SPLITS.length})</Text>
-        </TouchableOpacity>
-        {tmlsnExpanded && (
-          <View style={styles.dropdownList}>
-            {TMLSN_SPLITS.map((split) => (
-              <View key={split.id} style={styles.tmlsnRoutineCard}>
-                <View style={styles.tmlsnRoutineCardHeader}>
-                  <Text style={styles.tmlsnRoutineCardTitle}>
-                    {split.name.toUpperCase()}
-                  </Text>
-                </View>
-                <Text
-                  style={styles.tmlsnRoutineExerciseList}
-                  numberOfLines={3}
-                  ellipsizeMode="tail"
-                >
-                  {split.exercises.map((ex) => ex.name).join(', ')}
-                </Text>
-                <TouchableOpacity
-                  style={styles.tmlsnRoutineStartButton}
-                  onPress={() => startWorkoutFromSplit(split)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.tmlsnRoutineStartButtonText}>start routine</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* My Routines – collapsible; saved routines from builder */}
-        <TouchableOpacity
-          style={styles.dropdownHeader}
-          onPress={() => setMyRoutinesExpanded(!myRoutinesExpanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.dropdownChevron}>{myRoutinesExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownTitle}>My Routines ({savedRoutines.length})</Text>
-        </TouchableOpacity>
-        {myRoutinesExpanded && (
-          <View style={styles.dropdownList}>
-            {savedRoutines.length === 0 ? (
-              <Text style={styles.emptyText}>No routines yet. Create one with new routine.</Text>
-            ) : (
-              savedRoutines.map((routine) => (
-                <TouchableOpacity
-                  key={routine.id}
-                  style={styles.routineItem}
-                  onPress={() => startWorkoutFromSavedRoutine(routine)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.routineItemName}>{routine.name}</Text>
-                  <Text style={styles.routineItemDetail}>
-                    {routine.exercises.length} exercises
-                  </Text>
-                </TouchableOpacity>
-              ))
-            )}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Routine builder overlay – same layout as log workout, no timer; Save top right */}
-      {showRoutineBuilder && (
-        <View style={[styles.workoutOverlay, { height: windowHeight }]}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.contentContainer,
-              { paddingTop: contentTopPadding },
-            ]}
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => router.push('/workout/settings')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            {/* Header: back arrow, title, Save */}
-            <View style={styles.logTopBar}>
-              <View style={styles.logTopLeft}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowRoutineBuilder(false);
-                    setEditingRoutine({ name: 'New Routine', exercises: [] });
-                  }}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={styles.logBackArrowWrap}
-                >
-                  <Text style={styles.logBackArrow}>▼</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    Alert.prompt(
-                      'Routine name',
-                      'Enter a name for this routine',
-                      (text) => {
-                        if (text?.trim()) {
-                          setEditingRoutine((prev) => ({ ...prev, name: text.trim() }));
-                        }
-                      },
-                      'plain-text',
-                      editingRoutine.name === 'New Routine' ? '' : editingRoutine.name
-                    );
-                  }}
-                >
-                  <Text style={styles.logTitle}>{editingRoutine.name}</Text>
-                </TouchableOpacity>
-              </View>
+            <Text style={styles.settingsButtonText}>⚙</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Swipeable widget: full screen width for centered snap */}
+        <View
+          style={styles.swipeWidgetWrapper}
+          onLayout={(e) => setSwipeViewWidth(e.nativeEvent.layout.width)}
+        >
+          <ScrollView
+            horizontal
+            snapToInterval={swipeViewWidth || SCREEN_WIDTH}
+            snapToAlignment="center"
+            decelerationRate="fast"
+            pagingEnabled={false}
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+              const w = swipeViewWidth || SCREEN_WIDTH;
+              const page = Math.round(e.nativeEvent.contentOffset.x / w);
+              setSwipePageIndex(Math.min(page, 1));
+            }}
+            style={[styles.swipeWidget, { width: swipeViewWidth || SCREEN_WIDTH }]}
+            contentContainerStyle={styles.swipeWidgetContent}
+          >
+            {/* Page 0: 3 buttons */}
+            <View style={styles.swipePage}>
               <TouchableOpacity
-                style={styles.finishButton}
-                onPress={saveRoutine}
+                style={styles.mainMenuButton}
+                onPress={() => router.push('/workout/tmlsn-routines')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.finishButtonText}>Save</Text>
+                <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.mainMenuButton}
+                onPress={() => router.push('/workout/your-routines')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.mainMenuButtonText}>your routines.</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.mainMenuButton}
+                onPress={startFreeformWorkout}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.mainMenuButtonText}>start empty workout</Text>
               </TouchableOpacity>
             </View>
-
-            {/* Exercise cards – name + rest timer only */}
-            {editingRoutine.exercises.map((ex) => (
-              <Card key={ex.id} style={styles.exerciseBlock}>
-                <View style={styles.exerciseBlockHeader}>
-                  <Text style={styles.exerciseBlockName}>{ex.name}</Text>
-                  <TouchableOpacity
-                    onPress={() => removeExerciseFromRoutine(ex.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.exerciseBlockMenu}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.restTimerRow}>
-                  <Text style={styles.restTimerRowIcon}>🕐</Text>
-                  <Text style={styles.restTimerRowText}>
-                    Rest: {formatDuration(ex.restTimer)}
-                  </Text>
-                </View>
-              </Card>
-            ))}
-
-            {/* Add Exercise */}
-            <TouchableOpacity
-              style={styles.addExerciseToRoutineButton}
-              onPress={() => {
-                Alert.prompt(
-                  'Add Exercise',
-                  'Enter exercise name',
-                  (text) => {
-                    if (text?.trim()) {
-                      addExerciseToRoutine(text.trim(), 120);
-                    }
-                  }
-                );
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.addExerciseToRoutineText}>+ Add Exercise</Text>
-            </TouchableOpacity>
+            {/* Page 1: progress card */}
+            <View style={styles.swipePage}>
+              <TouchableOpacity
+                style={styles.progressCard}
+                activeOpacity={0.8}
+                onPress={() => setShowHistory(true)}
+              >
+                <Text style={styles.mainMenuButtonText}>progress</Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </View>
-      )}
+
+        {/* Swipe dots */}
+        <View style={styles.swipeDots}>
+          <View style={[styles.swipeDot, swipePageIndex === 0 && styles.swipeDotActive]} />
+          <View style={[styles.swipeDot, swipePageIndex === 1 && styles.swipeDotActive]} />
+        </View>
+
+        {/* Achievements and Streak – stacked, same size as progress card */}
+        <View style={styles.achievementsStack}>
+          <TouchableOpacity style={styles.achievementCard} activeOpacity={0.8}>
+            <Text style={styles.mainMenuButtonText}>achievements</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.achievementCard}
+            onPress={() => router.push('/workout/streak')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.mainMenuButtonText}>streak</Text>
+          </TouchableOpacity>
+        </View>
+
+      </ScrollView>
+
+      {/* Progress / History modal */}
+      <Modal
+        visible={showHistory}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowHistory(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowHistory(false)}
+        >
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>progress</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={styles.editGoalsLink}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.historyList}>
+              {recentWorkouts.length === 0 ? (
+                <Text style={styles.emptyText}>No workouts yet. Start one to see your progress.</Text>
+              ) : (
+                recentWorkouts.map((w) => (
+                  <View key={w.id} style={styles.workoutItem}>
+                    <Text style={styles.workoutName}>{w.name}</Text>
+                    <Text style={styles.workoutDetail}>{w.duration} min · {w.exercises.length} exercises</Text>
+                    <Text style={styles.workoutDate}>{new Date(w.date).toLocaleDateString()}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Workout log overlay – pans down when Cancel is pressed on leave dialog */}
       {activeWorkout && (
@@ -724,7 +657,7 @@ export default function WorkoutScreen() {
 
             {/* Summary: Volume, Sets, muscle icons (reference design) */}
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryVolumeText}>Volume {totalVolume} kg</Text>
+              <Text style={styles.summaryVolumeText}>Volume {totalVolume} {weightUnit}</Text>
               <Text style={styles.summarySetsText}>Sets {totalSets}</Text>
               <View style={styles.summaryIconsRow}>
                 <Text style={styles.summaryIcon}>👤</Text>
@@ -778,7 +711,7 @@ export default function WorkoutScreen() {
                   <View style={styles.setTableHeader}>
                     <Text style={[styles.setTableHeaderCell, styles.setTableCol1]}>SET</Text>
                     <Text style={[styles.setTableHeaderCell, styles.setTableCol2]}>PREVIOUS</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol3]}>KG</Text>
+                    <Text style={[styles.setTableHeaderCell, styles.setTableCol3]}>{weightUnit.toUpperCase()}</Text>
                     <Text style={[styles.setTableHeaderCell, styles.setTableCol4]}>REPS</Text>
                     <Text style={[styles.setTableHeaderCell, styles.setTableCol5]}>RPE</Text>
                     <Text style={[styles.setTableHeaderCell, styles.setTableCol6]}>✓</Text>
@@ -901,6 +834,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+    overflow: 'visible',
   },
   contentContainer: {
     paddingHorizontal: Spacing.md,
@@ -1116,10 +1050,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   tmlsnRoutineCardTitle: {
-    fontFamily: Font.mono,
+    fontFamily: Font.bold,
     fontSize: Typography.h2,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    letterSpacing: HeadingLetterSpacing,
     flex: 1,
   },
   tmlsnRoutineExerciseList: {
@@ -1167,18 +1101,116 @@ const styles = StyleSheet.create({
   pageHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     gap: Spacing.sm,
   },
   pageHeaderLogo: {
-    height: (Typography.h2 + 10) * 1.2 * 1.1,
-    width: (Typography.h2 + 10) * 1.2 * 1.1,
+    height: 44,
+    width: 44,
+  },
+  pageHeaderTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsButtonText: {
+    fontSize: 24,
+    color: Colors.primaryLight,
   },
   pageHeading: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2 * 1.2 * 1.1,
+    fontFamily: Font.bold,
+    fontSize: 28,
+    lineHeight: 64,
+    letterSpacing: -1,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    textAlign: 'center',
+  },
+  swipeWidgetWrapper: {
+    width: SCREEN_WIDTH,
+    alignSelf: 'center',
+    marginHorizontal: -Spacing.md,
+    marginBottom: Spacing.sm,
+    overflow: 'visible',
+  },
+  swipeWidget: {
+    flexGrow: 0,
+  },
+  swipeWidgetContent: {
+    alignItems: 'center',
+  },
+  swipePage: {
+    width: SCREEN_WIDTH,
+    height: SWIPE_PAGE_HEIGHT + SWIPE_WIDGET_PADDING_TOP + SWIPE_WIDGET_EXTRA_HEIGHT,
+    paddingTop: SWIPE_WIDGET_PADDING_TOP,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  mainMenuButton: {
+    alignSelf: 'center',
+    width: BUTTON_WIDTH,
+    height: MAIN_MENU_BUTTON_HEIGHT,
+    borderRadius: 38,
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: MAIN_MENU_BUTTON_GAP,
+    ...Shadows.card,
+  },
+  mainMenuButtonText: {
+    fontFamily: Font.mono,
+    fontSize: 16,
+    lineHeight: 16,
+    letterSpacing: 0,
+    color: '#C6C6C6',
+    textAlign: 'center',
+  },
+  progressCard: {
+    width: PROGRESS_CARD_WIDTH,
+    height: PROGRESS_CARD_HEIGHT,
+    borderRadius: 38,
+    alignSelf: 'center',
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.card,
+  },
+  swipeDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  swipeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primaryLight + '40',
+  },
+  swipeDotActive: {
+    backgroundColor: Colors.primaryLight,
+  },
+  achievementsStack: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: MAIN_MENU_BUTTON_GAP,
+    marginBottom: Spacing.sm,
+  },
+  achievementCard: {
+    width: PROGRESS_CARD_WIDTH,
+    height: PROGRESS_CARD_HEIGHT,
+    borderRadius: 38,
+    alignSelf: 'center',
+    backgroundColor: Colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    ...Shadows.card,
   },
   cardTitle: {
     fontFamily: Font.extraBold,
@@ -1328,6 +1360,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'flex-end',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'flex-end',
+  },
   modalContent: {
     backgroundColor: Colors.primaryDark,
     borderTopLeftRadius: BorderRadius.xl,
@@ -1335,13 +1372,21 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     maxHeight: '80%',
   },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
   modalTitle: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h1,
     fontWeight: Typography.weights.bold,
     color: Colors.primaryLight,
-    marginBottom: Spacing.lg,
     letterSpacing: HeadingLetterSpacing,
+  },
+  historyList: {
+    maxHeight: 400,
   },
   splitOption: {
     paddingVertical: Spacing.md,
