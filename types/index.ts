@@ -50,6 +50,8 @@ export interface Exercise {
   sets: Set[];
   restTimer?: number; // in seconds
   notes?: string;
+  /** ID from exercise database for muscle heatmap mapping */
+  exerciseDbId?: string;
 }
 
 export interface Set {
@@ -77,7 +79,7 @@ export interface WorkoutExerciseTemplate {
 export interface SavedRoutine {
   id: string;
   name: string;
-  exercises: { id: string; name: string; restTimer: number }[];
+  exercises: { id: string; name: string; restTimer: number; exerciseDbId?: string }[];
 }
 
 // Prompt Vault Types

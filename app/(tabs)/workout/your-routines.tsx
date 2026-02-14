@@ -11,6 +11,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Card } from '../../../components/Card';
+import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { getSavedRoutines, saveSavedRoutine } from '../../../utils/storage';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
 import { SavedRoutine } from '../../../types';
@@ -27,9 +28,10 @@ export default function YourRoutinesScreen() {
   const router = useRouter();
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<{
     name: string;
-    exercises: { id: string; name: string; restTimer: number }[];
+    exercises: { id: string; name: string; restTimer: number; exerciseDbId?: string }[];
   }>({ name: 'New Routine', exercises: [] });
 
   const loadRoutines = useCallback(async () => {
@@ -48,10 +50,15 @@ export default function YourRoutinesScreen() {
     setShowRoutineBuilder(true);
   };
 
-  const addExerciseToRoutine = (name: string, restTimer: number = 120) => {
+  const addExerciseToRoutine = (exercise: {
+    id: string;
+    name: string;
+    restTimer: number;
+    exerciseDbId?: string;
+  }) => {
     setEditingRoutine((prev) => ({
       ...prev,
-      exercises: [...prev.exercises, { id: generateId(), name, restTimer }],
+      exercises: [...prev.exercises, { ...exercise, id: generateId() }],
     }));
   };
 
@@ -87,7 +94,12 @@ export default function YourRoutinesScreen() {
     const routine: SavedRoutine = {
       id: generateId(),
       name,
-      exercises: editingRoutine.exercises.map((e) => ({ ...e })),
+      exercises: editingRoutine.exercises.map((e) => ({
+        id: e.id,
+        name: e.name,
+        restTimer: e.restTimer,
+        exerciseDbId: e.exerciseDbId,
+      })),
     };
     await saveSavedRoutine(routine);
     await loadRoutines();
@@ -160,7 +172,7 @@ export default function YourRoutinesScreen() {
                   <Text style={styles.logBackArrow}>▼</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => {
+                  onPress={() =>
                     Alert.prompt(
                       'Routine name',
                       'Enter a name for this routine',
@@ -171,8 +183,8 @@ export default function YourRoutinesScreen() {
                       },
                       'plain-text',
                       editingRoutine.name === 'New Routine' ? '' : editingRoutine.name
-                    );
-                  }}
+                    )
+                  }
                 >
                   <Text style={styles.logTitle}>{editingRoutine.name}</Text>
                 </TouchableOpacity>
@@ -208,21 +220,18 @@ export default function YourRoutinesScreen() {
 
             <TouchableOpacity
               style={styles.addExerciseButton}
-              onPress={() => {
-                Alert.prompt(
-                  'Add Exercise',
-                  'Enter exercise name',
-                  (text) => {
-                    if (text?.trim()) {
-                      addExerciseToRoutine(text.trim(), 120);
-                    }
-                  }
-                );
-              }}
+              onPress={() => setShowExercisePicker(true)}
               activeOpacity={0.8}
             >
               <Text style={styles.addExerciseText}>+ Add Exercise</Text>
             </TouchableOpacity>
+
+            <ExercisePickerModal
+              visible={showExercisePicker}
+              onClose={() => setShowExercisePicker(false)}
+              onSelect={addExerciseToRoutine}
+              defaultRestTimer={120}
+            />
           </ScrollView>
         </View>
       )}

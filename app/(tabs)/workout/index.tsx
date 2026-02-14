@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   Alert,
   Image,
@@ -24,6 +25,7 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../con
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import {
   getRecentWorkouts,
+  getWorkoutSessions,
   saveWorkoutSession,
   getSavedRoutines,
   getUserSettings,
@@ -33,6 +35,13 @@ import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../..
 import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useButtonSound } from '../../../hooks/useButtonSound';
+import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
+import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
+import { HeatmapPreviewWidget } from '../../../components/HeatmapPreviewWidget';
+import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
+import { AnimatedPressable } from '../../../components/AnimatedPressable';
+import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 
 // EB Garamond – same as Calorie tab; DB Mono for body/UI text
 const Font = {
@@ -72,6 +81,7 @@ export default function WorkoutScreen() {
     startRoutineId?: string;
   }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
+  const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [activeWorkout, setActiveWorkout] = useState<WorkoutSession | null>(null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [showSplitSelection, setShowSplitSelection] = useState(false);
@@ -80,6 +90,7 @@ export default function WorkoutScreen() {
   const [swipePageIndex, setSwipePageIndex] = useState(0);
   const [swipeViewWidth, setSwipeViewWidth] = useState(SCREEN_WIDTH);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  const [animTrigger, setAnimTrigger] = useState(0);
 
   // Rest Timer State
   const [restTimerActive, setRestTimerActive] = useState(false);
@@ -94,12 +105,15 @@ export default function WorkoutScreen() {
     field: 'weight' | 'reps';
   } | null>(null);
 
+  const { playIn, playOut } = useButtonSound();
+
   useEffect(() => {
     loadWorkouts();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => setWeightUnit(s.weightUnit));
     }, [])
   );
@@ -164,6 +178,12 @@ export default function WorkoutScreen() {
   const loadWorkouts = async () => {
     const workouts = await getRecentWorkouts(10);
     setRecentWorkouts(workouts);
+    // Load weekly muscle heatmap
+    const allSessions = await getWorkoutSessions();
+    const weekStart = getWeekStart();
+    const setRecords = workoutsToSetRecords(allSessions, weekStart);
+    const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
+    setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
   };
 
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
@@ -198,6 +218,7 @@ export default function WorkoutScreen() {
       name: ex.name,
       sets: [],
       restTimer: ex.restTimer,
+      exerciseDbId: ex.exerciseDbId,
     }));
 
     const newWorkout: WorkoutSession = {
@@ -466,6 +487,7 @@ export default function WorkoutScreen() {
         ]}
       >
         {/* Header: profile + tmlsn tracker. + settings */}
+        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
         <View style={styles.pageHeaderRow}>
           <Image
             source={require('../../../assets/tmlsn-calories-logo.png')}
@@ -475,16 +497,30 @@ export default function WorkoutScreen() {
           <View style={styles.pageHeaderTitleWrap}>
             <Text style={styles.pageHeading}>tmlsn tracker.</Text>
           </View>
-          <TouchableOpacity
+          <Pressable
             style={styles.settingsButton}
+            onPressIn={playIn}
+            onPressOut={playOut}
             onPress={() => router.push('/workout/settings')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Text style={styles.settingsButtonText}>⚙</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
+        </AnimatedFadeInUp>
+
+        {/* Heatmap preview (top, below header) */}
+        <AnimatedFadeInUp delay={80} duration={380} trigger={animTrigger}>
+          <HeatmapPreviewWidget heatmapData={weeklyHeatmap} />
+        </AnimatedFadeInUp>
+
+        {/* Statistics button (pressable, below heatmap) */}
+        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
+          <StatisticsButtonWidget />
+        </AnimatedFadeInUp>
 
         {/* Swipeable widget: full screen width for centered snap */}
+        <AnimatedFadeInUp delay={240} duration={380} trigger={animTrigger}>
         <View
           style={styles.swipeWidgetWrapper}
           onLayout={(e) => setSwipeViewWidth(e.nativeEvent.layout.width)}
@@ -506,60 +542,67 @@ export default function WorkoutScreen() {
           >
             {/* Page 0: 3 buttons */}
             <View style={styles.swipePage}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.mainMenuButton}
+                onPressIn={playIn}
+                onPressOut={playOut}
                 onPress={() => router.push('/workout/tmlsn-routines')}
-                activeOpacity={0.8}
               >
                 <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={styles.mainMenuButton}
+                onPressIn={playIn}
+                onPressOut={playOut}
                 onPress={() => router.push('/workout/your-routines')}
-                activeOpacity={0.8}
               >
                 <Text style={styles.mainMenuButtonText}>your routines.</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={styles.mainMenuButton}
+                onPressIn={playIn}
+                onPressOut={playOut}
                 onPress={startFreeformWorkout}
-                activeOpacity={0.8}
               >
                 <Text style={styles.mainMenuButtonText}>start empty workout</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
             {/* Page 1: progress card */}
             <View style={styles.swipePage}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.progressCard}
-                activeOpacity={0.8}
+                onPressIn={playIn}
+                onPressOut={playOut}
                 onPress={() => setShowHistory(true)}
               >
                 <Text style={styles.mainMenuButtonText}>progress</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </ScrollView>
+          {/* Swipe dots */}
+          <View style={styles.swipeDots}>
+            <View style={[styles.swipeDot, swipePageIndex === 0 && styles.swipeDotActive]} />
+            <View style={[styles.swipeDot, swipePageIndex === 1 && styles.swipeDotActive]} />
+          </View>
         </View>
-
-        {/* Swipe dots */}
-        <View style={styles.swipeDots}>
-          <View style={[styles.swipeDot, swipePageIndex === 0 && styles.swipeDotActive]} />
-          <View style={[styles.swipeDot, swipePageIndex === 1 && styles.swipeDotActive]} />
-        </View>
+        </AnimatedFadeInUp>
 
         {/* Achievements and Streak – stacked, same size as progress card */}
+        <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
         <View style={styles.achievementsStack}>
-          <TouchableOpacity style={styles.achievementCard} activeOpacity={0.8}>
+          <AnimatedPressable style={styles.achievementCard}>
             <Text style={styles.mainMenuButtonText}>achievements</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </AnimatedPressable>
+          <AnimatedPressable
             style={styles.achievementCard}
+            onPressIn={playIn}
+            onPressOut={playOut}
             onPress={() => router.push('/workout/streak')}
-            activeOpacity={0.8}
           >
             <Text style={styles.mainMenuButtonText}>streak</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
+        </AnimatedFadeInUp>
 
       </ScrollView>
 
@@ -570,17 +613,23 @@ export default function WorkoutScreen() {
         transparent
         onRequestClose={() => setShowHistory(false)}
       >
-        <TouchableOpacity
+        <Pressable
           style={styles.modalOverlay}
-          activeOpacity={1}
+          onPressIn={playIn}
+          onPressOut={playOut}
           onPress={() => setShowHistory(false)}
         >
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>progress</Text>
-              <TouchableOpacity onPress={() => setShowHistory(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Pressable
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={() => setShowHistory(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
                 <Text style={styles.editGoalsLink}>Close</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
             <ScrollView style={styles.historyList}>
               {recentWorkouts.length === 0 ? (
@@ -596,7 +645,7 @@ export default function WorkoutScreen() {
               )}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </Modal>
 
       {/* Workout log overlay – pans down when Cancel is pressed on leave dialog */}
@@ -626,20 +675,24 @@ export default function WorkoutScreen() {
             {/* Workout – top bar: back arrow, timer, clock, Workout title, blue Finish */}
             <View style={styles.logTopBar}>
               <View style={styles.logTopLeft}>
-                <TouchableOpacity
+                <Pressable
+                  onPressIn={playIn}
+                  onPressOut={playOut}
                   onPress={handleBackArrowPress}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   style={styles.logBackArrowWrap}
                 >
                   <Text style={styles.logBackArrow}>▼</Text>
-                </TouchableOpacity>
+                </Pressable>
                 <Text style={styles.logTimer}>{formatElapsed(elapsedSeconds)}</Text>
                 <Text style={styles.logTitle}>Workout</Text>
                 <Text style={styles.logClockIcon}>🕐</Text>
               </View>
-              <TouchableOpacity
-                style={styles.finishButton}
-                onPress={() => {
+              <Pressable
+                style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.8 }]}
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={() =>
                   Alert.alert(
                     'Finish Workout',
                     'Save this workout?',
@@ -647,12 +700,11 @@ export default function WorkoutScreen() {
                       { text: 'Cancel', style: 'cancel' },
                       { text: 'Save', onPress: finishWorkout },
                     ]
-                  );
-                }}
-                activeOpacity={0.8}
+                  )
+                }
               >
                 <Text style={styles.finishButtonText}>Finish</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {/* Summary: Volume, Sets, muscle icons (reference design) */}
@@ -670,21 +722,30 @@ export default function WorkoutScreen() {
               <View style={styles.restTimerPanel}>
                 <Text style={styles.restTimerCountdown}>{formatDuration(restTimeRemaining)}</Text>
                 <View style={styles.restTimerButtonsRow}>
-                  <TouchableOpacity
-                    style={styles.restTimerAdjustButton}
+                  <Pressable
+                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
                   >
                     <Text style={styles.restTimerAdjustButtonText}>-15</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.restTimerAdjustButton}
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => prev + 15)}
                   >
                     <Text style={styles.restTimerAdjustButtonText}>+15</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.restTimerSkipButton} onPress={skipRestTimer}>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.restTimerSkipButton, pressed && { opacity: 0.8 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={skipRestTimer}
+                  >
                     <Text style={styles.restTimerSkipButtonText}>Skip</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
             )}
@@ -720,13 +781,14 @@ export default function WorkoutScreen() {
                     <Swipeable
                       key={set.id}
                       renderRightActions={() => (
-                        <TouchableOpacity
-                          style={styles.setRowDeleteAction}
+                        <Pressable
+                          style={({ pressed }) => [styles.setRowDeleteAction, pressed && { opacity: 0.8 }]}
+                          onPressIn={playIn}
+                          onPressOut={playOut}
                           onPress={() => removeSet(exerciseIndex, setIndex)}
-                          activeOpacity={0.8}
                         >
                           <Text style={styles.setRowDeleteText}>Delete</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       )}
                       friction={2}
                       rightThreshold={40}
@@ -757,13 +819,15 @@ export default function WorkoutScreen() {
                               fontFamily={Font.mono}
                             />
                           ) : (
-                            <TouchableOpacity
+                            <Pressable
+                              onPressIn={playIn}
+                              onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'weight' })}
                               style={styles.setTableDashCell}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
                               <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           )}
                         </View>
                         <View style={[styles.setTableInputCell, styles.setTableCol4]}>
@@ -781,13 +845,15 @@ export default function WorkoutScreen() {
                               fontFamily={Font.mono}
                             />
                           ) : (
-                            <TouchableOpacity
+                            <Pressable
+                              onPressIn={playIn}
+                              onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'reps' })}
                               style={styles.setTableDashCell}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
                               <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           )}
                         </View>
                         <TouchableOpacity
@@ -798,28 +864,31 @@ export default function WorkoutScreen() {
                             RPE
                           </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
+                        <Pressable
                           style={[styles.setTableTickCell, styles.setTableCol6]}
+                          onPressIn={playIn}
+                          onPressOut={playOut}
                           onPress={() => updateSet(exerciseIndex, setIndex, { completed: !set.completed })}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
                           <Text style={[styles.setTableCell, set.completed && styles.setTableTickCompleted]}>
                             ✓
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
                     </Swipeable>
                   ))}
                 </View>
 
                 {/* Add set – button adds a new row to the table; KG/REPS edited in the table */}
-                <TouchableOpacity
-                  style={styles.addSetButtonBlock}
+                <Pressable
+                  style={({ pressed }) => [styles.addSetButtonBlock, pressed && { opacity: 0.8 }]}
+                  onPressIn={playIn}
+                  onPressOut={playOut}
                   onPress={() => addSet(exerciseIndex)}
-                  activeOpacity={0.8}
                 >
                   <Text style={styles.addSetButtonBlockText}>+ add set</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ))}
           </ScrollView>

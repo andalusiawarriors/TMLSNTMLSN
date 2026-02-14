@@ -1,7 +1,10 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { Pressable, Text } from 'react-native';
 import { Colors } from '../../../constants/theme';
 
 export default function WorkoutLayout() {
+  const router = useRouter();
+
   return (
     <Stack
       screenOptions={{
@@ -9,6 +12,15 @@ export default function WorkoutLayout() {
         headerTintColor: Colors.primaryLight,
         headerBackTitle: 'Back',
         contentStyle: { backgroundColor: Colors.primaryDark },
+        headerLeft: () => (
+          <Pressable
+            onPress={() => router.replace('/workout')}
+            style={{ marginLeft: 8, paddingVertical: 8, paddingRight: 16 }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={{ color: Colors.primaryLight, fontSize: 17 }}>‹ Back</Text>
+          </Pressable>
+        ),
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -40,6 +52,14 @@ export default function WorkoutLayout() {
         name="streak"
         options={{
           title: 'streak',
+          headerShown: true,
+          animation: 'fade_from_bottom',
+        }}
+      />
+      <Stack.Screen
+        name="statistics"
+        options={{
+          title: 'statistics',
           headerShown: true,
           animation: 'fade_from_bottom',
         }}

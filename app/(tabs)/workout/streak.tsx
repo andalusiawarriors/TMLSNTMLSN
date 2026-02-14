@@ -367,7 +367,11 @@ export default function StreakScreen() {
             </View>
         </View>
 
-        <TouchableOpacity style={styles.resetTouchable} onPress={resetStreak}>
+        <TouchableOpacity
+          style={styles.resetTouchable}
+          onPress={resetStreak}
+          activeOpacity={0.8}
+        >
           <Text style={styles.resetLabel}>reset streak</Text>
         </TouchableOpacity>
       </View>

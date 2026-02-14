@@ -25,7 +25,6 @@ const formatRoutineTitle = (name: string) => {
 
 export default function TmlsnRoutinesScreen() {
   const router = useRouter();
-
   const handleStartRoutine = (split: WorkoutSplit) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.replace({

@@ -27,7 +27,7 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *none*       | —                 | —                         | —               | —       |
+| workout      | Statistics widget + subpage | `app/(tabs)/workout/index.tsx`, `statistics.tsx`, `_layout.tsx`, `components/StatisticsWidget.tsx` | — | now |
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -37,7 +37,9 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/workout/` – TMLSN routines + your routines as separate screens: `_layout.tsx`, `index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx`
+- `components/MuscleBodyHeatmap.tsx`, `components/BodyAnatomySvg.tsx` – LiftShift anatomy for muscle heatmap (front/back body, volume gradient, tap-to-select)
+- `hooks/useButtonSound.ts` – shared button press sound (card-press-in/out)
+- `app/(tabs)/workout/` – button sound on all tappable elements: `index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx`, `settings.tsx`, `streak.tsx`
 
 ---
 
