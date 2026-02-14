@@ -1,9 +1,15 @@
 import { Stack, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { Pressable, Text } from 'react-native';
 import { Colors } from '../../../constants/theme';
 
 export default function WorkoutLayout() {
   const router = useRouter();
+
+  const handleBack = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.back();
+  };
 
   return (
     <Stack
@@ -12,10 +18,15 @@ export default function WorkoutLayout() {
         headerTintColor: Colors.primaryLight,
         headerBackTitle: 'Back',
         contentStyle: { backgroundColor: Colors.primaryDark },
+        animation: 'slide_from_right',
+        animationDuration: 220,
         headerLeft: () => (
           <Pressable
-            onPress={() => router.replace('/workout')}
-            style={{ marginLeft: 8, paddingVertical: 8, paddingRight: 16 }}
+            onPress={handleBack}
+            style={({ pressed }) => [
+              { marginLeft: 8, paddingVertical: 8, paddingRight: 16 },
+              pressed && { opacity: 0.7 },
+            ]}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <Text style={{ color: Colors.primaryLight, fontSize: 17 }}>‹ Back</Text>
@@ -29,7 +40,7 @@ export default function WorkoutLayout() {
         options={{
           title: 'tmlsn routines',
           headerShown: true,
-          animation: 'fade_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
       <Stack.Screen
@@ -37,7 +48,7 @@ export default function WorkoutLayout() {
         options={{
           title: 'your routines',
           headerShown: true,
-          animation: 'fade_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
       <Stack.Screen
@@ -45,7 +56,7 @@ export default function WorkoutLayout() {
         options={{
           title: 'settings',
           headerShown: true,
-          animation: 'fade_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
       <Stack.Screen
@@ -53,7 +64,7 @@ export default function WorkoutLayout() {
         options={{
           title: 'streak',
           headerShown: true,
-          animation: 'fade_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
       <Stack.Screen
@@ -61,7 +72,7 @@ export default function WorkoutLayout() {
         options={{
           title: 'statistics',
           headerShown: true,
-          animation: 'fade_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
     </Stack>

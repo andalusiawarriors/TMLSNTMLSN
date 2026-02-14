@@ -8,7 +8,6 @@ import {
   Pressable,
   Modal,
   Alert,
-  Image,
   Animated,
   Dimensions,
   NativeSyntheticEvent,
@@ -40,6 +39,7 @@ import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
 import { HeatmapPreviewWidget } from '../../../components/HeatmapPreviewWidget';
 import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
+import { StreakWidget } from '../../../components/StreakWidget';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 
@@ -489,14 +489,13 @@ export default function WorkoutScreen() {
         {/* Header: profile + tmlsn tracker. + settings */}
         <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
         <View style={styles.pageHeaderRow}>
-          <Image
-            source={require('../../../assets/tmlsn-calories-logo.png')}
-            style={styles.pageHeaderLogo}
-            resizeMode="contain"
-          />
-          <View style={styles.pageHeaderTitleWrap}>
+          <View style={styles.pageHeaderLeft}>
+            <StreakWidget />
+          </View>
+          <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
             <Text style={styles.pageHeading}>tmlsn tracker.</Text>
           </View>
+          <View style={styles.pageHeaderRight}>
           <Pressable
             style={styles.settingsButton}
             onPressIn={playIn}
@@ -506,6 +505,7 @@ export default function WorkoutScreen() {
           >
             <Text style={styles.settingsButtonText}>⚙</Text>
           </Pressable>
+          </View>
         </View>
         </AnimatedFadeInUp>
 
@@ -587,19 +587,11 @@ export default function WorkoutScreen() {
         </View>
         </AnimatedFadeInUp>
 
-        {/* Achievements and Streak – stacked, same size as progress card */}
+        {/* Achievements only – streak moved to header widget */}
         <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
         <View style={styles.achievementsStack}>
           <AnimatedPressable style={styles.achievementCard}>
             <Text style={styles.mainMenuButtonText}>achievements</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            style={styles.achievementCard}
-            onPressIn={playIn}
-            onPressOut={playOut}
-            onPress={() => router.push('/workout/streak')}
-          >
-            <Text style={styles.mainMenuButtonText}>streak</Text>
           </AnimatedPressable>
         </View>
         </AnimatedFadeInUp>
@@ -1170,17 +1162,28 @@ const styles = StyleSheet.create({
   pageHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.sm,
-    gap: Spacing.sm,
+    position: 'relative',
   },
-  pageHeaderLogo: {
-    height: 44,
-    width: 44,
+  pageHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
   },
   pageHeaderTitleWrap: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pageHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
   },
   settingsButton: {
     width: 44,
@@ -1195,7 +1198,8 @@ const styles = StyleSheet.create({
   pageHeading: {
     fontFamily: Font.bold,
     fontSize: 28,
-    lineHeight: 64,
+    lineHeight: 44,
+    marginTop: -4,
     letterSpacing: -1,
     color: Colors.primaryLight,
     textAlign: 'center',

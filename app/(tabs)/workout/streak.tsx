@@ -11,16 +11,20 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  Platform,
   Easing,
 } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, Spacing, Shadows } from '../../../constants/theme';
+import { Colors, Spacing } from '../../../constants/theme';
+import { BlurRollNumber } from '../../../components/BlurRollNumber';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'tmlsn_workout_streak_v2';
-const TICK_MS = 80;
+const TICK_MS = 17; // ~60fps for smooth bar and number updates
 const COUNTDOWN_TOTAL = 86400;
+
+// TMLSN theme
+const FONT_MONO = 'DMMono_400Regular';
 
 // TMLSN theme colors
 const BG = Colors.primaryDark;
@@ -109,12 +113,13 @@ function calcBars(startMs: number) {
 }
 
 // ─── LIVE BAR ─────────────────────────────────────────────────────────────────
+const BAR_NUM_HEIGHT = 21;
+
 const LiveBar = React.memo(function LiveBar({
   config,
   palette,
   frac,
   display,
-  maxVal,
   index,
   dead,
 }: {
@@ -122,13 +127,15 @@ const LiveBar = React.memo(function LiveBar({
   palette: { fill: string; glow: string };
   frac: number;
   display: number;
-  maxVal: number | string;
   index: number;
   dead: boolean;
 }) {
   const animPct = useRef(new Animated.Value(0)).current;
   const entrance = useRef(new Animated.Value(0)).current;
   const currentAnim = useRef<Animated.CompositeAnimation | null>(null);
+  const prevDisplayRef = useRef(display);
+  const rollTrigger = useSharedValue(0);
+  const isEaten = useSharedValue(1);
 
   useEffect(() => {
     Animated.timing(entrance, {
@@ -144,18 +151,29 @@ const LiveBar = React.memo(function LiveBar({
     if (currentAnim.current) currentAnim.current.stop();
     currentAnim.current = Animated.timing(animPct, {
       toValue: dead ? 0 : frac * 100,
-      duration: TICK_MS + 30,
+      duration: 80,
       easing: Easing.linear,
       useNativeDriver: false,
     });
     currentAnim.current.start();
   }, [frac, dead]);
 
+  useEffect(() => {
+    if (prevDisplayRef.current !== display) {
+      rollTrigger.value = rollTrigger.value + 1;
+      isEaten.value = 1;
+      prevDisplayRef.current = display;
+    }
+  }, [display]);
+
   const widthInterp = animPct.interpolate({
     inputRange: [0, 100],
     outputRange: ['0%', '100%'],
     extrapolate: 'clamp',
   });
+
+  const leftVal = String(prevDisplayRef.current);
+  const eatenVal = String(display);
 
   return (
     <Animated.View
@@ -173,7 +191,14 @@ const LiveBar = React.memo(function LiveBar({
       ]}
     >
       <View style={styles.barLabel}>
-        <Text style={styles.barNum}>{display}</Text>
+        <BlurRollNumber
+          leftValue={leftVal}
+          eatenValue={eatenVal}
+          isEaten={isEaten}
+          trigger={rollTrigger}
+          textStyle={styles.barNum}
+          height={BAR_NUM_HEIGHT}
+        />
         <Text style={styles.barUnit}>{config.label}</Text>
       </View>
 
@@ -181,8 +206,6 @@ const LiveBar = React.memo(function LiveBar({
         <Animated.View
           style={[styles.barFill, { backgroundColor: palette.fill, width: widthInterp }]}
         />
-
-        <Text style={styles.barMax}>{maxVal}</Text>
       </View>
     </Animated.View>
   );
@@ -308,13 +331,12 @@ export default function StreakScreen() {
       <View style={styles.widget}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>tmlsn · workout streak</Text>
           <Text style={styles.title}>
             {streakDead
               ? "your streak ended"
               : !streakStart
                 ? "start your streak"
-                : "i've been consistent for"}
+                : "workout streak"}
           </Text>
         </View>
 
@@ -327,17 +349,16 @@ export default function StreakScreen() {
               palette={PALETTE[i]}
               frac={barData ? barData.frac[cfg.key as keyof typeof barData.frac] : 0}
               display={barData ? barData.display[cfg.key as keyof typeof barData.display] : 0}
-              maxVal={barData ? barData.maxes[cfg.key as keyof typeof barData.maxes] : '—'}
               index={i}
               dead={streakDead}
             />
           ))}
         </View>
 
-        {/* Next reset and rest day – below bars */}
-        <View style={styles.widgetsRow}>
+        {/* Next reset on top, rest day below */}
+        <View style={styles.widgetsCol}>
             <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>next{'\n'}reset</Text>
+              <Text style={styles.cardEyebrow}>next reset</Text>
               <Text style={[styles.cdValue, { color: cdColor }]}>
                 {formatCountdown(countdown)}
               </Text>
@@ -349,7 +370,7 @@ export default function StreakScreen() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>rest{'\n'}day</Text>
+              <Text style={styles.cardEyebrow}>rest day</Text>
               {!exemptThisWeek ? (
                 <TouchableOpacity
                   style={styles.rdBtn}
@@ -384,30 +405,35 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.lg, paddingBottom: Spacing.xl * 2 },
 
   widget: {
-    backgroundColor: SURFACE,
+    backgroundColor: Colors.primaryDark,
     borderRadius: 38,
     padding: Spacing.lg,
-    ...Shadows.card,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
   },
 
-  header: { marginBottom: Spacing.lg },
-  eyebrow: { color: DIM, fontSize: 10, fontWeight: '700' as const, letterSpacing: 3, marginBottom: 6 },
-  title: { color: WHITE, fontSize: 21, fontWeight: '300' as const, letterSpacing: 0.2 },
+  header: { marginBottom: Spacing.lg, alignItems: 'center' },
+  title: { fontFamily: FONT_MONO, color: WHITE, fontSize: 21, fontWeight: '300' as const, letterSpacing: 0, textAlign: 'center' },
 
   barsCol: { gap: 9, marginBottom: Spacing.lg },
   barRow: { flexDirection: 'row' as const, alignItems: 'center', gap: 10 },
   barLabel: { width: 54, alignItems: 'flex-end' },
   barNum: {
+    fontFamily: FONT_MONO,
     color: WHITE, fontSize: 18, fontWeight: '800' as const,
     fontStyle: 'italic', lineHeight: 21,
   },
   barUnit: {
+    fontFamily: FONT_MONO,
     color: DIM, fontSize: 8, fontWeight: '700' as const,
     letterSpacing: 0.8, textTransform: 'uppercase',
   },
   barTrack: {
     flex: 1, height: BAR_H,
-    backgroundColor: BG,
+    backgroundColor: SURFACE,
     borderRadius: 38,
     overflow: 'hidden',
     justifyContent: 'center',
@@ -416,29 +442,24 @@ const styles = StyleSheet.create({
     position: 'absolute', height: BAR_H, left: 0,
     borderRadius: 38,
   },
-  barMax: {
-    position: 'absolute', right: 10,
-    color: DIMMER, fontSize: 9, fontWeight: '600' as const,
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-  },
 
-  widgetsRow: { flexDirection: 'row' as const, gap: 12, marginBottom: Spacing.lg },
+  widgetsCol: { flexDirection: 'column' as const, gap: 8, marginBottom: Spacing.lg },
   card: {
-    flex: 1,
     backgroundColor: BG,
     borderRadius: 38, padding: 12,
-    alignItems: 'center', gap: 7,
+    alignItems: 'center', gap: 6,
   },
   cardEyebrow: {
-    color: DIM, fontSize: 8, fontWeight: '700' as const,
+    fontFamily: FONT_MONO,
+    color: DIM, fontSize: 12, fontWeight: '700' as const,
     letterSpacing: 1.8, textTransform: 'uppercase',
     textAlign: 'center',
   },
-  cardNote: { color: DIMMER, fontSize: 8, letterSpacing: 0.5, textAlign: 'center' },
+  cardNote: { fontFamily: FONT_MONO, color: DIMMER, fontSize: 12, letterSpacing: 0.5, textAlign: 'center', marginTop: 2 },
 
   cdValue: {
-    fontSize: 14, fontWeight: '800' as const, textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontFamily: FONT_MONO,
+    fontSize: 20, fontWeight: '800' as const, textAlign: 'center',
   },
   cdTrack: {
     width: '100%', height: 3,
@@ -448,16 +469,20 @@ const styles = StyleSheet.create({
 
   rdBtn: {
     backgroundColor: Colors.primaryLight,
-    borderRadius: 38, paddingHorizontal: 13, paddingVertical: 7,
+    borderRadius: 38, paddingHorizontal: 28, paddingVertical: 7,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
   },
-  rdBtnText: { color: Colors.primaryDark, fontSize: 11, fontWeight: '800' as const, letterSpacing: 1.5 },
+  rdBtnText: { fontFamily: FONT_MONO, color: Colors.primaryDark, fontSize: 15, fontWeight: '800' as const, letterSpacing: 1.5, textAlign: 'center' },
   rdDone: {
-    width: 36, height: 36, borderRadius: 38,
+    width: 40, height: 40, borderRadius: 38,
     borderWidth: 2, borderColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  rdDoneText: { color: Colors.primaryLight, fontSize: 16, fontWeight: '800' as const },
+  rdDoneText: { fontFamily: FONT_MONO, color: Colors.primaryLight, fontSize: 20, fontWeight: '800' as const },
 
   resetTouchable: { marginTop: Spacing.lg, alignItems: 'center', paddingVertical: 8 },
-  resetLabel: { color: DIMMER, fontSize: 11, textDecorationLine: 'underline' as const },
+  resetLabel: { fontFamily: FONT_MONO, color: DIMMER, fontSize: 11, textDecorationLine: 'underline' as const },
 });

@@ -22,9 +22,9 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 
-const STAGGER_MS = 29;   // 20% faster again (was 36)
-const ACCEL_MS = 102;    // 20% faster again (was 128)
-const SPRING_CFG = { damping: 14, stiffness: 390, mass: 0.26 }; // ~20% faster spring
+const STAGGER_MS = 36;   // delay between digits
+const ACCEL_MS = 140;    // acceleration phase – longer = smoother
+const SPRING_CFG = { damping: 18, stiffness: 280, mass: 0.3 }; // softer spring = smoother settle
 // Per-digit fade in/out during motion; at animation end revert to full opacity (#FFF)
 const FADE_IN_END = 0.07;
 const FADE_OUT_START = 0.93;
@@ -63,7 +63,7 @@ const BlurRollChar = memo<CharProps>(({
             withSequence(
               withTiming(0.5, {
                 duration: ACCEL_MS,
-                easing: Easing.in(Easing.cubic),
+                easing: Easing.inOut(Easing.cubic),
               }),
               withSpring(1, SPRING_CFG),
             ),
