@@ -22,12 +22,19 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 
-const STAGGER_MS = 70;
-const ACCEL_MS = 250;
-const SPRING_CFG = { damping: 14, stiffness: 160, mass: 0.6 };
-const NUM_GHOST_PAIRS = 2;
-const GHOST_OP_BASE = 0.45;
-const GHOST_OP_DECAY = 0.18;
+const STAGGER_MS = 29;   // 20% faster again (was 36)
+const ACCEL_MS = 102;    // 20% faster again (was 128)
+const SPRING_CFG = { damping: 14, stiffness: 390, mass: 0.26 }; // ~20% faster spring
+// Per-digit fade in/out during motion; at animation end revert to full opacity (#FFF)
+const FADE_IN_END = 0.07;
+const FADE_OUT_START = 0.93;
+const FADE_EDGE_OPACITY = 0.5; // opacity at start/end of motion (during animation only)
+// Soft fog + glow (no directional streak): radial copies around digit, visible only while moving
+const FOG_RADIUS = 3; // px – inner soft diffusion (~33% larger)
+const FOG_OPACITY = 0.43;
+const GLOW_RADIUS = 7; // px – outer halo (~33% larger)
+const GLOW_OPACITY = 0.24;
+const NUM_RADIAL = 8; // 8 directions for even fog/glow
 
 interface CharProps {
   char: string;
@@ -66,19 +73,24 @@ const BlurRollChar = memo<CharProps>(({
     },
   );
 
-  const ghostSpread = Math.max(3, Math.round(height * 0.18));
-
   const wrapStyle = useAnimatedStyle(() => {
     const p = progress.value;
     const isLeft = layer === 'left' ? 1 : 0;
     const isOut = isLeft === 1 ? isEaten.value : 1 - isEaten.value;
-    const outY = interpolate(p, [0, 0.5], [0, -height * 1.3], Extrapolation.CLAMP);
-    const outOp = interpolate(p, [0, 0.3, 0.5], [1, 0.6, 0], Extrapolation.CLAMP);
-    const inY = interpolate(p, [0.3, 1], [height * 1.3, 0], Extrapolation.CLAMP);
-    const inOp = interpolate(p, [0.3, 0.5, 0.85], [0, 0.6, 1], Extrapolation.CLAMP);
+    const outY = interpolate(p, [0, 0.5], [0, height * 1.3], Extrapolation.CLAMP);
+    const outOp = interpolate(p, [0, 0.3, 0.5], [1, 0.38, 0], Extrapolation.CLAMP);
+    const inY = interpolate(p, [0.3, 1], [-height * 1.3, 0], Extrapolation.CLAMP);
+    const inOp = interpolate(p, [0.3, 0.5, 0.85], [0, 0.38, 1], Extrapolation.CLAMP);
+    const baseOp = outOp * isOut + inOp * (1 - isOut);
+    const fadeIn = interpolate(p, [0, FADE_IN_END], [FADE_EDGE_OPACITY, 1], Extrapolation.CLAMP);
+    const fadeOut = interpolate(p, [FADE_OUT_START, 1], [1, FADE_EDGE_OPACITY], Extrapolation.CLAMP);
+    const staggerFade = fadeIn * fadeOut;
+    // During motion use stagger fade; from FADE_OUT_START→1 gradually restore to 1 so rest state is full #FFF
+    const restoreToFull = interpolate(p, [FADE_OUT_START, 1], [staggerFade, 1], Extrapolation.CLAMP);
+    const opacityMul = p >= FADE_OUT_START ? restoreToFull : (staggerFade < 1 ? staggerFade : 1);
     return {
       transform: [{ translateY: outY * isOut + inY * (1 - isOut) }],
-      opacity: outOp * isOut + inOp * (1 - isOut),
+      opacity: baseOp * opacityMul,
     };
   });
 
@@ -86,22 +98,28 @@ const BlurRollChar = memo<CharProps>(({
     const p = progress.value;
     const isLeft = layer === 'left' ? 1 : 0;
     const isOut = isLeft === 1 ? isEaten.value : 1 - isEaten.value;
-    const outB = interpolate(p, [0, 0.12, 0.3, 0.5], [0, 0.6, 1, 0.2], Extrapolation.CLAMP);
-    const inB = interpolate(p, [0.3, 0.5, 0.72, 0.9], [0.2, 1, 0.6, 0], Extrapolation.CLAMP);
-    return { opacity: outB * isOut + inB * (1 - isOut) };
+    const outB = interpolate(p, [0, 0.08, 0.25, 0.5], [0, 0.78, 1, 0.28], Extrapolation.CLAMP);
+    const inB = interpolate(p, [0.28, 0.5, 0.7, 0.92], [0.28, 1, 0.78, 0], Extrapolation.CLAMP);
+    const baseB = outB * isOut + inB * (1 - isOut);
+    const fadeIn = interpolate(p, [0, FADE_IN_END], [FADE_EDGE_OPACITY, 1], Extrapolation.CLAMP);
+    const fadeOut = interpolate(p, [FADE_OUT_START, 1], [1, FADE_EDGE_OPACITY], Extrapolation.CLAMP);
+    return { opacity: baseB * fadeIn * fadeOut };
   });
 
   return (
     <View style={{ height, overflow: 'hidden' }}>
       <Animated.View style={wrapStyle}>
-        <Animated.View style={[{ position: 'absolute', top: 0, left: 0 }, ghostStyle]}>
-          {Array.from({ length: NUM_GHOST_PAIRS }).map((_, gi) => {
-            const off = (gi + 1) * ghostSpread;
-            const gOp = GHOST_OP_BASE - gi * GHOST_OP_DECAY;
+        <Animated.View style={[{ position: 'absolute', top: 0, left: 0 }, ghostStyle]} pointerEvents="none">
+          {Array.from({ length: NUM_RADIAL }, (_, i) => {
+            const a = (i / NUM_RADIAL) * 2 * Math.PI;
+            const fogX = FOG_RADIUS * Math.cos(a);
+            const fogY = FOG_RADIUS * Math.sin(a);
+            const glowX = GLOW_RADIUS * Math.cos(a);
+            const glowY = GLOW_RADIUS * Math.sin(a);
             return (
-              <React.Fragment key={gi}>
-                <Text style={[style as TextStyle, { position: 'absolute', top: -off, opacity: gOp }]}>{char}</Text>
-                <Text style={[style as TextStyle, { position: 'absolute', top: off, opacity: gOp }]}>{char}</Text>
+              <React.Fragment key={i}>
+                <Text style={[style as TextStyle, { position: 'absolute', left: fogX, top: fogY, opacity: FOG_OPACITY }]}>{char}</Text>
+                <Text style={[style as TextStyle, { position: 'absolute', left: glowX, top: glowY, opacity: GLOW_OPACITY }]}>{char}</Text>
               </React.Fragment>
             );
           })}

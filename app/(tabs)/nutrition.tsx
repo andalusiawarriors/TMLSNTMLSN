@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -26,9 +26,16 @@ import Animated, {
   useAnimatedReaction,
   withTiming,
   withSpring,
+  withDelay,
+  withSequence,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+  Easing,
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
@@ -36,7 +43,7 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import {
-  getTodayNutritionLog,
+  getNutritionLogByDate,
   saveNutritionLog,
   getUserSettings,
   saveUserSettings,
@@ -44,7 +51,8 @@ import {
   saveSavedFood,
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
-import { generateId, getTodayDateString } from '../../utils/helpers';
+import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
+import SwipeableWeekView from '../../components/SwipeableWeekView';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
@@ -65,8 +73,8 @@ const CardFont = {
 } as const;
 
 const HeadingLetterSpacing = -1;
-const CARD_LABEL_COLOR = '#C6C6C6';
-const CARD_NUMBER_COLOR = '#FFFFFF';
+const CARD_LABEL_COLOR = '#FFFFFF';
+const CARD_NUMBER_COLOR = '#FFFFFF'; // quantity text on cards – full white, animation restores to this
 const CARD_UNIFIED_HEIGHT = Math.round(100 * 1.2); // 20% taller, all cards same height (120)
 const MAIN_CARD_RING_SIZE = 100;
 const SMALL_CARD_RING_SIZE = Math.round(61 * 0.95); // 5% smaller (58)
@@ -76,12 +84,17 @@ const CARD_LABEL_FONT_SIZE = Math.round(Typography.body * 0.45);   // 8 (Calorie
 const MACRO_VALUE_FONT_SIZE = Math.round(Typography.dataValue * 0.5); // 10
 const MACRO_LABEL_FONT_SIZE = Math.round(Typography.label * 0.45);   // 6 (Protein left, etc.)
 
+const WEEK_STRIP_PAGE_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
+
 export default function NutritionScreen() {
+  const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [cardPage, setCardPage] = useState(0);
+
+  const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
 
   const cardScale = useSharedValue(1);
   const cardScaleStyle = useAnimatedStyle(() => ({
@@ -89,9 +102,96 @@ export default function NutritionScreen() {
   }));
 
   const fabScale = useSharedValue(1);
-  const fabScaleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: fabScale.value }],
+  const fabStretchX = useSharedValue(0); // very subtle scale in drag direction
+  const fabStretchY = useSharedValue(0);
+  const FAB_STRETCH_FACTOR = 0.0005; // very very subtle stretch toward drag
+  const FAB_STRETCH_MAX = 0.012; // max ~1.2% scale change
+  const FAB_PRESS_SCALE = 1.12; // enlarge on press (same magnitude as previous shrink 0.88 → 1)
+  const FAB_PRESS_DURATION_MS = 260; // smooth enlargement
+  const FAB_PRESS_EASING = Easing.bezier(0.33, 0.2, 0.2, 1); // smooth ease-out
+  const FAB_RETURN_DURATION_MS = 55; // shrink back on release almost instant
+  const FAB_ROTATION_SPRING = { damping: 55, stiffness: 264 }; // plus↔X and star, 10% faster
+  const fabScaleStyle = useAnimatedStyle(() => {
+    'worklet';
+    const sx = 1 + Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, fabStretchX.value));
+    const sy = 1 + Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, fabStretchY.value));
+    return {
+      transform: [
+        { scale: fabScale.value },
+        { scaleX: sx },
+        { scaleY: sy },
+      ],
+    };
+  });
+  const fabTouchStartRef = useRef({ x: 0, y: 0 });
+
+  const fabRotation = useSharedValue(0); // 0 = plus, 45 = X
+  const fabIconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${fabRotation.value}deg` }],
   }));
+  const fabStarStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${-fabRotation.value}deg` }], // mirror of plus: same 45° magnitude, opposite direction
+  }));
+
+  // Popup: keyframed fade (0→1 progress) + spring position on content only
+  const popupFade = useSharedValue(0);
+  const popupPop = useSharedValue(0);
+  const popupOverlayStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      popupFade.value,
+      [0, 0.18, 0.42, 0.65, 0.85, 1],
+      [0, 0.25, 0.72, 0.92, 0.98, 1],
+      Extrapolation.CLAMP
+    );
+    return { opacity };
+  });
+  const popupContentStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      popupFade.value,
+      [0, 0.18, 0.42, 0.65, 0.85, 1],
+      [0, 0.25, 0.72, 0.92, 0.98, 1],
+      Extrapolation.CLAMP
+    );
+    const translateY = interpolate(popupPop.value, [0, 1], [32, 0], Extrapolation.CLAMP);
+    const scale = interpolate(popupPop.value, [0, 1], [0.9, 1], Extrapolation.CLAMP);
+    return {
+      opacity,
+      transform: [{ translateY }, { scale }],
+    };
+  });
+
+  // Staggered pop per card (0–3): smooth entrance, no bounce
+  const popupCard0 = useSharedValue(0);
+  const popupCard1 = useSharedValue(0);
+  const popupCard2 = useSharedValue(0);
+  const popupCard3 = useSharedValue(0);
+  const popupCardHover0 = useSharedValue(0);
+  const popupCardHover1 = useSharedValue(0);
+  const popupCardHover2 = useSharedValue(0);
+  const popupCardHover3 = useSharedValue(0);
+  const popupCardPress0 = useSharedValue(1);
+  const popupCardPress1 = useSharedValue(1);
+  const popupCardPress2 = useSharedValue(1);
+  const popupCardPress3 = useSharedValue(1);
+  const POPUP_CARD_STAGGER_MS = 55;
+  const HOVER_EASING = Easing.inOut(Easing.sin);
+  const HOVER_STAGGER_MS = 320; // cards start hover slightly offset so not one block
+  const POPUP_CARD_PRESS_DURATION = 100;
+  const popupCardStyle = (card: 0 | 1 | 2 | 3) =>
+    useAnimatedStyle(() => {
+      const v = card === 0 ? popupCard0.value : card === 1 ? popupCard1.value : card === 2 ? popupCard2.value : popupCard3.value;
+      const y = interpolate(v, [0, 1], [20, 0], Extrapolation.CLAMP);
+      const s = interpolate(v, [0, 1], [0.82, 1], Extrapolation.CLAMP);
+      const o = interpolate(v, [0, 0.6, 1], [0, 0.7, 1], Extrapolation.CLAMP);
+      const h = card === 0 ? popupCardHover0.value : card === 1 ? popupCardHover1.value : card === 2 ? popupCardHover2.value : popupCardHover3.value;
+      const hoverY = interpolate(h, [0, 1], [0, -4], Extrapolation.CLAMP);
+      const p = card === 0 ? popupCardPress0.value : card === 1 ? popupCardPress1.value : card === 2 ? popupCardPress2.value : popupCardPress3.value;
+      return { opacity: o, transform: [{ translateY: y + hoverY }, { scale: s * p }] };
+    });
+  const popupCardStyle0 = popupCardStyle(0);
+  const popupCardStyle1 = popupCardStyle(1);
+  const popupCardStyle2 = popupCardStyle(2);
+  const popupCardStyle3 = popupCardStyle(3);
 
   const isEaten = useSharedValue(0);
   const rollTrigger = useSharedValue(0);
@@ -115,6 +215,15 @@ export default function NutritionScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraMode, setCameraMode] = useState<'ai' | 'barcode' | 'label'>('ai');
   const cameraRef = useRef<any>(null);
+  const clickSoundRef = useRef<Audio.Sound | null>(null);
+  const tapSoundRef = useRef<Audio.Sound | null>(null);
+  const popupOpenSoundRef = useRef<Audio.Sound | null>(null);
+  const popupAmbientSoundRef = useRef<Audio.Sound | null>(null);
+  const popupAmbientFadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fabPressInSoundRef = useRef<Audio.Sound | null>(null);
+  const fabPressOutSoundRef = useRef<Audio.Sound | null>(null);
+  const cardPressInSoundRef = useRef<Audio.Sound | null>(null);
+  const cardPressOutSoundRef = useRef<Audio.Sound | null>(null);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [aiPhotoBase64, setAiPhotoBase64] = useState<string | null>(null);
   const [aiDescription, setAiDescription] = useState('');
@@ -127,6 +236,69 @@ export default function NutritionScreen() {
   const [foodSearchLoading, setFoodSearchLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [showFlickerLogo, setShowFlickerLogo] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const lastFlickerRef = useRef(0);
+  const flickerTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const darkLogoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const IDLE_MS = 10000; // flicker after 10s idle
+  const DARK_LOGO_HOLD_MS = 10000; // after flickers, hold dark logo for 10s then back to main
+  const FLICKER_COOLDOWN_MS = 8000;
+  const LOGO_RAPID_PRESS_COUNT = 10;
+  const LOGO_RAPID_WINDOW_MS = 2500;
+  const logoRapidPressCountRef = useRef(0);
+  const logoRapidWindowStartRef = useRef(0);
+  // Quick flickers: [showAltMs, showMainMs] pairs; then we hold alt for 10s
+  const FLICKER_SEQUENCE: [number, number][] = [[100, 70], [180, 90], [120, 80]];
+  const reportActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    if (darkLogoTimeoutRef.current) {
+      clearTimeout(darkLogoTimeoutRef.current);
+      darkLogoTimeoutRef.current = null;
+    }
+    setShowFlickerLogo(false);
+  }, []);
+
+  const runFlickerThenHold = useCallback(() => {
+    flickerTimeoutsRef.current.forEach(clearTimeout);
+    flickerTimeoutsRef.current = [];
+    if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    let delay = 0;
+    FLICKER_SEQUENCE.forEach(([onMs, offMs]) => {
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(true), delay));
+      delay += onMs;
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(false), delay));
+      delay += offMs;
+    });
+    // After the flickers, show dark logo for 10s then revert to main without flickering
+    flickerTimeoutsRef.current.push(setTimeout(() => {
+      setShowFlickerLogo(true);
+      darkLogoTimeoutRef.current = setTimeout(() => {
+        setShowFlickerLogo(false);
+        darkLogoTimeoutRef.current = null;
+        lastFlickerRef.current = Date.now(); // so idle doesn't re-trigger flicker right after revert
+      }, DARK_LOGO_HOLD_MS);
+    }, delay));
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      const idleLongEnough = now - lastActivityRef.current >= IDLE_MS;
+      const cooldownPassed = now - lastFlickerRef.current >= FLICKER_COOLDOWN_MS;
+      const notInDarkHold = darkLogoTimeoutRef.current == null; // don't interrupt 10s revert
+      if (idleLongEnough && cooldownPassed && notInDarkHold) {
+        lastFlickerRef.current = now;
+        runFlickerThenHold();
+      }
+    }, 600);
+    return () => {
+      clearInterval(t);
+      flickerTimeoutsRef.current.forEach(clearTimeout);
+      if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    };
+  }, [runFlickerThenHold]);
 
   // Tab-bar pill dimensions for FAB positioning
   const PILL_BOTTOM = Platform.OS === 'ios' ? 28 : 12;
@@ -148,30 +320,18 @@ export default function NutritionScreen() {
   const [editFat, setEditFat] = useState('');
   const [editWater, setEditWater] = useState('');
 
-  // Reload from storage whenever this tab is focused (e.g. after reload or switching tabs) so progress is never lost
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
-
-  // Also reload when app comes back from background (e.g. after switching apps)
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-      if (nextState === 'active') loadData();
-    });
-    return () => sub.remove();
-  }, []);
-
-  const loadData = async () => {
-    const log = await getTodayNutritionLog();
+  // Reload from storage whenever this tab is focused or viewing date changes
+  const loadData = useCallback(async () => {
     const userSettings = await getUserSettings();
-    
-    if (!log) {
-      // Create today's log
+    setSettings(userSettings);
+    const date = viewingDate;
+    const log = await getNutritionLogByDate(date);
+    if (log) {
+      setTodayLog(log);
+    } else {
       const newLog: NutritionLog = {
         id: generateId(),
-        date: getTodayDateString(),
+        date,
         calories: 0,
         protein: 0,
         carbs: 0,
@@ -181,12 +341,234 @@ export default function NutritionScreen() {
       };
       await saveNutritionLog(newLog);
       setTodayLog(newLog);
-    } else {
-      setTodayLog(log);
     }
-    
-    setSettings(userSettings);
-  };
+  }, [viewingDate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  const prevViewingDateRef = useRef(viewingDate);
+  // Load the selected day's log when user taps a different date (not on initial mount)
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/24d86888-ef82-444e-aad8-90b62a37b0c8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'nutrition.tsx:viewingDate', message: 'viewingDate effect', data: { hypothesisId: 'H4', viewingDate, prev: prevViewingDateRef.current }, timestamp: Date.now() }) }).catch(() => {});
+    // #endregion
+    if (prevViewingDateRef.current !== viewingDate) {
+      prevViewingDateRef.current = viewingDate;
+      loadData();
+    }
+  }, [viewingDate, loadData]);
+
+  // Also reload when app comes back from background (e.g. after switching apps)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') loadData();
+    });
+    return () => sub.remove();
+  }, [loadData]);
+
+  const handleSelectDate = useCallback((dateString: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/24d86888-ef82-444e-aad8-90b62a37b0c8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'nutrition.tsx:handleSelectDate', message: 'user selected date', data: { hypothesisId: 'H1', dateString }, timestamp: Date.now() }) }).catch(() => {});
+    // #endregion
+    setViewingDate(dateString);
+  }, []);
+
+  // Load sounds: tap, click, popup-open, popup-ambient, fab in/out (0213(3)/(4)), card in/out (0213(5)/(6))
+  useEffect(() => {
+    let clickSound: Audio.Sound | null = null;
+    let tapSound: Audio.Sound | null = null;
+    let popupOpenSound: Audio.Sound | null = null;
+    let popupAmbientSound: Audio.Sound | null = null;
+    let fabPressInSound: Audio.Sound | null = null;
+    let fabPressOutSound: Audio.Sound | null = null;
+    let cardPressInSound: Audio.Sound | null = null;
+    let cardPressOutSound: Audio.Sound | null = null;
+    (async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: false, // respect silent mode – no sounds when muted
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        const { sound: sClick } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/click.mp4')
+        );
+        await sClick.setVolumeAsync(0.64); // 20% lower than 0.8
+        clickSound = sClick;
+        clickSoundRef.current = sClick;
+
+        const { sound: sTap } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/tap.mp4')
+        );
+        await sTap.setVolumeAsync(0.64); // 20% lower than 0.8
+        tapSound = sTap;
+        tapSoundRef.current = sTap;
+
+        const { sound: sPopup } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/popup-open.mp3')
+        );
+        await sPopup.setVolumeAsync(0.11); // popup open sound (20% of original 0.55)
+        popupOpenSound = sPopup;
+        popupOpenSoundRef.current = sPopup;
+
+        const { sound: sAmbient } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/popup-ambient.mp3')
+        );
+        await sAmbient.setVolumeAsync(0.05); // 5% volume
+        await sAmbient.setRateAsync(0.9, true); // 10% slower (pitchCorrect: true keeps pitch)
+        popupAmbientSound = sAmbient;
+        popupAmbientSoundRef.current = sAmbient;
+
+        const { sound: sFabIn } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/fab-press-in.mp4')
+        );
+        await sFabIn.setVolumeAsync(0.2); // FAB click in 20% volume
+        fabPressInSound = sFabIn;
+        fabPressInSoundRef.current = sFabIn;
+
+        const { sound: sFabOut } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/fab-press-out.mp4')
+        );
+        await sFabOut.setVolumeAsync(0.2); // FAB click out 20% volume
+        fabPressOutSound = sFabOut;
+        fabPressOutSoundRef.current = sFabOut;
+
+        const { sound: sCardIn } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/card-press-in.mp4')
+        );
+        await sCardIn.setVolumeAsync(0.2); // card press-in 20% volume
+        cardPressInSound = sCardIn;
+        cardPressInSoundRef.current = sCardIn;
+
+        const { sound: sCardOut } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/card-press-out.mp4')
+        );
+        await sCardOut.setVolumeAsync(0.2); // card press-out 20% volume
+        cardPressOutSound = sCardOut;
+        cardPressOutSoundRef.current = sCardOut;
+      } catch (_) {
+        // Assets missing or load failed – sounds will be silent
+      }
+    })();
+    return () => {
+      if (clickSound) clickSound.unloadAsync();
+      if (tapSound) tapSound.unloadAsync();
+      if (popupOpenSound) popupOpenSound.unloadAsync();
+      if (popupAmbientSound) popupAmbientSound.unloadAsync();
+      if (fabPressInSound) fabPressInSound.unloadAsync();
+      if (fabPressOutSound) fabPressOutSound.unloadAsync();
+      if (cardPressInSound) cardPressInSound.unloadAsync();
+      if (cardPressOutSound) cardPressOutSound.unloadAsync();
+      clickSoundRef.current = null;
+      tapSoundRef.current = null;
+      popupOpenSoundRef.current = null;
+      popupAmbientSoundRef.current = null;
+      fabPressInSoundRef.current = null;
+      fabPressOutSoundRef.current = null;
+      cardPressInSoundRef.current = null;
+      cardPressOutSoundRef.current = null;
+    };
+  }, []);
+
+  const playClickSound = useCallback(() => {
+    const s = clickSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+
+  const playTapSound = useCallback(() => {
+    const s = tapSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+
+  // Press = one sound, release = other sound (cards: 0213(5) in / 0213(6) out; FAB: 0213(3) in / 0213(4) out)
+  const playCardPressInSound = useCallback(() => {
+    const s = cardPressInSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+  const playCardPressOutSound = useCallback(() => {
+    const s = cardPressOutSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+  const playFabPressInSound = useCallback(() => {
+    const s = fabPressInSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+  const playFabPressOutSound = useCallback(() => {
+    const s = fabPressOutSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+
+  const playPopupOpenSound = useCallback(() => {
+    const s = popupOpenSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+
+  const playPopupAmbientSound = useCallback(() => {
+    const s = popupAmbientSoundRef.current;
+    if (!s) return;
+    if (popupAmbientFadeIntervalRef.current) {
+      clearInterval(popupAmbientFadeIntervalRef.current);
+      popupAmbientFadeIntervalRef.current = null;
+    }
+    s.setVolumeAsync(0.05).catch(() => {}); // reset so audible every time popup opens (5%)
+    s.setPositionAsync(0);
+    s.playAsync().catch(() => {});
+  }, []);
+
+  // When user clicks out (closes popup), ambient fades to 0 over 0.5s then stops. While popup is open it keeps playing.
+  const POPUP_AMBIENT_FADE_MS = 500;
+  const POPUP_AMBIENT_FADE_STEP_MS = 50;
+  const stopPopupAmbientSound = useCallback(() => {
+    const s = popupAmbientSoundRef.current;
+    if (!s) return;
+    if (popupAmbientFadeIntervalRef.current) {
+      clearInterval(popupAmbientFadeIntervalRef.current);
+      popupAmbientFadeIntervalRef.current = null;
+    }
+    const startVol = 0.05;
+    const steps = Math.max(1, Math.floor(POPUP_AMBIENT_FADE_MS / POPUP_AMBIENT_FADE_STEP_MS));
+    const stepVol = startVol / steps;
+    let current = startVol;
+    popupAmbientFadeIntervalRef.current = setInterval(() => {
+      current -= stepVol;
+      if (current <= 0) {
+        if (popupAmbientFadeIntervalRef.current) {
+          clearInterval(popupAmbientFadeIntervalRef.current);
+          popupAmbientFadeIntervalRef.current = null;
+        }
+        s.setVolumeAsync(0).then(() => s.stopAsync().catch(() => {})).catch(() => {});
+        return;
+      }
+      s.setVolumeAsync(current).catch(() => {});
+    }, POPUP_AMBIENT_FADE_STEP_MS);
+  }, []);
+
 
   // ── Form helpers ──
   const resetMealForm = () => {
@@ -250,8 +632,92 @@ export default function NutritionScreen() {
     setShowAddMeal(false);
   };
 
+  // ── Choice popup: keyframed fade + spring pop + staggered cards (smooth entrance, no bounce) ──
+  const popupHoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const runPopupHover = useCallback(() => {
+    const up = withTiming(1, { duration: 2400, easing: HOVER_EASING });
+    const down = withTiming(0, { duration: 2400, easing: HOVER_EASING });
+    const cycle = withSequence(up, down);
+    popupCardHover0.value = withDelay(0, cycle);
+    popupCardHover1.value = withDelay(HOVER_STAGGER_MS, cycle);
+    popupCardHover2.value = withDelay(HOVER_STAGGER_MS * 2, cycle);
+    popupCardHover3.value = withDelay(HOVER_STAGGER_MS * 3, cycle);
+  }, []);
+
+  useEffect(() => {
+    if (showChoicePopup) {
+      popupFade.value = 0;
+      popupPop.value = 0;
+      popupCard0.value = 0;
+      popupCard1.value = 0;
+      popupCard2.value = 0;
+      popupCard3.value = 0;
+      popupCardHover0.value = 0;
+      popupCardHover1.value = 0;
+      popupCardHover2.value = 0;
+      popupCardHover3.value = 0;
+      popupFade.value = withTiming(1, { duration: 380 });
+      popupPop.value = withSpring(1, { damping: 14, stiffness: 200, mass: 0.5 });
+      // Smooth entrance (no bounce): timing instead of spring
+      popupCard0.value = withDelay(0, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+      popupCard1.value = withDelay(POPUP_CARD_STAGGER_MS, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+      popupCard2.value = withDelay(POPUP_CARD_STAGGER_MS * 2, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+      popupCard3.value = withDelay(POPUP_CARD_STAGGER_MS * 3, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+      fabRotation.value = withSpring(45, FAB_ROTATION_SPRING); // plus → X, very subtle overshoot
+
+      if (popupHoverIntervalRef.current) clearInterval(popupHoverIntervalRef.current);
+      popupHoverIntervalRef.current = setInterval(runPopupHover, 5000);
+      return () => {
+        if (popupHoverIntervalRef.current) {
+          clearInterval(popupHoverIntervalRef.current);
+          popupHoverIntervalRef.current = null;
+        }
+      };
+    } else {
+      popupFade.value = 0;
+      popupPop.value = 0;
+      popupCard0.value = 0;
+      popupCard1.value = 0;
+      popupCard2.value = 0;
+      popupCard3.value = 0;
+      popupCardHover0.value = 0;
+      popupCardHover1.value = 0;
+      popupCardHover2.value = 0;
+      popupCardHover3.value = 0;
+      popupCardPress0.value = 1;
+      popupCardPress1.value = 1;
+      popupCardPress2.value = 1;
+      popupCardPress3.value = 1;
+      fabRotation.value = withSpring(0, FAB_ROTATION_SPRING); // X → plus, very subtle overshoot
+      if (popupHoverIntervalRef.current) {
+        clearInterval(popupHoverIntervalRef.current);
+        popupHoverIntervalRef.current = null;
+      }
+    }
+  }, [showChoicePopup, runPopupHover]);
+
+  const closeChoicePopup = useCallback(() => {
+    stopPopupAmbientSound();
+    popupPop.value = withTiming(0, { duration: 90 });
+    popupFade.value = withTiming(0, { duration: 120 }, (finished) => {
+      if (finished) runOnJS(setShowChoicePopup)(false);
+    });
+    fabRotation.value = withSpring(0, FAB_ROTATION_SPRING); // X → plus in sync with cards leaving, very subtle overshoot
+  }, [stopPopupAmbientSound]);
+
+  const popupCardPressIn = useCallback((card: 0 | 1 | 2 | 3) => {
+    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : card === 2 ? popupCardPress2 : popupCardPress3;
+    sv.value = withTiming(0.99, { duration: POPUP_CARD_PRESS_DURATION, easing: Easing.out(Easing.cubic) });
+  }, []);
+  const popupCardPressOut = useCallback((card: 0 | 1 | 2 | 3) => {
+    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : card === 2 ? popupCardPress2 : popupCardPress3;
+    sv.value = withTiming(1, { duration: POPUP_CARD_PRESS_DURATION, easing: Easing.out(Easing.cubic) });
+  }, []);
+
   // ── Choice popup handlers ──
   const handleChoiceSavedFoods = async () => {
+    stopPopupAmbientSound();
     setShowChoicePopup(false);
     const foods = await getSavedFoods();
     setSavedFoodsList(foods);
@@ -259,6 +725,7 @@ export default function NutritionScreen() {
   };
 
   const handleChoiceFoodDatabase = () => {
+    stopPopupAmbientSound();
     setShowChoicePopup(false);
     setFoodSearchQuery('');
     setFoodSearchResults([]);
@@ -266,6 +733,7 @@ export default function NutritionScreen() {
   };
 
   const handleChoiceScanFood = async () => {
+    stopPopupAmbientSound();
     setShowChoicePopup(false);
     if (!permission?.granted) {
       const result = await requestPermission();
@@ -283,6 +751,7 @@ export default function NutritionScreen() {
   };
 
   const handleChoiceManual = () => {
+    stopPopupAmbientSound();
     setShowChoicePopup(false);
     resetMealForm();
     setShowAddMeal(true);
@@ -492,20 +961,43 @@ export default function NutritionScreen() {
   // Carousel (horizontal paging between normal and flipped card layouts)
   const CAROUSEL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
   const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(page);
   };
 
-  const onCardPressIn = () => {
+  const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
+  const cardTouchStart = useRef({ x: 0, y: 0 });
+  const carouselDraggedRef = useRef(false); // set true when carousel scroll starts – prevents toggle on release
+
+  const onCardPressIn = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    reportActivity();
+    cardTouchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+    carouselDraggedRef.current = false;
+    playCardPressInSound();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    cardScale.value = withTiming(0.99, { duration: 80 });
+    cardScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) });
   };
 
-  const onCardPressOut = () => {
-    cardScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 });
-    isEaten.value = isEaten.value === 0 ? 1 : 0;
-    rollTrigger.value = rollTrigger.value + 1;
+  const onCardPressOut = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    const { x, y } = cardTouchStart.current;
+    const dx = e.nativeEvent.pageX - x;
+    const dy = e.nativeEvent.pageY - y;
+    const moved = Math.sqrt(dx * dx + dy * dy);
+    const wasDrag = carouselDraggedRef.current || moved >= TAP_SLOP;
+    if (!wasDrag) {
+      playCardPressOutSound();
+      isEaten.value = isEaten.value === 0 ? 1 : 0;
+      rollTrigger.value = rollTrigger.value + 1;
+    }
+    carouselDraggedRef.current = false;
+    cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
+  };
+
+  const onCarouselScrollBeginDrag = () => {
+    reportActivity();
+    carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
   return (
@@ -517,15 +1009,37 @@ export default function NutritionScreen() {
         ]}
       >
         <View style={styles.pageHeaderRow}>
-          <Image
-            source={require('../../assets/tmlsn-calories-logo.png')}
-            style={styles.pageHeaderLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.pageHeading}>
-            tmlsn cal.
-          </Text>
+          <Pressable
+            onPress={() => {
+              const now = Date.now();
+              if (now - logoRapidWindowStartRef.current > LOGO_RAPID_WINDOW_MS) {
+                logoRapidPressCountRef.current = 0;
+                logoRapidWindowStartRef.current = now;
+              }
+              logoRapidPressCountRef.current += 1;
+              if (logoRapidPressCountRef.current >= LOGO_RAPID_PRESS_COUNT) {
+                logoRapidPressCountRef.current = 0;
+                logoRapidWindowStartRef.current = 0;
+                lastFlickerRef.current = Date.now();
+                runFlickerThenHold();
+              }
+            }}
+            style={styles.pageHeaderLogoPressable}
+          >
+            <Image
+              source={showFlickerLogo ? require('../../assets/logo-flicker.png') : require('../../assets/tmlsn-calories-logo.png')}
+              style={styles.pageHeaderLogo}
+              resizeMode="contain"
+            />
+          </Pressable>
         </View>
+        <SwipeableWeekView
+          weekWidth={WEEK_STRIP_PAGE_WIDTH}
+          selectedDate={viewingDateAsDate}
+          onDaySelect={(date) => handleSelectDate(toDateString(date))}
+          initialDate={viewingDateAsDate}
+          showHeader={false}
+        />
         {/* Macro cards carousel – swipe left to reveal flipped layout */}
         {settings && todayLog && (
           <>
@@ -534,6 +1048,7 @@ export default function NutritionScreen() {
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               onScroll={handleCarouselScroll}
+              onScrollBeginDrag={onCarouselScrollBeginDrag}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
             >
@@ -556,7 +1071,7 @@ export default function NutritionScreen() {
                           />
                           <View>
                             <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
-                            <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesLeftLabel}>calories eaten</Text></Animated.View>
+                            <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
                           </View>
                         </View>
                         <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2 }]} />
@@ -578,9 +1093,9 @@ export default function NutritionScreen() {
                           suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>protein left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>protein eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>protein eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -599,9 +1114,9 @@ export default function NutritionScreen() {
                           suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>carbs left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>carbs eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>carbs eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -620,9 +1135,9 @@ export default function NutritionScreen() {
                           suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>fat left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>fat eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>fat eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -640,9 +1155,9 @@ export default function NutritionScreen() {
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
                           textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>sodium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>sodium eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>sodium eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -654,9 +1169,9 @@ export default function NutritionScreen() {
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
                           textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>potassium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>potassium eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>potassium eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -668,9 +1183,9 @@ export default function NutritionScreen() {
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
                           textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View>
+                        <View style={styles.macroLabelRow}>
                           <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>magnesium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroLeftLabel}>magnesium eaten</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>magnesium eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
@@ -678,7 +1193,8 @@ export default function NutritionScreen() {
                   </Pressable>
                 </Animated.View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={() => {
-                  cardScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 });
+                  playCardPressOutSound();
+                  cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
                 }}>
                   <Animated.View style={cardScaleStyle}>
                     <Card style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
@@ -714,42 +1230,103 @@ export default function NutritionScreen() {
         <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
       </ScrollView>
 
-      {/* Floating Action Button (FAB) — 24px above tab bar pill, same press animation as cards */}
-      <Pressable
+      {/* Floating Action Button (FAB) — 24px above tab bar pill; hold + drag stretches minimally in drag direction */}
+      <View
         style={[styles.fabTouchable, { bottom: PILL_BOTTOM + PILL_HEIGHT + 24 }]}
-        onPressIn={() => { fabScale.value = withTiming(0.99, { duration: 80 }); }}
-        onPressOut={() => { fabScale.value = withSpring(1, { damping: 18, stiffness: 200, mass: 0.8 }); }}
-        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowChoicePopup(true); }}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={(e) => {
+          reportActivity();
+          playFabPressInSound();
+          fabTouchStartRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+          fabScale.value = withTiming(FAB_PRESS_SCALE, { duration: FAB_PRESS_DURATION_MS, easing: FAB_PRESS_EASING });
+        }}
+        onResponderMove={(e) => {
+          const { x: startX, y: startY } = fabTouchStartRef.current;
+          const dx = e.nativeEvent.pageX - startX;
+          const dy = e.nativeEvent.pageY - startY;
+          fabStretchX.value = Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, dx * FAB_STRETCH_FACTOR));
+          fabStretchY.value = Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, dy * FAB_STRETCH_FACTOR));
+        }}
+        onResponderRelease={() => {
+          playFabPressOutSound();
+          fabRotation.value = withSpring(45, FAB_ROTATION_SPRING);
+          fabScale.value = withTiming(1, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
+          fabStretchX.value = withTiming(0, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
+          fabStretchY.value = withTiming(0, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
+          setShowChoicePopup(true);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          playPopupOpenSound();
+          playPopupAmbientSound();
+        }}
       >
         <Animated.View style={[styles.fab, fabScaleStyle]}>
-          <View style={styles.fabPlusH} />
-          <View style={styles.fabPlusV} />
+          <Animated.View style={[styles.fabStarWrap, fabStarStyle]}>
+            <Image source={require('../../assets/fab-star.png')} style={styles.fabStarImg} resizeMode="contain" />
+          </Animated.View>
+          <Animated.View style={[styles.fabIconWrap, fabIconStyle]}>
+            <View style={styles.fabPlusH} />
+            <View style={styles.fabPlusV} />
+          </Animated.View>
         </Animated.View>
-      </Pressable>
+      </View>
 
       {/* Choice Popup — 4 cards: saved foods, food database, scan food, manual entry — positioned just above FAB */}
-      <Modal visible={showChoicePopup} animationType="fade" transparent onRequestClose={() => setShowChoicePopup(false)}>
-        <Pressable style={styles.popupOverlay} onPress={() => setShowChoicePopup(false)}>
-          <View style={[styles.popupGridWrap, { paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + 56 + 16 }]}>
+      <Modal visible={showChoicePopup} animationType="none" transparent onRequestClose={closeChoicePopup}>
+        <Pressable style={styles.popupOverlayTouch} onPress={closeChoicePopup}>
+          <Animated.View style={[styles.popupOverlay, popupOverlayStyle]}>
+          <Animated.View style={[styles.popupGridWrap, popupContentStyle, { paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + 56 + 16 }]}>
           <View style={styles.popupGrid}>
             <View style={styles.popupGridRow}>
-              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceSavedFoods} activeOpacity={0.85}>
-                <Text style={styles.popupCardLabel}>saved foods</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceFoodDatabase} activeOpacity={0.85}>
-                <Text style={styles.popupCardLabel}>food database</Text>
-              </TouchableOpacity>
+              <Animated.View style={popupCardStyle0}>
+                <TouchableOpacity
+                  style={styles.popupCard}
+                  onPress={handleChoiceSavedFoods}
+                  onPressIn={() => popupCardPressIn(0)}
+                  onPressOut={() => popupCardPressOut(0)}
+                  activeOpacity={1}
+                >
+                  <Text style={styles.popupCardLabel}>saved foods</Text>
+                </TouchableOpacity>
+              </Animated.View>
+              <Animated.View style={popupCardStyle1}>
+                <TouchableOpacity
+                  style={styles.popupCard}
+                  onPress={handleChoiceFoodDatabase}
+                  onPressIn={() => popupCardPressIn(1)}
+                  onPressOut={() => popupCardPressOut(1)}
+                  activeOpacity={1}
+                >
+                  <Text style={styles.popupCardLabel}>search food</Text>
+                </TouchableOpacity>
+              </Animated.View>
             </View>
             <View style={styles.popupGridRow}>
-              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceScanFood} activeOpacity={0.85}>
-                <Text style={styles.popupCardLabel}>scan food</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.popupCard} onPress={handleChoiceManual} activeOpacity={0.85}>
-                <Text style={styles.popupCardLabel}>manual entry</Text>
-              </TouchableOpacity>
+              <Animated.View style={popupCardStyle2}>
+                <TouchableOpacity
+                  style={styles.popupCard}
+                  onPress={handleChoiceScanFood}
+                  onPressIn={() => popupCardPressIn(2)}
+                  onPressOut={() => popupCardPressOut(2)}
+                  activeOpacity={1}
+                >
+                  <Text style={styles.popupCardLabel}>scan food</Text>
+                </TouchableOpacity>
+              </Animated.View>
+              <Animated.View style={popupCardStyle3}>
+                <TouchableOpacity
+                  style={styles.popupCard}
+                  onPress={handleChoiceManual}
+                  onPressIn={() => popupCardPressIn(3)}
+                  onPressOut={() => popupCardPressOut(3)}
+                  activeOpacity={1}
+                >
+                  <Text style={styles.popupCardLabel}>manual entry</Text>
+                </TouchableOpacity>
+              </Animated.View>
             </View>
           </View>
-          </View>
+          </Animated.View>
+          </Animated.View>
         </Pressable>
       </Modal>
 
@@ -859,7 +1436,7 @@ export default function NutritionScreen() {
       <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => setShowFoodSearch(false)}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalContent, { maxHeight: '85%' }]}>
-            <Text style={styles.modalTitle}>Food Database</Text>
+            <Text style={styles.modalTitle}>Search food</Text>
             <TextInput
               style={styles.searchInput}
               placeholder="Search foods…"
@@ -1088,8 +1665,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   pageHeaderRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.md,
     gap: Spacing.sm,
   },
@@ -1097,6 +1675,7 @@ const styles = StyleSheet.create({
     height: (Typography.h2 + 10) * 1.2 * 1.1,
     width: (Typography.h2 + 10) * 1.2 * 1.1,
   },
+  pageHeaderLogoPressable: {},
   pageHeading: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h2 * 1.2 * 1.1,
@@ -1142,8 +1721,16 @@ const styles = StyleSheet.create({
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
-    marginTop: -3, // raised by 10 more (7 - 10)
-    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12, // -12% letter spacing
+    marginTop: -3,
+    letterSpacing: (CARD_LABEL_FONT_SIZE + 2) * -0.12,
+  },
+  caloriesEatenLabel: {
+    fontFamily: CardFont.family,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    marginTop: -3,
+    letterSpacing: (CARD_LABEL_FONT_SIZE + 2) * -0.12,
   },
   caloriesEatenGoal: {
     fontFamily: CardFont.family,
@@ -1177,7 +1764,7 @@ const styles = StyleSheet.create({
   macroLeftTextWrap: {
     alignSelf: 'flex-start',
     alignItems: 'flex-start',
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   macroLeftValue: {
     fontFamily: CardFont.family,
@@ -1191,7 +1778,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: 10 * -0.12, // -12%
+    letterSpacing: 10 * -0.12,
+  },
+  macroEatenLabel: {
+    fontFamily: CardFont.family,
+    fontSize: 10,
+    color: CARD_LABEL_COLOR,
+    marginTop: Spacing.xs,
+    letterSpacing: 10 * -0.12,
+  },
+  macroLabelRow: {
+    minWidth: 72,
   },
   macroEatenGoal: {
     fontFamily: CardFont.family,
@@ -1399,15 +1996,25 @@ const styles = StyleSheet.create({
   fab: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#C6C6C6',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
+  },
+  fabStarWrap: {
+    position: 'absolute',
+    width: 58,
+    height: 58,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fabStarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  fabIconWrap: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fabPlusH: {
     position: 'absolute',
@@ -1424,9 +2031,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#2F3031',
   },
   // ── Choice Popup ──
+  popupOverlayTouch: {
+    flex: 1,
+  },
   popupOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)', // 10% darker than 0.45
   },
   popupGridWrap: {
     flex: 1,
@@ -1441,21 +2051,23 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   popupCard: {
-    width: 140,
-    height: 112,
+    width: 174,
+    height: 98,
     borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primaryDark,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#C6C6C6',
+    paddingLeft: 12,
+    paddingBottom: 12,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
     ...Shadows.card,
   },
   popupCardLabel: {
     fontFamily: CardFont.family,
-    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontSize: 16,
     fontWeight: '500',
-    color: CARD_LABEL_COLOR,
-    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
-    textAlign: 'center',
+    color: '#2F3031',
+    letterSpacing: -0.105,
+    textAlign: 'left',
   },
   // ── Camera ──
   scannerContainer: {

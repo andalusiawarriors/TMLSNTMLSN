@@ -11,7 +11,7 @@ TMLSN App Notes — Structured + Cohesive
 * It converts attention → retained users → paid ecosystem.
 
 2) Product thesis
-Apps used to be single-purpose tools. Apps are becoming “hosts”: one place that bundles many functions and connects them.
+Apps used to be single-purpose tools.Apps are becoming “hosts”: one place that bundles many functions and connects them.
 * Now: apps = separate tools (calorie tracker, workout tracker, timer, notes)
 * Next: apps = platforms that contain tools + content + coaching + automation
 * TMLSN’s direction: start with tools, evolve into an integrated system
