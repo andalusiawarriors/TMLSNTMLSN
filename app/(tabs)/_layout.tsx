@@ -5,12 +5,12 @@ import { Platform, Text, Image, View, Pressable, StyleSheet } from 'react-native
 
 const PILL_LABEL_COLOR = '#C6C6C6';
 const TAB_LABEL_STYLE = {
-  fontSize: 11,
+  fontSize: 7,
   fontFamily: 'DMMono_400Regular',
   letterSpacing: -0.1,
   color: PILL_LABEL_COLOR,
-  marginTop: 6,
-  lineHeight: 14,
+  marginTop: 4,
+  lineHeight: 8,
   textShadowColor: 'rgba(0, 0, 0, 0.5)',
   textShadowOffset: { width: 0, height: 1 },
   textShadowRadius: 2,
@@ -34,9 +34,11 @@ const SELECTED_TAB_PILL_MIN_HEIGHT = 48;
 
 export default function TabsLayout() {
   const pathname = usePathname();
+  const isHomeSelected = pathname === '/' || pathname === '/(tabs)' || pathname.endsWith('index');
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
+  const isProfileSelected = pathname.includes('profile');
 
   return (
     <Tabs
@@ -89,7 +91,7 @@ export default function TabsLayout() {
           marginBottom: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 7,
           fontFamily: 'DMMono_400Regular',
           letterSpacing: -0.1,
           color: PILL_LABEL_COLOR,
@@ -110,9 +112,44 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          href: null,
           title: 'Home',
+          tabBarLabel: 'Home',
           headerTitle: 'TMLSN',
+          headerShown: true,
+          tabBarIcon: () => null,
+          tabBarButton: (props) => {
+            const { children, accessibilityState, ...rest } = props;
+            const selected = (accessibilityState?.selected ?? false) || isHomeSelected;
+            return (
+              <Pressable
+                {...rest}
+                accessibilityState={accessibilityState}
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 8 }}
+              >
+                <View
+                  style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: selected ? SELECTED_TAB_PILL_PADDING_H : 0,
+                    paddingVertical: selected ? SELECTED_TAB_PILL_PADDING_V : 0,
+                    borderRadius: SELECTED_TAB_PILL_RADIUS,
+                    backgroundColor: selected ? SELECTED_TAB_PILL_COLOR : 'transparent',
+                    ...(selected && {
+                      borderWidth: 1,
+                      borderColor: SELECTED_TAB_PILL_BORDER,
+                      minWidth: SELECTED_TAB_PILL_MIN_WIDTH,
+                      minHeight: SELECTED_TAB_PILL_MIN_HEIGHT,
+                    }),
+                  }}
+                >
+                  <View style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: ICON_BOX_SIZE, lineHeight: ICON_BOX_SIZE, color: PILL_LABEL_COLOR }}>🏠</Text>
+                  </View>
+                  <Text style={TAB_LABEL_STYLE}>Home</Text>
+                </View>
+              </Pressable>
+            );
+          },
         }}
       />
       <Tabs.Screen
@@ -239,6 +276,49 @@ export default function TabsLayout() {
                     <Text style={{ fontSize: ICON_BOX_SIZE, lineHeight: ICON_BOX_SIZE, color: PILL_LABEL_COLOR }}>📝</Text>
                   </View>
                   <Text style={TAB_LABEL_STYLE}>PROMPTS</Text>
+                </View>
+              </Pressable>
+            );
+          },
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarLabel: 'Profile',
+          headerTitle: 'Profile',
+          headerShown: true,
+          tabBarIcon: () => null,
+          tabBarButton: (props) => {
+            const { children, accessibilityState, ...rest } = props;
+            const selected = (accessibilityState?.selected ?? false) || isProfileSelected;
+            return (
+              <Pressable
+                {...rest}
+                accessibilityState={accessibilityState}
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 8 }}
+              >
+                <View
+                  style={{
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: selected ? SELECTED_TAB_PILL_PADDING_H : 0,
+                    paddingVertical: selected ? SELECTED_TAB_PILL_PADDING_V : 0,
+                    borderRadius: SELECTED_TAB_PILL_RADIUS,
+                    backgroundColor: selected ? SELECTED_TAB_PILL_COLOR : 'transparent',
+                    ...(selected && {
+                      borderWidth: 1,
+                      borderColor: SELECTED_TAB_PILL_BORDER,
+                      minWidth: SELECTED_TAB_PILL_MIN_WIDTH,
+                      minHeight: SELECTED_TAB_PILL_MIN_HEIGHT,
+                    }),
+                  }}
+                >
+                  <View style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: ICON_BOX_SIZE, lineHeight: ICON_BOX_SIZE, color: PILL_LABEL_COLOR }}>👤</Text>
+                  </View>
+                  <Text style={TAB_LABEL_STYLE}>Profile</Text>
                 </View>
               </Pressable>
             );

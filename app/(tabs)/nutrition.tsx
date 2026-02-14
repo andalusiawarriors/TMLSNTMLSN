@@ -224,6 +224,7 @@ export default function NutritionScreen() {
   const fabPressOutSoundRef = useRef<Audio.Sound | null>(null);
   const cardPressInSoundRef = useRef<Audio.Sound | null>(null);
   const cardPressOutSoundRef = useRef<Audio.Sound | null>(null);
+  const popupCloseSoundRef = useRef<Audio.Sound | null>(null);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [aiPhotoBase64, setAiPhotoBase64] = useState<string | null>(null);
   const [aiDescription, setAiDescription] = useState('');
@@ -387,6 +388,7 @@ export default function NutritionScreen() {
     let fabPressOutSound: Audio.Sound | null = null;
     let cardPressInSound: Audio.Sound | null = null;
     let cardPressOutSound: Audio.Sound | null = null;
+    let popupCloseSound: Audio.Sound | null = null;
     (async () => {
       try {
         await Audio.setAudioModeAsync({
@@ -451,6 +453,13 @@ export default function NutritionScreen() {
         await sCardOut.setVolumeAsync(0.2); // card press-out 20% volume
         cardPressOutSound = sCardOut;
         cardPressOutSoundRef.current = sCardOut;
+
+        const { sound: sPopupClose } = await Audio.Sound.createAsync(
+          require('../../assets/sounds/popup-close.mp4')
+        );
+        await sPopupClose.setVolumeAsync(0.1); // FAB popup close (click-out) 10% volume
+        popupCloseSound = sPopupClose;
+        popupCloseSoundRef.current = sPopupClose;
       } catch (_) {
         // Assets missing or load failed – sounds will be silent
       }
@@ -464,6 +473,7 @@ export default function NutritionScreen() {
       if (fabPressOutSound) fabPressOutSound.unloadAsync();
       if (cardPressInSound) cardPressInSound.unloadAsync();
       if (cardPressOutSound) cardPressOutSound.unloadAsync();
+      if (popupCloseSound) popupCloseSound.unloadAsync();
       clickSoundRef.current = null;
       tapSoundRef.current = null;
       popupOpenSoundRef.current = null;
@@ -472,6 +482,7 @@ export default function NutritionScreen() {
       fabPressOutSoundRef.current = null;
       cardPressInSoundRef.current = null;
       cardPressOutSoundRef.current = null;
+      popupCloseSoundRef.current = null;
     };
   }, []);
 
@@ -523,6 +534,14 @@ export default function NutritionScreen() {
 
   const playPopupOpenSound = useCallback(() => {
     const s = popupOpenSoundRef.current;
+    if (s) {
+      s.setPositionAsync(0);
+      s.playAsync().catch(() => {});
+    }
+  }, []);
+
+  const playPopupCloseSound = useCallback(() => {
+    const s = popupCloseSoundRef.current;
     if (s) {
       s.setPositionAsync(0);
       s.playAsync().catch(() => {});
@@ -698,13 +717,14 @@ export default function NutritionScreen() {
   }, [showChoicePopup, runPopupHover]);
 
   const closeChoicePopup = useCallback(() => {
+    playPopupCloseSound(); // play when user clicks out (not when selecting a card)
     stopPopupAmbientSound();
     popupPop.value = withTiming(0, { duration: 90 });
     popupFade.value = withTiming(0, { duration: 120 }, (finished) => {
       if (finished) runOnJS(setShowChoicePopup)(false);
     });
     fabRotation.value = withSpring(0, FAB_ROTATION_SPRING); // X → plus in sync with cards leaving, very subtle overshoot
-  }, [stopPopupAmbientSound]);
+  }, [playPopupCloseSound, stopPopupAmbientSound]);
 
   const popupCardPressIn = useCallback((card: 0 | 1 | 2 | 3) => {
     const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : card === 2 ? popupCardPress2 : popupCardPress3;
@@ -1285,6 +1305,11 @@ export default function NutritionScreen() {
                   onPressOut={() => popupCardPressOut(0)}
                   activeOpacity={1}
                 >
+                  <Image
+                    source={require('../../assets/saved-food-icon.png')}
+                    style={styles.scanFoodIcon}
+                    resizeMode="contain"
+                  />
                   <Text style={styles.popupCardLabel}>saved foods</Text>
                 </TouchableOpacity>
               </Animated.View>
@@ -1296,11 +1321,16 @@ export default function NutritionScreen() {
                   onPressOut={() => popupCardPressOut(1)}
                   activeOpacity={1}
                 >
+                  <Image
+                    source={require('../../assets/search-food-icon.png')}
+                    style={styles.searchFoodIcon}
+                    resizeMode="contain"
+                  />
                   <Text style={styles.popupCardLabel}>search food</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
-            <View style={styles.popupGridRow}>
+            <View style={[styles.popupGridRow, styles.popupGridRowCenter]}>
               <Animated.View style={popupCardStyle2}>
                 <TouchableOpacity
                   style={styles.popupCard}
@@ -1310,22 +1340,11 @@ export default function NutritionScreen() {
                   activeOpacity={1}
                 >
                   <Image
-                    source={require('../../assets/tmlsn-ai-logo.png')}
-                    style={styles.scanFoodLogo}
+                    source={require('../../assets/scan-food-ai-icon.png')}
+                    style={styles.scanFoodIcon}
                     resizeMode="contain"
                   />
                   <Text style={styles.popupCardLabel}>scan food</Text>
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View style={popupCardStyle3}>
-                <TouchableOpacity
-                  style={styles.popupCard}
-                  onPress={handleChoiceManual}
-                  onPressIn={() => popupCardPressIn(3)}
-                  onPressOut={() => popupCardPressOut(3)}
-                  activeOpacity={1}
-                >
-                  <Text style={styles.popupCardLabel}>manual entry</Text>
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -1727,7 +1746,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
     marginTop: -3,
-    letterSpacing: (CARD_LABEL_FONT_SIZE + 2) * -0.12,
+    letterSpacing: -0.11,
   },
   caloriesEatenLabel: {
     fontFamily: CardFont.family,
@@ -1735,14 +1754,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
     marginTop: -3,
-    letterSpacing: (CARD_LABEL_FONT_SIZE + 2) * -0.12,
+    letterSpacing: -0.11,
   },
   caloriesEatenGoal: {
     fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
-    letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
+    letterSpacing: -0.11,
   },
   mainCardRing: {
     borderWidth: 9,
@@ -1783,14 +1802,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: 10 * -0.12,
+    letterSpacing: -0.11,
   },
   macroEatenLabel: {
     fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     marginTop: Spacing.xs,
-    letterSpacing: 10 * -0.12,
+    letterSpacing: -0.11,
   },
   macroLabelRow: {
     minWidth: 72,
@@ -1799,7 +1818,7 @@ const styles = StyleSheet.create({
     fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
-    letterSpacing: 10 * -0.12,
+    letterSpacing: -0.11,
   },
   smallCardRing: {
     borderWidth: 6 * 0.99, // 1% less stroke (~5.94)
@@ -1824,7 +1843,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#FFFFFF',
-    letterSpacing: 15 * -0.12, // -12%
+    letterSpacing: -0.11,
   },
   healthScoreNaWrap: {
     position: 'absolute',
@@ -2055,31 +2074,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  popupGridRowCenter: {
+    justifyContent: 'center',
+  },
   popupCard: {
-    width: 174,
-    height: 98,
+    width: 173,
+    height: 87,
     borderRadius: BorderRadius.lg,
     backgroundColor: '#C6C6C6',
-    paddingLeft: 12,
     paddingBottom: 12,
     justifyContent: 'flex-end',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     ...Shadows.card,
   },
-  scanFoodLogo: {
+  scanFoodIcon: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 130,
-    height: 73,
+    top: -2,
+    left: '50%',
+    marginLeft: -61,
+    width: 122,
+    height: 67,
+  },
+  searchFoodIcon: {
+    position: 'absolute',
+    top: 3,
+    left: '50%',
+    marginLeft: -55,
+    width: 110,
+    height: 60,
   },
   popupCardLabel: {
     fontFamily: CardFont.family,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '500',
     color: '#2F3031',
-    letterSpacing: -0.105,
-    textAlign: 'left',
+    letterSpacing: -0.11,
+    textAlign: 'center',
   },
   // ── Camera ──
   scannerContainer: {

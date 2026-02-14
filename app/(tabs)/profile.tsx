@@ -3,13 +3,13 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../../constants/theme';
 
-export default function HomeScreen() {
+export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + Spacing.lg }]}>
-      <Text style={styles.title}>TMLSN</Text>
-      <Text style={styles.subtitle}>Tools · Content · Coaching</Text>
+      <Text style={styles.title}>Profile</Text>
+      <Text style={styles.subtitle}>Your account and settings</Text>
     </View>
   );
 }

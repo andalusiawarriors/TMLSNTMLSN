@@ -37,8 +37,11 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/nutrition.tsx` – added TMLSN AI logo to scan food popup card
+- `app/(tabs)/nutrition.tsx` – added TMLSN AI logo to scan food popup card; added FAB popup close sound (10%) when user clicks out
 - `assets/tmlsn-ai-logo.png` – new logo asset
+- `assets/sounds/popup-close.mp4` – FAB popup close sound (0213(7))
+- `app/(tabs)/_layout.tsx` – Home tab in center pill (4 tabs: TMLSN CAL, Home, WORKOUT TRACKER, PROMPTS)
+- `app/(tabs)/index.tsx` – Home page (TMLSN title + subtitle)
 
 ---
 
