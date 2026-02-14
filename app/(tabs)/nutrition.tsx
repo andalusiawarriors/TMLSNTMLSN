@@ -1309,6 +1309,11 @@ export default function NutritionScreen() {
                   onPressOut={() => popupCardPressOut(2)}
                   activeOpacity={1}
                 >
+                  <Image
+                    source={require('../../assets/tmlsn-ai-logo.png')}
+                    style={styles.scanFoodLogo}
+                    resizeMode="contain"
+                  />
                   <Text style={styles.popupCardLabel}>scan food</Text>
                 </TouchableOpacity>
               </Animated.View>
@@ -2060,6 +2065,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'flex-start',
     ...Shadows.card,
+  },
+  scanFoodLogo: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 130,
+    height: 73,
   },
   popupCardLabel: {
     fontFamily: CardFont.family,

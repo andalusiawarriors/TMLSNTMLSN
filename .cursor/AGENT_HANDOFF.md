@@ -37,7 +37,8 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- *(none)*
+- `app/(tabs)/nutrition.tsx` – added TMLSN AI logo to scan food popup card
+- `assets/tmlsn-ai-logo.png` – new logo asset
 
 ---
 
