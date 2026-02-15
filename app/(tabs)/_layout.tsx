@@ -15,20 +15,18 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect } from '../../utils/fabBridge';
+import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
+import { StreakShiftContext } from '../../context/streakShiftContext';
 
 // ── Pill constants ──
 const PILL_LABEL_COLOR = '#C6C6C6';
 const TAB_LABEL_STYLE: any = {
   fontSize: 10,
-  fontFamily: 'DMMono_500Medium',
+  fontWeight: '500',
   letterSpacing: -0.10,
   color: PILL_LABEL_COLOR,
   marginTop: 4,
   lineHeight: 12,
-  textShadowColor: 'rgba(0, 0, 0, 0.5)',
-  textShadowOffset: { width: 0, height: 1 },
-  textShadowRadius: 2,
 };
 const ICON_BOX_SIZE = 24;
 
@@ -100,7 +98,7 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     ),
   },
   profile: {
-    label: 'profile.',
+    label: 'progress.',
     tabIndex: 4,
     icon: (
       <Image
@@ -181,6 +179,56 @@ export default function TabsLayout() {
   const pillScaleX = useRef(new RNAnimated.Value(1)).current;
   const pillScaleY = useRef(new RNAnimated.Value(1)).current;
   const pillOpacity = useRef(new RNAnimated.Value(1)).current;
+
+  // Single source of truth: one shift value for tab bar + nutrition content (same rate, in sync)
+  const streakShiftX = useRef(new RNAnimated.Value(0)).current;
+  const streakOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const STREAK_SHIFT_LEFT_PX = -12;
+  const STREAK_SHIFT_RIGHT_PX = 24;
+  const STREAK_OPEN_DELAY_MS = 40; // match panel slide start
+  useEffect(() => {
+    const unsub = onStreakPopupState((open) => {
+      if (open) {
+        if (streakOpenTimeoutRef.current) clearTimeout(streakOpenTimeoutRef.current);
+        streakOpenTimeoutRef.current = setTimeout(() => {
+          streakOpenTimeoutRef.current = null;
+          // Diagnostic: listener to see if we ever reach the "right" step (value >= 20)
+          const listenerId = streakShiftX.addListener(({ value }: { value: number }) => {
+            if (value >= 20) console.log('[StreakShift] value reached right', value);
+          });
+          RNAnimated.sequence([
+            RNAnimated.timing(streakShiftX, {
+              toValue: STREAK_SHIFT_LEFT_PX,
+              duration: 50,
+              useNativeDriver: true,
+            }),
+            RNAnimated.timing(streakShiftX, {
+              toValue: STREAK_SHIFT_RIGHT_PX,
+              duration: 120,
+              useNativeDriver: true,
+            }),
+          ]).start(({ finished }) => {
+            streakShiftX.removeListener(listenerId);
+            console.log('[StreakShift] open sequence finished', finished);
+          });
+        }, STREAK_OPEN_DELAY_MS);
+      } else {
+        if (streakOpenTimeoutRef.current) {
+          clearTimeout(streakOpenTimeoutRef.current);
+          streakOpenTimeoutRef.current = null;
+        }
+        RNAnimated.timing(streakShiftX, {
+          toValue: 0,
+          duration: 100,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
+    return () => {
+      unsub();
+      if (streakOpenTimeoutRef.current) clearTimeout(streakOpenTimeoutRef.current);
+    };
+  }, [streakShiftX]);
 
   useEffect(() => {
     RNAnimated.spring(pillTranslateX, {
@@ -561,13 +609,14 @@ export default function TabsLayout() {
     const visibleRoutes = state.routes.filter((r: any) => r.name !== 'index');
 
     return (
-      <View
+      <RNAnimated.View
         style={{
           position: 'absolute',
           left: 0,
           right: 0,
           bottom: PILL_BOTTOM,
           height: PILL_HEIGHT,
+          transform: [{ translateX: streakShiftX }],
         }}
       >
         {/* ── Layer 1: Animated background (recedes when FAB opens) ── */}
@@ -584,10 +633,14 @@ export default function TabsLayout() {
             opacity: barOpacity,
           }}
         >
-          {/* Uniform border fill */}
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: PILL_BORDER_COLOR }]} />
-          {/* Dark fill */}
-          <View
+          {/* Border gradient (matches top pills) */}
+          <LinearGradient
+            colors={['#4E4F50', '#4A4B4C']}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
+          />
+          {/* Subtle gradient fill */}
+          <LinearGradient
+            colors={['#363738', '#2E2F30']}
             style={{
               position: 'absolute',
               top: 1,
@@ -595,7 +648,6 @@ export default function TabsLayout() {
               right: 1,
               bottom: 1,
               borderRadius: PILL_RADIUS - 1,
-              backgroundColor: PILL_BG_COLOR,
             }}
           />
 
@@ -710,9 +762,10 @@ export default function TabsLayout() {
             );
           })}
         </RNAnimated.View>
-      </View>
+      </RNAnimated.View>
     );
   }, [
+    streakShiftX,
     barScale, barTranslateY, barOpacity,
     pillTranslateX, pillScaleX, pillScaleY, pillOpacity,
     tabScales, handleTabPressIn, handleTabPressOut, handleTabLongPress,
@@ -721,6 +774,7 @@ export default function TabsLayout() {
   ]);
 
   return (
+    <StreakShiftContext.Provider value={streakShiftX}>
     <View style={{ flex: 1 }}>
       <Tabs
         initialRouteName="nutrition"
@@ -860,6 +914,7 @@ export default function TabsLayout() {
         </View>
       )}
     </View>
+    </StreakShiftContext.Provider>
   );
 }
 
@@ -895,7 +950,6 @@ const popupStyles = StyleSheet.create({
     height: 60,
   },
   cardLabel: {
-    fontFamily: POPUP_CARD_FONT,
     fontSize: 13,
     fontWeight: '500',
     color: '#2F3031',

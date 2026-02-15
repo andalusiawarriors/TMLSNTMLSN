@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   Image,
+  ImageBackground,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -18,23 +19,32 @@ import {
   Platform,
   AppState,
   AppStateStatus,
+  RefreshControl,
+  Animated as RNAnimated,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname } from 'expo-router';
-import { onCardSelect } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState } from '../../utils/fabBridge';
+import { StreakShiftContext } from '../../context/streakShiftContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedReaction,
   withTiming,
   withSpring,
+  withSequence,
+  withRepeat,
   runOnJS,
   Easing,
+  cancelAnimation,
+  interpolate,
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -64,9 +74,9 @@ const Font = {
   extraBold: 'EBGaramond_800ExtraBold',
 } as const;
 
-// DM Mono for calories/macro cards (as in tab bar)
+// Card font: system default (DMMono_500Medium was never loaded so cards always used system fallback)
 const CardFont = {
-  family: 'DMMono_500Medium',
+  family: undefined as string | undefined,
   letterSpacing: -0.1,
 } as const;
 
@@ -100,6 +110,16 @@ export default function NutritionScreen() {
     transform: [{ scale: cardScale.value }],
   }));
 
+  // Top pills: scale-in on press (same as calorie card, no sound)
+  const streakPillScale = useSharedValue(1);
+  const streakPillScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: streakPillScale.value }],
+  }));
+  const profilePillScale = useSharedValue(1);
+  const profilePillScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: profilePillScale.value }],
+  }));
+
   const isEaten = useSharedValue(0);
   const rollTrigger = useSharedValue(0);
 
@@ -118,19 +138,60 @@ export default function NutritionScreen() {
   const eatenLabelStyle = useAnimatedStyle(() => ({ opacity: eatenLabelOp.value }));
 
   // ── Day-switch card slide animation ──
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
   const cardSlideX = useSharedValue(0);
   const cardSlideOpacity = useSharedValue(1);
-  const cardSlideScale = useSharedValue(1);
   const prevDateRef = useRef<string>(viewingDate);
-  const SLIDE_DISTANCE = Dimensions.get('window').width * 0.25;
+  const SLIDE_DISTANCE = SCREEN_WIDTH * 0.3;
 
   const cardSlideStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: cardSlideX.value },
-      { scale: cardSlideScale.value },
-    ],
+    transform: [{ translateX: cardSlideX.value }],
     opacity: cardSlideOpacity.value,
   }));
+
+  const [fireStreakPopupVisible, setFireStreakPopupVisible] = useState(false);
+  // Fire streak popup: panel slides in from left (animated value: -width = off left, 0 = visible)
+  const fireStreakSlideX = useRef(new RNAnimated.Value(-Dimensions.get('window').width)).current;
+  // Content + tab bar shift: single value from layout (same rate, in sync)
+  const streakShiftX = useContext(StreakShiftContext);
+  const streakShiftXOrZero = useRef(new RNAnimated.Value(0)).current;
+  const contentShiftX = streakShiftX ?? streakShiftXOrZero;
+
+  useEffect(() => {
+    if (fireStreakPopupVisible) {
+      emitStreakPopupState(true);
+      const w = Dimensions.get('window').width;
+      fireStreakSlideX.setValue(-w);
+      const startSlide = () => {
+        RNAnimated.timing(fireStreakSlideX, {
+          toValue: 0,
+          duration: 120,
+          useNativeDriver: true,
+        }).start();
+      };
+      const t = setTimeout(startSlide, 40);
+      return () => clearTimeout(t);
+    }
+  }, [fireStreakPopupVisible]);
+
+  const closeFireStreakPopup = useCallback(() => {
+    const w = Dimensions.get('window').width;
+    emitStreakPopupState(false); // layout runs shift-back in sync with panel
+    RNAnimated.timing(fireStreakSlideX, {
+      toValue: -w,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setFireStreakPopupVisible(false);
+    });
+  }, []);
+
+  // Real blur-to-focus: BlurView overlay fades out so content goes from blurred → sharp
+  const cardTextReveal = useSharedValue(1);
+  const blurOverlayStyle = useAnimatedStyle(() => {
+    const r = cardTextReveal.value;
+    return { opacity: interpolate(r, [0, 1], [1, 0]) };
+  });
 
   // ── New food-logging state ──
   const [showCamera, setShowCamera] = useState(false);
@@ -286,31 +347,28 @@ export default function NutritionScreen() {
 
   const applyDateAndSlideIn = useCallback((dateString: string, forward: boolean) => {
     setViewingDate(dateString);
-    // Snap to entry position on the opposite side
-    cardSlideX.value = forward ? SLIDE_DISTANCE * 0.6 : -SLIDE_DISTANCE * 0.6;
-    cardSlideScale.value = 0.97;
+    prevDateRef.current = dateString;
+    // Snap to entry position on the opposite side (forward = slid out left → enter from right)
+    cardSlideX.value = forward ? SLIDE_DISTANCE : -SLIDE_DISTANCE;
     cardSlideOpacity.value = 0;
-    // Spring in — organic, slightly bouncy settle
-    const springConfig = { damping: 22, stiffness: 280, mass: 0.8 };
-    cardSlideX.value = withSpring(0, springConfig);
-    cardSlideScale.value = withSpring(1, { damping: 20, stiffness: 300, mass: 0.7 });
-    cardSlideOpacity.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.quad) });
-  }, [cardSlideX, cardSlideOpacity, cardSlideScale, SLIDE_DISTANCE]);
+    cardTextReveal.value = 0;
+    // Animate in: slide + fade + blur-to-focus text (~220ms easeOut)
+    cardSlideX.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
+    cardSlideOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
+    cardTextReveal.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
+  }, [cardSlideX, cardSlideOpacity, cardTextReveal, SLIDE_DISTANCE]);
 
   const handleSelectDate = useCallback((dateString: string) => {
     if (dateString === prevDateRef.current) return;
     const forward = dateString > prevDateRef.current;
-    prevDateRef.current = dateString;
 
-    // Quick exit — scale down slightly, slide and fade out
+    // Animate out: slide and fade — ~180ms easeIn
     const exitX = forward ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
-    cardSlideX.value = withTiming(exitX, { duration: 140, easing: Easing.in(Easing.quad) });
-    cardSlideScale.value = withTiming(0.96, { duration: 140, easing: Easing.in(Easing.quad) });
-    cardSlideOpacity.value = withTiming(0, { duration: 120, easing: Easing.in(Easing.quad) }, () => {
-      // Once exit completes, update data and spring in from the other side
+    cardSlideX.value = withTiming(exitX, { duration: 180, easing: Easing.in(Easing.quad) });
+    cardSlideOpacity.value = withTiming(0, { duration: 180, easing: Easing.in(Easing.quad) }, () => {
       runOnJS(applyDateAndSlideIn)(dateString, forward);
     });
-  }, [cardSlideX, cardSlideOpacity, cardSlideScale, SLIDE_DISTANCE, applyDateAndSlideIn]);
+  }, [cardSlideX, cardSlideOpacity, SLIDE_DISTANCE, applyDateAndSlideIn]);
 
   // Load sounds: tap, click, card in/out (popup sounds moved to _layout.tsx)
   useEffect(() => {
@@ -698,7 +756,6 @@ export default function NutritionScreen() {
 
   const insets = useSafeAreaInsets();
   const headerHeight = 44;
-  const contentTopPadding = ((insets.top + headerHeight) / 2 + Spacing.md) * 1.2;
 
   // Calories left card: 349×136 dp, radius 16
   const CALORIES_CARD_WIDTH = 349;
@@ -722,6 +779,8 @@ export default function NutritionScreen() {
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
   const cardTouchStart = useRef({ x: 0, y: 0 });
   const carouselDraggedRef = useRef(false); // set true when carousel scroll starts – prevents toggle on release
+  const mainScrollPullRef = useRef(false);
+  const mainScrollDragBegunRef = useRef(false); // true when user is pulling down main list – don’t run card click-out animation
 
   const onCardPressIn = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
     reportActivity();
@@ -737,14 +796,29 @@ export default function NutritionScreen() {
     const dx = e.nativeEvent.pageX - x;
     const dy = e.nativeEvent.pageY - y;
     const moved = Math.sqrt(dx * dx + dy * dy);
-    const wasDrag = carouselDraggedRef.current || moved >= TAP_SLOP;
+    const wasScrollPull = mainScrollPullRef.current || mainScrollDragBegunRef.current; // scroll down or drag begun (catches quick scroll before contentOffset updates)
+    const wasCarouselDrag = carouselDraggedRef.current; // user slid carousel left/right during press
+    const wasDrag = wasCarouselDrag || moved >= TAP_SLOP || wasScrollPull;
     if (!wasDrag) {
       playCardPressOutSound();
       isEaten.value = isEaten.value === 0 ? 1 : 0;
       rollTrigger.value = rollTrigger.value + 1;
     }
     carouselDraggedRef.current = false;
-    cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
+    if (wasScrollPull) {
+      cardScale.value = 1; // snap back without click-out animation when touch was scroll-down
+    } else {
+      cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
+    }
+  };
+
+  const onCardPressOutScaleOnly = () => {
+    if (mainScrollPullRef.current || mainScrollDragBegunRef.current) {
+      cardScale.value = 1;
+    } else {
+      playCardPressOutSound();
+      cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
+    }
   };
 
   const onCarouselScrollBeginDrag = () => {
@@ -752,14 +826,301 @@ export default function NutritionScreen() {
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
+  // ── Pull-to-refresh flywheel ──
+  const REFRESH_THRESHOLD = 80; // arc 0–360° over this many px
+  const pullDistance = useSharedValue(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const isRefreshingSv = useSharedValue(0); // 1 when refreshing, 0 otherwise – for worklet opacity
+  const spinAnim = useSharedValue(0);
+  const flywheelFadeOut = useSharedValue(1); // 0 after refresh complete (rise + fade); reset to 1 when user pulls
+  const flywheelTranslateY = useSharedValue(0); // rises (negative) when refresh completes; 0 when pulling/refreshing
+
+  const handleMainScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = event.nativeEvent.contentOffset.y;
+    mainScrollPullRef.current = y < 0;
+    if (y >= 0) mainScrollDragBegunRef.current = false; // clear when scrolled back to top
+    pullDistance.value = y < 0 ? -y : 0;
+  }, [pullDistance]);
+
+  const handleMainScrollBeginDrag = useCallback(() => {
+    mainScrollDragBegunRef.current = true; // user started dragging main scroll (fires before first onScroll with y < 0 on quick drag)
+  }, []);
+
+  const handleMainScrollEndDrag = useCallback(() => {
+    mainScrollDragBegunRef.current = false;
+  }, []);
+
+  const FLYWHEEL_RISE_MS = 250; // flywheel rise + fade duration
+  const MIN_REFRESH_HOLD_MS = 700; // keep content locked at least this long
+  const LOCKED_PULL_OFFSET = 70; // keep scroll at this negative offset while refreshing
+  const refreshStartTimeRef = useRef<number>(0);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const releaseLockRef = useRef(false); // true when we're done and should stop forcing -70 and rise back
+
+  const handleRefresh = useCallback(() => {
+    releaseLockRef.current = false;
+    refreshStartTimeRef.current = Date.now();
+    setRefreshing(true);
+    loadData().then(() => {
+      const elapsed = Date.now() - refreshStartTimeRef.current;
+      const waitBeforeRise = Math.max(0, MIN_REFRESH_HOLD_MS - elapsed);
+      setTimeout(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        cancelAnimation(spinAnim);
+        flywheelTranslateY.value = withTiming(-56, { duration: FLYWHEEL_RISE_MS });
+        flywheelFadeOut.value = withTiming(0, { duration: FLYWHEEL_RISE_MS });
+        setTimeout(() => {
+          releaseLockRef.current = true; // stop scroll lock from overriding
+          setRefreshing(false);
+          requestAnimationFrame(() => {
+            mainScrollRef.current?.scrollTo({ y: 0, animated: true });
+          });
+        }, FLYWHEEL_RISE_MS);
+      }, waitBeforeRise);
+    });
+  }, [loadData, spinAnim, flywheelTranslateY, flywheelFadeOut]);
+
+  // Force content to stay pulled down while refreshing (skip when we're releasing so content can rise)
+  useEffect(() => {
+    if (!refreshing) return;
+    const id = setInterval(() => {
+      if (releaseLockRef.current) return;
+      mainScrollRef.current?.scrollTo({
+        y: -LOCKED_PULL_OFFSET,
+        animated: false,
+      });
+    }, 50);
+    return () => clearInterval(id);
+  }, [refreshing]);
+
+  // Start / stop continuous spin and sync refreshing state to worklet; rise is started from handleRefresh
+  useEffect(() => {
+    isRefreshingSv.value = withTiming(refreshing ? 1 : 0, { duration: 150 });
+    if (refreshing) {
+      flywheelFadeOut.value = 1;
+      flywheelTranslateY.value = 0;
+      spinAnim.value = 0;
+      spinAnim.value = withRepeat(
+        withTiming(360, { duration: 800, easing: Easing.linear }),
+        -1, // infinite
+      );
+    } else {
+      cancelAnimation(spinAnim);
+      // Rise + fade are started in handleRefresh when loadData completes; don't re-trigger here
+    }
+  }, [refreshing, spinAnim, isRefreshingSv, flywheelFadeOut, flywheelTranslateY]);
+
+  // Reset fade and rise when user pulls so flywheel is visible again at fixed Y
+  useAnimatedReaction(
+    () => pullDistance.value,
+    (curr) => {
+      if (curr > 0) {
+        flywheelFadeOut.value = 1;
+        flywheelTranslateY.value = 0;
+      }
+    },
+  );
+
+  const flywheelStyle = useAnimatedStyle(() => {
+    // Pull-phase rotation: proportional 0-360° over REFRESH_THRESHOLD (80px)
+    const pullRotation = Math.min(pullDistance.value / REFRESH_THRESHOLD, 1) * 360;
+    // Continuous spin: use modulo so 360→0 repeat has no visual jump
+    const spinDeg = spinAnim.value % 360;
+    const totalRotation = pullRotation + spinDeg;
+    // Opacity: full during refresh; otherwise reveal over first 20px of pull; then multiply by complete-phase fade
+    const baseOpacity = isRefreshingSv.value > 0.5
+      ? 1
+      : pullDistance.value > 2
+        ? Math.min(pullDistance.value / 20, 1)
+        : 0;
+    const opacity = baseOpacity * flywheelFadeOut.value;
+    return {
+      transform: [
+        { translateY: flywheelTranslateY.value },
+        { rotate: `${totalRotation}deg` },
+      ],
+      opacity,
+    };
+  });
+
+  // Top pills: 54pt from screen top; horizontal padding = calorie card inset (Spacing.md + centering offset)
+  const TOP_LEFT_PILL_TOP = 54;
+  const calorieCardLeft = Spacing.md + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
+  const TOP_RIGHT_CIRCLE_SIZE = 40; // circle, same stroke as pill
+  const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2; // 20
+
   return (
     <View style={styles.container}>
-      <ScrollView
+      <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
+        {/* Background image behind everything */}
+        <Image
+          source={require('../../assets/home-background.png')}
+          style={styles.homeBackgroundImage}
+          resizeMode="cover"
+        />
+        {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
+        <View
+          style={[styles.flywheelOverlay, { top: TOP_LEFT_PILL_TOP + 12 }]}
+          pointerEvents="none"
+        >
+          <Animated.View style={[styles.flywheelWrap, flywheelStyle]}>
+            <View style={styles.flywheelRing} />
+          </Animated.View>
+        </View>
+        <ScrollView
+        ref={mainScrollRef}
+        style={styles.scrollViewLayer}
+        scrollEventThrottle={16}
+        onScroll={handleMainScroll}
+        onScrollBeginDrag={handleMainScrollBeginDrag}
+        onScrollEndDrag={handleMainScrollEndDrag}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="transparent"
+          />
+        }
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: contentTopPadding },
+          { paddingTop: TOP_LEFT_PILL_TOP },
         ]}
       >
+        {/* Top-left pill — same stroke as bottom pill + slight gradient; scale animation like calorie card (no sound) */}
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: TOP_LEFT_PILL_TOP,
+            left: calorieCardLeft,
+            zIndex: 10,
+            width: 60,
+            height: 40,
+          }}
+          onPressIn={() => { streakPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPressOut={() => { streakPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPress={() => setFireStreakPopupVisible(true)}
+        >
+
+
+
+
+
+
+          <Animated.View style={[{ width: 60, height: 40 }, streakPillScaleStyle]}>
+            <View
+              style={{
+                width: 60,
+                height: 40,
+                borderRadius: 28,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Border gradient (same idea as bottom pill) */}
+              <LinearGradient
+                colors={['#4E4F50', '#4A4B4C']}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }}
+              />
+              {/* Fill gradient */}
+              <LinearGradient
+                colors={['#363738', '#2E2F30']}
+                style={{
+                  position: 'absolute',
+                  top: 1,
+                  left: 1,
+                  right: 1,
+                  bottom: 1,
+                  borderRadius: 27,
+                }}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2.9,
+                }}
+              >
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2.9, transform: [{ translateX: -0.17 }] }}
+                >
+                  <Image
+                    source={require('../../assets/firestreakhomepage.png')}
+                    style={{ width: 19, height: 19 }}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.pillStreakCount}>0</Text>
+                </View>
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
+
+        {/* Top-right circle — same stroke + slight gradient; scale animation like calorie card (no sound) */}
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: TOP_LEFT_PILL_TOP,
+            right: calorieCardLeft,
+            zIndex: 10,
+            width: TOP_RIGHT_CIRCLE_SIZE,
+            height: TOP_RIGHT_CIRCLE_SIZE,
+          }}
+          onPressIn={() => { profilePillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPressOut={() => { profilePillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPress={() => {}}
+        >
+          <Animated.View style={[{ width: TOP_RIGHT_CIRCLE_SIZE, height: TOP_RIGHT_CIRCLE_SIZE }, profilePillScaleStyle]}>
+            <View
+              style={{
+                width: TOP_RIGHT_CIRCLE_SIZE,
+                height: TOP_RIGHT_CIRCLE_SIZE,
+                borderRadius: TOP_RIGHT_CIRCLE_RADIUS,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Border gradient (same as bottom pill) */}
+              <LinearGradient
+                colors={['#4E4F50', '#4A4B4C']}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: TOP_RIGHT_CIRCLE_RADIUS }}
+              />
+              {/* Fill gradient */}
+              <LinearGradient
+                colors={['#363738', '#2E2F30']}
+                style={{
+                  position: 'absolute',
+                  top: 1,
+                  left: 1,
+                  right: 1,
+                  bottom: 1,
+                  borderRadius: TOP_RIGHT_CIRCLE_RADIUS - 1,
+                }}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Image
+                  source={require('../../assets/profile-top-icon.png')}
+                  style={{ width: TOP_RIGHT_CIRCLE_SIZE - 8, height: TOP_RIGHT_CIRCLE_SIZE - 8 }}
+                  resizeMode="contain"
+                />
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
+
         <View style={styles.pageHeaderRow}>
           <Pressable
             onPress={() => {
@@ -792,8 +1153,10 @@ export default function NutritionScreen() {
           initialDate={viewingDateAsDate}
           showHeader={false}
         />
-        {/* Animated wrapper for day-switch slide */}
+        {/* Animated wrapper for day-switch slide + real blur overlay (BlurView fades out → sharp) */}
         <Animated.View style={cardSlideStyle}>
+          <View style={{ position: 'relative' }}>
+            <View>
         {/* Macro cards carousel – swipe left to reveal flipped layout */}
         {settings && todayLog && (
           <>
@@ -810,7 +1173,7 @@ export default function NutritionScreen() {
               <View style={{ width: CAROUSEL_WIDTH }}>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                   <Animated.View style={cardScaleStyle}>
-                    <Card style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
+                    <Card gradientFill style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
                       <View style={styles.caloriesLeftContent}>
                         <View style={styles.caloriesLeftTextWrap}>
                           <BlurRollNumber
@@ -828,14 +1191,20 @@ export default function NutritionScreen() {
                             <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
                           </View>
                         </View>
-                        <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2 }]} />
-                      </View>
+                        <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Image
+                            source={require('../../assets/calorie-ring-flame.png')}
+                            style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF' }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                        </View>
                     </Card>
                   </Animated.View>
                 </Pressable>
                 <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`}
@@ -852,11 +1221,17 @@ export default function NutritionScreen() {
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>protein eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Image
+                          source={require('../../assets/protein-ring-icon.png')}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF', transform: [{ rotate: '325deg' }] }}
+                          resizeMode="contain"
+                        />
+                      </View>
                     </Card>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`}
@@ -873,11 +1248,17 @@ export default function NutritionScreen() {
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>carbs eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Image
+                          source={require('../../assets/carbs-ring-icon.png')}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.45, height: SMALL_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF', transform: [{ rotate: '-45deg' }] }}
+                          resizeMode="contain"
+                        />
+                      </View>
                     </Card>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`}
@@ -894,7 +1275,13 @@ export default function NutritionScreen() {
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>fat eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Image
+                          source={require('../../assets/fat-ring-icon.png')}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                      </View>
                     </Card>
                   </Pressable>
                 </Animated.View>
@@ -904,7 +1291,7 @@ export default function NutritionScreen() {
               <View style={{ width: CAROUSEL_WIDTH }}>
                 <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -918,7 +1305,7 @@ export default function NutritionScreen() {
                     </Card>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -932,7 +1319,7 @@ export default function NutritionScreen() {
                     </Card>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -946,12 +1333,9 @@ export default function NutritionScreen() {
                     </Card>
                   </Pressable>
                 </Animated.View>
-                <Pressable onPressIn={onCardPressIn} onPressOut={() => {
-                  playCardPressOutSound();
-                  cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
-                }}>
+                <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
                   <Animated.View style={cardScaleStyle}>
-                    <Card style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
+                    <Card gradientFill style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
                       <View style={styles.healthScoreHeaderRow}>
                         <Text style={styles.healthScoreTitle}>health score</Text>
                       </View>
@@ -979,11 +1363,85 @@ export default function NutritionScreen() {
           </>
         )}
 
-        {/* Recently uploaded – title + card same size as calories left */}
+        {/* Recently uploaded – title + card same width/alignment as calorie card above */}
         <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
-        <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
+        <Card
+          gradientFill
+          style={[
+            styles.caloriesLeftCard,
+            styles.recentlyUploadedCard,
+            {
+              width: CALORIES_CARD_WIDTH,
+              minHeight: CARD_UNIFIED_HEIGHT,
+              borderRadius: CALORIES_CARD_RADIUS,
+              alignSelf: 'center',
+            },
+          ]}
+        />
+            </View>
+            <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, blurOverlayStyle]} pointerEvents="none">
+              <BlurView
+                intensity={100}
+                tint="dark"
+                {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+                style={StyleSheet.absoluteFill}
+              />
+              {/* Strong frosted tint so diffuse/out-of-focus is visible even when native blur is subtle */}
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.72)' }]} />
+            </Animated.View>
+          </View>
         </Animated.View>
       </ScrollView>
+      </RNAnimated.View>
+
+      {/* Fire streak full-screen popup — slides in from left when pill is tapped */}
+      <Modal
+        visible={fireStreakPopupVisible}
+        transparent
+        animationType="none"
+        onRequestClose={closeFireStreakPopup}
+        statusBarTranslucent
+      >
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}>
+          <Pressable
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'transparent', zIndex: 0 }]}
+            onPress={closeFireStreakPopup}
+          />
+          <RNAnimated.View
+            pointerEvents="box-none"
+            collapsable={false}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: SCREEN_WIDTH,
+              height: SCREEN_HEIGHT,
+              zIndex: 1,
+              elevation: 20,
+              backgroundColor: Colors.primaryDark,
+              transform: [{ translateX: fireStreakSlideX }],
+            }}
+          >
+            <ImageBackground
+              source={require('../../assets/streakbackground.png')}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+              resizeMode="cover"
+            >
+              <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: Spacing.lg }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg }}>
+                  <Text style={{ fontFamily: Font.semiBold, fontSize: 22, color: Colors.primaryLight }}>Fire Streak</Text>
+                  <Pressable onPress={closeFireStreakPopup} hitSlop={12}>
+                    <Text style={{ fontSize: 28, color: Colors.primaryLight }}>×</Text>
+                  </Pressable>
+                </View>
+                <Text style={{ fontFamily: Font.regular, fontSize: 17, color: Colors.primaryLight }}>
+                  Your streak and fire stats will appear here.
+                </Text>
+              </View>
+            </ImageBackground>
+          </RNAnimated.View>
+        </View>
+      </Modal>
 
       {/* FAB is now rendered in _layout.tsx (inside the pill). Press event arrives via fabBridge. */}
 
@@ -1319,9 +1777,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.primaryDark,
   },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  flywheelOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1, // behind scroll content so logo is always on top
+  },
+  scrollViewLayer: {
+    zIndex: 2, // scroll content (including logo) always in front of flywheel
+  },
+  flywheelWrap: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flywheelRing: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 3,
+    borderColor: 'rgba(198, 198, 198, 0.9)',
+    borderTopColor: 'transparent',
+    backgroundColor: 'transparent',
+  },
   contentContainer: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
+  },
+  pillStreakCount: {
+    color: '#C6C6C6',
+    fontSize: 13,
+    fontWeight: '600',
   },
   pageHeaderRow: {
     flexDirection: 'column',
@@ -1436,14 +1928,14 @@ const styles = StyleSheet.create({
     fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
-    marginTop: Spacing.xs,
+    marginTop: -3,
     letterSpacing: -0.11,
   },
   macroEatenLabel: {
     fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
-    marginTop: Spacing.xs,
+    marginTop: -3,
     letterSpacing: -0.11,
   },
   macroLabelRow: {

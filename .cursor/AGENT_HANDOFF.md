@@ -37,7 +37,12 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/nutrition.tsx` – added TMLSN AI logo to scan food popup card; added FAB popup close sound (10%) when user clicks out
+- `components/BlurRollNumber.tsx` – restored full Skia version (Canvas, Group, Blur, matchFont, SkText); useDerivedValue from reanimated; lerp instead of Extrapolation
+- `components/BlurTextAnimation.tsx` – new: RN-adapted blur-to-focus word animation (opacity + scale, Reanimated, loop after animationDelay)
+- `app/(tabs)/nutrition.tsx` – top-left pill: added firestreakhomepage.png flame icon (26×26, contained)
+- `assets/firestreakhomepage.png` – new asset (flame for homepage pill)
+- `app/(tabs)/nutrition.tsx` – polished pull-to-refresh flywheel (RefreshControl + in-content flywheel, 200ms fade on complete)
+- `app/(tabs)/nutrition.tsx` – card swipe day animation (slide/fade on day switch: 180ms exit, 220ms entry, 30% width); added TMLSN AI logo to scan food popup card; added FAB popup close sound (10%) when user clicks out
 - `assets/tmlsn-ai-logo.png` – new logo asset
 - `assets/sounds/popup-close.mp4` – FAB popup close sound (0213(7))
 - `app/(tabs)/_layout.tsx` – Home tab in center pill (4 tabs: TMLSN CAL, Home, WORKOUT TRACKER, PROMPTS)

@@ -1,0 +1,33 @@
+---
+description: Keep this project and worktree (obh) in sync — apply same changes to both
+alwaysApply: true
+---
+
+# Sync main project and worktree (obh)
+
+This project and the obh worktree must stay the same and be updated the same way.
+
+## Locations
+
+- **This project (main):** current workspace
+- **Worktree obh:** `.cursor/worktrees/tmlsn-app_2/obh` (or repo worktree named obh)
+
+## Rule
+
+When you edit any of the following, **apply the same change in both places** so they stay identical:
+
+- `app/(tabs)/nutrition.tsx`
+- `components/BlurRollNumber.tsx`
+- `utils/storage.ts`
+- `utils/foodApi.ts`
+- `utils/geminiApi.ts`
+- `types/index.ts`
+- `constants/theme.ts`
+- `babel.config.js`
+- `package.json` (dependency changes for this app)
+
+After editing in the current workspace, copy the modified file(s) to the other location (main ↔ worktree), or remind the user to sync. Prefer: make the edit once in the active workspace, then copy to the other so both are updated.
+
+## Why
+
+Running the app from the main project uses main’s files; running from the worktree uses worktree’s files. If they differ, changes in one place won’t appear when running from the other. Keeping them in sync avoids that.

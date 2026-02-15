@@ -265,14 +265,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     height: 53 + Spacing.sm * 2, // fixed so prev/current/next same height → no vertical misalignment when peeking
   },
-  dayColumn: { alignItems: 'center', justifyContent: 'center', flex: 1 },
-  dayUnselectedWrap: { height: 53, justifyContent: 'center', alignItems: 'center' }, // same as card height so columns align
-  dayLabel: { fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase', letterSpacing: Typography.label * -0.12 },
+  dayColumn: { alignItems: 'center', justifyContent: 'center', flex: 1, overflow: 'visible' },
+  dayUnselectedWrap: { height: 53, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8, overflow: 'visible' }, // padding so label glyphs (o, a, e) don't clip
+  dayLabel: { fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase', letterSpacing: Typography.label * -0.12, paddingHorizontal: 2 },
   dayLabelGrey: { color: Colors.primaryLight },
   dayNumber: { fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03, marginTop: Spacing.xs },
   dayNumberGrey: { color: Colors.primaryLight },
   dayCardSelected: {
-    width: 45,
+    width: 50,
     height: 53,
     borderRadius: 13,
     borderWidth: 2,
@@ -280,6 +280,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8, // so label glyphs (o, a, e) don't clip at edges
+    overflow: 'visible',
   },
   dayCardLabel: {
     fontSize: Typography.label,
@@ -287,6 +289,7 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
     letterSpacing: Typography.label * -0.12,
     color: Colors.white,
+    paddingHorizontal: 2,
   },
   dayCardNumber: {
     fontSize: Typography.body,

@@ -45,3 +45,16 @@ export function onCardSelect(fn: CardCb): VoidCb {
     if (i >= 0) cardListeners.splice(i, 1);
   };
 }
+
+// ── Streak popup open/close (nutrition → layout, so tab bar shifts with content) ──
+const streakStateListeners: BoolCb[] = [];
+export function emitStreakPopupState(open: boolean) {
+  streakStateListeners.forEach(fn => fn(open));
+}
+export function onStreakPopupState(fn: BoolCb): VoidCb {
+  streakStateListeners.push(fn);
+  return () => {
+    const i = streakStateListeners.indexOf(fn);
+    if (i >= 0) streakStateListeners.splice(i, 1);
+  };
+}
