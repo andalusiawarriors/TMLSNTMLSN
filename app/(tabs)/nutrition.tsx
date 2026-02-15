@@ -20,17 +20,15 @@ import {
   AppStateStatus,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { usePathname } from 'expo-router';
+import { onCardSelect } from '../../utils/fabBridge';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   useAnimatedReaction,
   withTiming,
   withSpring,
-  withDelay,
-  withSequence,
   runOnJS,
-  interpolate,
-  Extrapolation,
   Easing,
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
@@ -87,6 +85,7 @@ const MACRO_LABEL_FONT_SIZE = Math.round(Typography.label * 0.45);   // 6 (Prote
 const WEEK_STRIP_PAGE_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
 export default function NutritionScreen() {
+  const pathname = usePathname();
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -100,98 +99,6 @@ export default function NutritionScreen() {
   const cardScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: cardScale.value }],
   }));
-
-  const fabScale = useSharedValue(1);
-  const fabStretchX = useSharedValue(0); // very subtle scale in drag direction
-  const fabStretchY = useSharedValue(0);
-  const FAB_STRETCH_FACTOR = 0.0005; // very very subtle stretch toward drag
-  const FAB_STRETCH_MAX = 0.012; // max ~1.2% scale change
-  const FAB_PRESS_SCALE = 1.12; // enlarge on press (same magnitude as previous shrink 0.88 → 1)
-  const FAB_PRESS_DURATION_MS = 260; // smooth enlargement
-  const FAB_PRESS_EASING = Easing.bezier(0.33, 0.2, 0.2, 1); // smooth ease-out
-  const FAB_RETURN_DURATION_MS = 55; // shrink back on release almost instant
-  const FAB_ROTATION_SPRING = { damping: 55, stiffness: 264 }; // plus↔X and star, 10% faster
-  const fabScaleStyle = useAnimatedStyle(() => {
-    'worklet';
-    const sx = 1 + Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, fabStretchX.value));
-    const sy = 1 + Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, fabStretchY.value));
-    return {
-      transform: [
-        { scale: fabScale.value },
-        { scaleX: sx },
-        { scaleY: sy },
-      ],
-    };
-  });
-  const fabTouchStartRef = useRef({ x: 0, y: 0 });
-
-  const fabRotation = useSharedValue(0); // 0 = plus, 45 = X
-  const fabIconStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${fabRotation.value}deg` }],
-  }));
-  const fabStarStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${-fabRotation.value}deg` }], // mirror of plus: same 45° magnitude, opposite direction
-  }));
-
-  // Popup: keyframed fade (0→1 progress) + spring position on content only
-  const popupFade = useSharedValue(0);
-  const popupPop = useSharedValue(0);
-  const popupOverlayStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      popupFade.value,
-      [0, 0.18, 0.42, 0.65, 0.85, 1],
-      [0, 0.25, 0.72, 0.92, 0.98, 1],
-      Extrapolation.CLAMP
-    );
-    return { opacity };
-  });
-  const popupContentStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      popupFade.value,
-      [0, 0.18, 0.42, 0.65, 0.85, 1],
-      [0, 0.25, 0.72, 0.92, 0.98, 1],
-      Extrapolation.CLAMP
-    );
-    const translateY = interpolate(popupPop.value, [0, 1], [32, 0], Extrapolation.CLAMP);
-    const scale = interpolate(popupPop.value, [0, 1], [0.9, 1], Extrapolation.CLAMP);
-    return {
-      opacity,
-      transform: [{ translateY }, { scale }],
-    };
-  });
-
-  // Staggered pop per card (0–3): smooth entrance, no bounce
-  const popupCard0 = useSharedValue(0);
-  const popupCard1 = useSharedValue(0);
-  const popupCard2 = useSharedValue(0);
-  const popupCard3 = useSharedValue(0);
-  const popupCardHover0 = useSharedValue(0);
-  const popupCardHover1 = useSharedValue(0);
-  const popupCardHover2 = useSharedValue(0);
-  const popupCardHover3 = useSharedValue(0);
-  const popupCardPress0 = useSharedValue(1);
-  const popupCardPress1 = useSharedValue(1);
-  const popupCardPress2 = useSharedValue(1);
-  const popupCardPress3 = useSharedValue(1);
-  const POPUP_CARD_STAGGER_MS = 55;
-  const HOVER_EASING = Easing.inOut(Easing.sin);
-  const HOVER_STAGGER_MS = 320; // cards start hover slightly offset so not one block
-  const POPUP_CARD_PRESS_DURATION = 100;
-  const popupCardStyle = (card: 0 | 1 | 2 | 3) =>
-    useAnimatedStyle(() => {
-      const v = card === 0 ? popupCard0.value : card === 1 ? popupCard1.value : card === 2 ? popupCard2.value : popupCard3.value;
-      const y = interpolate(v, [0, 1], [20, 0], Extrapolation.CLAMP);
-      const s = interpolate(v, [0, 1], [0.82, 1], Extrapolation.CLAMP);
-      const o = interpolate(v, [0, 0.6, 1], [0, 0.7, 1], Extrapolation.CLAMP);
-      const h = card === 0 ? popupCardHover0.value : card === 1 ? popupCardHover1.value : card === 2 ? popupCardHover2.value : popupCardHover3.value;
-      const hoverY = interpolate(h, [0, 1], [0, -4], Extrapolation.CLAMP);
-      const p = card === 0 ? popupCardPress0.value : card === 1 ? popupCardPress1.value : card === 2 ? popupCardPress2.value : popupCardPress3.value;
-      return { opacity: o, transform: [{ translateY: y + hoverY }, { scale: s * p }] };
-    });
-  const popupCardStyle0 = popupCardStyle(0);
-  const popupCardStyle1 = popupCardStyle(1);
-  const popupCardStyle2 = popupCardStyle(2);
-  const popupCardStyle3 = popupCardStyle(3);
 
   const isEaten = useSharedValue(0);
   const rollTrigger = useSharedValue(0);
@@ -210,21 +117,29 @@ export default function NutritionScreen() {
   const leftLabelStyle = useAnimatedStyle(() => ({ opacity: leftLabelOp.value }));
   const eatenLabelStyle = useAnimatedStyle(() => ({ opacity: eatenLabelOp.value }));
 
+  // ── Day-switch card slide animation ──
+  const cardSlideX = useSharedValue(0);
+  const cardSlideOpacity = useSharedValue(1);
+  const cardSlideScale = useSharedValue(1);
+  const prevDateRef = useRef<string>(viewingDate);
+  const SLIDE_DISTANCE = Dimensions.get('window').width * 0.25;
+
+  const cardSlideStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: cardSlideX.value },
+      { scale: cardSlideScale.value },
+    ],
+    opacity: cardSlideOpacity.value,
+  }));
+
   // ── New food-logging state ──
-  const [showChoicePopup, setShowChoicePopup] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraMode, setCameraMode] = useState<'ai' | 'barcode' | 'label'>('ai');
   const cameraRef = useRef<any>(null);
   const clickSoundRef = useRef<Audio.Sound | null>(null);
   const tapSoundRef = useRef<Audio.Sound | null>(null);
-  const popupOpenSoundRef = useRef<Audio.Sound | null>(null);
-  const popupAmbientSoundRef = useRef<Audio.Sound | null>(null);
-  const popupAmbientFadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fabPressInSoundRef = useRef<Audio.Sound | null>(null);
-  const fabPressOutSoundRef = useRef<Audio.Sound | null>(null);
   const cardPressInSoundRef = useRef<Audio.Sound | null>(null);
   const cardPressOutSoundRef = useRef<Audio.Sound | null>(null);
-  const popupCloseSoundRef = useRef<Audio.Sound | null>(null);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [aiPhotoBase64, setAiPhotoBase64] = useState<string | null>(null);
   const [aiDescription, setAiDescription] = useState('');
@@ -302,8 +217,6 @@ export default function NutritionScreen() {
   }, [runFlickerThenHold]);
 
   // Tab-bar pill dimensions for FAB positioning
-  const PILL_BOTTOM = Platform.OS === 'ios' ? 28 : 12;
-  const PILL_HEIGHT = Platform.OS === 'ios' ? Math.round(64 * 1.1) : Math.round(56 * 1.1);
 
   // Add Meal Form State
   const [mealType, setMealType] = useState<MealType>('breakfast');
@@ -371,24 +284,40 @@ export default function NutritionScreen() {
     return () => sub.remove();
   }, [loadData]);
 
-  const handleSelectDate = useCallback((dateString: string) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/24d86888-ef82-444e-aad8-90b62a37b0c8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'nutrition.tsx:handleSelectDate', message: 'user selected date', data: { hypothesisId: 'H1', dateString }, timestamp: Date.now() }) }).catch(() => {});
-    // #endregion
+  const applyDateAndSlideIn = useCallback((dateString: string, forward: boolean) => {
     setViewingDate(dateString);
-  }, []);
+    // Snap to entry position on the opposite side
+    cardSlideX.value = forward ? SLIDE_DISTANCE * 0.6 : -SLIDE_DISTANCE * 0.6;
+    cardSlideScale.value = 0.97;
+    cardSlideOpacity.value = 0;
+    // Spring in — organic, slightly bouncy settle
+    const springConfig = { damping: 22, stiffness: 280, mass: 0.8 };
+    cardSlideX.value = withSpring(0, springConfig);
+    cardSlideScale.value = withSpring(1, { damping: 20, stiffness: 300, mass: 0.7 });
+    cardSlideOpacity.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.quad) });
+  }, [cardSlideX, cardSlideOpacity, cardSlideScale, SLIDE_DISTANCE]);
 
-  // Load sounds: tap, click, popup-open, popup-ambient, fab in/out (0213(3)/(4)), card in/out (0213(5)/(6))
+  const handleSelectDate = useCallback((dateString: string) => {
+    if (dateString === prevDateRef.current) return;
+    const forward = dateString > prevDateRef.current;
+    prevDateRef.current = dateString;
+
+    // Quick exit — scale down slightly, slide and fade out
+    const exitX = forward ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
+    cardSlideX.value = withTiming(exitX, { duration: 140, easing: Easing.in(Easing.quad) });
+    cardSlideScale.value = withTiming(0.96, { duration: 140, easing: Easing.in(Easing.quad) });
+    cardSlideOpacity.value = withTiming(0, { duration: 120, easing: Easing.in(Easing.quad) }, () => {
+      // Once exit completes, update data and spring in from the other side
+      runOnJS(applyDateAndSlideIn)(dateString, forward);
+    });
+  }, [cardSlideX, cardSlideOpacity, cardSlideScale, SLIDE_DISTANCE, applyDateAndSlideIn]);
+
+  // Load sounds: tap, click, card in/out (popup sounds moved to _layout.tsx)
   useEffect(() => {
     let clickSound: Audio.Sound | null = null;
     let tapSound: Audio.Sound | null = null;
-    let popupOpenSound: Audio.Sound | null = null;
-    let popupAmbientSound: Audio.Sound | null = null;
-    let fabPressInSound: Audio.Sound | null = null;
-    let fabPressOutSound: Audio.Sound | null = null;
     let cardPressInSound: Audio.Sound | null = null;
     let cardPressOutSound: Audio.Sound | null = null;
-    let popupCloseSound: Audio.Sound | null = null;
     (async () => {
       try {
         await Audio.setAudioModeAsync({
@@ -400,66 +329,30 @@ export default function NutritionScreen() {
         const { sound: sClick } = await Audio.Sound.createAsync(
           require('../../assets/sounds/click.mp4')
         );
-        await sClick.setVolumeAsync(0.64); // 20% lower than 0.8
+        await sClick.setVolumeAsync(0.64);
         clickSound = sClick;
         clickSoundRef.current = sClick;
 
         const { sound: sTap } = await Audio.Sound.createAsync(
           require('../../assets/sounds/tap.mp4')
         );
-        await sTap.setVolumeAsync(0.64); // 20% lower than 0.8
+        await sTap.setVolumeAsync(0.64);
         tapSound = sTap;
         tapSoundRef.current = sTap;
-
-        const { sound: sPopup } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/popup-open.mp3')
-        );
-        await sPopup.setVolumeAsync(0.11); // popup open sound (20% of original 0.55)
-        popupOpenSound = sPopup;
-        popupOpenSoundRef.current = sPopup;
-
-        const { sound: sAmbient } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/popup-ambient.mp3')
-        );
-        await sAmbient.setVolumeAsync(0.05); // 5% volume
-        await sAmbient.setRateAsync(0.9, true); // 10% slower (pitchCorrect: true keeps pitch)
-        popupAmbientSound = sAmbient;
-        popupAmbientSoundRef.current = sAmbient;
-
-        const { sound: sFabIn } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/fab-press-in.mp4')
-        );
-        await sFabIn.setVolumeAsync(0.2); // FAB click in 20% volume
-        fabPressInSound = sFabIn;
-        fabPressInSoundRef.current = sFabIn;
-
-        const { sound: sFabOut } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/fab-press-out.mp4')
-        );
-        await sFabOut.setVolumeAsync(0.2); // FAB click out 20% volume
-        fabPressOutSound = sFabOut;
-        fabPressOutSoundRef.current = sFabOut;
 
         const { sound: sCardIn } = await Audio.Sound.createAsync(
           require('../../assets/sounds/card-press-in.mp4')
         );
-        await sCardIn.setVolumeAsync(0.2); // card press-in 20% volume
+        await sCardIn.setVolumeAsync(0.2);
         cardPressInSound = sCardIn;
         cardPressInSoundRef.current = sCardIn;
 
         const { sound: sCardOut } = await Audio.Sound.createAsync(
           require('../../assets/sounds/card-press-out.mp4')
         );
-        await sCardOut.setVolumeAsync(0.2); // card press-out 20% volume
+        await sCardOut.setVolumeAsync(0.2);
         cardPressOutSound = sCardOut;
         cardPressOutSoundRef.current = sCardOut;
-
-        const { sound: sPopupClose } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/popup-close.mp4')
-        );
-        await sPopupClose.setVolumeAsync(0.1); // FAB popup close (click-out) 10% volume
-        popupCloseSound = sPopupClose;
-        popupCloseSoundRef.current = sPopupClose;
       } catch (_) {
         // Assets missing or load failed – sounds will be silent
       }
@@ -467,22 +360,12 @@ export default function NutritionScreen() {
     return () => {
       if (clickSound) clickSound.unloadAsync();
       if (tapSound) tapSound.unloadAsync();
-      if (popupOpenSound) popupOpenSound.unloadAsync();
-      if (popupAmbientSound) popupAmbientSound.unloadAsync();
-      if (fabPressInSound) fabPressInSound.unloadAsync();
-      if (fabPressOutSound) fabPressOutSound.unloadAsync();
       if (cardPressInSound) cardPressInSound.unloadAsync();
       if (cardPressOutSound) cardPressOutSound.unloadAsync();
-      if (popupCloseSound) popupCloseSound.unloadAsync();
       clickSoundRef.current = null;
       tapSoundRef.current = null;
-      popupOpenSoundRef.current = null;
-      popupAmbientSoundRef.current = null;
-      fabPressInSoundRef.current = null;
-      fabPressOutSoundRef.current = null;
       cardPressInSoundRef.current = null;
       cardPressOutSoundRef.current = null;
-      popupCloseSoundRef.current = null;
     };
   }, []);
 
@@ -516,76 +399,6 @@ export default function NutritionScreen() {
       s.setPositionAsync(0);
       s.playAsync().catch(() => {});
     }
-  }, []);
-  const playFabPressInSound = useCallback(() => {
-    const s = fabPressInSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
-  }, []);
-  const playFabPressOutSound = useCallback(() => {
-    const s = fabPressOutSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
-  }, []);
-
-  const playPopupOpenSound = useCallback(() => {
-    const s = popupOpenSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
-  }, []);
-
-  const playPopupCloseSound = useCallback(() => {
-    const s = popupCloseSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
-  }, []);
-
-  const playPopupAmbientSound = useCallback(() => {
-    const s = popupAmbientSoundRef.current;
-    if (!s) return;
-    if (popupAmbientFadeIntervalRef.current) {
-      clearInterval(popupAmbientFadeIntervalRef.current);
-      popupAmbientFadeIntervalRef.current = null;
-    }
-    s.setVolumeAsync(0.05).catch(() => {}); // reset so audible every time popup opens (5%)
-    s.setPositionAsync(0);
-    s.playAsync().catch(() => {});
-  }, []);
-
-  // When user clicks out (closes popup), ambient fades to 0 over 0.5s then stops. While popup is open it keeps playing.
-  const POPUP_AMBIENT_FADE_MS = 500;
-  const POPUP_AMBIENT_FADE_STEP_MS = 50;
-  const stopPopupAmbientSound = useCallback(() => {
-    const s = popupAmbientSoundRef.current;
-    if (!s) return;
-    if (popupAmbientFadeIntervalRef.current) {
-      clearInterval(popupAmbientFadeIntervalRef.current);
-      popupAmbientFadeIntervalRef.current = null;
-    }
-    const startVol = 0.05;
-    const steps = Math.max(1, Math.floor(POPUP_AMBIENT_FADE_MS / POPUP_AMBIENT_FADE_STEP_MS));
-    const stepVol = startVol / steps;
-    let current = startVol;
-    popupAmbientFadeIntervalRef.current = setInterval(() => {
-      current -= stepVol;
-      if (current <= 0) {
-        if (popupAmbientFadeIntervalRef.current) {
-          clearInterval(popupAmbientFadeIntervalRef.current);
-          popupAmbientFadeIntervalRef.current = null;
-        }
-        s.setVolumeAsync(0).then(() => s.stopAsync().catch(() => {})).catch(() => {});
-        return;
-      }
-      s.setVolumeAsync(current).catch(() => {});
-    }, POPUP_AMBIENT_FADE_STEP_MS);
   }, []);
 
 
@@ -651,110 +464,31 @@ export default function NutritionScreen() {
     setShowAddMeal(false);
   };
 
-  // ── Choice popup: keyframed fade + spring pop + staggered cards (smooth entrance, no bounce) ──
-  const popupHoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const runPopupHover = useCallback(() => {
-    const up = withTiming(1, { duration: 2400, easing: HOVER_EASING });
-    const down = withTiming(0, { duration: 2400, easing: HOVER_EASING });
-    const cycle = withSequence(up, down);
-    popupCardHover0.value = withDelay(0, cycle);
-    popupCardHover1.value = withDelay(HOVER_STAGGER_MS, cycle);
-    popupCardHover2.value = withDelay(HOVER_STAGGER_MS * 2, cycle);
-    popupCardHover3.value = withDelay(HOVER_STAGGER_MS * 3, cycle);
-  }, []);
-
+  // ── Bridge: card selected in popup (rendered in _layout.tsx) → open feature ──
   useEffect(() => {
-    if (showChoicePopup) {
-      popupFade.value = 0;
-      popupPop.value = 0;
-      popupCard0.value = 0;
-      popupCard1.value = 0;
-      popupCard2.value = 0;
-      popupCard3.value = 0;
-      popupCardHover0.value = 0;
-      popupCardHover1.value = 0;
-      popupCardHover2.value = 0;
-      popupCardHover3.value = 0;
-      popupFade.value = withTiming(1, { duration: 380 });
-      popupPop.value = withSpring(1, { damping: 14, stiffness: 200, mass: 0.5 });
-      // Smooth entrance (no bounce): timing instead of spring
-      popupCard0.value = withDelay(0, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-      popupCard1.value = withDelay(POPUP_CARD_STAGGER_MS, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-      popupCard2.value = withDelay(POPUP_CARD_STAGGER_MS * 2, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-      popupCard3.value = withDelay(POPUP_CARD_STAGGER_MS * 3, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
-      fabRotation.value = withSpring(45, FAB_ROTATION_SPRING); // plus → X, very subtle overshoot
-
-      if (popupHoverIntervalRef.current) clearInterval(popupHoverIntervalRef.current);
-      popupHoverIntervalRef.current = setInterval(runPopupHover, 5000);
-      return () => {
-        if (popupHoverIntervalRef.current) {
-          clearInterval(popupHoverIntervalRef.current);
-          popupHoverIntervalRef.current = null;
-        }
-      };
-    } else {
-      popupFade.value = 0;
-      popupPop.value = 0;
-      popupCard0.value = 0;
-      popupCard1.value = 0;
-      popupCard2.value = 0;
-      popupCard3.value = 0;
-      popupCardHover0.value = 0;
-      popupCardHover1.value = 0;
-      popupCardHover2.value = 0;
-      popupCardHover3.value = 0;
-      popupCardPress0.value = 1;
-      popupCardPress1.value = 1;
-      popupCardPress2.value = 1;
-      popupCardPress3.value = 1;
-      fabRotation.value = withSpring(0, FAB_ROTATION_SPRING); // X → plus, very subtle overshoot
-      if (popupHoverIntervalRef.current) {
-        clearInterval(popupHoverIntervalRef.current);
-        popupHoverIntervalRef.current = null;
-      }
-    }
-  }, [showChoicePopup, runPopupHover]);
-
-  const closeChoicePopup = useCallback(() => {
-    playPopupCloseSound(); // play when user clicks out (not when selecting a card)
-    stopPopupAmbientSound();
-    popupPop.value = withTiming(0, { duration: 90 });
-    popupFade.value = withTiming(0, { duration: 120 }, (finished) => {
-      if (finished) runOnJS(setShowChoicePopup)(false);
+    const unsub = onCardSelect((card) => {
+      reportActivity();
+      if (card === 'saved') handleChoiceSavedFoods();
+      else if (card === 'search') handleChoiceFoodDatabase();
+      else if (card === 'scan') handleChoiceScanFood();
     });
-    fabRotation.value = withSpring(0, FAB_ROTATION_SPRING); // X → plus in sync with cards leaving, very subtle overshoot
-  }, [playPopupCloseSound, stopPopupAmbientSound]);
-
-  const popupCardPressIn = useCallback((card: 0 | 1 | 2 | 3) => {
-    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : card === 2 ? popupCardPress2 : popupCardPress3;
-    sv.value = withTiming(0.99, { duration: POPUP_CARD_PRESS_DURATION, easing: Easing.out(Easing.cubic) });
-  }, []);
-  const popupCardPressOut = useCallback((card: 0 | 1 | 2 | 3) => {
-    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : card === 2 ? popupCardPress2 : popupCardPress3;
-    sv.value = withTiming(1, { duration: POPUP_CARD_PRESS_DURATION, easing: Easing.out(Easing.cubic) });
+    return unsub;
   }, []);
 
-  // ── Choice popup handlers ──
+  // ── Choice popup handlers (popup is closed by _layout.tsx before emitting) ──
   const handleChoiceSavedFoods = async () => {
-    stopPopupAmbientSound();
-    setShowChoicePopup(false);
     const foods = await getSavedFoods();
     setSavedFoodsList(foods);
     setShowSavedFoods(true);
   };
 
   const handleChoiceFoodDatabase = () => {
-    stopPopupAmbientSound();
-    setShowChoicePopup(false);
     setFoodSearchQuery('');
     setFoodSearchResults([]);
     setShowFoodSearch(true);
   };
 
   const handleChoiceScanFood = async () => {
-    stopPopupAmbientSound();
-    setShowChoicePopup(false);
     if (!permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
@@ -771,8 +505,6 @@ export default function NutritionScreen() {
   };
 
   const handleChoiceManual = () => {
-    stopPopupAmbientSound();
-    setShowChoicePopup(false);
     resetMealForm();
     setShowAddMeal(true);
   };
@@ -1060,6 +792,8 @@ export default function NutritionScreen() {
           initialDate={viewingDateAsDate}
           showHeader={false}
         />
+        {/* Animated wrapper for day-switch slide */}
+        <Animated.View style={cardSlideStyle}>
         {/* Macro cards carousel – swipe left to reveal flipped layout */}
         {settings && todayLog && (
           <>
@@ -1248,111 +982,12 @@ export default function NutritionScreen() {
         {/* Recently uploaded – title + card same size as calories left */}
         <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
         <Card style={[styles.caloriesLeftCard, styles.recentlyUploadedCard, { minHeight: CARD_UNIFIED_HEIGHT }]} />
+        </Animated.View>
       </ScrollView>
 
-      {/* Floating Action Button (FAB) — 24px above tab bar pill; hold + drag stretches minimally in drag direction */}
-      <View
-        style={[styles.fabTouchable, { bottom: PILL_BOTTOM + PILL_HEIGHT + 24 }]}
-        onStartShouldSetResponder={() => true}
-        onResponderGrant={(e) => {
-          reportActivity();
-          playFabPressInSound();
-          fabTouchStartRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-          fabScale.value = withTiming(FAB_PRESS_SCALE, { duration: FAB_PRESS_DURATION_MS, easing: FAB_PRESS_EASING });
-        }}
-        onResponderMove={(e) => {
-          const { x: startX, y: startY } = fabTouchStartRef.current;
-          const dx = e.nativeEvent.pageX - startX;
-          const dy = e.nativeEvent.pageY - startY;
-          fabStretchX.value = Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, dx * FAB_STRETCH_FACTOR));
-          fabStretchY.value = Math.max(-FAB_STRETCH_MAX, Math.min(FAB_STRETCH_MAX, dy * FAB_STRETCH_FACTOR));
-        }}
-        onResponderRelease={() => {
-          playFabPressOutSound();
-          fabRotation.value = withSpring(45, FAB_ROTATION_SPRING);
-          fabScale.value = withTiming(1, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
-          fabStretchX.value = withTiming(0, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
-          fabStretchY.value = withTiming(0, { duration: FAB_RETURN_DURATION_MS, easing: Easing.out(Easing.cubic) });
-          setShowChoicePopup(true);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          playPopupOpenSound();
-          playPopupAmbientSound();
-        }}
-      >
-        <Animated.View style={[styles.fab, fabScaleStyle]}>
-          <Animated.View style={[styles.fabStarWrap, fabStarStyle]}>
-            <Image source={require('../../assets/fab-star.png')} style={styles.fabStarImg} resizeMode="contain" />
-          </Animated.View>
-          <Animated.View style={[styles.fabIconWrap, fabIconStyle]}>
-            <View style={styles.fabPlusH} />
-            <View style={styles.fabPlusV} />
-          </Animated.View>
-        </Animated.View>
-      </View>
+      {/* FAB is now rendered in _layout.tsx (inside the pill). Press event arrives via fabBridge. */}
 
-      {/* Choice Popup — 4 cards: saved foods, food database, scan food, manual entry — positioned just above FAB */}
-      <Modal visible={showChoicePopup} animationType="none" transparent onRequestClose={closeChoicePopup}>
-        <Pressable style={styles.popupOverlayTouch} onPress={closeChoicePopup}>
-          <Animated.View style={[styles.popupOverlay, popupOverlayStyle]}>
-          <Animated.View style={[styles.popupGridWrap, popupContentStyle, { paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + 56 + 16 }]}>
-          <View style={styles.popupGrid}>
-            <View style={styles.popupGridRow}>
-              <Animated.View style={popupCardStyle0}>
-                <TouchableOpacity
-                  style={styles.popupCard}
-                  onPress={handleChoiceSavedFoods}
-                  onPressIn={() => popupCardPressIn(0)}
-                  onPressOut={() => popupCardPressOut(0)}
-                  activeOpacity={1}
-                >
-                  <Image
-                    source={require('../../assets/saved-food-icon.png')}
-                    style={styles.scanFoodIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.popupCardLabel}>saved foods</Text>
-                </TouchableOpacity>
-              </Animated.View>
-              <Animated.View style={popupCardStyle1}>
-                <TouchableOpacity
-                  style={styles.popupCard}
-                  onPress={handleChoiceFoodDatabase}
-                  onPressIn={() => popupCardPressIn(1)}
-                  onPressOut={() => popupCardPressOut(1)}
-                  activeOpacity={1}
-                >
-                  <Image
-                    source={require('../../assets/search-food-icon.png')}
-                    style={styles.searchFoodIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.popupCardLabel}>search food</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-            <View style={[styles.popupGridRow, styles.popupGridRowCenter]}>
-              <Animated.View style={popupCardStyle2}>
-                <TouchableOpacity
-                  style={styles.popupCard}
-                  onPress={handleChoiceScanFood}
-                  onPressIn={() => popupCardPressIn(2)}
-                  onPressOut={() => popupCardPressOut(2)}
-                  activeOpacity={1}
-                >
-                  <Image
-                    source={require('../../assets/scan-food-ai-icon.png')}
-                    style={styles.scanFoodIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.popupCardLabel}>scan food</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </View>
-          </Animated.View>
-          </Animated.View>
-        </Pressable>
-      </Modal>
+      {/* Popup is now rendered in _layout.tsx (always on top). Card selections arrive via onCardSelect bridge. */}
 
       {/* Unified Camera — AI / Barcode / Food Label */}
       <Modal visible={showCamera} animationType="slide" onRequestClose={() => { setShowCamera(false); setShowAiDescribe(false); }}>
@@ -2053,63 +1688,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 1.8,
     backgroundColor: '#2F3031',
-  },
-  // ── Choice Popup ──
-  popupOverlayTouch: {
-    flex: 1,
-  },
-  popupOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)', // 10% darker than 0.45
-  },
-  popupGridWrap: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  popupGrid: {
-    gap: 12,
-  },
-  popupGridRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  popupGridRowCenter: {
-    justifyContent: 'center',
-  },
-  popupCard: {
-    width: 173,
-    height: 87,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: '#C6C6C6',
-    paddingBottom: 12,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    ...Shadows.card,
-  },
-  scanFoodIcon: {
-    position: 'absolute',
-    top: -2,
-    left: '50%',
-    marginLeft: -61,
-    width: 122,
-    height: 67,
-  },
-  searchFoodIcon: {
-    position: 'absolute',
-    top: 3,
-    left: '50%',
-    marginLeft: -55,
-    width: 110,
-    height: 60,
-  },
-  popupCardLabel: {
-    fontFamily: CardFont.family,
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#2F3031',
-    letterSpacing: -0.11,
-    textAlign: 'center',
   },
   // ── Camera ──
   scannerContainer: {
