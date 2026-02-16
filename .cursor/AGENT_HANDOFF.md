@@ -27,7 +27,7 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *none*       | —                 | —                         | —               | —       |
+| —            | —                 | —                         | —               | —       |
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -37,14 +37,14 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `components/BlurRollNumber.tsx` – restored full Skia version (Canvas, Group, Blur, matchFont, SkText); useDerivedValue from reanimated; lerp instead of Extrapolation
-- `components/BlurTextAnimation.tsx` – new: RN-adapted blur-to-focus word animation (opacity + scale, Reanimated, loop after animationDelay)
-- `app/(tabs)/nutrition.tsx` – top-left pill: added firestreakhomepage.png flame icon (26×26, contained)
-- `assets/firestreakhomepage.png` – new asset (flame for homepage pill)
-- `app/(tabs)/nutrition.tsx` – polished pull-to-refresh flywheel (RefreshControl + in-content flywheel, 200ms fade on complete)
-- `app/(tabs)/nutrition.tsx` – card swipe day animation (slide/fade on day switch: 180ms exit, 220ms entry, 30% width); added TMLSN AI logo to scan food popup card; added FAB popup close sound (10%) when user clicks out
-- `assets/tmlsn-ai-logo.png` – new logo asset
-- `assets/sounds/popup-close.mp4` – FAB popup close sound (0213(7))
+- `constants/theme.ts` – added Font, HeadingLetterSpacing (shared with home)
+- `app/(tabs)/workout/` – full home font system: EB Garamond (extraBold/bold/semiBold/regular) for headings/body, DMMono for data/numbers; Typography constants throughout
+- `components/Card.tsx` – added borderRadius prop for gradientFill
+- `components/HeatmapPreviewWidget.tsx`, `StatisticsButtonWidget.tsx` – Card gradientFill
+- `app/(tabs)/workout/index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx` – Hevy-style workout redesign (Person 1): exercise cards, numbered set dots, weight×reps, rest timer, collapsible routine cards, session history
+- `app/(tabs)/workout/` – StreakWidget, MuscleBodyHeatmap, button sound on tappable elements
+- `components/BlurRollNumber.tsx` – restored full Skia version; lerp instead of Extrapolation
+- `app/(tabs)/nutrition.tsx` – top-left pill flame icon, pull-to-refresh flywheel, card swipe day animation, TMLSN AI logo, FAB popup close sound (Person 2)
 - `app/(tabs)/_layout.tsx` – Home tab in center pill (4 tabs: TMLSN CAL, Home, WORKOUT TRACKER, PROMPTS)
 - `app/(tabs)/index.tsx` – Home page (TMLSN title + subtitle)
 

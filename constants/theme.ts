@@ -1,5 +1,18 @@
 // TMLSN Styling Constants based on PRD Styling Guidelines
 
+// Font families – match home (nutrition) section
+export const Font = {
+  regular: 'EBGaramond_400Regular',
+  medium: 'EBGaramond_500Medium',
+  semiBold: 'EBGaramond_600SemiBold',
+  bold: 'EBGaramond_700Bold',
+  extraBold: 'EBGaramond_800ExtraBold',
+  mono: 'DMMono_400Regular',
+  monoMedium: 'DMMono_500Medium',
+} as const;
+
+export const HeadingLetterSpacing = -1;
+
 export const Colors = {
   // Duo-tone Foundation
   primaryDark: '#2F3031',     // Primary backgrounds, cards, nav bars
@@ -52,16 +65,16 @@ export const BorderRadius = {
 export const Shadows = {
   card: {
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   button: {
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   }
 };

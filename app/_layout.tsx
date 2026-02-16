@@ -11,7 +11,7 @@ import {
   EBGaramond_700Bold,
   EBGaramond_800ExtraBold,
 } from '@expo-google-fonts/eb-garamond';
-import { DMMono_400Regular } from '@expo-google-fonts/dm-mono';
+import { DMMono_400Regular, DMMono_500Medium } from '@expo-google-fonts/dm-mono';
 import { registerForPushNotifications } from '../utils/notifications';
 import { Colors } from '../constants/theme';
 
@@ -23,6 +23,7 @@ export default function RootLayout() {
     EBGaramond_700Bold,
     EBGaramond_800ExtraBold,
     DMMono_400Regular,
+    DMMono_500Medium,
   });
 
   useEffect(() => {

@@ -27,6 +27,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   volumeUnit: 'oz',
   notificationsEnabled: true,
   restTimerSound: true,
+  defaultRestTimer: 120,
+  defaultRestTimerEnabled: true,
 };
 
 // Nutrition Storage Functions

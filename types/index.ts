@@ -50,6 +50,8 @@ export interface Exercise {
   sets: Set[];
   restTimer?: number; // in seconds
   notes?: string;
+  /** ID from exercise database for muscle heatmap mapping */
+  exerciseDbId?: string;
 }
 
 export interface Set {
@@ -77,7 +79,7 @@ export interface WorkoutExerciseTemplate {
 export interface SavedRoutine {
   id: string;
   name: string;
-  exercises: { id: string; name: string; restTimer: number }[];
+  exercises: { id: string; name: string; restTimer: number; exerciseDbId?: string }[];
 }
 
 // Prompt Vault Types
@@ -99,6 +101,21 @@ export interface UserSettings {
   volumeUnit: 'oz' | 'ml';
   notificationsEnabled: boolean;
   restTimerSound: boolean;
+  defaultRestTimer?: number; // seconds, for new exercises (workout)
+  defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
+}
+
+// Saved Food (for quick re-logging)
+export interface SavedFood {
+  id: string;
+  name: string;
+  brand?: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  lastUsed: string;
+  useCount: number;
 }
 
 // Saved Food (for quick re-logging)

@@ -1,0 +1,59 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Enter your Hevy API key and name to connect to your account.",
+                "data": {
+                    "api_key": "API Key",
+                    "name": "Name"
+                }
+            }
+        },
+        "error": {
+            "auth": "API key is invalid.",
+            "connection": "Could not connect to the Hevy API.",
+            "unknown": "An unknown error occurred."
+        },
+        "abort": {
+            "already_configured": "This API key is already configured."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "workout_count": {
+                "name": "Workout Count"
+            },
+            "today_count": {
+                "name": "Today's Workouts"
+            },
+            "week_count": {
+                "name": "This Week's Workouts"
+            },
+            "month_count": {
+                "name": "This Month's Workouts"
+            },
+            "year_count": {
+                "name": "This Year's Workouts"
+            },
+            "workout_date": {
+                "name": "Workout Date"
+            }
+        },
+        "binary_sensor": {
+            "workout_today": {
+                "name": "Workout Today",
+                "state": {
+                    "on": "Yes",
+                    "off": "No"
+                }
+            },
+            "workout_this_week": {
+                "name": "Workout This Week",
+                "state": {
+                    "on": "Yes",
+                    "off": "No"
+                }
+            }
+        }
+    }
+}
