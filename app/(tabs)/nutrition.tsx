@@ -61,6 +61,7 @@ import {
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
 import SwipeableWeekView from '../../components/SwipeableWeekView';
+import { StreakWidget } from '../../components/StreakWidget';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
@@ -111,10 +112,6 @@ export default function NutritionScreen() {
   }));
 
   // Top pills: scale-in on press (same as calorie card, no sound)
-  const streakPillScale = useSharedValue(1);
-  const streakPillScaleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: streakPillScale.value }],
-  }));
   const profilePillScale = useSharedValue(1);
   const profilePillScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profilePillScale.value }],
@@ -919,79 +916,17 @@ export default function NutritionScreen() {
           { paddingTop: TOP_LEFT_PILL_TOP },
         ]}
       >
-        {/* Top-left pill — same stroke as bottom pill + slight gradient; scale animation like calorie card (no sound) */}
-        <Pressable
+        {/* Top-left pill — same as workout page: StreakWidget (liquid glass, enso, navigates to streak) */}
+        <View
           style={{
             position: 'absolute',
             top: TOP_LEFT_PILL_TOP,
             left: calorieCardLeft,
             zIndex: 10,
-            width: 60,
-            height: 40,
           }}
-          onPressIn={() => { streakPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPressOut={() => { streakPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPress={() => setFireStreakPopupVisible(true)}
         >
-
-
-
-
-
-
-          <Animated.View style={[{ width: 60, height: 40 }, streakPillScaleStyle]}>
-            <View
-              style={{
-                width: 60,
-                height: 40,
-                borderRadius: 28,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Border gradient (same idea as bottom pill) */}
-              <LinearGradient
-                colors={['#4E4F50', '#4A4B4C']}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }}
-              />
-              {/* Fill gradient */}
-              <LinearGradient
-                colors={['#363738', '#2E2F30']}
-                style={{
-                  position: 'absolute',
-                  top: 1,
-                  left: 1,
-                  right: 1,
-                  bottom: 1,
-                  borderRadius: 27,
-                }}
-              />
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 2.9,
-                }}
-              >
-                <View
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2.9, transform: [{ translateX: -0.17 }] }}
-                >
-                  <Image
-                    source={require('../../assets/firestreakhomepage.png')}
-                    style={{ width: 19, height: 19 }}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.pillStreakCount}>0</Text>
-                </View>
-              </View>
-            </View>
-          </Animated.View>
-        </Pressable>
+          <StreakWidget />
+        </View>
 
         {/* Top-right circle — same stroke + slight gradient; scale animation like calorie card (no sound) */}
         <Pressable
