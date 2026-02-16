@@ -35,6 +35,7 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
+import { onWorkoutCardSelect } from '../../../utils/fabBridge';
 import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
 import { HeatmapPreviewWidget } from '../../../components/HeatmapPreviewWidget';
@@ -68,9 +69,10 @@ const SWIPE_WIDGET_PADDING_TOP = 12;
 const SWIPE_WIDGET_EXTRA_HEIGHT = 0;
 export default function WorkoutScreen() {
   const router = useRouter();
-  const { startSplitId, startRoutineId } = useLocalSearchParams<{
+  const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
     startRoutineId?: string;
+    startEmpty?: string;
   }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
@@ -103,6 +105,23 @@ export default function WorkoutScreen() {
     loadWorkouts();
   }, []);
 
+  useEffect(() => {
+    const unsub = onWorkoutCardSelect((card) => {
+      if (card === 'empty') startFreeformWorkout();
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (startEmpty !== '1') {
+      lastProcessedStartEmpty.current = false;
+      return;
+    }
+    if (lastProcessedStartEmpty.current) return;
+    lastProcessedStartEmpty.current = true;
+    startFreeformWorkout();
+  }, [startEmpty]);
+
   useFocusEffect(
     useCallback(() => {
       setAnimTrigger((t) => t + 1);
@@ -110,6 +129,7 @@ export default function WorkoutScreen() {
     }, [])
   );
 
+  const lastProcessedStartEmpty = useRef(false);
   const lastProcessedSplitId = useRef<string | null>(null);
   const lastProcessedRoutineId = useRef<string | null>(null);
   useEffect(() => {
@@ -238,15 +258,18 @@ export default function WorkoutScreen() {
       duration: 0,
       isComplete: false,
     };
-
     setActiveWorkout(newWorkout);
     setShowSplitSelection(false);
+    // Overlay shows first; user adds exercise via "+ Add exercise" in the overlay (no Alert here to avoid focus/cancel bugs)
+  };
+
+  const promptAddExercise = () => {
     Alert.prompt(
       'Add Exercise',
       'Enter exercise name',
       (text) => {
-        if (text) {
-          addExercise(text);
+        if (text?.trim()) {
+          addExercise(text.trim());
           setShowExerciseEntry(true);
         }
       }
@@ -434,9 +457,11 @@ export default function WorkoutScreen() {
         toValue: 0,
         duration: PAN_UP_DURATION,
         useNativeDriver: true,
-      }).start();
+      }).start(({ finished }) => {
+        if (finished && startEmpty === '1') router.replace({ pathname: '/workout' });
+      });
     }
-  }, [activeWorkout?.id]);
+  }, [activeWorkout?.id, startEmpty, router]);
 
   const runPanDownAnimation = () => {
     Animated.timing(slideAnim, {
@@ -840,6 +865,16 @@ export default function WorkoutScreen() {
             )}
 
             {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
+            {activeWorkout.exercises.length === 0 ? (
+              <Pressable
+                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={promptAddExercise}
+              >
+                <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
+              </Pressable>
+            ) : null}
             {activeWorkout.exercises.map((exercise, exerciseIndex) => (
               <View key={exercise.id} style={styles.exerciseBlock}>
                 {/* Exercise header */}
@@ -999,6 +1034,16 @@ export default function WorkoutScreen() {
                 </Pressable>
               </View>
             ))}
+            {activeWorkout.exercises.length > 0 ? (
+              <Pressable
+                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={promptAddExercise}
+              >
+                <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
+              </Pressable>
+            ) : null}
           </ScrollView>
         </Animated.View>
       )}
@@ -1716,6 +1761,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  addExerciseBlock: {
+    marginTop: 12,
   },
   addSetButtonBlockText: {
     fontFamily: Font.monoMedium,

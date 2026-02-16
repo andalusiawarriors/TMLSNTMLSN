@@ -18,13 +18,22 @@ const formatRoutineTitle = (name: string) => {
   return words.join(' ');
 };
 
-export default function TmlsnRoutinesScreen() {
+type TmlsnRoutinesScreenProps = {
+  /** When provided (e.g. from FAB modal), use this instead of navigating within workout tab */
+  onStartRoutine?: (split: WorkoutSplit) => void;
+};
+
+export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp }: TmlsnRoutinesScreenProps = {}) {
   const router = useRouter();
   const { playIn, playOut } = useButtonSound();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const handleStartRoutine = (split: WorkoutSplit) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onStartRoutineProp) {
+      onStartRoutineProp(split);
+      return;
+    }
     router.replace({
       pathname: '/workout',
       params: { startSplitId: split.id },

@@ -11,7 +11,10 @@ import {
   EBGaramond_700Bold,
   EBGaramond_800ExtraBold,
 } from '@expo-google-fonts/eb-garamond';
-import { DMMono_400Regular, DMMono_500Medium } from '@expo-google-fonts/dm-mono';
+import { DMMono_300Light, DMMono_400Regular, DMMono_500Medium } from '@expo-google-fonts/dm-mono';
+import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
+import { Inconsolata_400Regular } from '@expo-google-fonts/inconsolata';
+import { RobotoMono_400Regular } from '@expo-google-fonts/roboto-mono';
 import { registerForPushNotifications } from '../utils/notifications';
 import { Colors } from '../constants/theme';
 
@@ -22,8 +25,12 @@ export default function RootLayout() {
     EBGaramond_600SemiBold,
     EBGaramond_700Bold,
     EBGaramond_800ExtraBold,
+    DMMono_300Light,
     DMMono_400Regular,
     DMMono_500Medium,
+    SpaceMono_400Regular,
+    Inconsolata_400Regular,
+    RobotoMono_400Regular,
   });
 
   useEffect(() => {
@@ -50,9 +57,25 @@ export default function RootLayout() {
           },
         }}
       >
-        <Stack.Screen 
-          name="(tabs)" 
-          options={{ headerShown: false }} 
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="tmlsn-routines-modal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            title: 'TMLSN routines',
+          }}
+        />
+        <Stack.Screen
+          name="your-routines-modal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            title: 'Your routines',
+          }}
         />
       </Stack>
     </GestureHandlerRootView>

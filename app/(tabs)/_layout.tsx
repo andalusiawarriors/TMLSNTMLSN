@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Tabs, usePathname } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import { Colors, Typography } from '../../constants/theme';
 import {
   Platform,
@@ -15,7 +15,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
+import { emitCardSelect, emitWorkoutCardSelect, onStreakPopupState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 
 // ── Pill constants ──
@@ -159,6 +159,7 @@ function TabButton({
 
 export default function TabsLayout() {
   const pathname = usePathname();
+  const router = useRouter();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
@@ -300,9 +301,15 @@ export default function TabsLayout() {
   const popupCard0Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard1Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard2Anim = useRef(new RNAnimated.Value(0)).current;
+  const popupCard3Anim = useRef(new RNAnimated.Value(0)).current;
+  const popupCard4Anim = useRef(new RNAnimated.Value(0)).current;
+  const popupCard5Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCardPress0 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress1 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress2 = useRef(new RNAnimated.Value(1)).current;
+  const popupCardPress3 = useRef(new RNAnimated.Value(1)).current;
+  const popupCardPress4 = useRef(new RNAnimated.Value(1)).current;
+  const popupCardPress5 = useRef(new RNAnimated.Value(1)).current;
 
   // ══════════════════════════════════════════
   // SOUNDS — FAB + Popup
@@ -322,6 +329,12 @@ export default function TabsLayout() {
     let sAmbient: Audio.Sound | null = null;
     (async () => {
       try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
         const r1 = await Audio.Sound.createAsync(require('../../assets/sounds/fab-press-in.mp4'));
         await r1.sound.setVolumeAsync(0.2); sIn = r1.sound; fabPressInRef.current = r1.sound;
 
@@ -341,47 +354,57 @@ export default function TabsLayout() {
       } catch {}
     })();
     return () => {
-      if (sIn) sIn.unloadAsync();
-      if (sOut) sOut.unloadAsync();
-      if (sOpen) sOpen.unloadAsync();
-      if (sClose) sClose.unloadAsync();
-      if (sAmbient) sAmbient.unloadAsync();
       fabPressInRef.current = null;
       fabPressOutRef.current = null;
       popupOpenSoundRef.current = null;
       popupCloseSoundRef.current = null;
       popupAmbientSoundRef.current = null;
+      if (sIn) sIn.unloadAsync().catch(() => {});
+      if (sOut) sOut.unloadAsync().catch(() => {});
+      if (sOpen) sOpen.unloadAsync().catch(() => {});
+      if (sClose) sClose.unloadAsync().catch(() => {});
+      if (sAmbient) sAmbient.unloadAsync().catch(() => {});
     };
   }, []);
 
+  // Fire-and-forget; replayAsync() starts from beginning immediately (better on iOS). Errors caught to avoid console noise.
   const playIn = useCallback(() => {
     const s = fabPressInRef.current;
-    if (s) { s.setPositionAsync(0); s.playAsync().catch(() => {}); }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
   const playOut = useCallback(() => {
     const s = fabPressOutRef.current;
-    if (s) { s.setPositionAsync(0); s.playAsync().catch(() => {}); }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
   const playPopupOpen = useCallback(() => {
     const s = popupOpenSoundRef.current;
-    if (s) { s.setPositionAsync(0); s.playAsync().catch(() => {}); }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
   const playPopupClose = useCallback(() => {
     const s = popupCloseSoundRef.current;
-    if (s) { s.setPositionAsync(0); s.playAsync().catch(() => {}); }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
   const playPopupAmbient = useCallback(() => {
     const s = popupAmbientSoundRef.current;
     if (!s) return;
     if (popupAmbientFadeRef.current) { clearInterval(popupAmbientFadeRef.current); popupAmbientFadeRef.current = null; }
-    s.setVolumeAsync(0.05).catch(() => {});
-    s.setPositionAsync(0);
-    s.playAsync().catch(() => {});
+    s.getStatusAsync().then((status) => {
+      if (!status.isLoaded) return;
+      s.setVolumeAsync(0.05).then(() => s.setPositionAsync(0)).then(() => s.playAsync()).catch(() => {});
+    }).catch(() => {});
   }, []);
-  const stopPopupAmbient = useCallback(() => {
+  const stopPopupAmbient = useCallback(async () => {
     const s = popupAmbientSoundRef.current;
     if (!s) return;
     if (popupAmbientFadeRef.current) { clearInterval(popupAmbientFadeRef.current); popupAmbientFadeRef.current = null; }
+    try {
+      const status = await s.getStatusAsync();
+      if (!status.isLoaded) return;
+    } catch (_) { return; }
     const startVol = 0.05;
     const steps = 10;
     const stepVol = startVol / steps;
@@ -425,12 +448,8 @@ export default function TabsLayout() {
   const openPopup = useCallback(() => {
     popupOverlayAnim.setValue(0);
     popupContentAnim.setValue(0);
-    popupCard0Anim.setValue(0);
-    popupCard1Anim.setValue(0);
-    popupCard2Anim.setValue(0);
-    popupCardPress0.setValue(1);
-    popupCardPress1.setValue(1);
-    popupCardPress2.setValue(1);
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim].forEach((a) => a.setValue(0));
+    [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5].forEach((p) => p.setValue(1));
 
     setShowPopup(true);
 
@@ -448,7 +467,7 @@ export default function TabsLayout() {
       useNativeDriver: true,
     }).start();
 
-    [popupCard0Anim, popupCard1Anim, popupCard2Anim].forEach((anim, i) => {
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim].forEach((anim, i) => {
       setTimeout(() => {
         RNAnimated.timing(anim, {
           toValue: 1,
@@ -468,7 +487,7 @@ export default function TabsLayout() {
       RNAnimated.timing(barOpacity, { toValue: 0.88, duration: 300, useNativeDriver: true }),
       RNAnimated.timing(pillOpacity, { toValue: 0.5, duration: 300, useNativeDriver: true }),
     ]).start();
-  }, [popupOverlayAnim, popupContentAnim, popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCardPress0, popupCardPress1, popupCardPress2, playPopupOpen, playPopupAmbient, barScale, barTranslateY, barOpacity, pillOpacity]);
+  }, [popupOverlayAnim, popupContentAnim, popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim, popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5, playPopupOpen, playPopupAmbient, barScale, barTranslateY, barOpacity, pillOpacity]);
 
   // ══════════════════════════════════════════
   // Close popup
@@ -498,13 +517,13 @@ export default function TabsLayout() {
   // FAB press handler
   // ══════════════════════════════════════════
   const handleFabPress = useCallback(() => {
-    playOut();
+    playOut(); // sound first so it starts as soon as haptic
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     RNAnimated.timing(fabScaleAnim, {
       toValue: 1,
       duration: 55,
       useNativeDriver: true,
     }).start();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (fabOpen) {
       closePopup();
@@ -516,6 +535,7 @@ export default function TabsLayout() {
 
   const handleFabPressIn = useCallback(() => {
     playIn();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     RNAnimated.timing(fabScaleAnim, {
       toValue: 1.12,
       duration: 260,
@@ -526,15 +546,16 @@ export default function TabsLayout() {
   // ══════════════════════════════════════════
   // Popup card press animation
   // ══════════════════════════════════════════
-  const cardPressIn = useCallback((card: 0 | 1 | 2) => {
-    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : popupCardPress2;
-    RNAnimated.timing(sv, { toValue: 0.92, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2]);
+  const popupCardPressRefs = [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5];
+  const cardPressIn = useCallback((card: 0 | 1 | 2 | 3 | 4 | 5) => {
+    const sv = popupCardPressRefs[card];
+    if (sv) RNAnimated.timing(sv, { toValue: 0.92, duration: 100, useNativeDriver: true }).start();
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5]);
 
-  const cardPressOut = useCallback((card: 0 | 1 | 2) => {
-    const sv = card === 0 ? popupCardPress0 : card === 1 ? popupCardPress1 : popupCardPress2;
-    RNAnimated.timing(sv, { toValue: 1, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2]);
+  const cardPressOut = useCallback((card: 0 | 1 | 2 | 3 | 4 | 5) => {
+    const sv = popupCardPressRefs[card];
+    if (sv) RNAnimated.timing(sv, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5]);
 
   // ══════════════════════════════════════════
   // Popup card select handlers
@@ -559,6 +580,31 @@ export default function TabsLayout() {
       emitCardSelect(card);
     });
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity]);
+
+  const handleWorkoutCardSelect = useCallback((card: 'tmlsn' | 'your-routines' | 'empty') => {
+    stopPopupAmbient();
+    rotateTo(false);
+
+    RNAnimated.parallel([
+      RNAnimated.spring(barScale, { toValue: 1, damping: 16, stiffness: 100, mass: 1.2, useNativeDriver: true }),
+      RNAnimated.timing(barTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
+      RNAnimated.timing(barOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      RNAnimated.timing(pillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+
+    RNAnimated.parallel([
+      RNAnimated.timing(popupContentAnim, { toValue: 0, duration: 90, useNativeDriver: true }),
+      RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
+    ]).start(() => {
+      setShowPopup(false);
+      if (card === 'tmlsn') router.push('/tmlsn-routines-modal');
+      else if (card === 'your-routines') router.push('/your-routines-modal');
+      else {
+        emitWorkoutCardSelect('empty');
+        if (!isWorkoutSelected) router.push({ pathname: '/workout', params: { startEmpty: '1' } });
+      }
+    });
+  }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);
 
   // ══════════════════════════════════════════
   // Animated styles for popup
@@ -598,6 +644,9 @@ export default function TabsLayout() {
   const card0Style = makeCardStyle(popupCard0Anim, popupCardPress0);
   const card1Style = makeCardStyle(popupCard1Anim, popupCardPress1);
   const card2Style = makeCardStyle(popupCard2Anim, popupCardPress2);
+  const card3Style = makeCardStyle(popupCard3Anim, popupCardPress3);
+  const card4Style = makeCardStyle(popupCard4Anim, popupCardPress4);
+  const card5Style = makeCardStyle(popupCard5Anim, popupCardPress5);
 
   // ══════════════════════════════════════════════════════════════
   // CUSTOM TAB BAR — 3 layers: background, sliding pill, icons
@@ -850,10 +899,10 @@ export default function TabsLayout() {
               transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
             }}
           >
-            <View style={{ gap: POPUP_CARD_GAP }}>
-              {/* Row 1: saved foods + search food */}
-              <View style={{ flexDirection: 'row', gap: POPUP_CARD_GAP }}>
-                {/* Saved Foods */}
+            {/* Universal popup: left column = nutrition, right column = workout */}
+            <View style={{ flexDirection: 'row', gap: POPUP_CARD_GAP }}>
+              {/* Left column: saved foods, search food, scan food */}
+              <View style={{ gap: POPUP_CARD_GAP }}>
                 <RNAnimated.View style={card0Style}>
                   <TouchableOpacity
                     style={popupStyles.card}
@@ -862,16 +911,10 @@ export default function TabsLayout() {
                     onPressOut={() => cardPressOut(0)}
                     activeOpacity={1}
                   >
-                    <Image
-                      source={require('../../assets/saved-food-icon.png')}
-                      style={popupStyles.scanFoodIcon}
-                      resizeMode="contain"
-                    />
+                    <Image source={require('../../assets/saved-food-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
                     <Text style={popupStyles.cardLabel}>saved foods</Text>
                   </TouchableOpacity>
                 </RNAnimated.View>
-
-                {/* Search Food */}
                 <RNAnimated.View style={card1Style}>
                   <TouchableOpacity
                     style={popupStyles.card}
@@ -880,18 +923,10 @@ export default function TabsLayout() {
                     onPressOut={() => cardPressOut(1)}
                     activeOpacity={1}
                   >
-                    <Image
-                      source={require('../../assets/search-food-icon.png')}
-                      style={popupStyles.searchFoodIcon}
-                      resizeMode="contain"
-                    />
+                    <Image source={require('../../assets/search-food-icon.png')} style={popupStyles.searchFoodIcon} resizeMode="contain" />
                     <Text style={popupStyles.cardLabel}>search food</Text>
                   </TouchableOpacity>
                 </RNAnimated.View>
-              </View>
-
-              {/* Row 2: scan food (centered) */}
-              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: POPUP_CARD_GAP }}>
                 <RNAnimated.View style={card2Style}>
                   <TouchableOpacity
                     style={popupStyles.card}
@@ -900,12 +935,47 @@ export default function TabsLayout() {
                     onPressOut={() => cardPressOut(2)}
                     activeOpacity={1}
                   >
-                    <Image
-                      source={require('../../assets/scan-food-ai-icon.png')}
-                      style={popupStyles.scanFoodIcon}
-                      resizeMode="contain"
-                    />
+                    <Image source={require('../../assets/scan-food-ai-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
                     <Text style={popupStyles.cardLabel}>scan food</Text>
+                  </TouchableOpacity>
+                </RNAnimated.View>
+              </View>
+              {/* Right column: tmlsn routines, your routines, start empty workout */}
+              <View style={{ gap: POPUP_CARD_GAP }}>
+                <RNAnimated.View style={card3Style}>
+                  <TouchableOpacity
+                    style={popupStyles.card}
+                    onPress={() => handleWorkoutCardSelect('tmlsn')}
+                    onPressIn={() => cardPressIn(3)}
+                    onPressOut={() => cardPressOut(3)}
+                    activeOpacity={1}
+                  >
+                    <Image source={require('../../assets/saved-food-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
+                    <Text style={popupStyles.cardLabel}>tmlsn routines</Text>
+                  </TouchableOpacity>
+                </RNAnimated.View>
+                <RNAnimated.View style={card4Style}>
+                  <TouchableOpacity
+                    style={popupStyles.card}
+                    onPress={() => handleWorkoutCardSelect('your-routines')}
+                    onPressIn={() => cardPressIn(4)}
+                    onPressOut={() => cardPressOut(4)}
+                    activeOpacity={1}
+                  >
+                    <Image source={require('../../assets/search-food-icon.png')} style={popupStyles.searchFoodIcon} resizeMode="contain" />
+                    <Text style={popupStyles.cardLabel}>your routines</Text>
+                  </TouchableOpacity>
+                </RNAnimated.View>
+                <RNAnimated.View style={card5Style}>
+                  <TouchableOpacity
+                    style={popupStyles.card}
+                    onPress={() => handleWorkoutCardSelect('empty')}
+                    onPressIn={() => cardPressIn(5)}
+                    onPressOut={() => cardPressOut(5)}
+                    activeOpacity={1}
+                  >
+                    <Image source={require('../../assets/scan-food-ai-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
+                    <Text style={popupStyles.cardLabel}>start empty workout</Text>
                   </TouchableOpacity>
                 </RNAnimated.View>
               </View>

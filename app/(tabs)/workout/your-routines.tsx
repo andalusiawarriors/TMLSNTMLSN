@@ -21,7 +21,12 @@ import { Card } from '../../../components/Card';
 
 const windowHeight = Dimensions.get('window').height;
 
-export default function YourRoutinesScreen() {
+type YourRoutinesScreenProps = {
+  /** When provided (e.g. from FAB modal), use this instead of navigating within workout tab */
+  onStartRoutine?: (routine: SavedRoutine) => void;
+};
+
+export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp }: YourRoutinesScreenProps = {}) {
   const router = useRouter();
   const { playIn, playOut } = useButtonSound();
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
@@ -109,6 +114,10 @@ export default function YourRoutinesScreen() {
 
   const handleStartRoutine = (routine: SavedRoutine) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onStartRoutineProp) {
+      onStartRoutineProp(routine);
+      return;
+    }
     router.replace({
       pathname: '/workout',
       params: { startRoutineId: routine.id },

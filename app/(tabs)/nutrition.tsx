@@ -45,6 +45,7 @@ import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -74,11 +75,8 @@ const Font = {
   extraBold: 'EBGaramond_800ExtraBold',
 } as const;
 
-// Card font: DMMono for widgets (calories, macros, labels)
-const CardFont = {
-  family: 'DMMono_500Medium',
-  letterSpacing: -0.1,
-} as const;
+// Card letterSpacing only; font = system default (same as date/week strip in SwipeableWeekView). Rule: .cursor/rules/card-font-weight.mdc
+const CardFont = { letterSpacing: -0.1 } as const;
 
 const HeadingLetterSpacing = -1;
 const CARD_LABEL_COLOR = '#FFFFFF';
@@ -379,7 +377,7 @@ export default function NutritionScreen() {
     (async () => {
       try {
         await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: false, // respect silent mode – no sounds when muted
+          playsInSilentModeIOS: true, // UI feedback sounds play even when device is muted
           staysActiveInBackground: false,
           shouldDuckAndroid: true,
           playThroughEarpieceAndroid: false,
@@ -416,47 +414,40 @@ export default function NutritionScreen() {
       }
     })();
     return () => {
-      if (clickSound) clickSound.unloadAsync();
-      if (tapSound) tapSound.unloadAsync();
-      if (cardPressInSound) cardPressInSound.unloadAsync();
-      if (cardPressOutSound) cardPressOutSound.unloadAsync();
       clickSoundRef.current = null;
       tapSoundRef.current = null;
       cardPressInSoundRef.current = null;
       cardPressOutSoundRef.current = null;
+      if (clickSound) clickSound.unloadAsync().catch(() => {});
+      if (tapSound) tapSound.unloadAsync().catch(() => {});
+      if (cardPressInSound) cardPressInSound.unloadAsync().catch(() => {});
+      if (cardPressOutSound) cardPressOutSound.unloadAsync().catch(() => {});
     };
   }, []);
 
+  // Fire-and-forget; replayAsync() starts from beginning immediately (better on iOS). Errors caught to avoid console noise.
   const playClickSound = useCallback(() => {
     const s = clickSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
 
   const playTapSound = useCallback(() => {
     const s = tapSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
 
   // Press = one sound, release = other sound (cards: 0213(5) in / 0213(6) out; FAB: 0213(3) in / 0213(4) out)
   const playCardPressInSound = useCallback(() => {
     const s = cardPressInSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
   const playCardPressOutSound = useCallback(() => {
     const s = cardPressOutSoundRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (!s) return;
+    s.replayAsync({}).catch(() => {});
   }, []);
 
 
@@ -792,6 +783,8 @@ export default function NutritionScreen() {
   };
 
   const onCardPressOut = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    playCardPressOutSound();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const { x, y } = cardTouchStart.current;
     const dx = e.nativeEvent.pageX - x;
     const dy = e.nativeEvent.pageY - y;
@@ -800,7 +793,6 @@ export default function NutritionScreen() {
     const wasCarouselDrag = carouselDraggedRef.current; // user slid carousel left/right during press
     const wasDrag = wasCarouselDrag || moved >= TAP_SLOP || wasScrollPull;
     if (!wasDrag) {
-      playCardPressOutSound();
       isEaten.value = isEaten.value === 0 ? 1 : 0;
       rollTrigger.value = rollTrigger.value + 1;
     }
@@ -813,10 +805,11 @@ export default function NutritionScreen() {
   };
 
   const onCardPressOutScaleOnly = () => {
+    playCardPressOutSound();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (mainScrollPullRef.current || mainScrollDragBegunRef.current) {
       cardScale.value = 1;
     } else {
-      playCardPressOutSound();
       cardScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
     }
   };
@@ -952,12 +945,18 @@ export default function NutritionScreen() {
   return (
     <View style={styles.container}>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Background image behind everything */}
-        <Image
-          source={require('../../assets/home-background.png')}
-          style={styles.homeBackgroundImage}
-          resizeMode="cover"
-        />
+        {/* Circular gradient background at 0% 0%: #2f3031 → #1a1a1a */}
+        <View style={styles.homeBackgroundImage} pointerEvents="none">
+          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+            <Defs>
+              <RadialGradient id="homeBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
+                <Stop offset="0" stopColor="#2f3031" />
+                <Stop offset="1" stopColor="#1a1a1a" />
+              </RadialGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#homeBgGrad)" />
+          </Svg>
+        </View>
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
           style={[styles.flywheelOverlay, { top: TOP_LEFT_PILL_TOP + 12 }]}
@@ -1053,7 +1052,7 @@ export default function NutritionScreen() {
                     style={{ width: 19, height: 19 }}
                     resizeMode="contain"
                   />
-                  <Text style={styles.pillStreakCount}>0</Text>
+                  <Text style={[styles.caloriesLeftValue, { fontSize: 13, color: '#C6C6C6', letterSpacing: 13 * -0.03 }]}>0</Text>
                 </View>
               </View>
             </View>
@@ -1479,7 +1478,7 @@ export default function NutritionScreen() {
                 {cameraLoading ? <ActivityIndicator color="#2F3031" /> : <Text style={styles.aiDescribeButtonText}>Analyze</Text>}
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { setShowAiDescribe(false); setAiPhotoBase64(null); }} style={{ marginTop: 12 }}>
-                <Text style={{ color: '#C6C6C6', fontFamily: CardFont.family, fontSize: 14 }}>Retake</Text>
+                <Text style={{ color: '#C6C6C6', fontSize: 14 }}>Retake</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1811,10 +1810,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   pillStreakCount: {
-    fontFamily: 'DMMono_500Medium',
     color: '#C6C6C6',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   pageHeaderRow: {
     flexDirection: 'column',
@@ -1862,14 +1860,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   caloriesLeftValue: {
-    fontFamily: CardFont.family,
     fontSize: 36,
     fontWeight: '500',
     color: CARD_NUMBER_COLOR,
     letterSpacing: 36 * -0.03, // -3% letter spacing (-1.08)
   },
   caloriesLeftLabel: {
-    fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
@@ -1877,7 +1873,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
   },
   caloriesEatenLabel: {
-    fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
@@ -1885,7 +1880,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
   },
   caloriesEatenGoal: {
-    fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
@@ -1919,21 +1913,18 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   macroLeftValue: {
-    fontFamily: CardFont.family,
     fontSize: 16,
     fontWeight: '500',
     color: CARD_NUMBER_COLOR,
     letterSpacing: CardFont.letterSpacing,
   },
   macroLeftLabel: {
-    fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     marginTop: -3,
     letterSpacing: -0.11,
   },
   macroEatenLabel: {
-    fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     marginTop: -3,
@@ -1943,7 +1934,6 @@ const styles = StyleSheet.create({
     minWidth: 72,
   },
   macroEatenGoal: {
-    fontFamily: CardFont.family,
     fontSize: 10,
     color: CARD_LABEL_COLOR,
     letterSpacing: -0.11,
@@ -1967,7 +1957,6 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   healthScoreTitle: {
-    fontFamily: CardFont.family,
     fontSize: 15,
     fontWeight: '500',
     color: '#FFFFFF',
@@ -1980,7 +1969,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   healthScoreNa: {
-    fontFamily: CardFont.family,
     fontSize: 15,
     fontWeight: '500',
     color: '#FFFFFF',
@@ -2020,7 +2008,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(198, 198, 198, 0.9)',
   },
   recentlyUploadedTitle: {
-    fontFamily: CardFont.family,
     fontSize: Typography.body,
     fontWeight: '700',
     color: '#FFFFFF',
@@ -2194,7 +2181,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   cameraCloseText: {
-    fontFamily: 'DMMono_500Medium',
     fontSize: 16,
     color: '#C6C6C6',
   },
@@ -2215,14 +2201,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#C6C6C6',
   },
   cameraModeBubbleText: {
-    fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     color: CARD_LABEL_COLOR,
     letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
   },
   cameraModeBubbleTextActive: {
-    fontFamily: CardFont.family,
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
     letterSpacing: CARD_LABEL_FONT_SIZE * -0.12,
@@ -2258,13 +2242,11 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   aiDescribeTitle: {
-    fontFamily: 'DMMono_500Medium',
     fontSize: 20,
     color: '#FFFFFF',
     marginBottom: 8,
   },
   aiDescribeHint: {
-    fontFamily: 'DMMono_400Regular',
     fontSize: 13,
     color: '#888',
     marginBottom: 20,
@@ -2276,7 +2258,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     color: '#FFFFFF',
-    fontFamily: 'DMMono_400Regular',
     fontSize: 15,
     textAlignVertical: 'top',
     marginBottom: 16,
@@ -2288,7 +2269,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   aiDescribeButtonText: {
-    fontFamily: 'DMMono_500Medium',
     fontSize: 16,
     color: '#2F3031',
   },
@@ -2298,7 +2278,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     color: '#FFFFFF',
-    fontFamily: 'DMMono_400Regular',
     fontSize: 15,
     marginBottom: 12,
   },
@@ -2308,18 +2287,15 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(198,198,198,0.15)',
   },
   foodSearchName: {
-    fontFamily: 'DMMono_500Medium',
     fontSize: 14,
     color: '#FFFFFF',
   },
   foodSearchBrand: {
-    fontFamily: 'DMMono_400Regular',
     fontSize: 12,
     color: '#888',
     marginTop: 2,
   },
   foodSearchMacros: {
-    fontFamily: 'DMMono_400Regular',
     fontSize: 12,
     color: '#C6C6C6',
     marginTop: 4,

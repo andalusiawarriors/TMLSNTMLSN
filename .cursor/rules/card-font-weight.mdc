@@ -1,0 +1,14 @@
+---
+description: Card font = system default (same as date). Do not add fontFamily to card styles.
+alwaysApply: true
+---
+
+# Card font — DO NOT CHANGE
+
+**Card font is the system default** — same as the date/week strip in `SwipeableWeekView` (no `fontFamily` set; uses platform default: San Francisco on iOS, Roboto on Android). User chose this for the bare 0.
+
+- **Do not add `fontFamily`** to card styles in `app/(tabs)/nutrition.tsx` (caloriesLeftValue, caloriesLeftLabel, macro styles, streak pill, etc.). Do not introduce DMMono, Space Mono, Inconsolata, or any other custom font for the cards.
+- **Cards** = calorie/macro/electrolyte/health score/recently-uploaded widgets + top-left streak pill. They must keep using the default font (no fontFamily).
+- **Allowed:** Other card styling (colors, sizes, layout, letterSpacing). Only adding a custom fontFamily to card text is forbidden.
+
+If a task would require setting a custom font on the cards, do not do it. Skip that part or ask the user.

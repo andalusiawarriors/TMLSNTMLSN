@@ -46,6 +46,20 @@ export function onCardSelect(fn: CardCb): VoidCb {
   };
 }
 
+// ── Workout FAB card select (layout → workout screen) ──
+type WorkoutCard = 'tmlsn' | 'your-routines' | 'empty';
+const workoutCardListeners: ((card: WorkoutCard) => void)[] = [];
+export function emitWorkoutCardSelect(card: WorkoutCard) {
+  workoutCardListeners.forEach(fn => fn(card));
+}
+export function onWorkoutCardSelect(fn: (card: WorkoutCard) => void): VoidCb {
+  workoutCardListeners.push(fn);
+  return () => {
+    const i = workoutCardListeners.indexOf(fn);
+    if (i >= 0) workoutCardListeners.splice(i, 1);
+  };
+}
+
 // ── Streak popup open/close (nutrition → layout, so tab bar shifts with content) ──
 const streakStateListeners: BoolCb[] = [];
 export function emitStreakPopupState(open: boolean) {
