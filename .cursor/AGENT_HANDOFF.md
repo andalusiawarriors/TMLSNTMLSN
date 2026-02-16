@@ -37,11 +37,12 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/workout/index.tsx`, `components/StreakWidget.tsx`, `utils/streak.ts`, `app/_layout.tsx`, `assets/enso.png` – Enso logo, liquid glass streak widget, removed big streak button
-- `components/MuscleBodyHeatmap.tsx`, `components/BodyAnatomySvg.tsx` – LiftShift anatomy for muscle heatmap (front/back body, volume gradient, tap-to-select)
-- `hooks/useButtonSound.ts` – shared button press sound (card-press-in/out)
-- `app/(tabs)/workout/` – button sound on all tappable elements: `index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx`, `settings.tsx`, `streak.tsx`
-- `app/(tabs)/workout/index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx` – Hevy-style workout redesign: exercise cards with icon+title, numbered set dots, weight×reps layout, bordered set rows with completion states, rest timer with progress bar, collapsible routine cards, session history cards with stat pills
+- `app/(tabs)/workout/index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx` – Hevy-style workout redesign (Person 1): exercise cards, numbered set dots, weight×reps, rest timer, collapsible routine cards, session history
+- `app/(tabs)/workout/` – StreakWidget, MuscleBodyHeatmap, button sound on tappable elements
+- `components/BlurRollNumber.tsx` – restored full Skia version; lerp instead of Extrapolation
+- `app/(tabs)/nutrition.tsx` – top-left pill flame icon, pull-to-refresh flywheel, card swipe day animation, TMLSN AI logo, FAB popup close sound (Person 2)
+- `app/(tabs)/_layout.tsx` – Home tab in center pill (4 tabs: TMLSN CAL, Home, WORKOUT TRACKER, PROMPTS)
+- `app/(tabs)/index.tsx` – Home page (TMLSN title + subtitle)
 
 ---
 

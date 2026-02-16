@@ -8,28 +8,28 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		14EB74BD7F6D1AFE9344F7BE /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D898676E03FBAAA169E681 /* ExpoModulesProvider.swift */; };
+		3B6A3B30187FA6086F72A98E /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54272EDDE304931AD282D17D /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		8838A02BEB1F86B5C4E03A1E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B42809B74F37D166FCD208F6 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C0E3C2CEBE777125FB47521E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D983AB6A20FEC65D3DBBFD91 /* PrivacyInfo.xcprivacy */; };
-		DC43CC6A913311A389F6CB6C /* libPods-TMLSN.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E59EDF86E9BEBF13749B6A01 /* libPods-TMLSN.a */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
+		FFE26C2F96BEBC8B310D9EFA /* libPods-TMLSN.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC681C8AEB56D931F4F6588F /* libPods-TMLSN.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* TMLSN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TMLSN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = TMLSN/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = TMLSN/Info.plist; sourceTree = "<group>"; };
-		62A30B18D122113496F4ECE5 /* Pods-TMLSN.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TMLSN.debug.xcconfig"; path = "Target Support Files/Pods-TMLSN/Pods-TMLSN.debug.xcconfig"; sourceTree = "<group>"; };
-		89D898676E03FBAAA169E681 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-TMLSN/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		54272EDDE304931AD282D17D /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-TMLSN/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		8F6B4DED6601A6C6122A20A3 /* Pods-TMLSN.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TMLSN.release.xcconfig"; path = "Target Support Files/Pods-TMLSN/Pods-TMLSN.release.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = TMLSN/SplashScreen.storyboard; sourceTree = "<group>"; };
+		B42809B74F37D166FCD208F6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = TMLSN/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		D7F9861693C9064DC1594254 /* Pods-TMLSN.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TMLSN.release.xcconfig"; path = "Target Support Files/Pods-TMLSN/Pods-TMLSN.release.xcconfig"; sourceTree = "<group>"; };
-		D983AB6A20FEC65D3DBBFD91 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = TMLSN/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		E59EDF86E9BEBF13749B6A01 /* libPods-TMLSN.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TMLSN.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D5ECCE06CDC613530A16FF3A /* Pods-TMLSN.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TMLSN.debug.xcconfig"; path = "Target Support Files/Pods-TMLSN/Pods-TMLSN.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = TMLSN/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* TMLSN-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "TMLSN-Bridging-Header.h"; path = "TMLSN/TMLSN-Bridging-Header.h"; sourceTree = "<group>"; };
+		FC681C8AEB56D931F4F6588F /* libPods-TMLSN.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TMLSN.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,13 +37,23 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DC43CC6A913311A389F6CB6C /* libPods-TMLSN.a in Frameworks */,
+				FFE26C2F96BEBC8B310D9EFA /* libPods-TMLSN.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		00CFC017F5758F87DC702FC4 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				D5ECCE06CDC613530A16FF3A /* Pods-TMLSN.debug.xcconfig */,
+				8F6B4DED6601A6C6122A20A3 /* Pods-TMLSN.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* TMLSN */ = {
 			isa = PBXGroup;
 			children = (
@@ -53,7 +63,15 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				D983AB6A20FEC65D3DBBFD91 /* PrivacyInfo.xcprivacy */,
+				B42809B74F37D166FCD208F6 /* PrivacyInfo.xcprivacy */,
+			);
+			name = TMLSN;
+			sourceTree = "<group>";
+		};
+		1E89EB4F37C62F7E97E04751 /* TMLSN */ = {
+			isa = PBXGroup;
+			children = (
+				54272EDDE304931AD282D17D /* ExpoModulesProvider.swift */,
 			);
 			name = TMLSN;
 			sourceTree = "<group>";
@@ -62,15 +80,15 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				E59EDF86E9BEBF13749B6A01 /* libPods-TMLSN.a */,
+				FC681C8AEB56D931F4F6588F /* libPods-TMLSN.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		59DA961A8A49ACFF6C0D491F /* ExpoModulesProviders */ = {
+		330E9835EF9D3A77D49C2AE0 /* ExpoModulesProviders */ = {
 			isa = PBXGroup;
 			children = (
-				CEC71992604EA9E49F7FB112 /* TMLSN */,
+				1E89EB4F37C62F7E97E04751 /* TMLSN */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -89,8 +107,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				C69A84C1B3F4A07500847E12 /* Pods */,
-				59DA961A8A49ACFF6C0D491F /* ExpoModulesProviders */,
+				00CFC017F5758F87DC702FC4 /* Pods */,
+				330E9835EF9D3A77D49C2AE0 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -114,24 +132,6 @@
 			path = TMLSN/Supporting;
 			sourceTree = "<group>";
 		};
-		C69A84C1B3F4A07500847E12 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				62A30B18D122113496F4ECE5 /* Pods-TMLSN.debug.xcconfig */,
-				D7F9861693C9064DC1594254 /* Pods-TMLSN.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
-			sourceTree = "<group>";
-		};
-		CEC71992604EA9E49F7FB112 /* TMLSN */ = {
-			isa = PBXGroup;
-			children = (
-				89D898676E03FBAAA169E681 /* ExpoModulesProvider.swift */,
-			);
-			name = TMLSN;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -140,13 +140,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "TMLSN" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				32F504453F8079A227D90948 /* [Expo] Configure project */,
+				D0679D1832A853BE40BAC01F /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				40E851AC945CAD6BF4A11B00 /* [CP] Embed Pods Frameworks */,
+				E109710EB32E14A02A7C84D3 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -167,8 +167,6 @@
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
-						DevelopmentTeam = "XDXCDRNUTP";
-						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -198,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				C0E3C2CEBE777125FB47521E /* PrivacyInfo.xcprivacy in Resources */,
+				8838A02BEB1F86B5C4E03A1E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -244,51 +242,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		32F504453F8079A227D90948 /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-TMLSN/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-TMLSN/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-TMLSN/expo-configure-project.sh\"\n";
-		};
-		40E851AC945CAD6BF4A11B00 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-TMLSN/Pods-TMLSN-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TMLSN/Pods-TMLSN-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -323,6 +276,51 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TMLSN/Pods-TMLSN-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		D0679D1832A853BE40BAC01F /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-TMLSN/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-TMLSN/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-TMLSN/expo-configure-project.sh\"\n";
+		};
+		E109710EB32E14A02A7C84D3 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-TMLSN/Pods-TMLSN-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-TMLSN/Pods-TMLSN-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -331,7 +329,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				14EB74BD7F6D1AFE9344F7BE /* ExpoModulesProvider.swift in Sources */,
+				3B6A3B30187FA6086F72A98E /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -340,7 +338,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 62A30B18D122113496F4ECE5 /* Pods-TMLSN.debug.xcconfig */;
+			baseConfigurationReference = D5ECCE06CDC613530A16FF3A /* Pods-TMLSN.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -363,21 +361,18 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.tmlsn.app;
+				PRODUCT_BUNDLE_IDENTIFIER = org.name.TMLSN;
 				PRODUCT_NAME = TMLSN;
 				SWIFT_OBJC_BRIDGING_HEADER = "TMLSN/TMLSN-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "XDXCDRNUTP";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = D7F9861693C9064DC1594254 /* Pods-TMLSN.release.xcconfig */;
+			baseConfigurationReference = 8F6B4DED6601A6C6122A20A3 /* Pods-TMLSN.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -395,14 +390,11 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.tmlsn.app;
+				PRODUCT_BUNDLE_IDENTIFIER = org.name.TMLSN;
 				PRODUCT_NAME = TMLSN;
 				SWIFT_OBJC_BRIDGING_HEADER = "TMLSN/TMLSN-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "XDXCDRNUTP";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};

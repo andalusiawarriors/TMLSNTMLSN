@@ -65,6 +65,16 @@ export const getTodayNutritionLog = async (): Promise<NutritionLog | null> => {
   }
 };
 
+export const getNutritionLogByDate = async (dateString: string): Promise<NutritionLog | null> => {
+  try {
+    const logs = await getNutritionLogs();
+    return logs.find(log => log.date === dateString) || null;
+  } catch (error) {
+    console.error('Error getting nutrition log by date:', error);
+    return null;
+  }
+};
+
 // Workout Storage Functions
 export const saveWorkoutSession = async (session: WorkoutSession): Promise<void> => {
   try {

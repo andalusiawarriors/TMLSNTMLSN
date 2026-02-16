@@ -18,6 +18,14 @@ export const getTodayDateString = (): string => {
   return new Date().toISOString().split('T')[0];
 };
 
+/** YYYY-MM-DD from a Date (local date, noon UTC to avoid timezone shift) */
+export const toDateString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // Number Formatting
 export const formatNumber = (num: number, decimals: number = 0): string => {
   return num.toFixed(decimals);
