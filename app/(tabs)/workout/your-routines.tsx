@@ -1,21 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   Alert,
   Dimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { getSavedRoutines, saveSavedRoutine } from '../../../utils/storage';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 import { SavedRoutine } from '../../../types';
 import { generateId, formatDuration } from '../../../utils/helpers';
+import { useButtonSound } from '../../../hooks/useButtonSound';
 
 const Font = {
   bold: 'EBGaramond_700Bold',
@@ -26,6 +26,7 @@ const windowHeight = Dimensions.get('window').height;
 
 export default function YourRoutinesScreen() {
   const router = useRouter();
+  const { playIn, playOut } = useButtonSound();
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -124,107 +125,148 @@ export default function YourRoutinesScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.list}>
-          <TouchableOpacity
-            style={styles.newRoutineButton}
-            onPress={openRoutineBuilder}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.newRoutineButtonText}>+ new routine</Text>
-          </TouchableOpacity>
-          {savedRoutines.length === 0 ? (
-            <Text style={styles.emptyText}>No routines yet. Create one above.</Text>
-          ) : (
-            savedRoutines.map((routine) => (
-              <TouchableOpacity
+        {/* New routine button */}
+        <Pressable
+          style={({ pressed }) => [styles.newRoutineButton, pressed && { opacity: 0.85 }]}
+          onPressIn={playIn}
+          onPressOut={playOut}
+          onPress={openRoutineBuilder}
+        >
+          <Text style={styles.newRoutineButtonText}>+ New Routine</Text>
+        </Pressable>
+
+        {/* Routine list */}
+        {savedRoutines.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>◇</Text>
+            <Text style={styles.emptyText}>No routines yet</Text>
+            <Text style={styles.emptySubtext}>Create your first routine above</Text>
+          </View>
+        ) : (
+          <View style={styles.routineList}>
+            {savedRoutines.map((routine) => (
+              <Pressable
                 key={routine.id}
-                style={styles.routineItem}
+                style={({ pressed }) => [styles.routineCard, pressed && { opacity: 0.9 }]}
+                onPressIn={playIn}
+                onPressOut={playOut}
                 onPress={() => handleStartRoutine(routine)}
-                activeOpacity={0.7}
               >
-                <Text style={styles.routineItemName}>{routine.name}</Text>
-                <Text style={styles.routineItemDetail}>
-                  {routine.exercises.length} exercises
-                </Text>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+                <View style={styles.routineCardLeft}>
+                  <View style={styles.routineCardIcon}>
+                    <Text style={styles.routineCardIconText}>◆</Text>
+                  </View>
+                  <View style={styles.routineCardContent}>
+                    <Text style={styles.routineCardName}>{routine.name}</Text>
+                    <View style={styles.routineCardStatsRow}>
+                      <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
+                    </View>
+                    <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
+                      {routine.exercises.map((e) => e.name).join(' · ')}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.routineCardChevron}>›</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
-      {/* Routine builder overlay */}
+      {/* ─── ROUTINE BUILDER OVERLAY (Hevy-style) ─── */}
       {showRoutineBuilder && (
         <View style={[styles.overlay, { height: windowHeight }]}>
           <ScrollView
             style={styles.overlayScroll}
             contentContainerStyle={styles.overlayContent}
           >
-            <View style={styles.logTopBar}>
-              <View style={styles.logTopLeft}>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowRoutineBuilder(false);
-                    setEditingRoutine({ name: 'New Routine', exercises: [] });
-                  }}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={styles.logBackArrowWrap}
-                >
-                  <Text style={styles.logBackArrow}>▼</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() =>
-                    Alert.prompt(
-                      'Routine name',
-                      'Enter a name for this routine',
-                      (text) => {
-                        if (text?.trim()) {
-                          setEditingRoutine((prev) => ({ ...prev, name: text.trim() }));
-                        }
-                      },
-                      'plain-text',
-                      editingRoutine.name === 'New Routine' ? '' : editingRoutine.name
-                    )
-                  }
-                >
-                  <Text style={styles.logTitle}>{editingRoutine.name}</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={styles.finishButton}
-                onPress={saveRoutine}
-                activeOpacity={0.8}
+            {/* Top bar */}
+            <View style={styles.builderTopBar}>
+              <Pressable
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={() => {
+                  setShowRoutineBuilder(false);
+                  setEditingRoutine({ name: 'New Routine', exercises: [] });
+                }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.builderBackWrap}
               >
-                <Text style={styles.finishButtonText}>Save</Text>
-              </TouchableOpacity>
+                <Text style={styles.builderBackArrow}>▼</Text>
+              </Pressable>
+              <Pressable
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={() =>
+                  Alert.prompt(
+                    'Routine name',
+                    'Enter a name for this routine',
+                    (text) => {
+                      if (text?.trim()) {
+                        setEditingRoutine((prev) => ({ ...prev, name: text.trim() }));
+                      }
+                    },
+                    'plain-text',
+                    editingRoutine.name === 'New Routine' ? '' : editingRoutine.name
+                  )
+                }
+                style={styles.builderTitleWrap}
+              >
+                <Text style={styles.builderTitle}>{editingRoutine.name}</Text>
+                <Text style={styles.builderTitleHint}>tap to rename</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.builderSaveButton, pressed && { opacity: 0.85 }]}
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={saveRoutine}
+              >
+                <Text style={styles.builderSaveButtonText}>Save</Text>
+              </Pressable>
             </View>
 
-            {editingRoutine.exercises.map((ex) => (
-              <Card key={ex.id} style={styles.exerciseBlock}>
-                <View style={styles.exerciseBlockHeader}>
-                  <Text style={styles.exerciseBlockName}>{ex.name}</Text>
-                  <TouchableOpacity
+            {/* Exercise count */}
+            <View style={styles.builderSummary}>
+              <Text style={styles.builderSummaryText}>
+                {editingRoutine.exercises.length} exercise{editingRoutine.exercises.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+
+            {/* Exercise blocks */}
+            {editingRoutine.exercises.map((ex, i) => (
+              <View key={ex.id} style={styles.builderExerciseBlock}>
+                <View style={styles.builderExerciseRow}>
+                  <View style={styles.builderExerciseDot}>
+                    <Text style={styles.builderExerciseDotText}>{i + 1}</Text>
+                  </View>
+                  <View style={styles.builderExerciseContent}>
+                    <Text style={styles.builderExerciseName}>{ex.name}</Text>
+                    <Text style={styles.builderExerciseDetail}>
+                      Rest: {formatDuration(ex.restTimer)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPressIn={playIn}
+                    onPressOut={playOut}
                     onPress={() => removeExerciseFromRoutine(ex.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.builderRemoveButton}
                   >
-                    <Text style={styles.exerciseBlockMenu}>✕</Text>
-                  </TouchableOpacity>
+                    <Text style={styles.builderRemoveButtonText}>✕</Text>
+                  </Pressable>
                 </View>
-                <View style={styles.restTimerRow}>
-                  <Text style={styles.restTimerRowIcon}>🕐</Text>
-                  <Text style={styles.restTimerRowText}>
-                    Rest: {formatDuration(ex.restTimer)}
-                  </Text>
-                </View>
-              </Card>
+              </View>
             ))}
 
-            <TouchableOpacity
-              style={styles.addExerciseButton}
+            {/* Add exercise button */}
+            <Pressable
+              style={({ pressed }) => [styles.builderAddButton, pressed && { opacity: 0.85 }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
               onPress={() => setShowExercisePicker(true)}
-              activeOpacity={0.8}
             >
-              <Text style={styles.addExerciseText}>+ Add Exercise</Text>
-            </TouchableOpacity>
+              <Text style={styles.builderAddButtonText}>+ Add Exercise</Text>
+            </Pressable>
 
             <ExercisePickerModal
               visible={showExercisePicker}
@@ -245,56 +287,121 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
   },
   content: {
-    padding: Spacing.lg,
+    padding: Spacing.md,
     paddingBottom: Spacing.xl * 2,
   },
-  list: {
-    paddingLeft: Spacing.sm,
-    borderLeftWidth: 1,
-    borderLeftColor: Colors.primaryLight + '30',
-  },
+
+  // ─── NEW ROUTINE BUTTON ───────────────────────────────────────────────────
   newRoutineButton: {
-    alignSelf: 'stretch',
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
+    backgroundColor: Colors.primaryLight + '15',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
+    borderStyle: 'dashed',
+    paddingVertical: 14,
     alignItems: 'center',
-    ...Shadows.card,
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
   },
   newRoutineButtonText: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.primaryLight + '80',
+    letterSpacing: 0.3,
+  },
+
+  // ─── EMPTY STATE ──────────────────────────────────────────────────────────
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyIcon: {
+    fontSize: 32,
+    color: Colors.primaryLight + '30',
+    marginBottom: 12,
   },
   emptyText: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight + '99',
-    fontStyle: 'italic',
+    fontSize: 16,
+    color: Colors.primaryLight + '60',
+    marginBottom: 4,
   },
-  routineItem: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    marginBottom: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.primaryLight + '15',
-  },
-  routineItemName: {
+  emptySubtext: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
-    letterSpacing: -0.72,
+    fontSize: 12,
+    color: Colors.primaryLight + '40',
+  },
+
+  // ─── ROUTINE LIST ─────────────────────────────────────────────────────────
+  routineList: {
+    gap: 10,
+  },
+  routineCard: {
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '15',
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  routineCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  routineCardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.primaryLight + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routineCardIconText: {
+    fontSize: 16,
+    color: Colors.primaryLight + '80',
+  },
+  routineCardContent: {
+    flex: 1,
+  },
+  routineCardName: {
+    fontFamily: Font.bold,
+    fontSize: 16,
     color: Colors.primaryLight,
+    letterSpacing: -0.5,
     marginBottom: 2,
   },
-  routineItemDetail: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
+  routineCardStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
   },
+  routineCardStat: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '60',
+    letterSpacing: 0.2,
+  },
+  routineCardPreview: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '40',
+    letterSpacing: -0.2,
+  },
+  routineCardChevron: {
+    fontFamily: Font.mono,
+    fontSize: 22,
+    color: Colors.primaryLight + '40',
+    paddingLeft: 8,
+  },
+
+  // ─── OVERLAY ──────────────────────────────────────────────────────────────
   overlay: {
     position: 'absolute',
     top: 0,
@@ -307,104 +414,147 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   overlayContent: {
-    padding: Spacing.lg,
+    padding: Spacing.md,
     paddingBottom: Spacing.xl * 3,
   },
-  logTopBar: {
+
+  // ─── BUILDER TOP BAR ──────────────────────────────────────────────────────
+  builderTopBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  logTopLeft: {
-    flexDirection: 'row',
+  builderBackWrap: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'center',
   },
-  logBackArrowWrap: {
-    padding: Spacing.xs,
-  },
-  logBackArrow: {
+  builderBackArrow: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
+    fontSize: 18,
     color: Colors.primaryLight,
-    lineHeight: Typography.dataValue,
-    letterSpacing: -0.72,
   },
-  logTitle: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  finishButton: {
-    backgroundColor: Colors.accentBlue,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-  },
-  finishButtonText: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.white,
-    letterSpacing: -0.72,
-  },
-  exerciseBlock: {
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.card,
-  },
-  exerciseBlockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  exerciseBlockName: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
+  builderTitleWrap: {
     flex: 1,
-  },
-  exerciseBlockMenu: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    padding: Spacing.xs,
-  },
-  restTimerRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Spacing.md,
-    gap: Spacing.xs,
   },
-  restTimerRowIcon: {
+  builderTitle: {
+    fontFamily: Font.bold,
+    fontSize: 18,
+    color: Colors.primaryLight,
+    letterSpacing: -0.5,
+  },
+  builderTitleHint: {
+    fontFamily: Font.mono,
+    fontSize: 10,
+    color: Colors.primaryLight + '40',
+    letterSpacing: 0.3,
+    marginTop: 2,
+  },
+  builderSaveButton: {
+    backgroundColor: Colors.accentBlue,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 20,
+  },
+  builderSaveButtonText: {
+    fontFamily: Font.mono,
     fontSize: 14,
+    color: Colors.white,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
   },
-  restTimerRowText: {
+
+  // ─── BUILDER SUMMARY ──────────────────────────────────────────────────────
+  builderSummary: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  builderSummaryText: {
     fontFamily: Font.mono,
     fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
   },
-  addExerciseButton: {
-    alignSelf: 'stretch',
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
+
+  // ─── BUILDER EXERCISE BLOCKS ──────────────────────────────────────────────
+  builderExerciseBlock: {
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '15',
+    padding: 12,
+    marginBottom: 8,
+  },
+  builderExerciseRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    ...Shadows.card,
+    gap: 10,
   },
-  addExerciseText: {
+  builderExerciseDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.primaryLight + '25',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  builderExerciseDotText: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight + '60',
+  },
+  builderExerciseContent: {
+    flex: 1,
+  },
+  builderExerciseName: {
+    fontFamily: Font.mono,
+    fontSize: 15,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    letterSpacing: -0.3,
+  },
+  builderExerciseDetail: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+  builderRemoveButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.accentRed + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  builderRemoveButtonText: {
+    fontFamily: Font.mono,
+    fontSize: 14,
+    color: Colors.accentRed + 'CC',
+    fontWeight: '700' as const,
+  },
+
+  // ─── BUILDER ADD BUTTON ───────────────────────────────────────────────────
+  builderAddButton: {
+    backgroundColor: Colors.primaryLight + '15',
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  builderAddButtonText: {
+    fontFamily: Font.mono,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.primaryLight + '80',
+    letterSpacing: 0.3,
   },
 });

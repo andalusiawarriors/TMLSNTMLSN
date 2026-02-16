@@ -17,8 +17,6 @@ import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Card } from '../../../components/Card';
-import { Button } from '../../../components/Button';
 import { Input } from '../../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
@@ -598,7 +596,7 @@ export default function WorkoutScreen() {
 
       </ScrollView>
 
-      {/* Progress / History modal */}
+      {/* ─── HEVY-STYLE PROGRESS / HISTORY MODAL ─── */}
       <Modal
         visible={showHistory}
         animationType="slide"
@@ -612,28 +610,90 @@ export default function WorkoutScreen() {
           onPress={() => setShowHistory(false)}
         >
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            {/* Modal header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>progress</Text>
+              <Text style={styles.modalTitle}>Progress</Text>
               <Pressable
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => setShowHistory(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.modalCloseButton}
               >
-                <Text style={styles.editGoalsLink}>Close</Text>
+                <Text style={styles.modalCloseText}>✕</Text>
               </Pressable>
             </View>
-            <ScrollView style={styles.historyList}>
+
+            {/* Stats summary */}
+            <View style={styles.historyStatsRow}>
+              <View style={styles.historyStatPill}>
+                <Text style={styles.historyStatValue}>{recentWorkouts.length}</Text>
+                <Text style={styles.historyStatLabel}>Sessions</Text>
+              </View>
+              <View style={styles.historyStatPill}>
+                <Text style={styles.historyStatValue}>
+                  {recentWorkouts.reduce((acc, w) => acc + w.exercises.reduce((a, e) => a + e.sets.length, 0), 0)}
+                </Text>
+                <Text style={styles.historyStatLabel}>Total Sets</Text>
+              </View>
+            </View>
+
+            {/* Session list */}
+            <ScrollView style={styles.historyList} showsVerticalScrollIndicator={false}>
               {recentWorkouts.length === 0 ? (
-                <Text style={styles.emptyText}>No workouts yet. Start one to see your progress.</Text>
+                <View style={styles.historyEmpty}>
+                  <Text style={styles.historyEmptyIcon}>◇</Text>
+                  <Text style={styles.historyEmptyText}>No workouts yet</Text>
+                  <Text style={styles.historyEmptySubtext}>Start one to see your progress</Text>
+                </View>
               ) : (
-                recentWorkouts.map((w) => (
-                  <View key={w.id} style={styles.workoutItem}>
-                    <Text style={styles.workoutName}>{w.name}</Text>
-                    <Text style={styles.workoutDetail}>{w.duration} min · {w.exercises.length} exercises</Text>
-                    <Text style={styles.workoutDate}>{new Date(w.date).toLocaleDateString()}</Text>
-                  </View>
-                ))
+                recentWorkouts.map((w) => {
+                  const wSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
+                  const wVolume = w.exercises.reduce(
+                    (a, e) => a + e.sets.reduce((s, set) => s + set.weight * set.reps, 0), 0
+                  );
+                  return (
+                    <View key={w.id} style={styles.historySessionCard}>
+                      {/* Session header */}
+                      <View style={styles.historySessionHeader}>
+                        <View style={styles.historySessionIcon}>
+                          <Text style={styles.historySessionIconText}>◆</Text>
+                        </View>
+                        <View style={styles.historySessionTitleCol}>
+                          <Text style={styles.historySessionName}>{w.name}</Text>
+                          <Text style={styles.historySessionDate}>
+                            {new Date(w.date).toLocaleDateString('en-US', {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                      </View>
+                      {/* Session stats */}
+                      <View style={styles.historySessionStats}>
+                        <View style={styles.historySessionStatItem}>
+                          <Text style={styles.historySessionStatIcon}>◎</Text>
+                          <Text style={styles.historySessionStatText}>{w.exercises.length} exercises</Text>
+                        </View>
+                        <View style={styles.historySessionStatItem}>
+                          <Text style={styles.historySessionStatIcon}>◉</Text>
+                          <Text style={styles.historySessionStatText}>{wSets} sets</Text>
+                        </View>
+                        <View style={styles.historySessionStatItem}>
+                          <Text style={styles.historySessionStatIcon}>⏱</Text>
+                          <Text style={styles.historySessionStatText}>{w.duration} min</Text>
+                        </View>
+                        {wVolume > 0 && (
+                          <View style={styles.historySessionStatItem}>
+                            <Text style={styles.historySessionStatIcon}>⚖</Text>
+                            <Text style={styles.historySessionStatText}>{wVolume.toLocaleString()} {weightUnit}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
               )}
             </ScrollView>
           </View>
@@ -664,24 +724,23 @@ export default function WorkoutScreen() {
               { paddingTop: contentTopPadding },
             ]}
           >
-            {/* Workout – top bar: back arrow, timer, clock, Workout title, blue Finish */}
+            {/* ─── HEVY-STYLE TOP BAR ─── */}
             <View style={styles.logTopBar}>
-              <View style={styles.logTopLeft}>
-                <Pressable
-                  onPressIn={playIn}
-                  onPressOut={playOut}
-                  onPress={handleBackArrowPress}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  style={styles.logBackArrowWrap}
-                >
-                  <Text style={styles.logBackArrow}>▼</Text>
-                </Pressable>
+              <Pressable
+                onPressIn={playIn}
+                onPressOut={playOut}
+                onPress={handleBackArrowPress}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.logBackArrowWrap}
+              >
+                <Text style={styles.logBackArrow}>▼</Text>
+              </Pressable>
+              <View style={styles.logTopCenter}>
+                <Text style={styles.logTitle}>{activeWorkout.name || 'Workout'}</Text>
                 <Text style={styles.logTimer}>{formatElapsed(elapsedSeconds)}</Text>
-                <Text style={styles.logTitle}>Workout</Text>
-                <Text style={styles.logClockIcon}>🕐</Text>
               </View>
               <Pressable
-                style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.8 }]}
+                style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.85 }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() =>
@@ -699,20 +758,35 @@ export default function WorkoutScreen() {
               </Pressable>
             </View>
 
-            {/* Summary: Volume, Sets, muscle icons (reference design) */}
+            {/* ─── HEVY-STYLE SUMMARY STATS ROW ─── */}
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryVolumeText}>Volume {totalVolume} {weightUnit}</Text>
-              <Text style={styles.summarySetsText}>Sets {totalSets}</Text>
-              <View style={styles.summaryIconsRow}>
-                <Text style={styles.summaryIcon}>👤</Text>
-                <Text style={styles.summaryIcon}>👤</Text>
+              <View style={styles.summaryStatPill}>
+                <Text style={styles.summaryStatIcon}>⚖</Text>
+                <Text style={styles.summaryStatValue}>{totalVolume.toLocaleString()}</Text>
+                <Text style={styles.summaryStatUnit}>{weightUnit}</Text>
+              </View>
+              <View style={styles.summaryStatPill}>
+                <Text style={styles.summaryStatIcon}>◉</Text>
+                <Text style={styles.summaryStatValue}>{totalSets}</Text>
+                <Text style={styles.summaryStatUnit}>sets</Text>
+              </View>
+              <View style={styles.summaryStatPill}>
+                <Text style={styles.summaryStatIcon}>◎</Text>
+                <Text style={styles.summaryStatValue}>{activeWorkout.exercises.length}</Text>
+                <Text style={styles.summaryStatUnit}>exercises</Text>
               </View>
             </View>
 
-            {/* Global rest timer (when active) – large countdown, -15/+15/Skip (reference design) */}
+            {/* ─── HEVY-STYLE REST TIMER PANEL ─── */}
             {restTimerActive && restTimeRemaining > 0 && (
               <View style={styles.restTimerPanel}>
+                <View style={styles.restTimerHeader}>
+                  <Text style={styles.restTimerLabel}>REST TIMER</Text>
+                </View>
                 <Text style={styles.restTimerCountdown}>{formatDuration(restTimeRemaining)}</Text>
+                <View style={styles.restTimerProgressTrack}>
+                  <View style={[styles.restTimerProgressFill, { width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
+                </View>
                 <View style={styles.restTimerButtonsRow}>
                   <Pressable
                     style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
@@ -720,15 +794,7 @@ export default function WorkoutScreen() {
                     onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
                   >
-                    <Text style={styles.restTimerAdjustButtonText}>-15</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={() => setRestTimeRemaining((prev) => prev + 15)}
-                  >
-                    <Text style={styles.restTimerAdjustButtonText}>+15</Text>
+                    <Text style={styles.restTimerAdjustButtonText}>−15s</Text>
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [styles.restTimerSkipButton, pressed && { opacity: 0.8 }]}
@@ -738,38 +804,59 @@ export default function WorkoutScreen() {
                   >
                     <Text style={styles.restTimerSkipButtonText}>Skip</Text>
                   </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={() => setRestTimeRemaining((prev) => prev + 15)}
+                  >
+                    <Text style={styles.restTimerAdjustButtonText}>+15s</Text>
+                  </Pressable>
                 </View>
               </View>
             )}
 
-            {/* Exercise blocks – no card divider, continuous flow */}
+            {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
             {activeWorkout.exercises.map((exercise, exerciseIndex) => (
               <View key={exercise.id} style={styles.exerciseBlock}>
+                {/* Exercise header */}
                 <View style={styles.exerciseBlockHeader}>
-                  <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
+                  <View style={styles.exerciseBlockTitleRow}>
+                    <View style={styles.exerciseBlockIcon}>
+                      <Text style={styles.exerciseBlockIconText}>◆</Text>
+                    </View>
+                    <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
+                  </View>
                   <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Text style={styles.exerciseBlockMenu}>⋮</Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.notesPlaceholder}>Add notes here...</Text>
-                <View style={styles.restTimerRow}>
-                  <Text style={styles.restTimerRowIcon}>🕐</Text>
-                  <Text style={styles.restTimerRowText}>
-                    Rest Timer: {exercise.restTimer ? formatDuration(exercise.restTimer) : '—'}
-                  </Text>
+
+                {/* Rest timer badge */}
+                {exercise.restTimer ? (
+                  <View style={styles.restTimerBadge}>
+                    <Text style={styles.restTimerBadgeText}>
+                      Rest: {formatDuration(exercise.restTimer)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Notes */}
+                <Text style={styles.notesPlaceholder}>+ Add notes</Text>
+
+                {/* Set table header */}
+                <View style={styles.setTableHeader}>
+                  <Text style={[styles.setTableHeaderCell, { width: 36 }]}>SET</Text>
+                  <Text style={[styles.setTableHeaderCell, { flex: 1 }]}>PREVIOUS</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 72 }]}>{weightUnit.toUpperCase()}</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 56 }]}>REPS</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 36 }]}>✓</Text>
                 </View>
 
-                {/* Set table */}
-                <View style={styles.setTable}>
-                  <View style={styles.setTableHeader}>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol1]}>SET</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol2]}>PREVIOUS</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol3]}>{weightUnit.toUpperCase()}</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol4]}>REPS</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol5]}>RPE</Text>
-                    <Text style={[styles.setTableHeaderCell, styles.setTableCol6]}>✓</Text>
-                  </View>
-                  {exercise.sets.map((set, setIndex) => (
+                {/* Set rows – Hevy style */}
+                {exercise.sets.map((set, setIndex) => {
+                  const isCompleted = set.completed;
+                  return (
                     <Swipeable
                       key={set.id}
                       renderRightActions={() => (
@@ -785,18 +872,25 @@ export default function WorkoutScreen() {
                       friction={2}
                       rightThreshold={40}
                     >
-                      <View
-                        style={[styles.setTableRow, set.completed && styles.setTableRowCompleted]}
-                      >
-                        <Text style={[styles.setTableCell, styles.setTableCol1, set.completed && styles.setTableCellCompleted]}>
-                          {setIndex + 1}
-                        </Text>
-                        <Text style={[styles.setTableCell, styles.setTableCol2, set.completed && styles.setTableCellCompleted]}>
-                          {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
-                            ? `${exercise.sets[setIndex - 1].weight}×${exercise.sets[setIndex - 1].reps}`
-                            : '—'}
-                        </Text>
-                        <View style={[styles.setTableInputCell, styles.setTableCol3]}>
+                      <View style={[styles.setRow, isCompleted && styles.setRowCompleted]}>
+                        {/* Set number dot */}
+                        <View style={[styles.setDot, isCompleted && styles.setDotCompleted]}>
+                          <Text style={[styles.setDotText, isCompleted && styles.setDotTextCompleted]}>
+                            {setIndex + 1}
+                          </Text>
+                        </View>
+
+                        {/* Previous */}
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                          <Text style={[styles.setCellDim, isCompleted && styles.setCellDimCompleted]}>
+                            {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
+                              ? `${exercise.sets[setIndex - 1].weight}×${exercise.sets[setIndex - 1].reps}`
+                              : '—'}
+                          </Text>
+                        </View>
+
+                        {/* Weight input */}
+                        <View style={{ width: 72, alignItems: 'center' }}>
                           {(set.weight > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight')) ? (
                             <Input
                               value={String(set.weight)}
@@ -805,9 +899,9 @@ export default function WorkoutScreen() {
                               autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight'}
                               keyboardType="numeric"
                               placeholder="—"
-                              containerStyle={StyleSheet.flatten([set.completed ? styles.setTableInputWhenCompleted : styles.setTableInput, styles.setTableInputMinimal])}
-                              style={[styles.setTableInputText, styles.setTableInputNoBox, set.completed && styles.setTableInputTextCompleted]}
-                              placeholderTextColor={set.completed ? 'rgba(255,255,255,0.7)' : Colors.primaryLight}
+                              containerStyle={styles.setInputContainer}
+                              style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
+                              placeholderTextColor={Colors.primaryLight + '60'}
                               fontFamily={Font.mono}
                             />
                           ) : (
@@ -815,14 +909,16 @@ export default function WorkoutScreen() {
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'weight' })}
-                              style={styles.setTableDashCell}
+                              style={styles.setInputPlaceholder}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
+                              <Text style={styles.setInputPlaceholderText}>—</Text>
                             </Pressable>
                           )}
                         </View>
-                        <View style={[styles.setTableInputCell, styles.setTableCol4]}>
+
+                        {/* Reps input */}
+                        <View style={{ width: 56, alignItems: 'center' }}>
                           {(set.reps > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps')) ? (
                             <Input
                               value={String(set.reps)}
@@ -831,9 +927,9 @@ export default function WorkoutScreen() {
                               autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps'}
                               keyboardType="numeric"
                               placeholder="—"
-                              containerStyle={StyleSheet.flatten([set.completed ? styles.setTableInputWhenCompleted : styles.setTableInput, styles.setTableInputMinimal])}
-                              style={[styles.setTableInputText, styles.setTableInputNoBox, set.completed && styles.setTableInputTextCompleted]}
-                              placeholderTextColor={set.completed ? 'rgba(255,255,255,0.7)' : Colors.primaryLight}
+                              containerStyle={styles.setInputContainer}
+                              style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
+                              placeholderTextColor={Colors.primaryLight + '60'}
                               fontFamily={Font.mono}
                             />
                           ) : (
@@ -841,45 +937,42 @@ export default function WorkoutScreen() {
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'reps' })}
-                              style={styles.setTableDashCell}
+                              style={styles.setInputPlaceholder}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={[styles.setTableCell, set.completed && styles.setTableCellCompleted]}>—</Text>
+                              <Text style={styles.setInputPlaceholderText}>—</Text>
                             </Pressable>
                           )}
                         </View>
-                        <TouchableOpacity
-                          style={[styles.setTableRpeCell, styles.setTableCol5, set.completed && styles.setTableRpeCellCompleted]}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.setTableRpeText, set.completed && styles.setTableRpeTextCompleted]}>
-                            RPE
-                          </Text>
-                        </TouchableOpacity>
+
+                        {/* Completion checkmark */}
                         <Pressable
-                          style={[styles.setTableTickCell, styles.setTableCol6]}
+                          style={[styles.setCheckWrap, isCompleted && styles.setCheckWrapCompleted]}
                           onPressIn={playIn}
                           onPressOut={playOut}
-                          onPress={() => updateSet(exerciseIndex, setIndex, { completed: !set.completed })}
+                          onPress={() => {
+                            updateSet(exerciseIndex, setIndex, { completed: !set.completed });
+                            if (!set.completed && exercise.restTimer) {
+                              startRestTimer(exercise.restTimer, setIndex, exerciseIndex);
+                            }
+                          }}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={[styles.setTableCell, set.completed && styles.setTableTickCompleted]}>
-                            ✓
-                          </Text>
+                          <Text style={[styles.setCheckText, isCompleted && styles.setCheckTextCompleted]}>✓</Text>
                         </Pressable>
                       </View>
                     </Swipeable>
-                  ))}
-                </View>
+                  );
+                })}
 
-                {/* Add set – button adds a new row to the table; KG/REPS edited in the table */}
+                {/* Add set button */}
                 <Pressable
-                  style={({ pressed }) => [styles.addSetButtonBlock, pressed && { opacity: 0.8 }]}
+                  style={({ pressed }) => [styles.addSetButtonBlock, pressed && { opacity: 0.85 }]}
                   onPressIn={playIn}
                   onPressOut={playOut}
                   onPress={() => addSet(exerciseIndex)}
                 >
-                  <Text style={styles.addSetButtonBlockText}>+ add set</Text>
+                  <Text style={styles.addSetButtonBlockText}>+ Add Set</Text>
                 </Pressable>
               </View>
             ))}
@@ -909,256 +1002,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
     zIndex: 10,
   },
-  startEmptyButton: {
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.card,
-  },
-  startEmptyButtonText: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-    textAlign: 'center',
-  },
-  routinesHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  routinesTitle: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  newRoutineButton: {
-    alignSelf: 'stretch',
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.card,
-  },
-  newRoutineButtonText: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-    textAlign: 'center',
-  },
-  bubbleButton: {
-    flex: 1,
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
-    ...Shadows.card,
-  },
-  bubbleButtonIcon: {
-    fontFamily: Font.mono,
-    fontSize: 20,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-    marginBottom: Spacing.xs,
-  },
-  bubbleButtonLabel: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  infoBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#C4A035',
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.lg,
-    gap: Spacing.sm,
-    ...Shadows.card,
-  },
-  infoBubbleIcon: {
-    fontSize: 16,
-  },
-  infoBubbleText: {
-    flex: 1,
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: '#1a1a1a',
-  },
-  infoBubbleClose: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    letterSpacing: -0.72,
-    color: '#1a1a1a',
-    padding: Spacing.xs,
-  },
-  sectionTitle: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-    marginBottom: Spacing.sm,
-  },
-  splitCardBlock: {
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
-    ...Shadows.card,
-  },
-  splitCardName: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-    marginBottom: Spacing.sm,
-  },
-  splitExerciseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    marginBottom: Spacing.xs,
-    backgroundColor: Colors.primaryLight + '12',
-    borderRadius: BorderRadius.sm,
-  },
-  splitExerciseName: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  splitExerciseRest: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  addExerciseToRoutineButton: {
-    alignSelf: 'stretch',
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.lg,
-    alignItems: 'center',
-    ...Shadows.card,
-  },
-  addExerciseToRoutineText: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  dropdownHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: 0,
-    marginBottom: Spacing.xs / 2,
-    gap: Spacing.sm,
-  },
-  dropdownChevron: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  dropdownTitle: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  dropdownList: {
-    marginLeft: Spacing.sm,
-    marginBottom: Spacing.md,
-    paddingLeft: Spacing.sm,
-    borderLeftWidth: 1,
-    borderLeftColor: Colors.primaryLight + '30',
-  },
-  tmlsnRoutineCard: {
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-    ...Shadows.card,
-  },
-  tmlsnRoutineCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  tmlsnRoutineCardTitle: {
-    fontFamily: Font.bold,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
-    flex: 1,
-  },
-  tmlsnRoutineExerciseList: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight + 'cc',
-    marginBottom: Spacing.md,
-    lineHeight: 18,
-  },
-  tmlsnRoutineStartButton: {
-    backgroundColor: '#c6c6c6',
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tmlsnRoutineStartButtonText: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    letterSpacing: -0.72,
-    color: '#2f3031',
-  },
-  routineItem: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    marginBottom: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.primaryLight + '15',
-  },
-  routineItemName: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-    marginBottom: 2,
-  },
-  routineItemDetail: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
+  // (old split/routine/bubble styles removed – replaced by Hevy-style components)
   pageHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1299,192 +1143,167 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  editGoalsLink: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
-    color: '#C6C6C6',
-    fontWeight: Typography.weights.semiBold,
-  },
-  optionButton: {
-    marginBottom: Spacing.sm,
-  },
-  emptyText: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    textAlign: 'center',
-    paddingVertical: Spacing.lg,
-  },
-  workoutItem: {
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '20',
-  },
-  workoutName: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.h2,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.xs,
-  },
-  workoutDetail: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.xs,
-  },
-  workoutDate: {
-    fontFamily: Font.regular,
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
-  },
-  progressText: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: '#C6C6C6',
-    marginTop: Spacing.xs,
-  },
-  exerciseName: {
-    fontFamily: Font.bold,
-    fontSize: Typography.h1,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.sm,
-    letterSpacing: HeadingLetterSpacing,
-  },
-  setsCompleted: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.md,
-  },
-  setRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '20',
-  },
-  setText: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-  },
-  setEntry: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  setInput: {
-    flex: 1,
-  },
-  addSetButton: {
-    marginTop: Spacing.md,
-  },
-  timerToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.md,
-    backgroundColor: Colors.primaryLight + '20',
-    borderRadius: BorderRadius.sm,
-  },
-  timerToggleText: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    fontWeight: Typography.weights.semiBold,
-  },
-  timerDuration: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: '#C6C6C6',
-    marginLeft: Spacing.sm,
-  },
-  nextButton: {
-    marginTop: Spacing.md,
-  },
-  restTimerCard: {
-    backgroundColor: Colors.accentRed + '20',
-    borderWidth: 2,
-    borderColor: Colors.accentRed,
-  },
-  restTimerTitle: {
-    fontFamily: Font.bold,
-    fontSize: Typography.h2,
-    fontWeight: Typography.weights.bold,
-    color: Colors.primaryLight,
-    textAlign: 'center',
-    letterSpacing: HeadingLetterSpacing,
-  },
-  restTimerTime: {
-    fontSize: 64,
-    fontWeight: Typography.weights.bold,
-    color: Colors.accentRed,
-    textAlign: 'center',
-    marginVertical: Spacing.lg,
-  },
-  skipButton: {
-    marginTop: Spacing.md,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'flex-end',
-  },
+  // (old exercise/set/timer styles removed – replaced by Hevy-style components above)
+  // ─── HEVY-STYLE MODAL ──────────────────────────────────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: Colors.primaryDark,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: Spacing.lg,
-    maxHeight: '80%',
+    maxHeight: '85%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   modalTitle: {
-    fontFamily: Font.extraBold,
-    fontSize: Typography.h1,
-    fontWeight: Typography.weights.bold,
+    fontFamily: Font.bold,
+    fontSize: 22,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.5,
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.primaryLight + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseText: {
+    fontFamily: Font.mono,
+    fontSize: 14,
+    color: Colors.primaryLight + '80',
+    fontWeight: '700' as const,
+  },
+  historyStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: Spacing.md,
+  },
+  historyStatPill: {
+    flex: 1,
+    backgroundColor: Colors.primaryLight + '0A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '15',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  historyStatValue: {
+    fontFamily: Font.mono,
+    fontSize: 22,
+    fontWeight: '800' as const,
+    color: Colors.primaryLight,
+    letterSpacing: -0.5,
+  },
+  historyStatLabel: {
+    fontFamily: Font.mono,
+    fontSize: 10,
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+    marginTop: 2,
   },
   historyList: {
-    maxHeight: 400,
+    maxHeight: 500,
   },
-  splitOption: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.primaryLight + '20',
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.sm,
+  historyEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
   },
-  splitName: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.h2,
-    fontWeight: Typography.weights.semiBold,
+  historyEmptyIcon: {
+    fontSize: 28,
+    color: Colors.primaryLight + '30',
+    marginBottom: 10,
+  },
+  historyEmptyText: {
+    fontFamily: Font.mono,
+    fontSize: 15,
+    color: Colors.primaryLight + '60',
+    marginBottom: 4,
+  },
+  historyEmptySubtext: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    color: Colors.primaryLight + '40',
+  },
+  historySessionCard: {
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '12',
+    padding: 14,
+    marginBottom: 10,
+  },
+  historySessionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  historySessionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.primaryLight + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historySessionIconText: {
+    fontSize: 14,
+    color: Colors.primaryLight + '80',
+  },
+  historySessionTitleCol: {
+    flex: 1,
+  },
+  historySessionName: {
+    fontFamily: Font.bold,
+    fontSize: 16,
     color: Colors.primaryLight,
-    marginBottom: Spacing.xs,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.5,
   },
-  splitDetail: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
+  historySessionDate: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.2,
+    marginTop: 1,
   },
-  cancelButton: {
-    marginTop: Spacing.lg,
+  historySessionStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  // Log Workout screen layout
+  historySessionStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primaryLight + '0A',
+    borderRadius: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  historySessionStatIcon: {
+    fontSize: 11,
+    color: Colors.primaryLight + '50',
+  },
+  historySessionStatText: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '70',
+    letterSpacing: 0.2,
+  },
+  // (old split selection styles removed)
+  // ─── HEVY-STYLE LOG WORKOUT LAYOUT ──────────────────────────────────────────
   logTopBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1492,303 +1311,376 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  logTopLeft: {
-    flexDirection: 'row',
+  logTopCenter: {
+    flex: 1,
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'center',
   },
   logBackArrowWrap: {
     padding: Spacing.xs,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logBackArrow: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
+    fontSize: 18,
     color: Colors.primaryLight,
-    lineHeight: Typography.dataValue,
     letterSpacing: -0.72,
   },
   logTimer: {
     fontFamily: Font.mono,
-    fontSize: Typography.dataValue,
-    color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    fontSize: 13,
+    color: Colors.primaryLight + '99',
+    letterSpacing: 0.5,
   },
   logTitle: {
-    fontFamily: Font.mono,
-    fontSize: Typography.body,
+    fontFamily: Font.bold,
+    fontSize: 18,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
-  },
-  logClockIcon: {
-    fontSize: 16,
-    marginLeft: Spacing.xs,
+    letterSpacing: -0.5,
+    textAlign: 'center',
   },
   finishButton: {
     backgroundColor: Colors.accentBlue,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 20,
   },
   finishButtonText: {
     fontFamily: Font.mono,
-    fontSize: Typography.body,
+    fontSize: 14,
     color: Colors.white,
-    letterSpacing: -0.72,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
   },
+
+  // ─── HEVY-STYLE SUMMARY STATS ─────────────────────────────────────────────
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.lg,
-    gap: Spacing.sm,
+    gap: 10,
   },
-  summaryVolumeText: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  summarySetsText: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  summaryIconsRow: {
+  summaryStatPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    flex: 1,
-    justifyContent: 'flex-end',
+    backgroundColor: Colors.primaryLight + '12',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    gap: 4,
   },
-  summaryIcon: {
-    fontSize: 18,
-    opacity: 0.9,
+  summaryStatIcon: {
+    fontSize: 12,
+    color: Colors.primaryLight + '80',
   },
+  summaryStatValue: {
+    fontFamily: Font.mono,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight,
+    letterSpacing: -0.3,
+  },
+  summaryStatUnit: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '80',
+    letterSpacing: 0.3,
+  },
+
+  // ─── HEVY-STYLE REST TIMER PANEL ──────────────────────────────────────────
   restTimerPanel: {
     marginBottom: Spacing.lg,
-    paddingVertical: Spacing.lg,
+    paddingVertical: 20,
     paddingHorizontal: Spacing.lg,
     alignItems: 'center',
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.lg,
-    ...Shadows.card,
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
+  },
+  restTimerHeader: {
+    marginBottom: 8,
+  },
+  restTimerLabel: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight + '80',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase' as const,
   },
   restTimerCountdown: {
-    fontFamily: Font.bold,
-    fontSize: 48,
+    fontFamily: Font.mono,
+    fontSize: 52,
+    fontWeight: '800' as const,
     color: Colors.primaryLight,
-    marginBottom: Spacing.md,
+    marginBottom: 12,
+    letterSpacing: -1,
+  },
+  restTimerProgressTrack: {
+    width: '100%',
+    height: 4,
+    backgroundColor: Colors.primaryLight + '15',
+    borderRadius: 2,
+    overflow: 'hidden' as const,
+    marginBottom: 16,
+  },
+  restTimerProgressFill: {
+    height: 4,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 2,
   },
   restTimerButtonsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 12,
   },
   restTimerAdjustButton: {
-    backgroundColor: Colors.primaryDarkLighter,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    ...Shadows.card,
+    backgroundColor: Colors.primaryLight + '15',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 16,
   },
   restTimerAdjustButtonText: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
+    fontFamily: Font.mono,
+    fontSize: 14,
+    fontWeight: '600' as const,
     color: Colors.primaryLight,
+    letterSpacing: -0.3,
   },
   restTimerSkipButton: {
-    backgroundColor: Colors.accentBlue,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    ...Shadows.card,
+    backgroundColor: Colors.primaryLight,
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+    borderRadius: 16,
   },
   restTimerSkipButtonText: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
-    color: Colors.white,
+    fontFamily: Font.mono,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primaryDark,
+    letterSpacing: -0.3,
   },
+
+  // ─── HEVY-STYLE EXERCISE BLOCKS ───────────────────────────────────────────
   exerciseBlock: {
-    marginBottom: Spacing.lg,
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    ...Shadows.card,
+    marginBottom: 12,
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '15',
+    padding: Spacing.md,
+    paddingBottom: 12,
   },
   exerciseBlockHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.xs,
+    marginBottom: 8,
+  },
+  exerciseBlockTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  exerciseBlockIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.primaryLight + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exerciseBlockIconText: {
+    fontSize: 14,
+    color: Colors.primaryLight + '80',
   },
   exerciseBlockName: {
-    fontFamily: Font.mono,
-    fontSize: Typography.h2,
+    fontFamily: Font.bold,
+    fontSize: 17,
     color: Colors.primaryLight,
-    letterSpacing: -0.72,
+    letterSpacing: -0.5,
     flex: 1,
   },
   exerciseBlockMenu: {
-    fontFamily: Font.regular,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    padding: Spacing.xs,
+    fontFamily: Font.mono,
+    fontSize: 20,
+    color: Colors.primaryLight + '60',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  restTimerBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primaryLight + '10',
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  restTimerBadgeText: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    color: Colors.primaryLight + '80',
+    letterSpacing: 0.3,
   },
   notesPlaceholder: {
     fontFamily: Font.mono,
     fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight + '99',
-    marginBottom: Spacing.sm,
+    letterSpacing: -0.3,
+    color: Colors.primaryLight + '50',
+    marginBottom: 12,
   },
-  restTimerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    gap: Spacing.xs,
-  },
-  restTimerRowIcon: {
-    fontSize: 14,
-  },
-  restTimerRowText: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  setTable: {
-    marginBottom: Spacing.md,
-    marginHorizontal: -Spacing.lg,
-  },
+
+  // ─── HEVY-STYLE SET TABLE ─────────────────────────────────────────────────
   setTableHeader: {
     flexDirection: 'row',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginBottom: 4,
   },
   setTableHeaderCell: {
     fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-    flex: 1,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 1,
+    color: Colors.primaryLight + '50',
     textAlign: 'center',
+    textTransform: 'uppercase' as const,
   },
-  setTableCol1: { minWidth: 28 },
-  setTableCol2: { marginLeft: 32, minWidth: 72 },
-  setTableCol3: { marginLeft: 32, minWidth: 28 },
-  setTableCol4: { marginLeft: 32, minWidth: 40 },
-  setTableCol5: { marginLeft: 32, minWidth: 28 },
-  setTableCol6: { marginLeft: 32, minWidth: 24 },
-  setTableRow: {
+
+  // ─── HEVY-STYLE SET ROWS ──────────────────────────────────────────────────
+  setRow: {
     flexDirection: 'row',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  setRowCompleted: {
+    backgroundColor: Colors.primaryLight + '0A',
+    borderColor: Colors.primaryLight + '20',
+  },
+  setDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.primaryLight + '30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  setDotCompleted: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primaryLight,
+  },
+  setDotText: {
+    fontFamily: Font.mono,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight + '80',
+  },
+  setDotTextCompleted: {
+    color: Colors.primaryDark,
+  },
+  setCellDim: {
+    fontFamily: Font.mono,
+    fontSize: 12,
+    color: Colors.primaryLight + '50',
+    letterSpacing: -0.3,
+  },
+  setCellDimCompleted: {
+    color: Colors.primaryLight + '70',
+  },
+  setInputContainer: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    marginBottom: 0,
+    minHeight: 32,
+  },
+  setInputText: {
+    fontFamily: Font.mono,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight,
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  setInputTextCompleted: {
+    color: Colors.white,
+  },
+  setInputPlaceholder: {
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryLight + '0A',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+  },
+  setInputPlaceholderText: {
+    fontFamily: Font.mono,
+    fontSize: 15,
+    color: Colors.primaryLight + '40',
+    fontWeight: '600' as const,
+  },
+  setCheckWrap: {
+    width: 36,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: Colors.primaryLight + '30',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setCheckWrapCompleted: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primaryLight,
+  },
+  setCheckText: {
+    fontFamily: Font.mono,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight + '40',
+  },
+  setCheckTextCompleted: {
+    color: Colors.primaryDark,
   },
   setRowDeleteAction: {
     backgroundColor: Colors.accentRed,
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
-    minHeight: 52,
+    borderRadius: 12,
+    marginLeft: 4,
   },
   setRowDeleteText: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.body,
+    fontFamily: Font.mono,
+    fontSize: 13,
     color: Colors.white,
-    fontWeight: Typography.weights.semiBold,
-  },
-  setTableRowCompleted: {
-    // no background – same as panel
-  },
-  setTableCell: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-    flex: 1,
-    textAlign: 'center',
-  },
-  setTableCellCompleted: {
-    color: '#ffffff',
-  },
-  setTableRpeCell: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-  },
-  setTableRpeCellCompleted: {
-    // no background – same as panel
-  },
-  setTableRpeText: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  setTableRpeTextCompleted: {
-    color: Colors.white,
-  },
-  setTableTickCell: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  setTableTickCompleted: {
-    color: '#ffffff',
-  },
-  setTableInputTextCompleted: {
-    color: '#ffffff',
-  },
-  setTableInputCell: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-  },
-  setTableInputMinimal: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    marginBottom: 0,
-  },
-  setTableDashCell: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  setTableInputText: {
-    fontFamily: Font.mono,
-    fontSize: 12,
-    letterSpacing: -0.72,
-    color: Colors.primaryLight,
-  },
-  setTableInputNoBox: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-  },
-  setTableInput: {
-    marginBottom: 0,
-    minHeight: 36,
-  },
-  setTableInputWhenCompleted: {
-    marginBottom: 0,
-    minHeight: 36,
+    fontWeight: '700' as const,
   },
   addSetButtonBlock: {
-    width: 368,
-    height: 39,
-    alignSelf: 'center',
-    backgroundColor: '#C6C6C6',
-    marginTop: Spacing.sm,
-    borderRadius: 38,
+    alignSelf: 'stretch',
+    height: 40,
+    backgroundColor: Colors.primaryLight + '15',
+    marginTop: 8,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.card,
   },
   addSetButtonBlockText: {
     fontFamily: Font.mono,
-    fontSize: 12,
-    color: '#2F3031',
-    letterSpacing: -0.72,
+    fontSize: 13,
+    color: Colors.primaryLight + '90',
+    fontWeight: '600' as const,
+    letterSpacing: 0.3,
   },
 });

@@ -16,7 +16,7 @@ export default function WorkoutLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: Colors.primaryDark },
         headerTintColor: Colors.primaryLight,
-        headerBackTitle: 'Back',
+        headerBackVisible: false,
         contentStyle: { backgroundColor: Colors.primaryDark },
         animation: 'slide_from_right',
         animationDuration: 220,
@@ -24,12 +24,19 @@ export default function WorkoutLayout() {
           <Pressable
             onPress={handleBack}
             style={({ pressed }) => [
-              { marginLeft: 8, paddingVertical: 8, paddingRight: 16 },
+              {
+                marginLeft: 8,
+                height: 36,
+                paddingHorizontal: 12,
+                alignItems: 'center',
+                justifyContent: 'center',
+                alignSelf: 'center',
+              },
               pressed && { opacity: 0.7 },
             ]}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={{ color: Colors.primaryLight, fontSize: 17 }}>‹ Back</Text>
+            <Text style={{ color: Colors.primaryLight, fontSize: 15 }}>‹ Back</Text>
           </Pressable>
         ),
       }}

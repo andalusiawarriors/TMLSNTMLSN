@@ -16,12 +16,16 @@ import {
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing } from '../../../constants/theme';
+import { getUserSettings } from '../../../utils/storage';
+import { scheduleStreak6HourNotification, cancelNotification } from '../../../utils/notifications';
 import { BlurRollNumber } from '../../../components/BlurRollNumber';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'tmlsn_workout_streak_v2';
+const STREAK_NOTIF_KEY = 'tmlsn_streak_6h_notification_id';
 const TICK_MS = 17; // ~60fps for smooth bar and number updates
 const COUNTDOWN_TOTAL = 86400;
+const SIX_HOURS_SEC = 21600;
 
 // TMLSN theme
 const FONT_MONO = 'DMMono_400Regular';
@@ -228,6 +232,7 @@ export default function StreakScreen() {
   const lastWorkRef = useRef<Date | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streakNotifRef = useRef<string | null>(null);
 
   useEffect(() => { streakRef.current = streakStart; }, [streakStart]);
   useEffect(() => { deadRef.current = streakDead; }, [streakDead]);
@@ -252,7 +257,24 @@ export default function StreakScreen() {
           if (rem <= 0 && s.exemptWeek !== getWeekKey(new Date())) {
             setStreakDead(true);
           } else {
-            setCountdown(Math.max(0, rem));
+            const cd = Math.max(0, rem);
+            setCountdown(cd);
+            if (cd > SIX_HOURS_SEC) {
+              getUserSettings().then(async (settings) => {
+                if (settings.notificationsEnabled) {
+                  const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
+                  if (oldId) {
+                    await cancelNotification(oldId);
+                    await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
+                  }
+                  const id = await scheduleStreak6HourNotification(cd - SIX_HOURS_SEC);
+                  if (id) {
+                    streakNotifRef.current = id;
+                    await AsyncStorage.setItem(STREAK_NOTIF_KEY, id);
+                  }
+                }
+              });
+            }
           }
         }
       } catch (e) { console.warn('streak load error', e); }
@@ -299,12 +321,24 @@ export default function StreakScreen() {
   }, []);
 
   const useRestDay = useCallback(async () => {
+    const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
+    if (oldId) {
+      await cancelNotification(oldId);
+      await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
+    }
+    streakNotifRef.current = null;
     const wk = getWeekKey(new Date());
     setExemptWeek(wk);
     await persist({ exemptWeek: wk });
   }, [persist]);
 
   const resetStreak = useCallback(async () => {
+    const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
+    if (oldId) {
+      await cancelNotification(oldId);
+      await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
+    }
+    streakNotifRef.current = null;
     if (tickRef.current) clearInterval(tickRef.current);
     if (cdRef.current) clearInterval(cdRef.current);
     setStreakStart(null);
@@ -395,6 +429,16 @@ export default function StreakScreen() {
         >
           <Text style={styles.resetLabel}>reset streak</Text>
         </TouchableOpacity>
+
+        {__DEV__ && (
+          <TouchableOpacity
+            style={[styles.resetTouchable, { marginTop: Spacing.sm }]}
+            onPress={() => scheduleStreak6HourNotification()}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.resetLabel}>test 6h notification</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
