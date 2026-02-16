@@ -39,7 +39,6 @@ import { onWorkoutCardSelect } from '../../../utils/fabBridge';
 import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
 import { HeatmapPreviewWidget } from '../../../components/HeatmapPreviewWidget';
-import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
 import { StreakWidget } from '../../../components/StreakWidget';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
@@ -550,13 +549,8 @@ export default function WorkoutScreen() {
           <HeatmapPreviewWidget heatmapData={weeklyHeatmap} />
         </AnimatedFadeInUp>
 
-        {/* Statistics button (pressable, below heatmap) */}
-        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
-          <StatisticsButtonWidget />
-        </AnimatedFadeInUp>
-
         {/* Swipeable widget: full screen width for centered snap */}
-        <AnimatedFadeInUp delay={240} duration={380} trigger={animTrigger}>
+        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
         <View
           style={styles.swipeWidgetWrapper}
           onLayout={(e) => setSwipeViewWidth(e.nativeEvent.layout.width)}
