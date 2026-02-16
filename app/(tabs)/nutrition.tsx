@@ -214,69 +214,6 @@ export default function NutritionScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [showFlickerLogo, setShowFlickerLogo] = useState(false);
-  const lastActivityRef = useRef(Date.now());
-  const lastFlickerRef = useRef(0);
-  const flickerTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const darkLogoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const IDLE_MS = 10000; // flicker after 10s idle
-  const DARK_LOGO_HOLD_MS = 10000; // after flickers, hold dark logo for 10s then back to main
-  const FLICKER_COOLDOWN_MS = 8000;
-  const LOGO_RAPID_PRESS_COUNT = 10;
-  const LOGO_RAPID_WINDOW_MS = 2500;
-  const logoRapidPressCountRef = useRef(0);
-  const logoRapidWindowStartRef = useRef(0);
-  // Quick flickers: [showAltMs, showMainMs] pairs; then we hold alt for 10s
-  const FLICKER_SEQUENCE: [number, number][] = [[100, 70], [180, 90], [120, 80]];
-  const reportActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    if (darkLogoTimeoutRef.current) {
-      clearTimeout(darkLogoTimeoutRef.current);
-      darkLogoTimeoutRef.current = null;
-    }
-    setShowFlickerLogo(false);
-  }, []);
-
-  const runFlickerThenHold = useCallback(() => {
-    flickerTimeoutsRef.current.forEach(clearTimeout);
-    flickerTimeoutsRef.current = [];
-    if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
-    let delay = 0;
-    FLICKER_SEQUENCE.forEach(([onMs, offMs]) => {
-      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(true), delay));
-      delay += onMs;
-      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(false), delay));
-      delay += offMs;
-    });
-    // After the flickers, show dark logo for 10s then revert to main without flickering
-    flickerTimeoutsRef.current.push(setTimeout(() => {
-      setShowFlickerLogo(true);
-      darkLogoTimeoutRef.current = setTimeout(() => {
-        setShowFlickerLogo(false);
-        darkLogoTimeoutRef.current = null;
-        lastFlickerRef.current = Date.now(); // so idle doesn't re-trigger flicker right after revert
-      }, DARK_LOGO_HOLD_MS);
-    }, delay));
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      const now = Date.now();
-      const idleLongEnough = now - lastActivityRef.current >= IDLE_MS;
-      const cooldownPassed = now - lastFlickerRef.current >= FLICKER_COOLDOWN_MS;
-      const notInDarkHold = darkLogoTimeoutRef.current == null; // don't interrupt 10s revert
-      if (idleLongEnough && cooldownPassed && notInDarkHold) {
-        lastFlickerRef.current = now;
-        runFlickerThenHold();
-      }
-    }, 600);
-    return () => {
-      clearInterval(t);
-      flickerTimeoutsRef.current.forEach(clearTimeout);
-      if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
-    };
-  }, [runFlickerThenHold]);
-
   // Tab-bar pill dimensions for FAB positioning
 
   // Add Meal Form State
@@ -525,7 +462,6 @@ export default function NutritionScreen() {
   // ── Bridge: card selected in popup (rendered in _layout.tsx) → open feature ──
   useEffect(() => {
     const unsub = onCardSelect((card) => {
-      reportActivity();
       if (card === 'saved') handleChoiceSavedFoods();
       else if (card === 'search') handleChoiceFoodDatabase();
       else if (card === 'scan') handleChoiceScanFood();
@@ -770,7 +706,6 @@ export default function NutritionScreen() {
   // Carousel (horizontal paging between normal and flipped card layouts)
   const CAROUSEL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
   const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(page);
@@ -783,7 +718,6 @@ export default function NutritionScreen() {
   const mainScrollDragBegunRef = useRef(false); // true when user is pulling down main list – don’t run card click-out animation
 
   const onCardPressIn = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
-    reportActivity();
     cardTouchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
     carouselDraggedRef.current = false;
     playCardPressInSound();
@@ -822,7 +756,6 @@ export default function NutritionScreen() {
   };
 
   const onCarouselScrollBeginDrag = () => {
-    reportActivity();
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -1122,29 +1055,13 @@ export default function NutritionScreen() {
         </Pressable>
 
         <View style={styles.pageHeaderRow}>
-          <Pressable
-            onPress={() => {
-              const now = Date.now();
-              if (now - logoRapidWindowStartRef.current > LOGO_RAPID_WINDOW_MS) {
-                logoRapidPressCountRef.current = 0;
-                logoRapidWindowStartRef.current = now;
-              }
-              logoRapidPressCountRef.current += 1;
-              if (logoRapidPressCountRef.current >= LOGO_RAPID_PRESS_COUNT) {
-                logoRapidPressCountRef.current = 0;
-                logoRapidWindowStartRef.current = 0;
-                lastFlickerRef.current = Date.now();
-                runFlickerThenHold();
-              }
-            }}
-            style={styles.pageHeaderLogoPressable}
-          >
+          <View style={styles.pageHeaderLogoPressable}>
             <Image
-              source={showFlickerLogo ? require('../../assets/logo-flicker.png') : require('../../assets/tmlsn-calories-logo.png')}
+              source={require('../../assets/tmlsn-calories-logo.png')}
               style={styles.pageHeaderLogo}
               resizeMode="contain"
             />
-          </Pressable>
+          </View>
         </View>
         <SwipeableWeekView
           weekWidth={WEEK_STRIP_PAGE_WIDTH}
