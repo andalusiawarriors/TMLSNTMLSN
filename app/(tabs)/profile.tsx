@@ -1,25 +1,40 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../../constants/theme';
+import { StatisticsButtonWidget } from '../../components/StatisticsButtonWidget';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + Spacing.lg }]}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={[styles.container, { paddingTop: insets.top + Spacing.lg }]}
+      showsVerticalScrollIndicator={false}
+    >
       <Text style={styles.title}>Profile</Text>
       <Text style={styles.subtitle}>Your account and settings</Text>
-    </View>
+      <View style={styles.progressSection}>
+        <StatisticsButtonWidget />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scroll: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+  },
+  container: {
     paddingHorizontal: Spacing.md,
-    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingBottom: Spacing.xxl,
+  },
+  progressSection: {
+    marginTop: Spacing.xl,
+    alignSelf: 'stretch',
     alignItems: 'center',
   },
   title: {
