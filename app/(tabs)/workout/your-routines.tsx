@@ -7,20 +7,17 @@ import {
   Pressable,
   Alert,
   Dimensions,
+  Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { getSavedRoutines, saveSavedRoutine } from '../../../utils/storage';
-import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../../constants/theme';
 import { SavedRoutine } from '../../../types';
 import { generateId, formatDuration } from '../../../utils/helpers';
 import { useButtonSound } from '../../../hooks/useButtonSound';
-
-const Font = {
-  bold: 'EBGaramond_700Bold',
-  mono: 'DMMono_400Regular',
-} as const;
+import { Card } from '../../../components/Card';
 
 const windowHeight = Dimensions.get('window').height;
 
@@ -120,11 +117,17 @@ export default function YourRoutinesScreen() {
 
   return (
     <>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.container}>
+        <Image
+          source={require('../../../assets/home-background.png')}
+          style={styles.homeBackgroundImage}
+          resizeMode="cover"
+        />
+        <ScrollView
+          style={styles.scrollLayer}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
         {/* New routine button */}
         <Pressable
           style={({ pressed }) => [styles.newRoutineButton, pressed && { opacity: 0.85 }]}
@@ -147,11 +150,12 @@ export default function YourRoutinesScreen() {
             {savedRoutines.map((routine) => (
               <Pressable
                 key={routine.id}
-                style={({ pressed }) => [styles.routineCard, pressed && { opacity: 0.9 }]}
+                style={({ pressed }) => [styles.routineCardWrap, pressed && { opacity: 0.9 }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => handleStartRoutine(routine)}
               >
+                <Card gradientFill borderRadius={18} style={styles.routineCard}>
                 <View style={styles.routineCardLeft}>
                   <View style={styles.routineCardIcon}>
                     <Text style={styles.routineCardIconText}>◆</Text>
@@ -167,11 +171,13 @@ export default function YourRoutinesScreen() {
                   </View>
                 </View>
                 <Text style={styles.routineCardChevron}>›</Text>
+                </Card>
               </Pressable>
             ))}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* ─── ROUTINE BUILDER OVERLAY (Hevy-style) ─── */}
       {showRoutineBuilder && (
@@ -286,6 +292,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.primaryDark,
   },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollLayer: {
+    zIndex: 2,
+  },
   content: {
     padding: Spacing.md,
     paddingBottom: Spacing.xl * 2,
@@ -304,8 +317,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   newRoutineButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '600' as const,
     color: Colors.primaryLight + '80',
     letterSpacing: 0.3,
@@ -324,13 +337,13 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontFamily: Font.mono,
-    fontSize: 16,
+    fontSize: Typography.body,
     color: Colors.primaryLight + '60',
     marginBottom: 4,
   },
   emptySubtext: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '40',
   },
 
@@ -338,12 +351,12 @@ const styles = StyleSheet.create({
   routineList: {
     gap: 10,
   },
+  routineCardWrap: {
+    marginBottom: 10,
+  },
   routineCard: {
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
     padding: 14,
+    marginVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -370,10 +383,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   routineCardName: {
-    fontFamily: Font.bold,
-    fontSize: 16,
+    fontFamily: Font.extraBold,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
-    letterSpacing: -0.5,
+    letterSpacing: HeadingLetterSpacing,
     marginBottom: 2,
   },
   routineCardStatsRow: {
@@ -384,18 +397,18 @@ const styles = StyleSheet.create({
   },
   routineCardStat: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '60',
     letterSpacing: 0.2,
   },
   routineCardPreview: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '40',
     letterSpacing: -0.2,
   },
   routineCardChevron: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 22,
     color: Colors.primaryLight + '40',
     paddingLeft: 8,
@@ -433,7 +446,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   builderBackArrow: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 18,
     color: Colors.primaryLight,
   },
@@ -442,14 +455,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   builderTitle: {
-    fontFamily: Font.bold,
-    fontSize: 18,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
   builderTitleHint: {
     fontFamily: Font.mono,
-    fontSize: 10,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '40',
     letterSpacing: 0.3,
     marginTop: 2,
@@ -461,8 +474,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   builderSaveButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.white,
     fontWeight: '700' as const,
     letterSpacing: 0.5,
@@ -475,7 +488,7 @@ const styles = StyleSheet.create({
   },
   builderSummaryText: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     letterSpacing: 0.5,
     textTransform: 'uppercase' as const,
@@ -505,8 +518,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   builderExerciseDotText: {
-    fontFamily: Font.mono,
-    fontSize: 11,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '60',
   },
@@ -514,14 +527,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   builderExerciseName: {
-    fontFamily: Font.mono,
-    fontSize: 15,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.3,
   },
   builderExerciseDetail: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     letterSpacing: 0.2,
     marginTop: 2,
@@ -535,8 +548,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   builderRemoveButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.accentRed + 'CC',
     fontWeight: '700' as const,
   },
@@ -551,8 +564,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   builderAddButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '600' as const,
     color: Colors.primaryLight + '80',
     letterSpacing: 0.3,

@@ -74,9 +74,9 @@ const Font = {
   extraBold: 'EBGaramond_800ExtraBold',
 } as const;
 
-// Card font: system default (DMMono_500Medium was never loaded so cards always used system fallback)
+// Card font: DMMono for widgets (calories, macros, labels)
 const CardFont = {
-  family: undefined as string | undefined,
+  family: 'DMMono_500Medium',
   letterSpacing: -0.1,
 } as const;
 
@@ -1811,6 +1811,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   pillStreakCount: {
+    fontFamily: 'DMMono_500Medium',
     color: '#C6C6C6',
     fontSize: 13,
     fontWeight: '600',

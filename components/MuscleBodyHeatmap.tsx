@@ -7,19 +7,21 @@ import { View, Text, StyleSheet, Dimensions, Pressable } from 'react-native';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { getWeekStart, DAY_NAMES, MUSCLE_GROUP_DISPLAY_NAMES } from '../utils/weeklyMuscleTracker';
 import type { MuscleGroup } from '../utils/exerciseDb/types';
-import { Colors, Spacing, BorderRadius, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Shadows, Typography, Font } from '../constants/theme';
 import { BodyAnatomySvg } from './BodyAnatomySvg';
 
 const BODY_WIDTH = Math.min(160, Dimensions.get('window').width / 2 - Spacing.lg);
 const BODY_HEIGHT = BODY_WIDTH * 1.5;
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-// Display order for muscle list (reference style)
-const MUSCLE_LIST_ORDER: MuscleGroup[] = [
+// Display order for muscle list — organized into upper / lower
+const UPPER_MUSCLES: MuscleGroup[] = [
   'chest', 'upper_back', 'lats', 'lower_back', 'traps',
   'front_delts', 'side_delts', 'rear_delts',
   'biceps', 'triceps', 'forearms',
   'abs', 'obliques',
+];
+const LOWER_MUSCLES: MuscleGroup[] = [
   'quads', 'hamstrings', 'glutes', 'adductors', 'calves', 'hip_flexors',
 ];
 
@@ -45,6 +47,8 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
 
   const [selectedDay, setSelectedDay] = useState(todayDayOfWeek);
   const [pressedMuscleGroup, setPressedMuscleGroup] = useState<MuscleGroup | null>(null);
+  const [upperExpanded, setUpperExpanded] = useState(true);
+  const [lowerExpanded, setLowerExpanded] = useState(true);
 
   // Clear selection when switching days
   React.useEffect(() => {
@@ -71,14 +75,22 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
   }, [heatmapData]);
 
   const muscleListForDay = useMemo(() => {
-    return MUSCLE_LIST_ORDER.map((group) => {
+    const upper = UPPER_MUSCLES.map((group) => {
       const data = heatmapByGroup.get(group);
       const sets = data?.byDay[selectedDay] ?? 0;
       return { group, displayName: MUSCLE_GROUP_DISPLAY_NAMES[group], sets };
     });
+    const lower = LOWER_MUSCLES.map((group) => {
+      const data = heatmapByGroup.get(group);
+      const sets = data?.byDay[selectedDay] ?? 0;
+      return { group, displayName: MUSCLE_GROUP_DISPLAY_NAMES[group], sets };
+    });
+    return { upper, lower };
   }, [heatmapByGroup, selectedDay]);
 
-  const totalSetsForDay = muscleListForDay.reduce((sum, m) => sum + m.sets, 0);
+  const totalSetsForDay =
+    muscleListForDay.upper.reduce((sum, m) => sum + m.sets, 0) +
+    muscleListForDay.lower.reduce((sum, m) => sum + m.sets, 0);
 
   return (
     <View style={styles.container}>
@@ -120,31 +132,27 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
 
       {/* Body anatomy (front + back) — volume gradient + tap-to-select */}
       <View style={styles.bodyRow}>
-        <View style={[styles.bodyHalf, styles.bodyWrapperShadow]}>
-          <View style={styles.bodyWrapperInner}>
-            <BodyAnatomySvg
-              variant="front"
-              heatmapData={heatmapData}
-              selectedDay={selectedDay}
-              maxVolume={maxVolumeForDay}
-              pressedMuscleGroup={pressedMuscleGroup}
-              width={BODY_WIDTH}
-              height={BODY_HEIGHT}
-            />
-          </View>
+        <View style={styles.bodyHalf}>
+          <BodyAnatomySvg
+            variant="front"
+            heatmapData={heatmapData}
+            selectedDay={selectedDay}
+            maxVolume={maxVolumeForDay}
+            pressedMuscleGroup={pressedMuscleGroup}
+            width={BODY_WIDTH}
+            height={BODY_HEIGHT}
+          />
         </View>
-        <View style={[styles.bodyHalf, styles.bodyWrapperShadow]}>
-          <View style={styles.bodyWrapperInner}>
-            <BodyAnatomySvg
-              variant="back"
-              heatmapData={heatmapData}
-              selectedDay={selectedDay}
-              maxVolume={maxVolumeForDay}
-              pressedMuscleGroup={pressedMuscleGroup}
-              width={BODY_WIDTH}
-              height={BODY_HEIGHT}
-            />
-          </View>
+        <View style={styles.bodyHalf}>
+          <BodyAnatomySvg
+            variant="back"
+            heatmapData={heatmapData}
+            selectedDay={selectedDay}
+            maxVolume={maxVolumeForDay}
+            pressedMuscleGroup={pressedMuscleGroup}
+            width={BODY_WIDTH}
+            height={BODY_HEIGHT}
+          />
         </View>
       </View>
 
@@ -164,7 +172,52 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
           <Text style={styles.muscleListName}>Total</Text>
           <Text style={styles.muscleListSets}>{totalSetsForDay}</Text>
         </Pressable>
-        {muscleListForDay.map((m) => (
+        <Pressable
+          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          onPress={() => setUpperExpanded((e) => !e)}
+        >
+          <Text style={styles.dropdownChevron}>{upperExpanded ? '▼' : '▶'}</Text>
+          <Text style={styles.dropdownLabel}>Upper</Text>
+          <Text style={styles.dropdownSets}>
+            {muscleListForDay.upper.reduce((s, m) => s + m.sets, 0)}
+          </Text>
+        </Pressable>
+        {upperExpanded &&
+          muscleListForDay.upper.map((m) => (
+            <Pressable
+              key={m.group}
+              style={({ pressed }) => [
+                styles.muscleListRow,
+                (pressed || pressedMuscleGroup === m.group) && styles.muscleListRowPressed,
+              ]}
+              onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
+            >
+              <Text style={[
+                styles.muscleListName,
+                pressedMuscleGroup === m.group && styles.muscleListNameSelected,
+              ]}>
+                {m.displayName}
+              </Text>
+              <Text style={[
+                styles.muscleListSets,
+                pressedMuscleGroup === m.group && styles.muscleListSetsSelected,
+              ]}>
+                {m.sets}
+              </Text>
+            </Pressable>
+          ))}
+        <Pressable
+          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          onPress={() => setLowerExpanded((e) => !e)}
+        >
+          <Text style={styles.dropdownChevron}>{lowerExpanded ? '▼' : '▶'}</Text>
+          <Text style={styles.dropdownLabel}>Lower</Text>
+          <Text style={styles.dropdownSets}>
+            {muscleListForDay.lower.reduce((s, m) => s + m.sets, 0)}
+          </Text>
+        </Pressable>
+        {lowerExpanded &&
+          muscleListForDay.lower.map((m) => (
           <Pressable
             key={m.group}
             style={({ pressed }) => [
@@ -198,15 +251,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   sectionTitle: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 13,
+    fontFamily: Font.extraBold,
+    fontSize: Typography.label,
     letterSpacing: -0.5,
     color: Colors.primaryLight,
     marginBottom: Spacing.sm,
   },
   weekRange: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 11,
+    fontFamily: Font.mono,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '99',
     marginBottom: Spacing.sm,
   },
@@ -232,16 +285,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
   },
   dayLetter: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 11,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
   },
   dayLetterSelected: {
     color: Colors.primaryDark,
   },
   dayDate: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 11,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
     marginTop: 2,
   },
@@ -253,15 +306,6 @@ const styles = StyleSheet.create({
   },
   bodyHalf: {
     alignItems: 'center',
-  },
-  bodyWrapperShadow: {
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.lg,
-    ...Shadows.card,
-  },
-  bodyWrapperInner: {
-    borderRadius: BorderRadius.lg,
-    overflow: 'hidden',
   },
   activityDot: {
     width: 6,
@@ -283,9 +327,44 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   muscleListHeaderText: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 11,
+    fontFamily: Font.mono,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '99',
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.primaryLight + '0A',
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '15',
+  },
+  dropdownHeaderPressed: {
+    backgroundColor: Colors.primaryLight + '15',
+  },
+  dropdownChevron: {
+    fontFamily: Font.mono,
+    fontSize: 10,
+    color: Colors.primaryLight + '99',
+    marginRight: Spacing.xs,
+    width: 14,
+  },
+  dropdownLabel: {
+    flex: 1,
+    fontFamily: Font.extraBold,
+    fontSize: Typography.label,
+    color: Colors.primaryLight + 'CC',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1,
+  },
+  dropdownSets: {
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
+    color: Colors.primaryLight + '99',
+    fontWeight: '600',
   },
   muscleListRow: {
     flexDirection: 'row',
@@ -300,14 +379,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight + '20',
   },
   muscleListName: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 13,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
   muscleListSets: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 13,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
     fontWeight: '600',
   },

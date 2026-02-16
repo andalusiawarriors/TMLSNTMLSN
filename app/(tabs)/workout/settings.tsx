@@ -6,16 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  Image,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
 import { getUserSettings, saveUserSettings } from '../../../utils/storage';
 import type { UserSettings } from '../../../types';
-
-const Font = {
-  mono: 'DMMono_400Regular',
-  semiBold: 'EBGaramond_600SemiBold',
-} as const;
 
 const REST_TIMER_OPTIONS = [60, 90, 120, 180];
 const REST_TIMER_LABELS: Record<number, string> = {
@@ -49,17 +45,28 @@ export default function WorkoutSettingsScreen() {
   if (!settings) {
     return (
       <View style={styles.container}>
+        <Image
+          source={require('../../../assets/home-background.png')}
+          style={styles.homeBackgroundImage}
+          resizeMode="cover"
+        />
         <Text style={styles.loadingText}>loading...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.container}>
+      <Image
+        source={require('../../../assets/home-background.png')}
+        style={styles.homeBackgroundImage}
+        resizeMode="cover"
+      />
+      <ScrollView
+        style={styles.scrollLayer}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
       {/* Weight unit */}
       <View style={styles.section}>
         <Text style={[styles.settingLabel, { marginBottom: Spacing.xs }]}>weight unit</Text>
@@ -157,7 +164,8 @@ export default function WorkoutSettingsScreen() {
           </View>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -165,6 +173,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+  },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollLayer: {
+    zIndex: 2,
   },
   content: {
     padding: Spacing.lg,
@@ -187,7 +202,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   sectionSubtitle: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
     color: Colors.primaryLight + '99',
     marginBottom: Spacing.sm,
@@ -210,7 +225,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
   },
   segmentButtonText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.72,
@@ -234,7 +249,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
   },
   optionChipText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.72,
@@ -249,7 +264,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   settingLabel: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.72,

@@ -37,6 +37,10 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `constants/theme.ts` – added Font, HeadingLetterSpacing (shared with home)
+- `app/(tabs)/workout/` – full home font system: EB Garamond (extraBold/bold/semiBold/regular) for headings/body, DMMono for data/numbers; Typography constants throughout
+- `components/Card.tsx` – added borderRadius prop for gradientFill
+- `components/HeatmapPreviewWidget.tsx`, `StatisticsButtonWidget.tsx` – Card gradientFill
 - `app/(tabs)/workout/index.tsx`, `tmlsn-routines.tsx`, `your-routines.tsx` – Hevy-style workout redesign (Person 1): exercise cards, numbered set dots, weight×reps, rest timer, collapsible routine cards, session history
 - `app/(tabs)/workout/` – StreakWidget, MuscleBodyHeatmap, button sound on tappable elements
 - `components/BlurRollNumber.tsx` – restored full Skia version; lerp instead of Extrapolation

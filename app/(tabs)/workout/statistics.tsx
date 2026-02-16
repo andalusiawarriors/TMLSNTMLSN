@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, ScrollView } from 'react-native';
+import { StyleSheet, ScrollView, View, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Spacing } from '../../../constants/theme';
+import { Spacing, Colors } from '../../../constants/theme';
 import { getWorkoutSessions } from '../../../utils/storage';
 import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
@@ -27,21 +27,36 @@ export default function StatisticsScreen() {
   );
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-        <MuscleBodyHeatmap heatmapData={weeklyHeatmap} />
-      </AnimatedFadeInUp>
-    </ScrollView>
+    <View style={styles.container}>
+      <Image
+        source={require('../../../assets/home-background.png')}
+        style={styles.homeBackgroundImage}
+        resizeMode="cover"
+      />
+      <ScrollView
+        style={styles.scrollLayer}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+          <MuscleBodyHeatmap heatmapData={weeklyHeatmap} />
+        </AnimatedFadeInUp>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.primaryDark,
+  },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollLayer: {
+    zIndex: 2,
   },
   content: {
     paddingHorizontal: Spacing.md,

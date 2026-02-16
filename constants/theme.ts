@@ -1,5 +1,18 @@
 // TMLSN Styling Constants based on PRD Styling Guidelines
 
+// Font families – match home (nutrition) section
+export const Font = {
+  regular: 'EBGaramond_400Regular',
+  medium: 'EBGaramond_500Medium',
+  semiBold: 'EBGaramond_600SemiBold',
+  bold: 'EBGaramond_700Bold',
+  extraBold: 'EBGaramond_800ExtraBold',
+  mono: 'DMMono_400Regular',
+  monoMedium: 'DMMono_500Medium',
+} as const;
+
+export const HeadingLetterSpacing = -1;
+
 export const Colors = {
   // Duo-tone Foundation
   primaryDark: '#2F3031',     // Primary backgrounds, cards, nav bars

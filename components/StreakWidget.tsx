@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { getStreakData } from '../utils/streak';
-import { Colors } from '../constants/theme';
+import { Colors, Font, Typography } from '../constants/theme';
 
 const ROTATION_PRESSED = -45; // degrees on press
 const ROTATION_RELEASED = 0; // anticlockwise back to original rest position
@@ -137,9 +137,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   number: {
-    fontFamily: 'DMMono_500Medium',
-    fontWeight: '800',
-    fontSize: 16,
+    fontFamily: Font.monoMedium,
+    fontWeight: '500',
+    fontSize: Typography.promptText,
     color: Colors.primaryLight,
   },
 });

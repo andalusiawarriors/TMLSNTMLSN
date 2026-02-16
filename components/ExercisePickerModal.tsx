@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../constants/theme';
 
 const CATEGORY_LABELS: Record<string, string> = {
   chest: 'Chest',
@@ -170,18 +170,18 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   title: {
-    fontFamily: 'EBGaramond_600SemiBold',
+    fontFamily: Font.semiBold,
     fontSize: Typography.h2,
     color: Colors.primaryLight,
     textTransform: 'lowercase',
   },
   closeBtn: {
-    fontFamily: 'DMMono_400Regular',
+    fontFamily: Font.monoMedium,
     fontSize: 18,
     color: Colors.primaryLight,
   },
   search: {
-    fontFamily: 'DMMono_400Regular',
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     backgroundColor: Colors.primaryDarkLighter,
@@ -211,8 +211,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
   },
   chipText: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 12,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
@@ -234,19 +234,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDarkLighter,
   },
   rowName: {
-    fontFamily: 'DMMono_400Regular',
+    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
   rowMeta: {
-    fontFamily: 'DMMono_400Regular',
-    fontSize: 11,
+    fontFamily: Font.mono,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '99',
     marginTop: 2,
   },
   empty: {
-    fontFamily: 'DMMono_400Regular',
+    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight + '80',
     fontStyle: 'italic',

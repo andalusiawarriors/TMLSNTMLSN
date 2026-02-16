@@ -10,15 +10,17 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Image,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Input } from '../../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Font, HeadingLetterSpacing } from '../../../constants/theme';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import {
   getRecentWorkouts,
@@ -40,18 +42,8 @@ import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidg
 import { StreakWidget } from '../../../components/StreakWidget';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
+import { Card } from '../../../components/Card';
 
-// EB Garamond – same as Calorie tab; DB Mono for body/UI text
-const Font = {
-  regular: 'EBGaramond_400Regular',
-  medium: 'EBGaramond_500Medium',
-  semiBold: 'EBGaramond_600SemiBold',
-  bold: 'EBGaramond_700Bold',
-  extraBold: 'EBGaramond_800ExtraBold',
-  mono: 'DMMono_400Regular',
-} as const;
-
-const HeadingLetterSpacing = -1;
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -68,6 +60,8 @@ const PROGRESS_CARD_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
 const MAIN_MENU_BUTTON_HEIGHT = 69;
 const MAIN_MENU_BUTTON_GAP = 15;
 const PROGRESS_CARD_HEIGHT = 237;
+const TOP_LEFT_PILL_TOP = 54; // Match home section layout
+const SETTINGS_CIRCLE_SIZE = 40; // Match home profile circle
 const THREE_BUTTON_STACK_HEIGHT = MAIN_MENU_BUTTON_HEIGHT * 3 + MAIN_MENU_BUTTON_GAP * 3; // 252
 const SWIPE_PAGE_HEIGHT = THREE_BUTTON_STACK_HEIGHT; // same height for both pages so y-axis aligns during swipe
 const SWIPE_WIDGET_PADDING_TOP = 12;
@@ -470,16 +464,22 @@ export default function WorkoutScreen() {
   };
 
   const insets = useSafeAreaInsets();
-  const contentTopPadding = insets.top + Spacing.sm;
 
   return (
     <View style={styles.container}>
+      {/* Background image – match home section */}
+      <Image
+        source={require('../../../assets/home-background.png')}
+        style={styles.homeBackgroundImage}
+        resizeMode="cover"
+      />
       {/* Main menu – always present (underneath when workout overlay is shown) */}
       <ScrollView
+        style={styles.scrollViewLayer}
         contentContainerStyle={[
           styles.contentContainer,
           {
-            paddingTop: contentTopPadding,
+            paddingTop: TOP_LEFT_PILL_TOP,
             paddingBottom: Math.max(Spacing.md, insets.bottom + 100),
           },
         ]}
@@ -501,7 +501,20 @@ export default function WorkoutScreen() {
             onPress={() => router.push('/workout/settings')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={styles.settingsButtonText}>⚙</Text>
+            <View style={styles.settingsPill}>
+              <LinearGradient
+                colors={['#4E4F50', '#4A4B4C']}
+                style={[StyleSheet.absoluteFillObject, { borderRadius: SETTINGS_CIRCLE_SIZE / 2 }]}
+              />
+              <LinearGradient
+                colors={['#363738', '#2E2F30']}
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  { top: 1, left: 1, right: 1, bottom: 1, borderRadius: SETTINGS_CIRCLE_SIZE / 2 - 1 },
+                ]}
+              />
+              <Text style={styles.settingsButtonText}>⚙</Text>
+            </View>
           </Pressable>
           </View>
         </View>
@@ -541,39 +554,47 @@ export default function WorkoutScreen() {
             {/* Page 0: 3 buttons */}
             <View style={styles.swipePage}>
               <AnimatedPressable
-                style={styles.mainMenuButton}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => router.push('/workout/tmlsn-routines')}
+                style={styles.mainMenuButtonWrap}
               >
-                <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
+                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
+                  <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
+                </Card>
               </AnimatedPressable>
               <AnimatedPressable
-                style={styles.mainMenuButton}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => router.push('/workout/your-routines')}
+                style={styles.mainMenuButtonWrap}
               >
-                <Text style={styles.mainMenuButtonText}>your routines.</Text>
+                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
+                  <Text style={styles.mainMenuButtonText}>your routines.</Text>
+                </Card>
               </AnimatedPressable>
               <AnimatedPressable
-                style={styles.mainMenuButton}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={startFreeformWorkout}
+                style={styles.mainMenuButtonWrap}
               >
-                <Text style={styles.mainMenuButtonText}>start empty workout</Text>
+                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
+                  <Text style={styles.mainMenuButtonText}>start empty workout</Text>
+                </Card>
               </AnimatedPressable>
             </View>
             {/* Page 1: progress card */}
             <View style={styles.swipePage}>
               <AnimatedPressable
-                style={styles.progressCard}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => setShowHistory(true)}
+                style={styles.mainMenuButtonWrap}
               >
-                <Text style={styles.mainMenuButtonText}>progress</Text>
+                <Card gradientFill borderRadius={38} style={styles.progressCard}>
+                  <Text style={styles.mainMenuButtonText}>progress</Text>
+                </Card>
               </AnimatedPressable>
             </View>
           </ScrollView>
@@ -588,8 +609,10 @@ export default function WorkoutScreen() {
         {/* Achievements only – streak moved to header widget */}
         <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
         <View style={styles.achievementsStack}>
-          <AnimatedPressable style={styles.achievementCard}>
-            <Text style={styles.mainMenuButtonText}>achievements</Text>
+          <AnimatedPressable style={styles.achievementCardWrap}>
+            <Card gradientFill borderRadius={38} style={styles.achievementCard}>
+              <Text style={styles.mainMenuButtonText}>achievements</Text>
+            </Card>
           </AnimatedPressable>
         </View>
         </AnimatedFadeInUp>
@@ -721,7 +744,7 @@ export default function WorkoutScreen() {
           <ScrollView
             contentContainerStyle={[
               styles.contentContainer,
-              { paddingTop: contentTopPadding },
+              { paddingTop: TOP_LEFT_PILL_TOP },
             ]}
           >
             {/* ─── HEVY-STYLE TOP BAR ─── */}
@@ -902,7 +925,7 @@ export default function WorkoutScreen() {
                               containerStyle={styles.setInputContainer}
                               style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
                               placeholderTextColor={Colors.primaryLight + '60'}
-                              fontFamily={Font.mono}
+                              fontFamily={Font.monoMedium}
                             />
                           ) : (
                             <Pressable
@@ -930,7 +953,7 @@ export default function WorkoutScreen() {
                               containerStyle={styles.setInputContainer}
                               style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
                               placeholderTextColor={Colors.primaryLight + '60'}
-                              fontFamily={Font.mono}
+                              fontFamily={Font.monoMedium}
                             />
                           ) : (
                             <Pressable
@@ -990,6 +1013,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
     overflow: 'visible',
   },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollViewLayer: {
+    zIndex: 2,
+  },
   contentContainer: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.md,
@@ -1030,21 +1060,29 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   settingsButton: {
-    width: 44,
-    height: 44,
+    width: SETTINGS_CIRCLE_SIZE,
+    height: SETTINGS_CIRCLE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsPill: {
+    width: SETTINGS_CIRCLE_SIZE,
+    height: SETTINGS_CIRCLE_SIZE,
+    borderRadius: SETTINGS_CIRCLE_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
   settingsButtonText: {
-    fontSize: 24,
+    fontSize: 20,
     color: Colors.primaryLight,
   },
   pageHeading: {
-    fontFamily: Font.bold,
-    fontSize: 28,
-    lineHeight: 44,
+    fontFamily: Font.extraBold,
+    fontSize: Typography.h2 * 1.2 * 1.1,
+    lineHeight: 36,
     marginTop: -4,
-    letterSpacing: -1,
+    letterSpacing: HeadingLetterSpacing,
     color: Colors.primaryLight,
     textAlign: 'center',
   },
@@ -1068,34 +1106,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
-  mainMenuButton: {
+  mainMenuButtonWrap: {
     alignSelf: 'center',
+    marginBottom: MAIN_MENU_BUTTON_GAP,
+  },
+  mainMenuButton: {
     width: BUTTON_WIDTH,
     height: MAIN_MENU_BUTTON_HEIGHT,
-    borderRadius: 38,
-    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: MAIN_MENU_BUTTON_GAP,
-    ...Shadows.card,
+    padding: 0,
+    marginVertical: 0,
   },
   mainMenuButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 16,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.promptText,
+    fontWeight: '500' as const,
     lineHeight: 16,
-    letterSpacing: 0,
+    letterSpacing: -0.1,
     color: '#C6C6C6',
     textAlign: 'center',
   },
   progressCard: {
     width: PROGRESS_CARD_WIDTH,
     height: PROGRESS_CARD_HEIGHT,
-    borderRadius: 38,
     alignSelf: 'center',
-    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.card,
+    padding: 0,
+    marginVertical: 0,
   },
   swipeDots: {
     flexDirection: 'row',
@@ -1118,20 +1157,22 @@ const styles = StyleSheet.create({
     gap: MAIN_MENU_BUTTON_GAP,
     marginBottom: Spacing.sm,
   },
+  achievementCardWrap: {
+    alignSelf: 'center',
+  },
   achievementCard: {
     width: PROGRESS_CARD_WIDTH,
     height: PROGRESS_CARD_HEIGHT,
-    borderRadius: 38,
     alignSelf: 'center',
-    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 0,
-    ...Shadows.card,
+    marginVertical: 0,
   },
   cardTitle: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h2,
+    letterSpacing: HeadingLetterSpacing,
     fontWeight: Typography.weights.semiBold,
     color: Colors.primaryLight,
     marginBottom: Spacing.md,
@@ -1164,8 +1205,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   modalTitle: {
-    fontFamily: Font.bold,
-    fontSize: 22,
+    fontFamily: Font.semiBold,
+    fontSize: Typography.h2,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
@@ -1178,7 +1219,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalCloseText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 14,
     color: Colors.primaryLight + '80',
     fontWeight: '700' as const,
@@ -1198,7 +1239,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   historyStatValue: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 22,
     fontWeight: '800' as const,
     color: Colors.primaryLight,
@@ -1206,7 +1247,7 @@ const styles = StyleSheet.create({
   },
   historyStatLabel: {
     fontFamily: Font.mono,
-    fontSize: 10,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     letterSpacing: 0.5,
     textTransform: 'uppercase' as const,
@@ -1227,13 +1268,13 @@ const styles = StyleSheet.create({
   },
   historyEmptyText: {
     fontFamily: Font.mono,
-    fontSize: 15,
+    fontSize: Typography.body,
     color: Colors.primaryLight + '60',
     marginBottom: 4,
   },
   historyEmptySubtext: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '40',
   },
   historySessionCard: {
@@ -1266,14 +1307,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   historySessionName: {
-    fontFamily: Font.bold,
-    fontSize: 16,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
   historySessionDate: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     letterSpacing: 0.2,
     marginTop: 1,
@@ -1297,7 +1338,7 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '50',
   },
   historySessionStatText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 11,
     color: Colors.primaryLight + '70',
     letterSpacing: 0.2,
@@ -1323,34 +1364,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logBackArrow: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 18,
     color: Colors.primaryLight,
     letterSpacing: -0.72,
   },
   logTimer: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 13,
     color: Colors.primaryLight + '99',
     letterSpacing: 0.5,
   },
   logTitle: {
-    fontFamily: Font.bold,
-    fontSize: 18,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
     textAlign: 'center',
   },
   finishButton: {
-    backgroundColor: Colors.accentBlue,
+    backgroundColor: Colors.primaryLight,
     paddingVertical: 10,
     paddingHorizontal: 22,
     borderRadius: 20,
   },
   finishButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
-    color: Colors.white,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
+    color: Colors.primaryDark,
     fontWeight: '700' as const,
     letterSpacing: 0.5,
   },
@@ -1377,7 +1418,7 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '80',
   },
   summaryStatValue: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.primaryLight,
@@ -1385,7 +1426,7 @@ const styles = StyleSheet.create({
   },
   summaryStatUnit: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '80',
     letterSpacing: 0.3,
   },
@@ -1406,14 +1447,14 @@ const styles = StyleSheet.create({
   },
   restTimerLabel: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '80',
     letterSpacing: 1.5,
     textTransform: 'uppercase' as const,
   },
   restTimerCountdown: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 52,
     fontWeight: '800' as const,
     color: Colors.primaryLight,
@@ -1445,8 +1486,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   restTimerAdjustButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '600' as const,
     color: Colors.primaryLight,
     letterSpacing: -0.3,
@@ -1458,8 +1499,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   restTimerSkipButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '700' as const,
     color: Colors.primaryDark,
     letterSpacing: -0.3,
@@ -1500,14 +1541,14 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '80',
   },
   exerciseBlockName: {
-    fontFamily: Font.bold,
-    fontSize: 17,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
     letterSpacing: -0.5,
     flex: 1,
   },
   exerciseBlockMenu: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 20,
     color: Colors.primaryLight + '60',
     paddingHorizontal: 8,
@@ -1522,13 +1563,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   restTimerBadgeText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 11,
     color: Colors.primaryLight + '80',
     letterSpacing: 0.3,
   },
   notesPlaceholder: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 12,
     letterSpacing: -0.3,
     color: Colors.primaryLight + '50',
@@ -1544,7 +1585,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   setTableHeaderCell: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 10,
     fontWeight: '700' as const,
     letterSpacing: 1,
@@ -1583,7 +1624,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primaryLight,
   },
   setDotText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 11,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '80',
@@ -1592,7 +1633,7 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
   },
   setCellDim: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 12,
     color: Colors.primaryLight + '50',
     letterSpacing: -0.3,
@@ -1607,7 +1648,7 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   setInputText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 15,
     fontWeight: '700' as const,
     color: Colors.primaryLight,
@@ -1626,7 +1667,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   setInputPlaceholderText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 15,
     color: Colors.primaryLight + '40',
     fontWeight: '600' as const,
@@ -1645,7 +1686,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primaryLight,
   },
   setCheckText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 14,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '40',
@@ -1662,7 +1703,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   setRowDeleteText: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 13,
     color: Colors.white,
     fontWeight: '700' as const,
@@ -1677,8 +1718,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addSetButtonBlockText: {
-    fontFamily: Font.mono,
-    fontSize: 13,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '90',
     fontWeight: '600' as const,
     letterSpacing: 0.3,

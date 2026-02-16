@@ -86,33 +86,29 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Slide 1: Front view */}
+        {/* Slide 1: Front view — body only, enclosed by widget */}
         <View style={styles.slide}>
-          <View style={styles.bodyWrap}>
-            <BodyAnatomySvg
-              variant="front"
-              heatmapData={heatmapData}
-              selectedDay={todayDayOfWeek}
-              maxVolume={maxVolumeForDay}
-              pressedMuscleGroup={null}
-              width={BODY_WIDTH}
-              height={BODY_HEIGHT}
-            />
-          </View>
+          <BodyAnatomySvg
+            variant="front"
+            heatmapData={heatmapData}
+            selectedDay={todayDayOfWeek}
+            maxVolume={maxVolumeForDay}
+            pressedMuscleGroup={null}
+            width={BODY_WIDTH}
+            height={BODY_HEIGHT}
+          />
         </View>
         {/* Slide 2: Back view */}
         <View style={styles.slide}>
-          <View style={styles.bodyWrap}>
-            <BodyAnatomySvg
-              variant="back"
-              heatmapData={heatmapData}
-              selectedDay={todayDayOfWeek}
-              maxVolume={maxVolumeForDay}
-              pressedMuscleGroup={null}
-              width={BODY_WIDTH}
-              height={BODY_HEIGHT}
-            />
-          </View>
+          <BodyAnatomySvg
+            variant="back"
+            heatmapData={heatmapData}
+            selectedDay={todayDayOfWeek}
+            maxVolume={maxVolumeForDay}
+            pressedMuscleGroup={null}
+            width={BODY_WIDTH}
+            height={BODY_HEIGHT}
+          />
         </View>
       </ScrollView>
       {/* Page dots */}
@@ -128,13 +124,14 @@ const styles = StyleSheet.create({
   card: {
     width: PROGRESS_CARD_WIDTH,
     alignSelf: 'center',
-    borderRadius: 38,
-    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
     marginBottom: 15,
     overflow: 'hidden',
+    borderRadius: 38,
+    backgroundColor: Colors.primaryDark,
     ...Shadows.card,
   },
   scrollView: {
@@ -145,21 +142,15 @@ const styles = StyleSheet.create({
   },
   slide: {
     width: PROGRESS_CARD_WIDTH,
-    minHeight: BODY_HEIGHT + Spacing.md,
+    minHeight: BODY_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  bodyWrap: {
-    backgroundColor: Colors.primaryDark,
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...Shadows.card,
   },
   dots: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: Spacing.sm,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
   dot: {
     width: 6,

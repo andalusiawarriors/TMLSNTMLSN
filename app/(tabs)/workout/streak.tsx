@@ -12,10 +12,11 @@ import {
   ScrollView,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, Spacing } from '../../../constants/theme';
+import { Colors, Spacing, Typography, Font } from '../../../constants/theme';
 import { getUserSettings } from '../../../utils/storage';
 import { scheduleStreak6HourNotification, cancelNotification } from '../../../utils/notifications';
 import { BlurRollNumber } from '../../../components/BlurRollNumber';
@@ -27,8 +28,6 @@ const TICK_MS = 17; // ~60fps for smooth bar and number updates
 const COUNTDOWN_TOTAL = 86400;
 const SIX_HOURS_SEC = 21600;
 
-// TMLSN theme
-const FONT_MONO = 'DMMono_400Regular';
 
 // TMLSN theme colors
 const BG = Colors.primaryDark;
@@ -357,11 +356,17 @@ export default function StreakScreen() {
   const cdPct = (countdown / COUNTDOWN_TOTAL) * 100;
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.root}>
+      <Image
+        source={require('../../../assets/home-background.png')}
+        style={styles.homeBackgroundImage}
+        resizeMode="cover"
+      />
+      <ScrollView
+        style={styles.scrollLayer}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={styles.widget}>
         {/* Header */}
         <View style={styles.header}>
@@ -440,12 +445,20 @@ export default function StreakScreen() {
           </TouchableOpacity>
         )}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.primaryDark },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollLayer: {
+    zIndex: 2,
+  },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xl * 2 },
 
   widget: {
@@ -460,19 +473,19 @@ const styles = StyleSheet.create({
   },
 
   header: { marginBottom: Spacing.lg, alignItems: 'center' },
-  title: { fontFamily: FONT_MONO, color: WHITE, fontSize: 21, fontWeight: '300' as const, letterSpacing: 0, textAlign: 'center' },
+  title: { fontFamily: Font.extraBold, color: WHITE, fontSize: Typography.h2, letterSpacing: -1, textAlign: 'center' },
 
   barsCol: { gap: 9, marginBottom: Spacing.lg },
   barRow: { flexDirection: 'row' as const, alignItems: 'center', gap: 10 },
   barLabel: { width: 54, alignItems: 'flex-end' },
   barNum: {
-    fontFamily: FONT_MONO,
-    color: WHITE, fontSize: 18, fontWeight: '800' as const,
+    fontFamily: Font.monoMedium,
+    color: WHITE, fontSize: Typography.dataValue, fontWeight: '800' as const,
     fontStyle: 'italic', lineHeight: 21,
   },
   barUnit: {
-    fontFamily: FONT_MONO,
-    color: DIM, fontSize: 8, fontWeight: '700' as const,
+    fontFamily: Font.mono,
+    color: DIM, fontSize: Typography.label, fontWeight: '700' as const,
     letterSpacing: 0.8, textTransform: 'uppercase',
   },
   barTrack: {
@@ -494,16 +507,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', gap: 6,
   },
   cardEyebrow: {
-    fontFamily: FONT_MONO,
-    color: DIM, fontSize: 12, fontWeight: '700' as const,
+    fontFamily: Font.mono,
+    color: DIM, fontSize: Typography.label, fontWeight: '700' as const,
     letterSpacing: 1.8, textTransform: 'uppercase',
     textAlign: 'center',
   },
-  cardNote: { fontFamily: FONT_MONO, color: DIMMER, fontSize: 12, letterSpacing: 0.5, textAlign: 'center', marginTop: 2 },
+  cardNote: { fontFamily: Font.mono, color: DIMMER, fontSize: Typography.label, letterSpacing: 0.5, textAlign: 'center', marginTop: 2 },
 
   cdValue: {
-    fontFamily: FONT_MONO,
-    fontSize: 20, fontWeight: '800' as const, textAlign: 'center',
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.dataValue, fontWeight: '800' as const, textAlign: 'center',
   },
   cdTrack: {
     width: '100%', height: 3,
@@ -519,14 +532,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
   },
-  rdBtnText: { fontFamily: FONT_MONO, color: Colors.primaryDark, fontSize: 15, fontWeight: '800' as const, letterSpacing: 1.5, textAlign: 'center' },
+  rdBtnText: { fontFamily: Font.monoMedium, color: Colors.primaryDark, fontSize: Typography.body, fontWeight: '800' as const, letterSpacing: 1.5, textAlign: 'center' },
   rdDone: {
     width: 40, height: 40, borderRadius: 38,
     borderWidth: 2, borderColor: Colors.primaryLight,
     alignItems: 'center', justifyContent: 'center',
   },
-  rdDoneText: { fontFamily: FONT_MONO, color: Colors.primaryLight, fontSize: 20, fontWeight: '800' as const },
+  rdDoneText: { fontFamily: Font.mono, color: Colors.primaryLight, fontSize: Typography.dataValue, fontWeight: '800' as const },
 
   resetTouchable: { marginTop: Spacing.lg, alignItems: 'center', paddingVertical: 8 },
-  resetLabel: { fontFamily: FONT_MONO, color: DIMMER, fontSize: 11, textDecorationLine: 'underline' as const },
+  resetLabel: { fontFamily: Font.mono, color: DIMMER, fontSize: Typography.label, textDecorationLine: 'underline' as const },
 });

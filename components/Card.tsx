@@ -14,10 +14,13 @@ interface CardProps {
   style?: ViewStyle;
   /** When true, uses bottom-pill-style border + gradient fill (no spacing/centering change) */
   gradientFill?: boolean;
+  /** Override border radius when gradientFill (e.g. 38 for workout cards) */
+  borderRadius?: number;
 }
 
-export const Card: React.FC<CardProps> = ({ children, style, gradientFill }) => {
+export const Card: React.FC<CardProps> = ({ children, style, gradientFill, borderRadius: radiusOverride }) => {
   const cardStyle = [styles.card, style];
+  const radius = radiusOverride ?? CARD_BORDER_RADIUS;
   if (gradientFill) {
     return (
       <View
@@ -39,7 +42,7 @@ export const Card: React.FC<CardProps> = ({ children, style, gradientFill }) => 
           colors={CARD_BORDER_GRADIENT}
           start={{ x: 0.5, y: 0 }}
           end={{ x: 0.5, y: 1 }}
-          style={[StyleSheet.absoluteFillObject, { borderRadius: CARD_BORDER_RADIUS }]}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: radius }]}
         />
         {/* Fill gradient (inset 1px) */}
         <LinearGradient
@@ -50,7 +53,7 @@ export const Card: React.FC<CardProps> = ({ children, style, gradientFill }) => 
             left: CARD_BORDER_INSET,
             right: CARD_BORDER_INSET,
             bottom: CARD_BORDER_INSET,
-            borderRadius: CARD_BORDER_RADIUS - CARD_BORDER_INSET,
+            borderRadius: radius - CARD_BORDER_INSET,
           }}
         />
         {children}

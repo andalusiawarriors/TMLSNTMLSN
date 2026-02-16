@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
-import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../../constants/theme';
 import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
-
-const Font = {
-  bold: 'EBGaramond_700Bold',
-  mono: 'DMMono_400Regular',
-} as const;
+import { Card } from '../../../components/Card';
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -41,18 +37,24 @@ export default function TmlsnRoutinesScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.container}>
+      <Image
+        source={require('../../../assets/home-background.png')}
+        style={styles.homeBackgroundImage}
+        resizeMode="cover"
+      />
+      <ScrollView
+        style={styles.scrollLayer}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
       {TMLSN_SPLITS.map((split) => {
         const isExpanded = expandedId === split.id;
         const exerciseCount = split.exercises.length;
         const totalSets = split.exercises.reduce((acc, ex) => acc + ex.targetSets, 0);
 
         return (
-          <View key={split.id} style={styles.routineCard}>
+          <Card key={split.id} gradientFill borderRadius={20} style={styles.routineCard}>
             {/* Header – tappable to expand/collapse */}
             <Pressable
               style={styles.cardHeader}
@@ -111,10 +113,11 @@ export default function TmlsnRoutinesScreen() {
             >
               <Text style={styles.startButtonText}>Start Routine</Text>
             </Pressable>
-          </View>
+          </Card>
         );
       })}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -122,6 +125,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+  },
+  homeBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  scrollLayer: {
+    zIndex: 2,
   },
   content: {
     padding: Spacing.md,
@@ -131,11 +141,8 @@ const styles = StyleSheet.create({
 
   // ─── ROUTINE CARD (Hevy-style) ────────────────────────────────────────────
   routineCard: {
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
     padding: Spacing.md,
+    marginVertical: 0,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -164,10 +171,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontFamily: Font.bold,
-    fontSize: 17,
+    fontFamily: Font.extraBold,
+    fontSize: Typography.body,
     color: Colors.primaryLight,
-    letterSpacing: -0.5,
+    letterSpacing: HeadingLetterSpacing,
     marginBottom: 2,
   },
   cardStatsRow: {
@@ -177,17 +184,17 @@ const styles = StyleSheet.create({
   },
   cardStat: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '60',
     letterSpacing: 0.2,
   },
   cardStatDot: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '30',
   },
   chevron: {
-    fontFamily: Font.mono,
+    fontFamily: Font.monoMedium,
     fontSize: 24,
     color: Colors.primaryLight + '50',
     paddingHorizontal: 4,
@@ -220,8 +227,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   exerciseRowDotText: {
-    fontFamily: Font.mono,
-    fontSize: 10,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '60',
   },
@@ -229,14 +236,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   exerciseRowName: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
     letterSpacing: -0.3,
   },
   exerciseRowDetail: {
     fontFamily: Font.mono,
-    fontSize: 11,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     letterSpacing: 0.2,
     marginTop: 1,
@@ -245,7 +252,7 @@ const styles = StyleSheet.create({
   // ─── COLLAPSED PREVIEW ────────────────────────────────────────────────────
   exercisePreview: {
     fontFamily: Font.mono,
-    fontSize: 12,
+    fontSize: Typography.label,
     color: Colors.primaryLight + '50',
     lineHeight: 18,
     marginTop: 10,
@@ -263,8 +270,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   startButtonText: {
-    fontFamily: Font.mono,
-    fontSize: 14,
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.label,
     fontWeight: '700' as const,
     letterSpacing: 0.3,
     color: Colors.primaryDark,

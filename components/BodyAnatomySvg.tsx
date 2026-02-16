@@ -289,7 +289,7 @@ export function BodyAnatomySvg({
 
   return (
     <Svg viewBox={VIEWBOX} width={width} height={height}>
-      <Rect x={0} y={0} width={660.46} height={1206.46} fill={Colors.primaryDark} />
+      <Rect x={0} y={0} width={660.46} height={1206.46} fill="transparent" />
       {/* Muscle fills (Part1) */}
       <G>
         {mappings.map(({ groups, paths }, i) => {
