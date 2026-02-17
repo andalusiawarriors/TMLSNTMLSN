@@ -13,10 +13,13 @@ import {
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
+import { Search } from 'lucide-react-native';
+import { BarbellIcon, BarcodeIcon, BookmarkSimple, PlayIcon } from 'phosphor-react-native';
 
 // ── Pill constants ──
 const PILL_LABEL_COLOR = '#C6C6C6';
@@ -54,11 +57,18 @@ const SELECTED_TAB_PILL_HEIGHT = PILL_HEIGHT - 2 * BORDER_INSET - 2 * SELECTED_T
 const getTabPillX = (index: number) =>
   BORDER_INSET + index * TAB_SLOT_WIDTH + SELECTED_TAB_PILL_H_PAD;
 
-// ── Popup card constants ──
-const POPUP_CARD_WIDTH = 173;
-const POPUP_CARD_HEIGHT = 87;
-const POPUP_CARD_RADIUS = 16;
-const POPUP_CARD_GAP = 12;
+// ── Popup pill constants (quick-action menu) ──
+const POPUP_PILL_HEIGHT = 48;
+const POPUP_PILL_RADIUS = 28;
+const POPUP_PILL_LEFT_PAD = 12;
+const POPUP_PILL_ICON_TO_TEXT_GAP = 6;
+const POPUP_PILL_RIGHT_PAD = 12;
+const POPUP_PILL_ICON_SIZE = 22;
+const POPUP_PILL_COLUMN_GAP = 10;
+const POPUP_PILL_ROW_GAP = 10;
+const POPUP_PILL_BORDER_INSET = 1;
+const POPUP_PILL_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
+const TAB_BAR_HEIGHT = PILL_BOTTOM + PILL_HEIGHT;
 const POPUP_CARD_STAGGER_MS = 55;
 const POPUP_CARD_FONT = 'DMMono_500Medium';
 
@@ -910,12 +920,23 @@ export default function TabsLayout() {
       {/* ══════════════════════════════════════════════════════════ */}
       {showPopup && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {/* Dark overlay + dismiss */}
+          {/* Backdrop blur + dismiss (tap to close) — stops above tab bar so nav stays crisp */}
           <Pressable style={StyleSheet.absoluteFill} onPress={() => closePopup(true)}>
-            <RNAnimated.View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.55)', opacity: overlayOpacity }]} />
+            <RNAnimated.View
+              style={[
+                { position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_HEIGHT, overflow: 'hidden', opacity: overlayOpacity },
+              ]}
+            >
+              <BlurView
+                intensity={15}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+                {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+              />
+            </RNAnimated.View>
           </Pressable>
 
-          {/* Cards container */}
+          {/* Pills container — equal-width columns, anchored above FAB */}
           <RNAnimated.View
             pointerEvents="box-none"
             style={{
@@ -927,83 +948,88 @@ export default function TabsLayout() {
               transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
             }}
           >
-            {/* Universal popup: left column = nutrition, right column = workout */}
-            <View style={{ flexDirection: 'row', gap: POPUP_CARD_GAP }}>
+            <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP, width: '100%', maxWidth: 400, paddingHorizontal: 16 }}>
               {/* Left column: saved foods, search food, scan food */}
-              <View style={{ gap: POPUP_CARD_GAP }}>
-                <RNAnimated.View style={card0Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleCardSelect('saved')}
-                    onPressIn={() => cardPressIn(0)}
-                    onPressOut={() => cardPressOut(0)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/saved-food-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>saved foods</Text>
+              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
+                <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <BookmarkSimple size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>saved foods</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
-                <RNAnimated.View style={card1Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleCardSelect('search')}
-                    onPressIn={() => cardPressIn(1)}
-                    onPressOut={() => cardPressOut(1)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/search-food-icon.png')} style={popupStyles.searchFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>search food</Text>
+                <RNAnimated.View style={[card1Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('search')} onPressIn={() => cardPressIn(1)} onPressOut={() => cardPressOut(1)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <Search size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>search food</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
-                <RNAnimated.View style={card2Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleCardSelect('scan')}
-                    onPressIn={() => cardPressIn(2)}
-                    onPressOut={() => cardPressOut(2)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/scan-food-ai-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>scan food</Text>
+                <RNAnimated.View style={[card2Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('scan')} onPressIn={() => cardPressIn(2)} onPressOut={() => cardPressOut(2)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <BarcodeIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>scan food</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
               </View>
-              {/* Right column: tmlsn routines, your routines, start empty workout */}
-              <View style={{ gap: POPUP_CARD_GAP }}>
-                <RNAnimated.View style={card3Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleWorkoutCardSelect('tmlsn')}
-                    onPressIn={() => cardPressIn(3)}
-                    onPressOut={() => cardPressOut(3)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/saved-food-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>tmlsn routines</Text>
+              {/* Right column: tmlsn workouts, your workouts, empty workout */}
+              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
+                <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('tmlsn')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: undefined }} resizeMode="contain" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>tmlsn workouts</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
-                <RNAnimated.View style={card4Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleWorkoutCardSelect('your-routines')}
-                    onPressIn={() => cardPressIn(4)}
-                    onPressOut={() => cardPressOut(4)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/search-food-icon.png')} style={popupStyles.searchFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>your routines</Text>
+                <RNAnimated.View style={[card4Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('your-routines')} onPressIn={() => cardPressIn(4)} onPressOut={() => cardPressOut(4)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <BarbellIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>your workouts</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
-                <RNAnimated.View style={card5Style}>
-                  <TouchableOpacity
-                    style={popupStyles.card}
-                    onPress={() => handleWorkoutCardSelect('empty')}
-                    onPressIn={() => cardPressIn(5)}
-                    onPressOut={() => cardPressOut(5)}
-                    activeOpacity={1}
-                  >
-                    <Image source={require('../../assets/scan-food-ai-icon.png')} style={popupStyles.scanFoodIcon} resizeMode="contain" />
-                    <Text style={popupStyles.cardLabel}>start empty workout</Text>
+                <RNAnimated.View style={[card5Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('empty')} onPressIn={() => cardPressIn(5)} onPressOut={() => cardPressOut(5)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={popupStyles.pillShell}>
+                        <View style={popupStyles.pillInner}>
+                          <PlayIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <Text style={popupStyles.pillLabel} numberOfLines={1}>empty workout</Text>
+                        </View>
+                      </View>
+                    </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
               </View>
@@ -1017,41 +1043,51 @@ export default function TabsLayout() {
 }
 
 const popupStyles = StyleSheet.create({
-  card: {
-    width: POPUP_CARD_WIDTH,
-    height: POPUP_CARD_HEIGHT,
-    borderRadius: POPUP_CARD_RADIUS,
-    backgroundColor: '#C6C6C6',
-    paddingBottom: 12,
-    justifyContent: 'flex-end',
+  pillRow: {
+    alignSelf: 'stretch',
+    minWidth: 0,
+    height: POPUP_PILL_HEIGHT,
+  },
+  pillTouchable: {
+    flex: 1,
+    height: POPUP_PILL_HEIGHT,
+  },
+  pill: {
+    flex: 1,
+    height: POPUP_PILL_HEIGHT,
+    alignSelf: 'stretch',
+  },
+  pillBorderWrap: {
+    overflow: 'hidden',
+    borderRadius: POPUP_PILL_RADIUS,
+  },
+  pillShell: {
+    position: 'absolute',
+    top: POPUP_PILL_BORDER_INSET,
+    left: POPUP_PILL_BORDER_INSET,
+    right: POPUP_PILL_BORDER_INSET,
+    bottom: POPUP_PILL_BORDER_INSET,
+    borderRadius: POPUP_PILL_RADIUS - POPUP_PILL_BORDER_INSET,
+    backgroundColor: '#2E2F30',
+    overflow: 'hidden',
+  },
+  pillInner: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingLeft: POPUP_PILL_LEFT_PAD,
+    paddingRight: POPUP_PILL_RIGHT_PAD,
+    paddingVertical: 0,
+    height: POPUP_PILL_HEIGHT,
+    gap: POPUP_PILL_ICON_TO_TEXT_GAP,
+    zIndex: 1,
   },
-  scanFoodIcon: {
-    position: 'absolute',
-    top: -2,
-    left: '50%',
-    marginLeft: -61,
-    width: 122,
-    height: 67,
-  },
-  searchFoodIcon: {
-    position: 'absolute',
-    top: 3,
-    left: '50%',
-    marginLeft: -55,
-    width: 110,
-    height: 60,
-  },
-  cardLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#2F3031',
+  pillLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
     letterSpacing: -0.11,
-    textAlign: 'center',
+    opacity: 1,
+    ...(Platform.OS === 'android' && { includeFontPadding: false }),
   },
 });

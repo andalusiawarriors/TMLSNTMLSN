@@ -49,18 +49,12 @@ export function useButtonSound() {
 
   const playIn = useCallback(() => {
     const s = cardPressInRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (s) s.setPositionAsync(0).then(() => s.playAsync()).catch(() => {});
   }, []);
 
   const playOut = useCallback(() => {
     const s = cardPressOutRef.current;
-    if (s) {
-      s.setPositionAsync(0);
-      s.playAsync().catch(() => {});
-    }
+    if (s) s.setPositionAsync(0).then(() => s.playAsync()).catch(() => {});
   }, []);
 
   return { playIn, playOut };
