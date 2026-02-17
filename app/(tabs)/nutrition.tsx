@@ -38,10 +38,14 @@ import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  FadeInUp,
+  FadeOut,
+  SlideInLeft,
+  SlideInRight,
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -70,6 +74,7 @@ import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
+import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -121,6 +126,7 @@ export default function NutritionScreen({
   const [cardPage, setCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
+  const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
 
   const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
 
@@ -216,10 +222,10 @@ export default function NutritionScreen({
   const [showCamera, setShowCamera] = useState(false);
   const [cameraMode, setCameraMode] = useState<'ai' | 'barcode' | 'label'>('ai');
   const cameraRef = useRef<any>(null);
-  const clickSoundRef = useRef<Audio.Sound | null>(null);
-  const tapSoundRef = useRef<Audio.Sound | null>(null);
-  const cardPressInSoundRef = useRef<Audio.Sound | null>(null);
-  const cardPressOutSoundRef = useRef<Audio.Sound | null>(null);
+  const clickSound = useAudioPlayer(require('../../assets/sounds/click.mp4'));
+  const tapSound = useAudioPlayer(require('../../assets/sounds/tap.mp4'));
+  const cardPressInSound = useAudioPlayer(require('../../assets/sounds/card-press-in.mp4'));
+  const cardPressOutSound = useAudioPlayer(require('../../assets/sounds/card-press-out.mp4'));
   const [cameraLoading, setCameraLoading] = useState(false);
   const [aiPhotoBase64, setAiPhotoBase64] = useState<string | null>(null);
   const [aiDescription, setAiDescription] = useState('');
@@ -397,87 +403,47 @@ export default function NutritionScreen({
     });
   }, [cardSlideX, cardSlideOpacity, SLIDE_DISTANCE, applyDateAndSlideIn]);
 
-  // Load sounds: tap, click, card in/out (popup sounds moved to _layout.tsx)
   useEffect(() => {
-    let clickSound: Audio.Sound | null = null;
-    let tapSound: Audio.Sound | null = null;
-    let cardPressInSound: Audio.Sound | null = null;
-    let cardPressOutSound: Audio.Sound | null = null;
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true, // UI feedback sounds play even when device is muted
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        const { sound: sClick } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/click.mp4')
-        );
-        await sClick.setVolumeAsync(0.64);
-        clickSound = sClick;
-        clickSoundRef.current = sClick;
-
-        const { sound: sTap } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/tap.mp4')
-        );
-        await sTap.setVolumeAsync(0.64);
-        tapSound = sTap;
-        tapSoundRef.current = sTap;
-
-        const { sound: sCardIn } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/card-press-in.mp4')
-        );
-        await sCardIn.setVolumeAsync(0.2);
-        cardPressInSound = sCardIn;
-        cardPressInSoundRef.current = sCardIn;
-
-        const { sound: sCardOut } = await Audio.Sound.createAsync(
-          require('../../assets/sounds/card-press-out.mp4')
-        );
-        await sCardOut.setVolumeAsync(0.2);
-        cardPressOutSound = sCardOut;
-        cardPressOutSoundRef.current = sCardOut;
-      } catch (_) {
-        // Assets missing or load failed – sounds will be silent
-      }
-    })();
-    return () => {
-      clickSoundRef.current = null;
-      tapSoundRef.current = null;
-      cardPressInSoundRef.current = null;
-      cardPressOutSoundRef.current = null;
-      if (clickSound) clickSound.unloadAsync().catch(() => {});
-      if (tapSound) tapSound.unloadAsync().catch(() => {});
-      if (cardPressInSound) cardPressInSound.unloadAsync().catch(() => {});
-      if (cardPressOutSound) cardPressOutSound.unloadAsync().catch(() => {});
-    };
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
+    }).catch(() => {});
   }, []);
 
-  // Fire-and-forget; replayAsync() starts from beginning immediately (better on iOS). Errors caught to avoid console noise.
+  useEffect(() => {
+    clickSound.volume = 0.64;
+    tapSound.volume = 0.64;
+    cardPressInSound.volume = 0.2;
+    cardPressOutSound.volume = 0.2;
+  }, [clickSound, tapSound, cardPressInSound, cardPressOutSound]);
+
   const playClickSound = useCallback(() => {
-    const s = clickSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
+    try {
+      clickSound.seekTo(0);
+      clickSound.play();
+    } catch (_) {}
+  }, [clickSound]);
 
   const playTapSound = useCallback(() => {
-    const s = tapSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
+    try {
+      tapSound.seekTo(0);
+      tapSound.play();
+    } catch (_) {}
+  }, [tapSound]);
 
-  // Press = one sound, release = other sound (cards: 0213(5) in / 0213(6) out; FAB: 0213(3) in / 0213(4) out)
   const playCardPressInSound = useCallback(() => {
-    const s = cardPressInSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
+    try {
+      cardPressInSound.seekTo(0);
+      cardPressInSound.play();
+    } catch (_) {}
+  }, [cardPressInSound]);
   const playCardPressOutSound = useCallback(() => {
-    const s = cardPressOutSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
+    try {
+      cardPressOutSound.seekTo(0);
+      cardPressOutSound.play();
+    } catch (_) {}
+  }, [cardPressOutSound]);
 
 
   // ── Form helpers ──
@@ -821,7 +787,7 @@ export default function NutritionScreen({
     reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
-    setCardPage(Math.min(2, page));
+    setCardPage(Math.min(1, page));
   };
 
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
@@ -1179,7 +1145,7 @@ export default function NutritionScreen({
           </Animated.View>
         </Pressable>
 
-        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+        <AnimatedFadeInUp delay={0} duration={220} trigger={animTrigger}>
         <View style={styles.pageHeaderRow}>
           <Pressable
             onPress={() => {
@@ -1206,7 +1172,7 @@ export default function NutritionScreen({
           </Pressable>
         </View>
         </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={80} duration={380} trigger={animTrigger}>
+        <AnimatedFadeInUp delay={35} duration={220} trigger={animTrigger}>
         <SwipeableWeekView
           weekWidth={WEEK_STRIP_PAGE_WIDTH}
           selectedDate={viewingDateAsDate}
@@ -1215,14 +1181,37 @@ export default function NutritionScreen({
           showHeader={false}
         />
         </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
-        {/* Animated wrapper for day-switch slide + real blur overlay (BlurView fades out → sharp) */}
-        <Animated.View style={cardSlideStyle}>
+        <AnimatedFadeInUp delay={55} duration={220} trigger={animTrigger}>
+        <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: -6, marginBottom: 4 }}>
+          <PillSegmentedControl
+            value={homeSegment}
+            onValueChange={setHomeSegment}
+            width={WEEK_STRIP_PAGE_WIDTH}
+          />
+        </View>
+        </AnimatedFadeInUp>
+        <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger}>
+        {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
+        {homeSegment === 'Fitness' ? (
+          <Animated.View
+            key="fitness-segment"
+            entering={SlideInRight.withInitialValues({ transform: [{ translateX: 24 }] }).springify().damping(200).stiffness(3000)}
+            exiting={FadeOut.duration(50)}
+            style={{ width: CAROUSEL_WIDTH, alignSelf: 'center', paddingHorizontal: CONTENT_PADDING }}
+          >
+            <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+          </Animated.View>
+        ) : (
+          <Animated.View
+            key="nutrition-segment"
+            entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000)}
+            exiting={FadeOut.duration(50)}
+          >
+          <Animated.View style={cardSlideStyle}>
           <View style={{ position: 'relative' }}>
             <View>
-        {/* Macro cards carousel – swipe left to reveal flipped layout */}
         {settings && todayLog && (
-          <>
+          <View style={{ zIndex: 1 }}>
             <ScrollView
               horizontal
               pagingEnabled
@@ -1232,8 +1221,9 @@ export default function NutritionScreen({
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
             >
-              {/* Page 1: Big card top, 3 small cards bottom */}
+              {/* Page 0: Big card top, 3 small cards bottom (Nutrition only) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
+                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(0)}>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                   <Animated.View style={cardScaleStyle}>
                     <Card gradientFill style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
@@ -1265,7 +1255,9 @@ export default function NutritionScreen({
                     </Card>
                   </Animated.View>
                 </Pressable>
-                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                </Animated.View>
+                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(5)}>
+                  <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
@@ -1347,17 +1339,14 @@ export default function NutritionScreen({
                       </View>
                     </Card>
                   </Pressable>
+                  </Animated.View>
                 </Animated.View>
               </View>
 
-              {/* Page 1: Muscles hit · last 7 days (front & back side by side) */}
-              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center', justifyContent: 'center' }}>
-                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
-              </View>
-
-              {/* Page 2: Electrolytes top, Health Score bottom (flipped layout) */}
+              {/* Page 1: Electrolytes top, Health Score bottom (flipped layout) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(10)}>
+                  <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
                       <View style={styles.macroLeftTextWrap}>
@@ -1401,6 +1390,7 @@ export default function NutritionScreen({
                     </Card>
                   </Pressable>
                 </Animated.View>
+                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(15)}>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
                   <Animated.View style={cardScaleStyle}>
                     <Card gradientFill style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
@@ -1420,33 +1410,37 @@ export default function NutritionScreen({
                     </Card>
                   </Animated.View>
                 </Pressable>
+                  </Animated.View>
+                </Animated.View>
               </View>
             </ScrollView>
 
-            {/* Pagination dots */}
+            {/* Pagination dots (Nutrition: 2 pages only) */}
             <View style={styles.paginationDots}>
               <View style={[styles.dot, cardPage === 0 && styles.dotActive]} />
               <View style={[styles.dot, cardPage === 1 && styles.dotActive]} />
-              <View style={[styles.dot, cardPage === 2 && styles.dotActive]} />
             </View>
-          </>
+
+            {/* Recently uploaded – below carousel, same width as calorie card (Nutrition only) */}
+            <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(20)}>
+              <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
+              <Card
+                gradientFill
+                style={[
+                  styles.caloriesLeftCard,
+                  styles.recentlyUploadedCard,
+                  {
+                    width: CALORIES_CARD_WIDTH,
+                    minHeight: CARD_UNIFIED_HEIGHT,
+                    borderRadius: CALORIES_CARD_RADIUS,
+                    alignSelf: 'center',
+                  },
+                ]}
+              />
+            </Animated.View>
+          </View>
         )}
 
-        {/* Recently uploaded – title + card same width/alignment as calorie card above */}
-        <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
-        <Card
-          gradientFill
-          style={[
-            styles.caloriesLeftCard,
-            styles.recentlyUploadedCard,
-            {
-              width: CALORIES_CARD_WIDTH,
-              minHeight: CARD_UNIFIED_HEIGHT,
-              borderRadius: CALORIES_CARD_RADIUS,
-              alignSelf: 'center',
-            },
-          ]}
-        />
             </View>
             <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, blurOverlayStyle]} pointerEvents="none">
               <BlurView
@@ -1459,7 +1453,9 @@ export default function NutritionScreen({
               <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.72)' }]} />
             </Animated.View>
           </View>
+          </Animated.View>
         </Animated.View>
+        )}
         </AnimatedFadeInUp>
       </ScrollView>
       </RNAnimated.View>

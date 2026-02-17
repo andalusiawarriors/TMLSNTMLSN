@@ -36,7 +36,9 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     if (!projectId) {
-      console.log('No projectId – skipping push token (local notifications still work)');
+      if (__DEV__) {
+        console.log('No projectId – skipping push token (local notifications still work)');
+      }
       return null;
     }
 

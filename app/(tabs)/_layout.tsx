@@ -13,7 +13,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
@@ -332,99 +332,72 @@ export default function TabsLayout() {
   const popupCardPress5 = useRef(new RNAnimated.Value(1)).current;
 
   // ══════════════════════════════════════════
-  // SOUNDS — FAB + Popup
+  // SOUNDS — FAB + Popup (expo-audio)
   // ══════════════════════════════════════════
-  const fabPressInRef = useRef<Audio.Sound | null>(null);
-  const fabPressOutRef = useRef<Audio.Sound | null>(null);
-  const popupOpenSoundRef = useRef<Audio.Sound | null>(null);
-  const popupCloseSoundRef = useRef<Audio.Sound | null>(null);
-  const popupAmbientSoundRef = useRef<Audio.Sound | null>(null);
+  const fabIn = useAudioPlayer(require('../../assets/sounds/fab-press-in.mp4'));
+  const fabOut = useAudioPlayer(require('../../assets/sounds/fab-press-out.mp4'));
+  const popupOpen = useAudioPlayer(require('../../assets/sounds/popup-open.mp3'));
+  const popupClose = useAudioPlayer(require('../../assets/sounds/popup-close.mp4'));
+  const popupAmbient = useAudioPlayer(require('../../assets/sounds/popup-ambient.mp3'));
   const popupAmbientFadeRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    let sIn: Audio.Sound | null = null;
-    let sOut: Audio.Sound | null = null;
-    let sOpen: Audio.Sound | null = null;
-    let sClose: Audio.Sound | null = null;
-    let sAmbient: Audio.Sound | null = null;
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: true,
-          playThroughEarpieceAndroid: false,
-        });
-        const r1 = await Audio.Sound.createAsync(require('../../assets/sounds/fab-press-in.mp4'));
-        await r1.sound.setVolumeAsync(0.2); sIn = r1.sound; fabPressInRef.current = r1.sound;
-
-        const r2 = await Audio.Sound.createAsync(require('../../assets/sounds/fab-press-out.mp4'));
-        await r2.sound.setVolumeAsync(0.2); sOut = r2.sound; fabPressOutRef.current = r2.sound;
-
-        const r3 = await Audio.Sound.createAsync(require('../../assets/sounds/popup-open.mp3'));
-        await r3.sound.setVolumeAsync(0.11); sOpen = r3.sound; popupOpenSoundRef.current = r3.sound;
-
-        const r4 = await Audio.Sound.createAsync(require('../../assets/sounds/popup-close.mp4'));
-        await r4.sound.setVolumeAsync(0.1); sClose = r4.sound; popupCloseSoundRef.current = r4.sound;
-
-        const r5 = await Audio.Sound.createAsync(require('../../assets/sounds/popup-ambient.mp3'));
-        await r5.sound.setVolumeAsync(0.05);
-        await r5.sound.setRateAsync(0.9, true);
-        sAmbient = r5.sound; popupAmbientSoundRef.current = r5.sound;
-      } catch {}
-    })();
-    return () => {
-      fabPressInRef.current = null;
-      fabPressOutRef.current = null;
-      popupOpenSoundRef.current = null;
-      popupCloseSoundRef.current = null;
-      popupAmbientSoundRef.current = null;
-      if (sIn) sIn.unloadAsync().catch(() => {});
-      if (sOut) sOut.unloadAsync().catch(() => {});
-      if (sOpen) sOpen.unloadAsync().catch(() => {});
-      if (sClose) sClose.unloadAsync().catch(() => {});
-      if (sAmbient) sAmbient.unloadAsync().catch(() => {});
-    };
-  }, []);
-
-  // Fire-and-forget; replayAsync() starts from beginning immediately (better on iOS). Errors caught to avoid console noise.
-  const playIn = useCallback(() => {
-    const s = fabPressInRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
-  const playOut = useCallback(() => {
-    const s = fabPressOutRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
-  const playPopupOpen = useCallback(() => {
-    const s = popupOpenSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
-  const playPopupClose = useCallback(() => {
-    const s = popupCloseSoundRef.current;
-    if (!s) return;
-    s.replayAsync({}).catch(() => {});
-  }, []);
-  const playPopupAmbient = useCallback(() => {
-    const s = popupAmbientSoundRef.current;
-    if (!s) return;
-    if (popupAmbientFadeRef.current) { clearInterval(popupAmbientFadeRef.current); popupAmbientFadeRef.current = null; }
-    s.getStatusAsync().then((status) => {
-      if (!status.isLoaded) return;
-      s.setVolumeAsync(0.05).then(() => s.setPositionAsync(0)).then(() => s.playAsync()).catch(() => {});
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
     }).catch(() => {});
   }, []);
-  const stopPopupAmbient = useCallback(async () => {
-    const s = popupAmbientSoundRef.current;
-    if (!s) return;
-    if (popupAmbientFadeRef.current) { clearInterval(popupAmbientFadeRef.current); popupAmbientFadeRef.current = null; }
+
+  useEffect(() => {
+    fabIn.volume = 0.2;
+    fabOut.volume = 0.2;
+    popupOpen.volume = 0.11;
+    popupClose.volume = 0.1;
+    popupAmbient.volume = 0.05;
+    popupAmbient.setPlaybackRate(0.9);
+  }, [fabIn, fabOut, popupOpen, popupClose, popupAmbient]);
+
+  const playIn = useCallback(() => {
     try {
-      const status = await s.getStatusAsync();
-      if (!status.isLoaded) return;
-    } catch (_) { return; }
+      fabIn.seekTo(0);
+      fabIn.play();
+    } catch (_) {}
+  }, [fabIn]);
+  const playOut = useCallback(() => {
+    try {
+      fabOut.seekTo(0);
+      fabOut.play();
+    } catch (_) {}
+  }, [fabOut]);
+  const playPopupOpen = useCallback(() => {
+    try {
+      popupOpen.seekTo(0);
+      popupOpen.play();
+    } catch (_) {}
+  }, [popupOpen]);
+  const playPopupClose = useCallback(() => {
+    try {
+      popupClose.seekTo(0);
+      popupClose.play();
+    } catch (_) {}
+  }, [popupClose]);
+  const playPopupAmbient = useCallback(() => {
+    if (popupAmbientFadeRef.current) {
+      clearInterval(popupAmbientFadeRef.current);
+      popupAmbientFadeRef.current = null;
+    }
+    try {
+      popupAmbient.volume = 0.05;
+      popupAmbient.seekTo(0);
+      popupAmbient.play();
+    } catch (_) {}
+  }, [popupAmbient]);
+  const stopPopupAmbient = useCallback(() => {
+    if (popupAmbientFadeRef.current) {
+      clearInterval(popupAmbientFadeRef.current);
+      popupAmbientFadeRef.current = null;
+    }
     const startVol = 0.05;
     const steps = 10;
     const stepVol = startVol / steps;
@@ -432,13 +405,21 @@ export default function TabsLayout() {
     popupAmbientFadeRef.current = setInterval(() => {
       current -= stepVol;
       if (current <= 0) {
-        if (popupAmbientFadeRef.current) { clearInterval(popupAmbientFadeRef.current); popupAmbientFadeRef.current = null; }
-        s.setVolumeAsync(0).then(() => s.stopAsync().catch(() => {})).catch(() => {});
+        if (popupAmbientFadeRef.current) {
+          clearInterval(popupAmbientFadeRef.current);
+          popupAmbientFadeRef.current = null;
+        }
+        try {
+          popupAmbient.volume = 0;
+          popupAmbient.pause();
+        } catch (_) {}
         return;
       }
-      s.setVolumeAsync(current).catch(() => {});
+      try {
+        popupAmbient.volume = current;
+      } catch (_) {}
     }, 50);
-  }, []);
+  }, [popupAmbient]);
 
   // ══════════════════════════════════════════
   // FAB rotation
