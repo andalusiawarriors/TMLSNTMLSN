@@ -169,9 +169,22 @@ export default function TabsLayout() {
   const isProfileSelected = pathname.includes('profile');
 
   const lastTabIndexRef = useRef(0);
+  const openedFromWorkoutRef = useRef(false);
+  const fabOpenedFromTabIndexRef = useRef(0);
+  // State (not ref) so tab bar re-renders when we open workout page from another tab — highlight stays on that tab
+  const [tabHighlightLock, setTabHighlightLock] = useState<number | null>(null);
   const tabIndexFromPath = isNutritionSelected ? 0 : isWorkoutSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
   if (!isModalPath(pathname)) lastTabIndexRef.current = tabIndexFromPath;
-  const activeTabIndex = isModalPath(pathname) ? lastTabIndexRef.current : tabIndexFromPath;
+  const activeTabIndex = tabHighlightLock !== null ? tabHighlightLock : (isModalPath(pathname) ? lastTabIndexRef.current : tabIndexFromPath);
+
+  // Clear highlight lock when leaving workout stack (e.g. Back to home)
+  useEffect(() => {
+    if (!pathname.startsWith('/workout')) setTabHighlightLock(null);
+  }, [pathname]);
+
+  const clearTabHighlightLock = useCallback(() => {
+    setTabHighlightLock(null);
+  }, []);
 
   // ══════════════════════════════════════════
   // FAB animation state
@@ -535,10 +548,12 @@ export default function TabsLayout() {
     if (fabOpen) {
       closePopup();
     } else {
+      openedFromWorkoutRef.current = isWorkoutSelected;
+      fabOpenedFromTabIndexRef.current = tabIndexFromPath;
       rotateTo(true);
       openPopup();
     }
-  }, [fabOpen, fabScaleAnim, playOut, rotateTo, openPopup, closePopup]);
+  }, [fabOpen, fabScaleAnim, playOut, rotateTo, openPopup, closePopup, isWorkoutSelected, tabIndexFromPath]);
 
   const handleFabPressIn = useCallback(() => {
     playIn();
@@ -609,12 +624,11 @@ export default function TabsLayout() {
       RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
     ]).start(() => {
       setShowPopup(false);
-      if (card === 'tmlsn') router.push('/tmlsn-routines-modal');
-      else if (card === 'your-routines') router.push('/your-routines-modal');
-      else {
-        // Start empty workout: always open modal from any tab — no redirect, same behaviour everywhere
-        router.push('/start-empty-workout-modal');
-      }
+      // Always open the workout PAGE (no modals). Keep toolbar highlight on the tab where FAB was opened.
+      if (!openedFromWorkoutRef.current) setTabHighlightLock(fabOpenedFromTabIndexRef.current);
+      if (card === 'tmlsn') router.push('/workout/tmlsn-routines');
+      else if (card === 'your-routines') router.push('/workout/your-routines');
+      else router.push({ pathname: '/workout', params: { startEmpty: '1' } });
     });
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);
 
@@ -794,7 +808,7 @@ export default function TabsLayout() {
               );
             }
 
-            // Regular tab
+            // Regular tab — use activeTabIndex so highlight can stay on FAB-origin tab when workout page is open
             if (!meta) return null;
             const tabIdx = meta.tabIndex;
             const isFocused = state.index === state.routes.indexOf(route);
@@ -804,12 +818,13 @@ export default function TabsLayout() {
                 key={route.key}
                 label={meta.label}
                 icon={meta.icon}
-                selected={isFocused}
+                selected={activeTabIndex === tabIdx}
                 scaleAnim={tabScales[tabIdx]}
                 onTabPressIn={() => handleTabPressIn(tabIdx)}
                 onTabPressOut={() => handleTabPressOut(tabIdx)}
                 onTabLongPress={handleTabLongPress}
                 onPress={() => {
+                  clearTabHighlightLock();
                   const event = navigation.emit({
                     type: 'tabPress',
                     target: route.key,
@@ -832,6 +847,7 @@ export default function TabsLayout() {
     tabScales, handleTabPressIn, handleTabPressOut, handleTabLongPress,
     fabScaleAnim, fabStarRotateInterpolate, fabRotateInterpolate,
     handleFabPressIn, handleFabPress,
+    activeTabIndex, clearTabHighlightLock,
   ]);
 
   return (

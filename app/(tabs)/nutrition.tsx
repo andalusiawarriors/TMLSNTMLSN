@@ -58,6 +58,7 @@ import {
   saveUserSettings,
   getSavedFoods,
   saveSavedFood,
+  getWorkoutSessions,
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
@@ -66,6 +67,9 @@ import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
+import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
+import { workoutsToSetRecords } from '../../utils/workoutMuscles';
+import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -116,6 +120,7 @@ export default function NutritionScreen({
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [cardPage, setCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
+  const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
 
   const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
 
@@ -331,6 +336,12 @@ export default function NutritionScreen({
       await saveNutritionLog(newLog);
       setTodayLog(newLog);
     }
+    // Weekly muscle heatmap for home carousel (last 7 days)
+    const allSessions = await getWorkoutSessions();
+    const weekStart = getWeekStart();
+    const setRecords = workoutsToSetRecords(allSessions, weekStart);
+    const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
+    setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
   }, [viewingDate]);
 
   const loadDataRef = useRef(loadData);
@@ -810,7 +821,7 @@ export default function NutritionScreen({
     reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
-    setCardPage(page);
+    setCardPage(Math.min(2, page));
   };
 
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
@@ -1339,6 +1350,11 @@ export default function NutritionScreen({
                 </Animated.View>
               </View>
 
+              {/* Page 1: Muscles hit · last 7 days (front & back side by side) */}
+              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center', justifyContent: 'center' }}>
+                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+              </View>
+
               {/* Page 2: Electrolytes top, Health Score bottom (flipped layout) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
                 <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
@@ -1411,6 +1427,7 @@ export default function NutritionScreen({
             <View style={styles.paginationDots}>
               <View style={[styles.dot, cardPage === 0 && styles.dotActive]} />
               <View style={[styles.dot, cardPage === 1 && styles.dotActive]} />
+              <View style={[styles.dot, cardPage === 2 && styles.dotActive]} />
             </View>
           </>
         )}

@@ -1,11 +1,12 @@
 // ============================================================
 // TMLSN — Heatmap preview widget (swipable: front → back)
-// Swipe left for back view; larger body display
+// + Side-by-side variant (front & back, last 7 days aggregate) for home
 // ============================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   Dimensions,
   ScrollView,
@@ -19,11 +20,21 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { BodyAnatomySvg } from './BodyAnatomySvg';
-import { Colors, Spacing, Shadows } from '../constants/theme';
+import { Colors, Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const BODY_WIDTH = Math.min(180, PROGRESS_CARD_WIDTH - Spacing.lg * 2);
 const BODY_HEIGHT = BODY_WIDTH * 1.5;
+
+/** Aggregate heatmap byDay to "last 7 days" (sum per group) for display */
+function aggregateHeatmapLast7Days(heatmapData: HeatmapData[]): HeatmapData[] {
+  return heatmapData.map((h) => {
+    let sum = 0;
+    for (let d = 0; d < 7; d++) sum += h.byDay[d] ?? 0;
+    const byDay: Record<number, number> = { 0: sum, 1: sum, 2: sum, 3: sum, 4: sum, 5: sum, 6: sum };
+    return { ...h, byDay };
+  });
+}
 
 function AnimatedDot({ active }: { active: boolean }) {
   const scale = useSharedValue(active ? 1.2 : 1);
@@ -161,4 +172,119 @@ const styles = StyleSheet.create({
   dotActive: {
     backgroundColor: Colors.primaryLight,
   },
+
+  // ─── Side-by-side (front + back) for home carousel – last 7 days ─────────
+  sideBySideCard: {
+    alignSelf: 'center' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.primaryDark,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
+    ...Shadows.card,
+  },
+  sideBySideTitle: {
+    fontSize: Typography.label,
+    fontWeight: '500',
+    color: Colors.primaryLight + 'CC',
+    textTransform: 'lowercase' as const,
+    letterSpacing: -0.11,
+    marginBottom: Spacing.sm,
+  },
+  sideBySideRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  sideBySideCell: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  sideBySideLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.primaryLight + '99',
+    textTransform: 'lowercase' as const,
+    letterSpacing: -0.11,
+    marginTop: 2,
+  },
 });
+
+// ─── Side-by-side (front + back) for home carousel – last 7 days ─────────────
+
+interface HeatmapPreviewWidgetSideBySideProps {
+  heatmapData: HeatmapData[];
+  /** Card width to fit carousel (e.g. CAROUSEL_WIDTH). Default: full width minus padding. */
+  cardWidth?: number;
+}
+
+export function HeatmapPreviewWidgetSideBySide({
+  heatmapData,
+  cardWidth = Dimensions.get('window').width - 38,
+}: HeatmapPreviewWidgetSideBySideProps) {
+  const weekAggregate = useMemo(
+    () => aggregateHeatmapLast7Days(heatmapData),
+    [heatmapData]
+  );
+
+  const maxVolume = useMemo(() => {
+    let max = 1;
+    for (const h of weekAggregate) {
+      const sum = (h.byDay[0] ?? 0) + (h.byDay[1] ?? 0) + (h.byDay[2] ?? 0) +
+        (h.byDay[3] ?? 0) + (h.byDay[4] ?? 0) + (h.byDay[5] ?? 0) + (h.byDay[6] ?? 0);
+      if (sum > max) max = sum;
+    }
+    return max;
+  }, [weekAggregate]);
+
+  // Match home carousel page 0: calories card (136) + gap (8) + macro row (140) = 284
+  const TARGET_WIDGET_HEIGHT = 136 + Spacing.sm + 140;
+  const gap = Spacing.sm;
+  const padding = Spacing.md;
+  const paddingVertical = Spacing.sm;
+  const titleWithMargin = 13 + Spacing.sm;
+  const labelWithMargin = 11 + 4;
+  const bodyHeight = Math.max(
+    60,
+    TARGET_WIDGET_HEIGHT - paddingVertical * 2 - titleWithMargin - labelWithMargin
+  );
+  const bodyWidth = Math.min(
+    Math.floor((cardWidth - padding * 2 - gap) / 2),
+    Math.floor(bodyHeight / 1.5)
+  );
+
+  return (
+    <View style={[styles.sideBySideCard, { width: cardWidth, height: TARGET_WIDGET_HEIGHT }]}>
+      <Text style={styles.sideBySideTitle}>muscles hit · last 7 days</Text>
+      <View style={styles.sideBySideRow}>
+        <View style={styles.sideBySideCell}>
+          <BodyAnatomySvg
+            variant="front"
+            heatmapData={weekAggregate}
+            selectedDay={0}
+            maxVolume={maxVolume}
+            pressedMuscleGroup={null}
+            width={bodyWidth}
+            height={bodyHeight}
+          />
+          <Text style={styles.sideBySideLabel}>front</Text>
+        </View>
+        <View style={[styles.sideBySideCell, { marginLeft: gap }]}>
+          <BodyAnatomySvg
+            variant="back"
+            heatmapData={weekAggregate}
+            selectedDay={0}
+            maxVolume={maxVolume}
+            pressedMuscleGroup={null}
+            width={bodyWidth}
+            height={bodyHeight}
+          />
+          <Text style={styles.sideBySideLabel}>back</Text>
+        </View>
+      </View>
+    </View>
+  );
+}

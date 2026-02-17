@@ -20,11 +20,10 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Input } from '../../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import {
   getRecentWorkouts,
-  getWorkoutSessions,
   saveWorkoutSession,
   getSavedRoutines,
   getUserSettings,
@@ -35,13 +34,11 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
-import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
-import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
-import { HeatmapPreviewWidget } from '../../../components/HeatmapPreviewWidget';
 import { StreakWidget } from '../../../components/StreakWidget';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
+import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -84,11 +81,15 @@ export default function WorkoutScreen({
     startEmpty?: string;
   }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
-  const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [activeWorkout, setActiveWorkout] = useState<WorkoutSession | null>(initialActiveWorkout ?? null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [showSplitSelection, setShowSplitSelection] = useState(false);
   const [showExerciseEntry, setShowExerciseEntry] = useState(false);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  /** When set, picker is in "replace" mode: onSelect replaces this exercise index instead of appending */
+  const [replaceExerciseIndex, setReplaceExerciseIndex] = useState<number | null>(null);
+  /** When set, custom exercise menu (replace/delete) is open for this exercise index */
+  const [exerciseMenuIndex, setExerciseMenuIndex] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [swipePageIndex, setSwipePageIndex] = useState(0);
   const [swipeViewWidth, setSwipeViewWidth] = useState(SCREEN_WIDTH);
@@ -195,12 +196,6 @@ export default function WorkoutScreen({
   const loadWorkouts = async () => {
     const workouts = await getRecentWorkouts(10);
     setRecentWorkouts(workouts);
-    // Load weekly muscle heatmap
-    const allSessions = await getWorkoutSessions();
-    const weekStart = getWeekStart();
-    const setRecords = workoutsToSetRecords(allSessions, weekStart);
-    const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
-    setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
   };
 
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
@@ -268,33 +263,64 @@ export default function WorkoutScreen({
     // Overlay shows first; user adds exercise via "+ Add exercise" in the overlay (no Alert here to avoid focus/cancel bugs)
   };
 
-  const promptAddExercise = () => {
-    Alert.prompt(
-      'Add Exercise',
-      'Enter exercise name',
-      (text) => {
-        if (text?.trim()) {
-          addExercise(text.trim());
-          setShowExerciseEntry(true);
-        }
-      }
-    );
-  };
-
-  const addExercise = (exerciseName: string) => {
+  const addExerciseFromPicker = (exercise: {
+    id: string;
+    name: string;
+    exerciseDbId: string;
+    restTimer: number;
+  }) => {
     if (!activeWorkout) return;
 
     const newExercise: Exercise = {
       id: generateId(),
-      name: exerciseName,
+      name: exercise.name,
       sets: [],
-      restTimer: 120, // default 2 minutes
+      restTimer: exercise.restTimer,
+      exerciseDbId: exercise.exerciseDbId,
     };
 
     setActiveWorkout({
       ...activeWorkout,
       exercises: [...activeWorkout.exercises, newExercise],
     });
+    setShowExerciseEntry(true);
+  };
+
+  const openExercisePicker = () => {
+    setReplaceExerciseIndex(null);
+    setShowExercisePicker(true);
+  };
+
+  const openExercisePickerForReplace = (exerciseIndex: number) => {
+    setReplaceExerciseIndex(exerciseIndex);
+    setShowExercisePicker(true);
+  };
+
+  const removeExercise = (exerciseIndex: number) => {
+    if (!activeWorkout) return;
+    const updatedExercises = activeWorkout.exercises.filter((_, i) => i !== exerciseIndex);
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const showExerciseMenu = (exerciseIndex: number) => {
+    setExerciseMenuIndex(exerciseIndex);
+  };
+
+  const closeExerciseMenu = () => {
+    setExerciseMenuIndex(null);
+  };
+
+  const handleReplaceFromMenu = () => {
+    if (exerciseMenuIndex === null) return;
+    openExercisePickerForReplace(exerciseMenuIndex);
+    closeExerciseMenu();
+  };
+
+  const handleDeleteFromMenu = () => {
+    if (exerciseMenuIndex === null) return;
+    removeExercise(exerciseMenuIndex);
+    closeExerciseMenu();
   };
 
   const addSet = (exerciseIndex: number) => {
@@ -557,11 +583,6 @@ export default function WorkoutScreen({
         </View>
         </AnimatedFadeInUp>
 
-        {/* Heatmap preview (top, below header) */}
-        <AnimatedFadeInUp delay={80} duration={380} trigger={animTrigger}>
-          <HeatmapPreviewWidget heatmapData={weeklyHeatmap} />
-        </AnimatedFadeInUp>
-
         {/* Swipeable widget: full screen width for centered snap */}
         <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
         <View
@@ -583,40 +604,7 @@ export default function WorkoutScreen({
             style={[styles.swipeWidget, { width: swipeViewWidth || SCREEN_WIDTH }]}
             contentContainerStyle={styles.swipeWidgetContent}
           >
-            {/* Page 0: 3 buttons */}
-            <View style={styles.swipePage}>
-              <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => router.push('/workout/tmlsn-routines')}
-                style={styles.mainMenuButtonWrap}
-              >
-                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
-                  <Text style={styles.mainMenuButtonText}>tmlsn routines.</Text>
-                </Card>
-              </AnimatedPressable>
-              <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => router.push('/workout/your-routines')}
-                style={styles.mainMenuButtonWrap}
-              >
-                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
-                  <Text style={styles.mainMenuButtonText}>your routines.</Text>
-                </Card>
-              </AnimatedPressable>
-              <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={startFreeformWorkout}
-                style={styles.mainMenuButtonWrap}
-              >
-                <Card gradientFill borderRadius={38} style={styles.mainMenuButton}>
-                  <Text style={styles.mainMenuButtonText}>start empty workout</Text>
-                </Card>
-              </AnimatedPressable>
-            </View>
-            {/* Page 1: progress card */}
+            {/* Single page: progress card (tmlsn routines, your routines, start empty workout only via FAB) */}
             <View style={styles.swipePage}>
               <AnimatedPressable
                 onPressIn={playIn}
@@ -630,10 +618,9 @@ export default function WorkoutScreen({
               </AnimatedPressable>
             </View>
           </ScrollView>
-          {/* Swipe dots */}
+          {/* Single page: no swipe dots */}
           <View style={styles.swipeDots}>
-            <View style={[styles.swipeDot, swipePageIndex === 0 && styles.swipeDotActive]} />
-            <View style={[styles.swipeDot, swipePageIndex === 1 && styles.swipeDotActive]} />
+            <View style={[styles.swipeDot, styles.swipeDotActive]} />
           </View>
         </View>
         </AnimatedFadeInUp>
@@ -778,7 +765,7 @@ export default function WorkoutScreen({
           <ScrollView
             contentContainerStyle={[
               styles.contentContainer,
-              { paddingTop: TOP_LEFT_PILL_TOP },
+              { paddingTop: TOP_LEFT_PILL_TOP, paddingBottom: Math.max(Spacing.md, insets.bottom + 100) },
             ]}
           >
             {/* ─── HEVY-STYLE TOP BAR ─── */}
@@ -879,7 +866,7 @@ export default function WorkoutScreen({
                 style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
-                onPress={promptAddExercise}
+                onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
               </Pressable>
@@ -894,7 +881,10 @@ export default function WorkoutScreen({
                     </View>
                     <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
                   </View>
-                  <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <TouchableOpacity
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => showExerciseMenu(exerciseIndex)}
+                  >
                     <Text style={styles.exerciseBlockMenu}>⋮</Text>
                   </TouchableOpacity>
                 </View>
@@ -1046,13 +1036,77 @@ export default function WorkoutScreen({
                 style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
-                onPress={promptAddExercise}
+                onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
               </Pressable>
             ) : null}
           </ScrollView>
         </Animated.View>
+      )}
+
+      {activeWorkout && exerciseMenuIndex !== null && (
+        <Modal visible animationType="fade" transparent>
+          <Pressable style={styles.exerciseMenuOverlay} onPress={closeExerciseMenu}>
+            <Pressable style={styles.exerciseMenuCard} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.exerciseMenuTitle} numberOfLines={1}>
+                {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
+              </Text>
+              <TouchableOpacity
+                style={styles.exerciseMenuOption}
+                onPress={handleReplaceFromMenu}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.exerciseMenuOptionText}>Replace exercise</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.exerciseMenuOption}
+                onPress={handleDeleteFromMenu}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.exerciseMenuOptionText, styles.exerciseMenuOptionDestructive]}>
+                  Delete exercise
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.exerciseMenuOption, styles.exerciseMenuOptionCancel]}
+                onPress={closeExerciseMenu}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.exerciseMenuOptionText}>Cancel</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
+      {activeWorkout && (
+        <ExercisePickerModal
+          visible={showExercisePicker}
+          onClose={() => {
+            setShowExercisePicker(false);
+            setReplaceExerciseIndex(null);
+          }}
+          onSelect={(exercise) => {
+            if (replaceExerciseIndex !== null) {
+              const newEx: Exercise = {
+                id: generateId(),
+                name: exercise.name,
+                sets: [],
+                restTimer: exercise.restTimer,
+                exerciseDbId: exercise.exerciseDbId,
+              };
+              const updated = [...activeWorkout.exercises];
+              updated[replaceExerciseIndex] = newEx;
+              setActiveWorkout({ ...activeWorkout, exercises: updated });
+              setReplaceExerciseIndex(null);
+            } else {
+              addExerciseFromPicker(exercise);
+            }
+            setShowExercisePicker(false);
+          }}
+          defaultRestTimer={120}
+        />
       )}
 
     </View>
@@ -1597,6 +1651,54 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '60',
     paddingHorizontal: 8,
     paddingVertical: 4,
+  },
+
+  // ─── Exercise menu popup (replace/delete) – TMLSN design ───────────────────
+  exerciseMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  exerciseMenuCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: Colors.primaryDark,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
+    padding: Spacing.lg,
+    ...Shadows.card,
+  },
+  exerciseMenuTitle: {
+    fontFamily: Font.semiBold,
+    fontSize: Typography.h2,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.primaryLight + '25',
+  },
+  exerciseMenuOption: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.xs,
+    backgroundColor: Colors.primaryDarkLighter,
+  },
+  exerciseMenuOptionText: {
+    fontFamily: Font.monoMedium,
+    fontSize: Typography.body,
+    color: Colors.primaryLight,
+  },
+  exerciseMenuOptionDestructive: {
+    color: Colors.accentRed,
+  },
+  exerciseMenuOptionCancel: {
+    marginTop: Spacing.sm,
+    marginBottom: 0,
+    backgroundColor: 'transparent',
   },
   restTimerBadge: {
     alignSelf: 'flex-start',
