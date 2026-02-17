@@ -23,7 +23,7 @@ import {
   Animated as RNAnimated,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { usePathname } from 'expo-router';
+import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
 import { onCardSelect, emitStreakPopupState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import Animated, {
@@ -62,7 +62,7 @@ import {
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
 import SwipeableWeekView from '../../components/SwipeableWeekView';
-import { StreakWidget } from '../../components/StreakWidget';
+import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
@@ -91,16 +91,31 @@ const CARD_LABEL_FONT_SIZE = Math.round(Typography.body * 0.45);   // 8 (Calorie
 const MACRO_VALUE_FONT_SIZE = Math.round(Typography.dataValue * 0.5); // 10
 const MACRO_LABEL_FONT_SIZE = Math.round(Typography.label * 0.45);   // 6 (Protein left, etc.)
 
-const WEEK_STRIP_PAGE_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
+const CONTENT_PADDING = 19;
+const WEEK_STRIP_PAGE_WIDTH = Dimensions.get('window').width - CONTENT_PADDING * 2;
 
-export default function NutritionScreen() {
+export type NutritionScreenModalProps = {
+  asModal?: boolean;
+  initialOpenCard?: 'saved' | 'search' | 'scan';
+  onCloseModal?: () => void;
+};
+
+export default function NutritionScreen({
+  asModal = false,
+  initialOpenCard,
+  onCloseModal,
+}: NutritionScreenModalProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { openCard } = useLocalSearchParams<{ openCard?: string }>();
+  const openCardProcessedRef = useRef(false);
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [cardPage, setCardPage] = useState(0);
+  const [animTrigger, setAnimTrigger] = useState(0);
 
   const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
 
@@ -110,6 +125,10 @@ export default function NutritionScreen() {
   }));
 
   // Top pills: scale-in on press (same as calorie card, no sound)
+  const streakPillScale = useSharedValue(1);
+  const streakPillScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: streakPillScale.value }],
+  }));
   const profilePillScale = useSharedValue(1);
   const profilePillScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profilePillScale.value }],
@@ -209,6 +228,69 @@ export default function NutritionScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [showFlickerLogo, setShowFlickerLogo] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const lastFlickerRef = useRef(0);
+  const flickerTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const darkLogoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const IDLE_MS = 10000; // flicker after 10s idle
+  const DARK_LOGO_HOLD_MS = 10000; // after flickers, hold dark logo for 10s then back to main
+  const FLICKER_COOLDOWN_MS = 8000;
+  const LOGO_RAPID_PRESS_COUNT = 10;
+  const LOGO_RAPID_WINDOW_MS = 2500;
+  const logoRapidPressCountRef = useRef(0);
+  const logoRapidWindowStartRef = useRef(0);
+  // Quick flickers: [showAltMs, showMainMs] pairs; then we hold alt for 10s
+  const FLICKER_SEQUENCE: [number, number][] = [[100, 70], [180, 90], [120, 80]];
+  const reportActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    if (darkLogoTimeoutRef.current) {
+      clearTimeout(darkLogoTimeoutRef.current);
+      darkLogoTimeoutRef.current = null;
+    }
+    setShowFlickerLogo(false);
+  }, []);
+
+  const runFlickerThenHold = useCallback(() => {
+    flickerTimeoutsRef.current.forEach(clearTimeout);
+    flickerTimeoutsRef.current = [];
+    if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    let delay = 0;
+    FLICKER_SEQUENCE.forEach(([onMs, offMs]) => {
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(true), delay));
+      delay += onMs;
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(false), delay));
+      delay += offMs;
+    });
+    // After the flickers, show dark logo for 10s then revert to main without flickering
+    flickerTimeoutsRef.current.push(setTimeout(() => {
+      setShowFlickerLogo(true);
+      darkLogoTimeoutRef.current = setTimeout(() => {
+        setShowFlickerLogo(false);
+        darkLogoTimeoutRef.current = null;
+        lastFlickerRef.current = Date.now(); // so idle doesn't re-trigger flicker right after revert
+      }, DARK_LOGO_HOLD_MS);
+    }, delay));
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      const idleLongEnough = now - lastActivityRef.current >= IDLE_MS;
+      const cooldownPassed = now - lastFlickerRef.current >= FLICKER_COOLDOWN_MS;
+      const notInDarkHold = darkLogoTimeoutRef.current == null; // don't interrupt 10s revert
+      if (idleLongEnough && cooldownPassed && notInDarkHold) {
+        lastFlickerRef.current = now;
+        runFlickerThenHold();
+      }
+    }, 600);
+    return () => {
+      clearInterval(t);
+      flickerTimeoutsRef.current.forEach(clearTimeout);
+      if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    };
+  }, [runFlickerThenHold]);
+
   // Tab-bar pill dimensions for FAB positioning
 
   // Add Meal Form State
@@ -251,18 +333,20 @@ export default function NutritionScreen() {
     }
   }, [viewingDate]);
 
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
+  // Only run entrance animations when the tab actually gains focus, not when viewingDate changes.
+  // (useFocusEffect re-runs when its callback identity changes; loadData changes with viewingDate, so we use a ref to keep the callback stable.)
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+      loadDataRef.current();
+      if (!asModal) setAnimTrigger((t) => t + 1);
+    }, [asModal])
   );
 
   const prevViewingDateRef = useRef(viewingDate);
   // Load the selected day's log when user taps a different date (not on initial mount)
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/24d86888-ef82-444e-aad8-90b62a37b0c8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'nutrition.tsx:viewingDate', message: 'viewingDate effect', data: { hypothesisId: 'H4', viewingDate, prev: prevViewingDateRef.current }, timestamp: Date.now() }) }).catch(() => {});
-    // #endregion
     if (prevViewingDateRef.current !== viewingDate) {
       prevViewingDateRef.current = viewingDate;
       loadData();
@@ -445,11 +529,13 @@ export default function NutritionScreen() {
     resetMealForm();
     setMealType('breakfast');
     setShowAddMeal(false);
+    asModal && onCloseModal?.();
   };
 
   // ── Bridge: card selected in popup (rendered in _layout.tsx) → open feature ──
   useEffect(() => {
     const unsub = onCardSelect((card) => {
+      reportActivity();
       if (card === 'saved') handleChoiceSavedFoods();
       else if (card === 'search') handleChoiceFoodDatabase();
       else if (card === 'scan') handleChoiceScanFood();
@@ -485,6 +571,30 @@ export default function NutritionScreen() {
     setAiDescription('');
     setShowCamera(true);
   };
+
+  // When asModal (opened from FAB on another tab), open the right flow from initialOpenCard
+  useEffect(() => {
+    if (!asModal || !initialOpenCard) return;
+    if (initialOpenCard === 'saved') handleChoiceSavedFoods();
+    else if (initialOpenCard === 'search') handleChoiceFoodDatabase();
+    else if (initialOpenCard === 'scan') handleChoiceScanFood();
+  }, [asModal, initialOpenCard]);
+
+  // When navigated from another tab with openCard param (legacy; FAB now uses food-action-modal)
+  useEffect(() => {
+    if (asModal) return;
+    if (openCard !== 'saved' && openCard !== 'search' && openCard !== 'scan') {
+      openCardProcessedRef.current = false;
+      return;
+    }
+    if (openCardProcessedRef.current) return;
+    openCardProcessedRef.current = true;
+    reportActivity();
+    if (openCard === 'saved') handleChoiceSavedFoods();
+    else if (openCard === 'search') handleChoiceFoodDatabase();
+    else if (openCard === 'scan') handleChoiceScanFood();
+    router.setParams({});
+  }, [asModal, openCard]);
 
   const handleChoiceManual = () => {
     resetMealForm();
@@ -681,19 +791,23 @@ export default function NutritionScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = 44;
 
-  // Calories left card: 349×136 dp, radius 16
-  const CALORIES_CARD_WIDTH = 349;
+  // Carousel (horizontal paging between normal and flipped card layouts)
+  const CAROUSEL_WIDTH = Dimensions.get('window').width - CONTENT_PADDING * 2;
+
+  // Card width aligned with week-strip day cells: left edge of Monday's selected card → right edge of Sunday's selected card
+  const WEEK_STRIP_HPAD = Spacing.sm;   // paddingHorizontal on weekStrip (8)
+  const DAY_CARD_WIDTH = 50;            // dayCardSelected width in SwipeableWeekView
+  const DAY_COL_WIDTH = (CAROUSEL_WIDTH - 2 * WEEK_STRIP_HPAD) / 7;
+  const CALORIES_CARD_WIDTH = Math.round(6 * DAY_COL_WIDTH + DAY_CARD_WIDTH);
   const CALORIES_CARD_HEIGHT = 136;
   const CALORIES_CARD_RADIUS = 16;
 
-  // Macro cards (Protein, Carbs, Fat): 112×140 dp, radius 16
-  const MACRO_CARD_WIDTH = 112;
+  // Macro cards (Protein, Carbs, Fat): 3 cards + 2 gaps fill the same width as the calorie card
+  const MACRO_CARD_WIDTH = Math.floor((CALORIES_CARD_WIDTH - 2 * Spacing.sm) / 3);
   const MACRO_CARD_HEIGHT = 140;
   const MACRO_CARD_RADIUS = 16;
-
-  // Carousel (horizontal paging between normal and flipped card layouts)
-  const CAROUSEL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
   const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(page);
@@ -706,6 +820,7 @@ export default function NutritionScreen() {
   const mainScrollDragBegunRef = useRef(false); // true when user is pulling down main list – don’t run card click-out animation
 
   const onCardPressIn = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
+    reportActivity();
     cardTouchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
     carouselDraggedRef.current = false;
     playCardPressInSound();
@@ -746,6 +861,7 @@ export default function NutritionScreen() {
   };
 
   const onCarouselScrollBeginDrag = () => {
+    reportActivity();
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -868,12 +984,14 @@ export default function NutritionScreen() {
 
   // Top pills: 54pt from screen top; horizontal padding = calorie card inset (Spacing.md + centering offset)
   const TOP_LEFT_PILL_TOP = 54;
-  const calorieCardLeft = Spacing.md + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
+  const calorieCardLeft = CONTENT_PADDING + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
   const TOP_RIGHT_CIRCLE_SIZE = 40; // circle, same stroke as pill
   const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2; // 20
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, asModal && { backgroundColor: 'transparent' }]}>
+      {!asModal && (
+      <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
         {/* Circular gradient background at 0% 0%: #2f3031 → #1a1a1a */}
         <View style={styles.homeBackgroundImage} pointerEvents="none">
@@ -915,17 +1033,79 @@ export default function NutritionScreen() {
           { paddingTop: TOP_LEFT_PILL_TOP },
         ]}
       >
-        {/* Top-left pill — same as workout page: StreakWidget (liquid glass, enso, navigates to streak) */}
-        <View
+        {/* Top-left pill — same stroke as bottom pill + slight gradient; scale animation like calorie card (no sound) */}
+        <Pressable
           style={{
             position: 'absolute',
             top: TOP_LEFT_PILL_TOP,
             left: calorieCardLeft,
             zIndex: 10,
+            width: 60,
+            height: 40,
           }}
+          onPressIn={() => { streakPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPressOut={() => { streakPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPress={() => setFireStreakPopupVisible(true)}
         >
-          <StreakWidget />
-        </View>
+
+
+
+
+
+
+          <Animated.View style={[{ width: 60, height: 40 }, streakPillScaleStyle]}>
+            <View
+              style={{
+                width: 60,
+                height: 40,
+                borderRadius: 28,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Border gradient (same idea as bottom pill) */}
+              <LinearGradient
+                colors={['#4E4F50', '#4A4B4C']}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }}
+              />
+              {/* Fill gradient */}
+              <LinearGradient
+                colors={['#363738', '#2E2F30']}
+                style={{
+                  position: 'absolute',
+                  top: 1,
+                  left: 1,
+                  right: 1,
+                  bottom: 1,
+                  borderRadius: 27,
+                }}
+              />
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2.9,
+                }}
+              >
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2.9, transform: [{ translateX: -0.17 }] }}
+                >
+                  <Image
+                    source={require('../../assets/firestreakhomepage.png')}
+                    style={{ width: 19, height: 19 }}
+                    resizeMode="contain"
+                  />
+                  <Text style={[styles.caloriesLeftValue, { fontSize: 13, color: '#C6C6C6', letterSpacing: 13 * -0.03 }]}>0</Text>
+                </View>
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
 
         {/* Top-right circle — same stroke + slight gradient; scale animation like calorie card (no sound) */}
         <Pressable
@@ -988,15 +1168,34 @@ export default function NutritionScreen() {
           </Animated.View>
         </Pressable>
 
+        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
         <View style={styles.pageHeaderRow}>
-          <View style={styles.pageHeaderLogoPressable}>
+          <Pressable
+            onPress={() => {
+              const now = Date.now();
+              if (now - logoRapidWindowStartRef.current > LOGO_RAPID_WINDOW_MS) {
+                logoRapidPressCountRef.current = 0;
+                logoRapidWindowStartRef.current = now;
+              }
+              logoRapidPressCountRef.current += 1;
+              if (logoRapidPressCountRef.current >= LOGO_RAPID_PRESS_COUNT) {
+                logoRapidPressCountRef.current = 0;
+                logoRapidWindowStartRef.current = 0;
+                lastFlickerRef.current = Date.now();
+                runFlickerThenHold();
+              }
+            }}
+            style={styles.pageHeaderLogoPressable}
+          >
             <Image
-              source={require('../../assets/tmlsn-calories-logo.png')}
+              source={showFlickerLogo ? require('../../assets/logo-flicker.png') : require('../../assets/tmlsn-calories-logo.png')}
               style={styles.pageHeaderLogo}
               resizeMode="contain"
             />
-          </View>
+          </Pressable>
         </View>
+        </AnimatedFadeInUp>
+        <AnimatedFadeInUp delay={80} duration={380} trigger={animTrigger}>
         <SwipeableWeekView
           weekWidth={WEEK_STRIP_PAGE_WIDTH}
           selectedDate={viewingDateAsDate}
@@ -1004,6 +1203,8 @@ export default function NutritionScreen() {
           initialDate={viewingDateAsDate}
           showHeader={false}
         />
+        </AnimatedFadeInUp>
+        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
         {/* Animated wrapper for day-switch slide + real blur overlay (BlurView fades out → sharp) */}
         <Animated.View style={cardSlideStyle}>
           <View style={{ position: 'relative' }}>
@@ -1242,6 +1443,7 @@ export default function NutritionScreen() {
             </Animated.View>
           </View>
         </Animated.View>
+        </AnimatedFadeInUp>
       </ScrollView>
       </RNAnimated.View>
 
@@ -1293,13 +1495,15 @@ export default function NutritionScreen() {
           </RNAnimated.View>
         </View>
       </Modal>
+      </>
+      )}
 
       {/* FAB is now rendered in _layout.tsx (inside the pill). Press event arrives via fabBridge. */}
 
       {/* Popup is now rendered in _layout.tsx (always on top). Card selections arrive via onCardSelect bridge. */}
 
       {/* Unified Camera — AI / Barcode / Food Label */}
-      <Modal visible={showCamera} animationType="slide" onRequestClose={() => { setShowCamera(false); setShowAiDescribe(false); }}>
+      <Modal visible={showCamera} animationType="slide" onRequestClose={() => { setShowCamera(false); setShowAiDescribe(false); asModal && onCloseModal?.(); }}>
         <View style={styles.scannerContainer}>
           {permission?.granted && !showAiDescribe && (
             <CameraView
@@ -1335,7 +1539,7 @@ export default function NutritionScreen() {
             </View>
           )}
           <View style={styles.cameraTopBar}>
-            <TouchableOpacity onPress={() => { setShowCamera(false); setShowAiDescribe(false); }}>
+            <TouchableOpacity onPress={() => { setShowCamera(false); setShowAiDescribe(false); asModal && onCloseModal?.(); }}>
               <Text style={styles.cameraCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -1374,7 +1578,7 @@ export default function NutritionScreen() {
       </Modal>
 
       {/* Saved Foods Modal */}
-      <Modal visible={showSavedFoods} animationType="slide" transparent onRequestClose={() => setShowSavedFoods(false)}>
+      <Modal visible={showSavedFoods} animationType="slide" transparent onRequestClose={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalContent, { maxHeight: '80%' }]}>
             <Text style={styles.modalTitle}>Saved Foods</Text>
@@ -1395,13 +1599,13 @@ export default function NutritionScreen() {
                 )}
               />
             )}
-            <Button title="Close" onPress={() => setShowSavedFoods(false)} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+            <Button title="Close" onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
           </View>
         </View>
       </Modal>
 
       {/* Food Database Search Modal */}
-      <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => setShowFoodSearch(false)}>
+      <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }}>
         <View style={styles.modalContainer}>
           <View style={[styles.modalContent, { maxHeight: '85%' }]}>
             <Text style={styles.modalTitle}>Search food</Text>
@@ -1429,7 +1633,7 @@ export default function NutritionScreen() {
               )}
               ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
             />
-            <Button title="Close" onPress={() => setShowFoodSearch(false)} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+            <Button title="Close" onPress={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
           </View>
         </View>
       </Modal>
@@ -1439,7 +1643,7 @@ export default function NutritionScreen() {
         visible={showAddMeal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowAddMeal(false)}
+        onRequestClose={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -1535,7 +1739,7 @@ export default function NutritionScreen() {
             <View style={styles.modalButtons}>
               <Button
                 title="Cancel"
-                onPress={() => setShowAddMeal(false)}
+                onPress={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
                 variant="secondary"
                 style={styles.modalButton}
                 textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
@@ -1658,7 +1862,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   contentContainer: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: CONTENT_PADDING,
     paddingBottom: Spacing.md,
   },
   pillStreakCount: {
@@ -1829,8 +2033,8 @@ const styles = StyleSheet.create({
   healthScoreBarTrack: {
     position: 'absolute',
     top: 48,
-    left: 15, // center 319-wide bar in 349 card
-    width: 319,
+    left: 15,
+    right: 15,
     height: 6,
     borderRadius: 3,
     backgroundColor: 'rgba(198, 198, 198, 0.2)', // darker uncomplete track

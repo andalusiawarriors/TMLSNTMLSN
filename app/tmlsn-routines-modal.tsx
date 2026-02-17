@@ -1,20 +1,41 @@
 import React from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors } from '../constants/theme';
 import TmlsnRoutinesScreen from './(tabs)/workout/tmlsn-routines';
+
+const TOP_PADDING_BASE = 24;
+/** Extra space so the first card (e.g. TMLSN Upper Body A) sits well below the top. */
+const TOP_EXTRA = 56;
 
 /**
  * Root-level modal for TMLSN routines (opened from FAB).
- * Keeps the user on their current tab; closing or starting a routine is explicit.
+ * Full-screen modal; swipe down to dismiss. First card is pushed down from the top.
  */
 export default function TmlsnRoutinesModal() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const onStartRoutine = (split: { id: string }) => {
     router.back();
     setTimeout(() => {
-      router.push({ pathname: '/workout', params: { startSplitId: split.id } });
+      router.replace({ pathname: '/workout', params: { startSplitId: split.id } });
     }, 0);
   };
 
-  return <TmlsnRoutinesScreen onStartRoutine={onStartRoutine} />;
+  const paddingTop = Math.max(insets.top, TOP_PADDING_BASE) + TOP_EXTRA;
+
+  return (
+    <View style={[styles.wrapper, { paddingTop }]}>
+      <TmlsnRoutinesScreen onStartRoutine={onStartRoutine} />
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  wrapper: {
+    flex: 1,
+    backgroundColor: Colors.primaryDark,
+  },
+});

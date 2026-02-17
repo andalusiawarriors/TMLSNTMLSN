@@ -65,8 +65,11 @@ export default function RootLayout() {
           name="tmlsn-routines-modal"
           options={{
             presentation: 'modal',
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
             headerShown: false,
             title: 'TMLSN routines',
+            contentStyle: { backgroundColor: Colors.primaryDark },
           }}
         />
         <Stack.Screen
@@ -75,6 +78,23 @@ export default function RootLayout() {
             presentation: 'modal',
             headerShown: false,
             title: 'Your routines',
+          }}
+        />
+        <Stack.Screen
+          name="start-empty-workout-modal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            title: 'Workout',
+          }}
+        />
+        <Stack.Screen
+          name="food-action-modal"
+          options={{
+            presentation: 'transparentModal',
+            headerShown: false,
+            title: 'Food',
+            contentStyle: { backgroundColor: 'transparent' },
           }}
         />
       </Stack>

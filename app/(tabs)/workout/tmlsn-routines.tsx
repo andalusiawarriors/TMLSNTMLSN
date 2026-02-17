@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-nati
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
-import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { Card } from '../../../components/Card';
@@ -180,10 +180,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontFamily: Font.extraBold,
     fontSize: Typography.body,
+    fontWeight: '600',
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.11,
     marginBottom: 2,
   },
   cardStatsRow: {
@@ -192,19 +192,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardStat: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight + '60',
-    letterSpacing: 0.2,
+    letterSpacing: -0.11,
   },
   cardStatDot: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight + '30',
+    letterSpacing: -0.11,
   },
   chevron: {
-    fontFamily: Font.monoMedium,
     fontSize: 24,
+    fontWeight: '500',
     color: Colors.primaryLight + '50',
     paddingHorizontal: 4,
   },
@@ -236,37 +237,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   exerciseRowDotText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
     fontWeight: '700' as const,
     color: Colors.primaryLight + '60',
+    letterSpacing: -0.11,
   },
   exerciseRowContent: {
     flex: 1,
   },
   exerciseRowName: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight,
-    letterSpacing: -0.3,
+    letterSpacing: -0.11,
   },
   exerciseRowDetail: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight + '50',
-    letterSpacing: 0.2,
+    letterSpacing: -0.11,
     marginTop: 1,
   },
 
   // ─── COLLAPSED PREVIEW ────────────────────────────────────────────────────
   exercisePreview: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight + '50',
     lineHeight: 18,
     marginTop: 10,
     marginBottom: 12,
-    letterSpacing: -0.2,
+    letterSpacing: -0.11,
   },
 
   // ─── START BUTTON ─────────────────────────────────────────────────────────
@@ -279,10 +280,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   startButtonText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
     fontWeight: '700' as const,
-    letterSpacing: 0.3,
+    letterSpacing: -0.11,
     color: Colors.primaryDark,
   },
 });

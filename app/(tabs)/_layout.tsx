@@ -15,7 +15,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, emitWorkoutCardSelect, onStreakPopupState } from '../../utils/fabBridge';
+import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 
 // ── Pill constants ──
@@ -157,6 +157,9 @@ function TabButton({
   );
 }
 
+const MODAL_ROUTES = ['food-action-modal', 'start-empty-workout-modal', 'tmlsn-routines-modal', 'your-routines-modal'];
+const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r));
+
 export default function TabsLayout() {
   const pathname = usePathname();
   const router = useRouter();
@@ -164,6 +167,11 @@ export default function TabsLayout() {
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
   const isProfileSelected = pathname.includes('profile');
+
+  const lastTabIndexRef = useRef(0);
+  const tabIndexFromPath = isNutritionSelected ? 0 : isWorkoutSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
+  if (!isModalPath(pathname)) lastTabIndexRef.current = tabIndexFromPath;
+  const activeTabIndex = isModalPath(pathname) ? lastTabIndexRef.current : tabIndexFromPath;
 
   // ══════════════════════════════════════════
   // FAB animation state
@@ -175,7 +183,6 @@ export default function TabsLayout() {
   // ══════════════════════════════════════════
   // Sliding selected pill
   // ══════════════════════════════════════════
-  const activeTabIndex = isNutritionSelected ? 0 : isWorkoutSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
   const pillTranslateX = useRef(new RNAnimated.Value(getTabPillX(0))).current;
   const pillScaleX = useRef(new RNAnimated.Value(1)).current;
   const pillScaleY = useRef(new RNAnimated.Value(1)).current;
@@ -577,9 +584,14 @@ export default function TabsLayout() {
       RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
     ]).start(() => {
       setShowPopup(false);
-      emitCardSelect(card);
+      // Food cards: never redirect. If on nutrition tab, emit; otherwise open modal so user stays on current tab.
+      if (isNutritionSelected) {
+        emitCardSelect(card);
+      } else {
+        router.push({ pathname: '/food-action-modal', params: { card } });
+      }
     });
-  }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity]);
+  }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router, isNutritionSelected]);
 
   const handleWorkoutCardSelect = useCallback((card: 'tmlsn' | 'your-routines' | 'empty') => {
     stopPopupAmbient();
@@ -600,8 +612,8 @@ export default function TabsLayout() {
       if (card === 'tmlsn') router.push('/tmlsn-routines-modal');
       else if (card === 'your-routines') router.push('/your-routines-modal');
       else {
-        emitWorkoutCardSelect('empty');
-        if (!isWorkoutSelected) router.push({ pathname: '/workout', params: { startEmpty: '1' } });
+        // Start empty workout: always open modal from any tab — no redirect, same behaviour everywhere
+        router.push('/start-empty-workout-modal');
       }
     });
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);

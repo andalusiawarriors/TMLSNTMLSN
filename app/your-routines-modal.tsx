@@ -12,7 +12,7 @@ export default function YourRoutinesModal() {
   const onStartRoutine = (routine: { id: string }) => {
     router.back();
     setTimeout(() => {
-      router.push({ pathname: '/workout', params: { startRoutineId: routine.id } });
+      router.replace({ pathname: '/workout', params: { startRoutineId: routine.id } });
     }, 0);
   };
 
