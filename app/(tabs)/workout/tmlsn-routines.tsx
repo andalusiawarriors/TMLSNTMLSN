@@ -7,6 +7,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/th
 import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { Card } from '../../../components/Card';
+import { BackButton } from '../../../components/BackButton';
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -47,6 +48,10 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
 
   return (
     <View style={styles.container}>
+      <BackButton />
+      <View style={styles.titleRow} pointerEvents="box-none">
+        <Text style={styles.screenTitle}>TMLSN Routines</Text>
+      </View>
       <Image
         source={require('../../../assets/home-background.png')}
         style={styles.homeBackgroundImage}
@@ -130,10 +135,28 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
   );
 }
 
+const TITLE_ROW_TOP = 54;
+const TITLE_ROW_HEIGHT = 40;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+  },
+  titleRow: {
+    position: 'absolute',
+    top: TITLE_ROW_TOP,
+    left: 0,
+    right: 0,
+    height: TITLE_ROW_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9,
+  },
+  screenTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
   },
   homeBackgroundImage: {
     ...StyleSheet.absoluteFillObject,
@@ -144,6 +167,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.md,
+    paddingTop: TITLE_ROW_TOP + TITLE_ROW_HEIGHT + Spacing.sm,
     paddingBottom: Spacing.xl * 2,
     gap: 12,
   },

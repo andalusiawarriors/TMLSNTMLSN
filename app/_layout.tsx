@@ -62,6 +62,24 @@ export default function RootLayout() {
           options={{ headerShown: false }}
         />
         <Stack.Screen
+          name="saved-foods"
+          options={{
+            title: 'Saved Foods',
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: Colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="search-food"
+          options={{
+            title: 'Search food',
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: Colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
           name="tmlsn-routines-modal"
           options={{
             presentation: 'modal',

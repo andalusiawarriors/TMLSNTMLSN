@@ -590,11 +590,13 @@ export default function TabsLayout() {
       RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
     ]).start(() => {
       setShowPopup(false);
-      // Food cards: never redirect. If on nutrition tab, emit; otherwise open modal so user stays on current tab.
-      if (isNutritionSelected) {
-        emitCardSelect(card);
-      } else {
-        router.push({ pathname: '/food-action-modal', params: { card } });
+      // All food actions use full-screen stack except scan (camera overlay).
+      if (card === 'saved') router.push('/saved-foods');
+      else if (card === 'search') router.push('/search-food');
+      else {
+        // scan: exception = standalone camera overlay (emit on nutrition tab, modal from other tabs)
+        if (isNutritionSelected) emitCardSelect('scan');
+        else router.push({ pathname: '/food-action-modal', params: { card: 'scan' } });
       }
     });
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router, isNutritionSelected]);

@@ -45,16 +45,16 @@ export default function WorkoutLayout() {
       <Stack.Screen
         name="tmlsn-routines"
         options={{
-          title: 'tmlsn routines',
-          headerShown: true,
+          title: 'TMLSN Routines',
+          headerShown: false,
           animation: 'slide_from_right',
         }}
       />
       <Stack.Screen
         name="your-routines"
         options={{
-          title: 'your routines',
-          headerShown: true,
+          title: 'Your Routines',
+          headerShown: false,
           animation: 'slide_from_right',
         }}
       />

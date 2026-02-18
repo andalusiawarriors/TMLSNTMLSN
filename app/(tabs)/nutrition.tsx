@@ -116,8 +116,13 @@ export default function NutritionScreen({
 }: NutritionScreenModalProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
-  const { openCard } = useLocalSearchParams<{ openCard?: string }>();
+  const { openCard, addSavedFood, addFoodResult } = useLocalSearchParams<{
+    openCard?: string;
+    addSavedFood?: string;
+    addFoodResult?: string;
+  }>();
   const openCardProcessedRef = useRef(false);
+  const addFoodParamProcessedRef = useRef(false);
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -572,6 +577,24 @@ export default function NutritionScreen({
     else if (openCard === 'scan') handleChoiceScanFood();
     router.setParams({});
   }, [asModal, openCard]);
+
+  // When returning from full-screen Saved Foods or Search Food with a selection
+  useEffect(() => {
+    const payload = addSavedFood || addFoodResult;
+    if (!payload) {
+      addFoodParamProcessedRef.current = false;
+      return;
+    }
+    if (addFoodParamProcessedRef.current) return;
+    addFoodParamProcessedRef.current = true;
+    try {
+      const data = JSON.parse(payload) as ParsedNutrition;
+      fillAndShowForm(data);
+    } catch (_) {
+      // ignore invalid JSON
+    }
+    router.setParams({ addSavedFood: undefined, addFoodResult: undefined });
+  }, [addSavedFood, addFoodResult, router]);
 
   const handleChoiceManual = () => {
     resetMealForm();
