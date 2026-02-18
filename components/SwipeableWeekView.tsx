@@ -266,10 +266,17 @@ export default function SwipeableWeekView({
     const dayOffset = Math.round((selectedDate.getTime() - currentMonday.getTime()) / (1000 * 60 * 60 * 24));
     const newSelected = new Date(newMonday);
     newSelected.setDate(newMonday.getDate() + Math.max(0, Math.min(6, dayOffset)));
-    if (controlledSelectedDate == null) setInternalSelectedDate(newSelected);
+    if (controlledSelectedDate == null) {
+      setInternalSelectedDate(newSelected);
+    }
+    // When controlled, parent must be notified so cards and viewingDate stay in sync with the week strip.
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SwipeableWeekView:commitWeekChange',message:'week change',data:{direction,controlled:controlledSelectedDate!=null,newDate:newSelected.toISOString().slice(0,10)},timestamp:Date.now(),hypothesisId:'H_week'})}).catch(()=>{});
+    // #endregion
+    if (onDaySelect) onDaySelect(newSelected);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onWeekChange?.(newMonday);
-  }, [currentMonday, selectedDate, controlledSelectedDate, onWeekChange]);
+  }, [currentMonday, selectedDate, controlledSelectedDate, onWeekChange, onDaySelect]);
 
   // ── Day press (tap or slide-to-week) ─────────────────────────────────────────
 

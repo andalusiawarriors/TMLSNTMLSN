@@ -9,7 +9,6 @@ import {
   Modal,
   Alert,
   Image,
-  ImageBackground,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -50,6 +49,7 @@ import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-ca
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -244,69 +244,6 @@ export default function NutritionScreen({
   const [foodSearchLoading, setFoodSearchLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const [showFlickerLogo, setShowFlickerLogo] = useState(false);
-  const lastActivityRef = useRef(Date.now());
-  const lastFlickerRef = useRef(0);
-  const flickerTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const darkLogoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const IDLE_MS = 10000; // flicker after 10s idle
-  const DARK_LOGO_HOLD_MS = 10000; // after flickers, hold dark logo for 10s then back to main
-  const FLICKER_COOLDOWN_MS = 8000;
-  const LOGO_RAPID_PRESS_COUNT = 10;
-  const LOGO_RAPID_WINDOW_MS = 2500;
-  const logoRapidPressCountRef = useRef(0);
-  const logoRapidWindowStartRef = useRef(0);
-  // Quick flickers: [showAltMs, showMainMs] pairs; then we hold alt for 10s
-  const FLICKER_SEQUENCE: [number, number][] = [[100, 70], [180, 90], [120, 80]];
-  const reportActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    if (darkLogoTimeoutRef.current) {
-      clearTimeout(darkLogoTimeoutRef.current);
-      darkLogoTimeoutRef.current = null;
-    }
-    setShowFlickerLogo(false);
-  }, []);
-
-  const runFlickerThenHold = useCallback(() => {
-    flickerTimeoutsRef.current.forEach(clearTimeout);
-    flickerTimeoutsRef.current = [];
-    if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
-    let delay = 0;
-    FLICKER_SEQUENCE.forEach(([onMs, offMs]) => {
-      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(true), delay));
-      delay += onMs;
-      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(false), delay));
-      delay += offMs;
-    });
-    // After the flickers, show dark logo for 10s then revert to main without flickering
-    flickerTimeoutsRef.current.push(setTimeout(() => {
-      setShowFlickerLogo(true);
-      darkLogoTimeoutRef.current = setTimeout(() => {
-        setShowFlickerLogo(false);
-        darkLogoTimeoutRef.current = null;
-        lastFlickerRef.current = Date.now(); // so idle doesn't re-trigger flicker right after revert
-      }, DARK_LOGO_HOLD_MS);
-    }, delay));
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      const now = Date.now();
-      const idleLongEnough = now - lastActivityRef.current >= IDLE_MS;
-      const cooldownPassed = now - lastFlickerRef.current >= FLICKER_COOLDOWN_MS;
-      const notInDarkHold = darkLogoTimeoutRef.current == null; // don't interrupt 10s revert
-      if (idleLongEnough && cooldownPassed && notInDarkHold) {
-        lastFlickerRef.current = now;
-        runFlickerThenHold();
-      }
-    }, 600);
-    return () => {
-      clearInterval(t);
-      flickerTimeoutsRef.current.forEach(clearTimeout);
-      if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
-    };
-  }, [runFlickerThenHold]);
 
   // Tab-bar pill dimensions for FAB positioning
 
@@ -518,7 +455,6 @@ export default function NutritionScreen({
   // ── Bridge: card selected in popup (rendered in _layout.tsx) → open feature ──
   useEffect(() => {
     const unsub = onCardSelect((card) => {
-      reportActivity();
       if (card === 'saved') handleChoiceSavedFoods();
       else if (card === 'search') handleChoiceFoodDatabase();
       else if (card === 'scan') handleChoiceScanFood();
@@ -572,7 +508,6 @@ export default function NutritionScreen({
     }
     if (openCardProcessedRef.current) return;
     openCardProcessedRef.current = true;
-    reportActivity();
     if (openCard === 'saved') handleChoiceSavedFoods();
     else if (openCard === 'search') handleChoiceFoodDatabase();
     else if (openCard === 'scan') handleChoiceScanFood();
@@ -808,7 +743,6 @@ export default function NutritionScreen({
   const MACRO_CARD_HEIGHT = 140;
   const MACRO_CARD_RADIUS = 16;
   const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(Math.min(1, page));
@@ -818,7 +752,6 @@ export default function NutritionScreen({
   };
 
   const handleFitnessCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    reportActivity();
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setFitnessCardPage(Math.min(1, page));
@@ -831,7 +764,6 @@ export default function NutritionScreen({
   const mainScrollDragBegunRef = useRef(false); // true when user is pulling down main list – don’t run card click-out animation
 
   const onCardPressIn = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
-    reportActivity();
     cardTouchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
     carouselDraggedRef.current = false;
     playCardPressInSound();
@@ -875,7 +807,6 @@ export default function NutritionScreen({
   };
 
   const onCarouselScrollBeginDrag = () => {
-    reportActivity();
     // #region agent log
     fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:beginDrag',message:'carousel drag started',data:{},timestamp:Date.now(),hypothesisId:'H_drag'})}).catch(()=>{});
     // #endregion
@@ -1186,33 +1117,7 @@ export default function NutritionScreen({
         </Pressable>
 
         <AnimatedFadeInUp delay={0} duration={220} trigger={animTrigger}>
-        <View style={styles.pageHeaderRow}>
-          <Pressable
-            onPress={() => {
-              const now = Date.now();
-              if (now - logoRapidWindowStartRef.current > LOGO_RAPID_WINDOW_MS) {
-                logoRapidPressCountRef.current = 0;
-                logoRapidWindowStartRef.current = now;
-              }
-              logoRapidPressCountRef.current += 1;
-              if (logoRapidPressCountRef.current >= LOGO_RAPID_PRESS_COUNT) {
-                logoRapidPressCountRef.current = 0;
-                logoRapidWindowStartRef.current = 0;
-                lastFlickerRef.current = Date.now();
-                runFlickerThenHold();
-              }
-            }}
-            style={styles.pageHeaderLogoPressable}
-          >
-            <Image
-              source={showFlickerLogo ? require('../../assets/logo-flicker.png') : require('../../assets/tmlsn-calories-logo.png')}
-              style={styles.pageHeaderLogo}
-              resizeMode="contain"
-            />
-          </Pressable>
-        </View>
-        </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={35} duration={220} trigger={animTrigger}>
+        <View style={{ height: (Typography.h2 + 10) * 1.2 * 1.1 + Spacing.md, marginBottom: 0 }} />
         <SwipeableWeekView
           weekWidth={WEEK_STRIP_PAGE_WIDTH}
           selectedDate={viewingDateAsDate}
@@ -1622,27 +1527,71 @@ export default function NutritionScreen({
               height: SCREEN_HEIGHT,
               zIndex: 1,
               elevation: 20,
-              backgroundColor: Colors.primaryDark,
               transform: [{ translateX: fireStreakSlideX }],
             }}
           >
-            <ImageBackground
-              source={require('../../assets/streakbackground.png')}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
-              resizeMode="cover"
-            >
-              <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: Spacing.lg }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg }}>
-                  <Text style={{ fontFamily: Font.semiBold, fontSize: 22, color: Colors.primaryLight }}>Fire Streak</Text>
-                  <Pressable onPress={closeFireStreakPopup} hitSlop={12}>
-                    <Text style={{ fontSize: 28, color: Colors.primaryLight }}>×</Text>
-                  </Pressable>
-                </View>
-                <Text style={{ fontFamily: Font.regular, fontSize: 17, color: Colors.primaryLight }}>
-                  Your streak and fire stats will appear here.
+            <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
+              <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT} style={StyleSheet.absoluteFill}>
+                <Defs>
+                  <RadialGradient id="streakBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
+                    <Stop offset="0" stopColor="#2f3031" />
+                    <Stop offset="1" stopColor="#1a1a1a" />
+                  </RadialGradient>
+                </Defs>
+                <Rect x="0" y="0" width={SCREEN_WIDTH} height={SCREEN_HEIGHT} fill="url(#streakBgGrad)" />
+              </Svg>
+            </View>
+            <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: Spacing.lg }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 16,
+                  paddingTop: 16,
+                  paddingBottom: 8,
+                  position: 'relative',
+                }}
+              >
+                <TouchableOpacity
+                  onPress={closeFireStreakPopup}
+                  style={{
+                    position: 'absolute',
+                    left: 16,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+                <Text
+                  style={{
+                    fontSize: Typography.h2,
+                    fontWeight: '600',
+                    letterSpacing: -0.11,
+                    color: Colors.primaryLight,
+                    textAlign: 'center',
+                  }}
+                >
+                  Fire Streak
                 </Text>
               </View>
-            </ImageBackground>
+              <Text
+                style={{
+                  fontSize: CARD_LABEL_FONT_SIZE + 2,
+                  fontWeight: '500',
+                  letterSpacing: -0.11,
+                  color: '#FFFFFF',
+                  textAlign: 'center',
+                }}
+              >
+                Your streak and fire stats will appear here.
+              </Text>
+            </View>
           </RNAnimated.View>
         </View>
       </Modal>
@@ -2022,18 +1971,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  pageHeaderRow: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  pageHeaderLogo: {
-    height: (Typography.h2 + 10) * 1.2 * 1.1,
-    width: (Typography.h2 + 10) * 1.2 * 1.1,
-  },
-  pageHeaderLogoPressable: {},
   pageHeading: {
     fontFamily: Font.extraBold,
     fontSize: Typography.h2 * 1.2 * 1.1,

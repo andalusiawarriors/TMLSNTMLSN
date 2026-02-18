@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
+  Image,
   Modal,
   Linking,
   Dimensions,
@@ -34,6 +36,68 @@ export default function PromptsScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [animTrigger, setAnimTrigger] = useState(0);
+
+  const [showFlickerLogo, setShowFlickerLogo] = useState(false);
+  const lastActivityRef = useRef(Date.now());
+  const lastFlickerRef = useRef(0);
+  const flickerTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const darkLogoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const IDLE_MS = 10000;
+  const DARK_LOGO_HOLD_MS = 10000;
+  const FLICKER_COOLDOWN_MS = 8000;
+  const LOGO_RAPID_PRESS_COUNT = 10;
+  const LOGO_RAPID_WINDOW_MS = 2500;
+  const logoRapidPressCountRef = useRef(0);
+  const logoRapidWindowStartRef = useRef(0);
+  const FLICKER_SEQUENCE: [number, number][] = [[100, 70], [180, 90], [120, 80]];
+
+  const reportActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    if (darkLogoTimeoutRef.current) {
+      clearTimeout(darkLogoTimeoutRef.current);
+      darkLogoTimeoutRef.current = null;
+    }
+    setShowFlickerLogo(false);
+  }, []);
+
+  const runFlickerThenHold = useCallback(() => {
+    flickerTimeoutsRef.current.forEach(clearTimeout);
+    flickerTimeoutsRef.current = [];
+    if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    let delay = 0;
+    FLICKER_SEQUENCE.forEach(([onMs, offMs]) => {
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(true), delay));
+      delay += onMs;
+      flickerTimeoutsRef.current.push(setTimeout(() => setShowFlickerLogo(false), delay));
+      delay += offMs;
+    });
+    flickerTimeoutsRef.current.push(setTimeout(() => {
+      setShowFlickerLogo(true);
+      darkLogoTimeoutRef.current = setTimeout(() => {
+        setShowFlickerLogo(false);
+        darkLogoTimeoutRef.current = null;
+        lastFlickerRef.current = Date.now();
+      }, DARK_LOGO_HOLD_MS);
+    }, delay));
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = Date.now();
+      const idleLongEnough = now - lastActivityRef.current >= IDLE_MS;
+      const cooldownPassed = now - lastFlickerRef.current >= FLICKER_COOLDOWN_MS;
+      const notInDarkHold = darkLogoTimeoutRef.current == null;
+      if (idleLongEnough && cooldownPassed && notInDarkHold) {
+        lastFlickerRef.current = now;
+        runFlickerThenHold();
+      }
+    }, 600);
+    return () => {
+      clearInterval(t);
+      flickerTimeoutsRef.current.forEach(clearTimeout);
+      if (darkLogoTimeoutRef.current) clearTimeout(darkLogoTimeoutRef.current);
+    };
+  }, [runFlickerThenHold]);
 
   useFocusEffect(
     useCallback(() => {
@@ -93,6 +157,31 @@ export default function PromptsScreen() {
       <HomeGradientBackground />
       <ScrollView style={styles.scrollLayer} contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 52 }]}>
         <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+          <View style={styles.pageHeaderRow}>
+            <Pressable
+              onPress={() => {
+                const now = Date.now();
+                if (now - logoRapidWindowStartRef.current > LOGO_RAPID_WINDOW_MS) {
+                  logoRapidPressCountRef.current = 0;
+                  logoRapidWindowStartRef.current = now;
+                }
+                logoRapidPressCountRef.current += 1;
+                if (logoRapidPressCountRef.current >= LOGO_RAPID_PRESS_COUNT) {
+                  logoRapidPressCountRef.current = 0;
+                  logoRapidWindowStartRef.current = 0;
+                  lastFlickerRef.current = Date.now();
+                  runFlickerThenHold();
+                }
+              }}
+              style={styles.pageHeaderLogoPressable}
+            >
+              <Image
+                source={showFlickerLogo ? require('../../assets/logo-flicker.png') : require('../../assets/tmlsn-calories-logo.png')}
+                style={styles.pageHeaderLogo}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
           <View style={styles.headerWrap}>
             <Text style={styles.headerTitle}>prompts.</Text>
             <Text style={styles.headerSubtitle}>
@@ -298,6 +387,17 @@ const styles = StyleSheet.create({
   promptCardInner: {
     flex: 1,
   },
+  pageHeaderRow: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xs,
+  },
+  pageHeaderLogo: {
+    height: (Typography.h2 + 10) * 1.2 * 1.1,
+    width: (Typography.h2 + 10) * 1.2 * 1.1,
+  },
+  pageHeaderLogoPressable: {},
   headerWrap: {
     alignSelf: 'stretch',
     alignItems: 'center',
