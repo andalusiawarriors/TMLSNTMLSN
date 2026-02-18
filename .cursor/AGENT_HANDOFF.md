@@ -27,7 +27,7 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| —            | —                 | —                         | —               | —       |
+| layout (FAB popup) | FAB popup card size/color/border | `app/(tabs)/_layout.tsx` | — | —       |
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
