@@ -7,7 +7,6 @@ import {
   Pressable,
   Alert,
   Dimensions,
-  Image,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -19,6 +18,7 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { Card } from '../../../components/Card';
 import { BackButton } from '../../../components/BackButton';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 const windowHeight = Dimensions.get('window').height;
 
@@ -132,11 +132,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
         <View style={styles.titleRow} pointerEvents="box-none">
           <Text style={styles.screenTitle}>Your Routines</Text>
         </View>
-        <Image
-          source={require('../../../assets/home-background.png')}
-          style={styles.homeBackgroundImage}
-          resizeMode="cover"
-        />
+        <HomeGradientBackground />
         <ScrollView
           style={styles.scrollLayer}
           contentContainerStyle={styles.content}
@@ -323,10 +319,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '600',
-  },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
   },
   scrollLayer: {
     zIndex: 2,

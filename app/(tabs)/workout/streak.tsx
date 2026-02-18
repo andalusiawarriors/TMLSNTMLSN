@@ -12,7 +12,6 @@ import {
   ScrollView,
   Animated,
   Easing,
-  Image,
 } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -20,6 +19,7 @@ import { Colors, Spacing, Typography, Font } from '../../../constants/theme';
 import { getUserSettings } from '../../../utils/storage';
 import { scheduleStreak6HourNotification, cancelNotification } from '../../../utils/notifications';
 import { BlurRollNumber } from '../../../components/BlurRollNumber';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'tmlsn_workout_streak_v2';
@@ -357,11 +357,7 @@ export default function StreakScreen() {
 
   return (
     <View style={styles.root}>
-      <Image
-        source={require('../../../assets/home-background.png')}
-        style={styles.homeBackgroundImage}
-        resizeMode="cover"
-      />
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -452,10 +448,6 @@ export default function StreakScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.primaryDark },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
   scrollLayer: {
     zIndex: 2,
   },

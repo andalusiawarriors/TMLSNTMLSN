@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,39 @@ import {
   TouchableOpacity,
   Modal,
   Linking,
+  Dimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
+import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
+import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { getPrompts, savePrompts } from '../../utils/storage';
 import { SAMPLE_PROMPTS } from '../../constants/samplePrompts';
 import { Prompt } from '../../types';
 
+const CONTENT_PADDING = 19;
+const CARD_RADIUS = 16;
+const CARD_LABEL_FONT_SIZE = 10;
+const CARD_LABEL_COLOR = '#FFFFFF';
+
 export default function PromptsScreen() {
+  const insets = useSafeAreaInsets();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [animTrigger, setAnimTrigger] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setAnimTrigger((t) => t + 1);
+    }, [])
+  );
 
   useEffect(() => {
     loadPrompts();
@@ -72,87 +90,95 @@ export default function PromptsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Prompt Vault</Text>
-          <Text style={styles.headerSubtitle}>
-            Actionable AI prompts to execute the advice from our content
-          </Text>
-        </View>
-
-        {/* Category Filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoryFilter}
-          contentContainerStyle={styles.categoryFilterContent}
-        >
-          <TouchableOpacity
-            style={[
-              styles.categoryChip,
-              !filterCategory && styles.categoryChipActive,
-            ]}
-            onPress={() => setFilterCategory(null)}
-          >
-            <Text
-              style={[
-                styles.categoryChipText,
-                !filterCategory && styles.categoryChipTextActive,
-              ]}
-            >
-              All
+      <HomeGradientBackground />
+      <ScrollView style={styles.scrollLayer} contentContainerStyle={[styles.contentContainer, { paddingTop: insets.top + 52 }]}>
+        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+          <View style={styles.headerWrap}>
+            <Text style={styles.headerTitle}>prompts.</Text>
+            <Text style={styles.headerSubtitle}>
+              actionable AI prompts to execute the advice from our content
             </Text>
-          </TouchableOpacity>
-          {categories.map((category) => (
+          </View>
+        </AnimatedFadeInUp>
+
+        <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
+          {/* Category Filter */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryFilter}
+            contentContainerStyle={styles.categoryFilterContent}
+          >
             <TouchableOpacity
-              key={category}
               style={[
                 styles.categoryChip,
-                filterCategory === category && styles.categoryChipActive,
+                !filterCategory && styles.categoryChipActive,
               ]}
-              onPress={() => setFilterCategory(category)}
+              onPress={() => setFilterCategory(null)}
             >
               <Text
                 style={[
                   styles.categoryChipText,
-                  filterCategory === category && styles.categoryChipTextActive,
+                  !filterCategory && styles.categoryChipTextActive,
                 ]}
               >
-                {category}
+                All
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+            {categories.map((category) => (
+              <TouchableOpacity
+                key={category}
+                style={[
+                  styles.categoryChip,
+                  filterCategory === category && styles.categoryChipActive,
+                ]}
+                onPress={() => setFilterCategory(category)}
+              >
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    filterCategory === category && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </AnimatedFadeInUp>
 
         {/* Prompts List */}
         {filteredPrompts.length === 0 ? (
-          <Card>
-            <Text style={styles.emptyText}>
-              No prompts available yet. Check back weekly for new actionable prompts!
-            </Text>
-          </Card>
-        ) : (
-          filteredPrompts.map((prompt) => (
-            <Card key={prompt.id}>
-              <TouchableOpacity onPress={() => openPromptDetail(prompt)}>
-                <View style={styles.promptHeader}>
-                  <Text style={styles.promptTitle}>{prompt.title}</Text>
-                  {prompt.category && (
-                    <View style={styles.categoryBadge}>
-                      <Text style={styles.categoryBadgeText}>{prompt.category}</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.promptSummary}>{prompt.summary}</Text>
-                <View style={styles.promptFooter}>
-                  <Text style={styles.promptSource}>From: {prompt.source}</Text>
-                  <Text style={styles.promptDate}>
-                    {new Date(prompt.dateAdded).toLocaleDateString()}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+          <AnimatedFadeInUp delay={100} duration={380} trigger={animTrigger}>
+            <Card gradientFill borderRadius={CARD_RADIUS} style={styles.promptCard}>
+              <Text style={styles.emptyText}>
+                No prompts available yet. Check back weekly for new actionable prompts!
+              </Text>
             </Card>
+          </AnimatedFadeInUp>
+        ) : (
+          filteredPrompts.map((prompt, index) => (
+            <AnimatedFadeInUp key={prompt.id} delay={100 + index * 45} duration={380} trigger={animTrigger}>
+              <Card gradientFill borderRadius={CARD_RADIUS} style={styles.promptCard}>
+                <TouchableOpacity onPress={() => openPromptDetail(prompt)} style={styles.promptCardInner}>
+                  <View style={styles.promptHeader}>
+                    <Text style={styles.promptTitle}>{prompt.title}</Text>
+                    {prompt.category && (
+                      <View style={styles.categoryBadge}>
+                        <Text style={styles.categoryBadgeText}>{prompt.category}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.promptSummary}>{prompt.summary}</Text>
+                  <View style={styles.promptFooter}>
+                    <Text style={styles.promptSource}>From: {prompt.source}</Text>
+                    <Text style={styles.promptDate}>
+                      {new Date(prompt.dateAdded).toLocaleDateString()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </Card>
+            </AnimatedFadeInUp>
           ))
         )}
       </ScrollView>
@@ -248,25 +274,47 @@ export default function PromptsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.black,
+    backgroundColor: 'transparent',
+  },
+  scrollLayer: {
+    zIndex: 2,
+    backgroundColor: 'transparent',
   },
   contentContainer: {
-    padding: Spacing.md,
+    paddingHorizontal: CONTENT_PADDING,
+    paddingBottom: Spacing.xxl,
   },
-  header: {
+  promptCard: {
+    width: Dimensions.get('window').width - CONTENT_PADDING * 2,
+    alignSelf: 'center',
+    paddingTop: 17.5,
+    paddingBottom: 17.5,
+    paddingHorizontal: 11,
+    marginVertical: 0,
+    marginBottom: Spacing.sm,
+  },
+  promptCardInner: {
+    flex: 1,
+  },
+  headerWrap: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
     marginBottom: Spacing.lg,
-    paddingTop: Spacing.sm,
   },
   headerTitle: {
-    fontSize: Typography.h1,
-    fontWeight: Typography.weights.bold,
-    color: Colors.white,
-    marginBottom: Spacing.xs,
+    fontSize: Typography.h2,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+    letterSpacing: -0.11,
+    textAlign: 'center',
   },
   headerSubtitle: {
-    fontSize: Typography.body,
+    fontSize: Typography.label,
     color: Colors.primaryLight,
-    lineHeight: 22,
+    opacity: 0.8,
+    marginTop: Spacing.sm,
+    letterSpacing: -0.1,
+    textAlign: 'center',
   },
   categoryFilter: {
     marginBottom: Spacing.md,
@@ -279,25 +327,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.primaryLight + '20',
-    borderRadius: BorderRadius.xl,
+    borderRadius: CARD_RADIUS,
     marginRight: Spacing.sm,
   },
   categoryChipActive: {
-    backgroundColor: Colors.accentBlue,
+    backgroundColor: Colors.primaryLight + '30',
   },
   categoryChipText: {
-    fontSize: Typography.body,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
     color: Colors.primaryLight,
-    fontWeight: Typography.weights.medium,
+    letterSpacing: -0.11,
   },
   categoryChipTextActive: {
-    color: Colors.white,
+    color: CARD_LABEL_COLOR,
   },
   emptyText: {
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
     textAlign: 'center',
-    paddingVertical: Spacing.xl,
   },
   promptHeader: {
     flexDirection: 'row',
@@ -307,27 +357,30 @@ const styles = StyleSheet.create({
   },
   promptTitle: {
     flex: 1,
-    fontSize: Typography.h2,
-    fontWeight: Typography.weights.semiBold,
-    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
     marginRight: Spacing.sm,
   },
   categoryBadge: {
-    backgroundColor: Colors.accentBlue + '30',
+    backgroundColor: Colors.primaryLight + '20',
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.sm,
   },
   categoryBadgeText: {
-    fontSize: Typography.label,
-    color: Colors.accentBlue,
-    fontWeight: Typography.weights.semiBold,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
   },
   promptSummary: {
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
     marginBottom: Spacing.md,
-    lineHeight: 22,
   },
   promptFooter: {
     flexDirection: 'row',
@@ -335,13 +388,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   promptSource: {
-    fontSize: Typography.label,
-    color: Colors.accentBlue,
-    fontWeight: Typography.weights.medium,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
   },
   promptDate: {
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
   },
   modalContainer: {
     flex: 1,
@@ -400,8 +456,8 @@ const styles = StyleSheet.create({
   },
   sourceLinkText: {
     fontSize: Typography.body,
-    color: Colors.accentBlue,
-    fontWeight: Typography.weights.semiBold,
+    color: Colors.primaryLight,
+    fontWeight: '500',
   },
   promptTextContainer: {
     marginBottom: Spacing.lg,
@@ -425,11 +481,11 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
   },
   instructionsBox: {
-    backgroundColor: Colors.accentBlue + '10',
+    backgroundColor: Colors.primaryLight + '10',
     padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+    borderRadius: CARD_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.accentBlue + '40',
+    borderColor: Colors.primaryLight + '30',
   },
   instructionsTitle: {
     fontSize: Typography.body,
@@ -447,7 +503,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   copyButton: {
-    backgroundColor: Colors.accentBlue,
+    backgroundColor: Colors.primaryDarkLighter,
   },
   closeModalButton: {
     marginTop: Spacing.xs,

@@ -27,7 +27,7 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| FAB navigation | All 6 FAB actions → full-screen stack pages (scan = overlay) | `app/(tabs)/_layout.tsx`, `app/_layout.tsx`, `app/saved-foods.tsx`, `app/search-food.tsx`, `app/(tabs)/nutrition.tsx` | — | —       |
+| *(none)*     | —                 | —                         | —               | —       |
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -37,6 +37,10 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/workout/index.tsx` – Workout carousel: two slides (progress | steps + recently uploaded), step card with calorie-style ring, placeholder steps, “Recently uploaded” block; synced to obh worktree
+- `app/(tabs)/prompts.tsx` – AnimatedFadeInUp on all elements (explore page): header, category filter, prompt cards with stagger
+- `app/(tabs)/profile.tsx` – AnimatedFadeInUp on all elements (progress page): title, subtitle, progress section; useFocusEffect for animTrigger
+- `app/(tabs)/workout/index.tsx` – already had AnimatedFadeInUp on header, swipe widget, achievements (no change)
 - `constants/theme.ts` – added Font, HeadingLetterSpacing (shared with home)
 - `app/(tabs)/workout/` – full home font system: EB Garamond (extraBold/bold/semiBold/regular) for headings/body, DMMono for data/numbers; Typography constants throughout
 - `components/Card.tsx` – added borderRadius prop for gradientFill

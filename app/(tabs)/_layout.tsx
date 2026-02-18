@@ -888,13 +888,13 @@ export default function TabsLayout() {
         {/* ── Tab 4: Prompts ── */}
         <Tabs.Screen
           name="prompts"
-          options={{ title: 'PROMPTS', headerTitle: 'PROMPTS' }}
+          options={{ title: 'PROMPTS', headerShown: false }}
         />
 
         {/* ── Tab 5: Profile ── */}
         <Tabs.Screen
           name="profile"
-          options={{ title: 'Profile', headerTitle: 'Profile', headerShown: true }}
+          options={{ title: 'Profile', headerShown: false }}
         />
       </Tabs>
 

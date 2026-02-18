@@ -134,7 +134,8 @@ const styles = StyleSheet.create({
   screenTitle: {
     color: '#FFFFFF',
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '500',
+    letterSpacing: -0.11,
   },
   searchRow: {
     padding: Spacing.md,
@@ -148,7 +149,8 @@ const styles = StyleSheet.create({
     padding: 12,
     color: Colors.white,
     fontSize: 15,
-    fontFamily: Font.regular,
+    fontWeight: '500',
+    letterSpacing: -0.11,
   },
   loadingRow: {
     padding: Spacing.md,
@@ -183,9 +185,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   emptyText: {
-    fontFamily: Font.regular,
     fontSize: 15,
-    color: Colors.primaryLight,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    color: '#FFFFFF',
     textAlign: 'center',
     marginTop: Spacing.lg,
   },

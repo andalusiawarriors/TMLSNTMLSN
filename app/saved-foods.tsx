@@ -116,7 +116,8 @@ const styles = StyleSheet.create({
   screenTitle: {
     color: '#FFFFFF',
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '500',
+    letterSpacing: -0.11,
   },
   centered: {
     flex: 1,
@@ -126,9 +127,10 @@ const styles = StyleSheet.create({
     paddingTop: TITLE_ROW_TOP + TITLE_ROW_HEIGHT + Spacing.lg,
   },
   emptyText: {
-    fontFamily: Font.regular,
     fontSize: 15,
-    color: Colors.primaryLight,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    color: '#FFFFFF',
     textAlign: 'center',
   },
   listContent: {

@@ -6,12 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
-  Image,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
 import { getUserSettings, saveUserSettings } from '../../../utils/storage';
 import type { UserSettings } from '../../../types';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 const REST_TIMER_OPTIONS = [60, 90, 120, 180];
 const REST_TIMER_LABELS: Record<number, string> = {
@@ -45,11 +45,7 @@ export default function WorkoutSettingsScreen() {
   if (!settings) {
     return (
       <View style={styles.container}>
-        <Image
-          source={require('../../../assets/home-background.png')}
-          style={styles.homeBackgroundImage}
-          resizeMode="cover"
-        />
+        <HomeGradientBackground />
         <Text style={styles.loadingText}>loading...</Text>
       </View>
     );
@@ -57,11 +53,7 @@ export default function WorkoutSettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../../../assets/home-background.png')}
-        style={styles.homeBackgroundImage}
-        resizeMode="cover"
-      />
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -173,10 +165,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
-  },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
   },
   scrollLayer: {
     zIndex: 2,

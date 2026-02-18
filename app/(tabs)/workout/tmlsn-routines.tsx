@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
@@ -8,6 +8,7 @@ import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { Card } from '../../../components/Card';
 import { BackButton } from '../../../components/BackButton';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -52,11 +53,7 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
       <View style={styles.titleRow} pointerEvents="box-none">
         <Text style={styles.screenTitle}>TMLSN Routines</Text>
       </View>
-      <Image
-        source={require('../../../assets/home-background.png')}
-        style={styles.homeBackgroundImage}
-        resizeMode="cover"
-      />
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -157,10 +154,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '600',
-  },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
   },
   scrollLayer: {
     zIndex: 2,

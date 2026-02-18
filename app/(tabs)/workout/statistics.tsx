@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, ScrollView, View, Image } from 'react-native';
+import { StyleSheet, ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Spacing, Colors } from '../../../constants/theme';
 import { getWorkoutSessions } from '../../../utils/storage';
@@ -7,6 +7,7 @@ import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
 import { MuscleBodyHeatmap } from '../../../components/MuscleBodyHeatmap';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 export default function StatisticsScreen() {
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
@@ -28,11 +29,7 @@ export default function StatisticsScreen() {
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../../../assets/home-background.png')}
-        style={styles.homeBackgroundImage}
-        resizeMode="cover"
-      />
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -50,10 +47,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
-  },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
   },
   scrollLayer: {
     zIndex: 2,

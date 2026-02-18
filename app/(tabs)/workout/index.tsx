@@ -10,7 +10,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Image,
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
@@ -34,11 +33,12 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
-import { StreakWidget } from '../../../components/StreakWidget';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
+import { SlidersHorizontal } from 'phosphor-react-native';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -59,7 +59,7 @@ const PROGRESS_CARD_HEIGHT = 237;
 const TOP_LEFT_PILL_TOP = 54; // Match home section layout
 const SETTINGS_CIRCLE_SIZE = 40; // Match home profile circle
 const THREE_BUTTON_STACK_HEIGHT = MAIN_MENU_BUTTON_HEIGHT * 3 + MAIN_MENU_BUTTON_GAP * 3; // 252
-const SWIPE_PAGE_HEIGHT = THREE_BUTTON_STACK_HEIGHT; // same height for both pages so y-axis aligns during swipe
+const SWIPE_PAGE_HEIGHT = THREE_BUTTON_STACK_HEIGHT;
 const SWIPE_WIDGET_PADDING_TOP = 12;
 const SWIPE_WIDGET_EXTRA_HEIGHT = 0;
 
@@ -528,12 +528,7 @@ export default function WorkoutScreen({
 
   return (
     <View style={styles.container}>
-      {/* Background image – match home section */}
-      <Image
-        source={require('../../../assets/home-background.png')}
-        style={styles.homeBackgroundImage}
-        resizeMode="cover"
-      />
+      <HomeGradientBackground />
       {/* Main menu – hidden when asModal (FAB opened from another tab); only overlay is shown */}
       {!asModal && (
       <>
@@ -550,9 +545,7 @@ export default function WorkoutScreen({
         {/* Header: profile + tmlsn tracker. + settings */}
         <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
         <View style={styles.pageHeaderRow}>
-          <View style={styles.pageHeaderLeft}>
-            <StreakWidget />
-          </View>
+          <View style={styles.pageHeaderLeft} />
           <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
             <Text style={styles.pageHeading}>tmlsn tracker.</Text>
           </View>
@@ -576,7 +569,7 @@ export default function WorkoutScreen({
                   { top: 1, left: 1, right: 1, bottom: 1, borderRadius: SETTINGS_CIRCLE_SIZE / 2 - 1 },
                 ]}
               />
-              <Text style={styles.settingsButtonText}>⚙</Text>
+              <SlidersHorizontal size={20} color={Colors.primaryLight} weight="regular" />
             </View>
           </Pressable>
           </View>
@@ -604,7 +597,7 @@ export default function WorkoutScreen({
             style={[styles.swipeWidget, { width: swipeViewWidth || SCREEN_WIDTH }]}
             contentContainerStyle={styles.swipeWidgetContent}
           >
-            {/* Single page: progress card (tmlsn routines, your routines, start empty workout only via FAB) */}
+            {/* Single page: progress card */}
             <View style={styles.swipePage}>
               <AnimatedPressable
                 onPressIn={playIn}
@@ -618,7 +611,6 @@ export default function WorkoutScreen({
               </AnimatedPressable>
             </View>
           </ScrollView>
-          {/* Single page: no swipe dots */}
           <View style={styles.swipeDots}>
             <View style={[styles.swipeDot, styles.swipeDotActive]} />
           </View>
@@ -1119,10 +1111,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
     overflow: 'visible',
   },
-  homeBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
   scrollViewLayer: {
     zIndex: 2,
   },
@@ -1147,8 +1135,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   pageHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: SETTINGS_CIRCLE_SIZE,
     zIndex: 1,
   },
   pageHeaderTitleWrap: {
@@ -1178,10 +1165,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  settingsButtonText: {
-    fontSize: 20,
-    color: Colors.primaryLight,
   },
   pageHeading: {
     fontSize: Typography.h2 * 1.2 * 1.1,

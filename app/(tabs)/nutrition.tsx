@@ -129,6 +129,7 @@ export default function NutritionScreen({
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [cardPage, setCardPage] = useState(0);
+  const [fitnessCardPage, setFitnessCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
@@ -811,6 +812,16 @@ export default function NutritionScreen({
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(Math.min(1, page));
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:handleCarouselScroll',message:'nutrition onScroll',data:{offsetX:Math.round(offsetX),page:Math.min(1,page),CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH)},timestamp:Date.now(),hypothesisId:'H_scroll'})}).catch(()=>{});
+    // #endregion
+  };
+
+  const handleFitnessCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    reportActivity();
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const page = Math.round(offsetX / CAROUSEL_WIDTH);
+    setFitnessCardPage(Math.min(1, page));
   };
 
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
@@ -826,6 +837,9 @@ export default function NutritionScreen({
     playCardPressInSound();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cardScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) });
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:onCardPressIn',message:'card pressIn fired',data:{x:e.nativeEvent.pageX,y:e.nativeEvent.pageY},timestamp:Date.now(),hypothesisId:'H_press'})}).catch(()=>{});
+    // #endregion
   };
 
   const onCardPressOut = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
@@ -862,6 +876,9 @@ export default function NutritionScreen({
 
   const onCarouselScrollBeginDrag = () => {
     reportActivity();
+    // #region agent log
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:beginDrag',message:'carousel drag started',data:{},timestamp:Date.now(),hypothesisId:'H_drag'})}).catch(()=>{});
+    // #endregion
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -1220,21 +1237,101 @@ export default function NutritionScreen({
             key="fitness-segment"
             entering={SlideInRight.withInitialValues({ transform: [{ translateX: 24 }] }).springify().damping(200).stiffness(3000)}
             exiting={FadeOut.duration(50)}
-            style={{ width: CAROUSEL_WIDTH, alignSelf: 'center', paddingHorizontal: CONTENT_PADDING }}
+            style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}
           >
-            <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onScroll={handleFitnessCarouselScroll}
+              scrollEventThrottle={16}
+              style={{ width: CAROUSEL_WIDTH }}
+            >
+              {/* Fitness page 0: heatmap */}
+              <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
+                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+              </View>
+              {/* Fitness page 1: steps card only */}
+              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
+                <Card
+                  gradientFill
+                  style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS }]}
+                >
+                  <View style={styles.caloriesLeftContent}>
+                    <View style={styles.caloriesLeftTextWrap}>
+                      <Text style={styles.caloriesLeftValue}>—</Text>
+                      <Text style={styles.caloriesLeftLabel}>steps today</Text>
+                    </View>
+                    <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                      <Text style={styles.stepRingValue}>—</Text>
+                    </View>
+                  </View>
+                </Card>
+              </View>
+            </ScrollView>
+            <View style={styles.paginationDots}>
+              <View style={[styles.dot, fitnessCardPage === 0 && styles.dotActive]} />
+              <View style={[styles.dot, fitnessCardPage === 1 && styles.dotActive]} />
+            </View>
+            {/* Recently uploaded – below carousel (same as Nutrition) */}
+            <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
+            <Card
+              gradientFill
+              style={[
+                styles.caloriesLeftCard,
+                styles.recentlyUploadedCard,
+                { width: CALORIES_CARD_WIDTH, minHeight: CARD_UNIFIED_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' },
+              ]}
+            >
+              {!todayLog?.meals?.length ? (
+                <Text style={styles.recentlyUploadedPlaceholder}>tap + to add a workout</Text>
+              ) : (
+                <View style={styles.recentlyUploadedList}>
+                  {todayLog.meals.map((meal) => (
+                    <View key={meal.id} style={styles.recentlyUploadedMealRow}>
+                      <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
+                      <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </Card>
           </Animated.View>
         ) : (
           <Animated.View
             key="nutrition-segment"
             entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000)}
             exiting={FadeOut.duration(50)}
+            onTouchStart={() => {
+              // #region agent log — touch on entering Animated.View
+              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:enteringViewTouch',message:'touch on entering Animated.View',data:{},timestamp:Date.now(),hypothesisId:'H_entering'})}).catch(()=>{});
+              // #endregion
+            }}
           >
-          <Animated.View style={cardSlideStyle}>
-          <View style={{ position: 'relative' }}>
+          {/* #region agent log — nutrition segment render marker */}
+          {(() => { fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:nutritionSegmentRender',message:'Nutrition segment rendering',data:{hasSettings:!!settings,hasTodayLog:!!todayLog,CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH)},timestamp:Date.now(),hypothesisId:'H_mount'})}).catch(()=>{}); return null; })()}
+          {/* #endregion */}
+          <Animated.View style={cardSlideStyle}
+            onTouchStart={() => {
+              // #region agent log — touch on cardSlide Animated.View
+              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:cardSlideTouch',message:'touch on cardSlide Animated.View',data:{},timestamp:Date.now(),hypothesisId:'H_cardslide'})}).catch(()=>{});
+              // #endregion
+            }}
+          >
+          <View style={{ position: 'relative' }}
+            onTouchStart={() => {
+              // #region agent log — touch on position:relative View
+              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:relativeViewTouch',message:'touch on relative View',data:{},timestamp:Date.now(),hypothesisId:'H_relative'})}).catch(()=>{});
+              // #endregion
+            }}
+          >
             <View>
         {settings && todayLog && (
-          <View style={{ zIndex: 1 }}>
+          <View style={{ zIndex: 1 }} onTouchStart={() => {
+            // #region agent log — touch arrives at ScrollView container
+            fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:scrollContainerTouch',message:'touch reached ScrollView container',data:{homeSegment},timestamp:Date.now(),hypothesisId:'H_touch'})}).catch(()=>{});
+            // #endregion
+          }}>
             <ScrollView
               horizontal
               pagingEnabled
@@ -1243,10 +1340,15 @@ export default function NutritionScreen({
               onScrollBeginDrag={onCarouselScrollBeginDrag}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
+              onLayout={(e) => {
+                // #region agent log
+                fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:scrollViewLayout',message:'nutrition ScrollView onLayout',data:{width:e.nativeEvent.layout.width,height:e.nativeEvent.layout.height,CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH),homeSegment},timestamp:Date.now(),hypothesisId:'H_layout'})}).catch(()=>{});
+                // #endregion
+              }}
             >
               {/* Page 0: Big card top, 3 small cards bottom (Nutrition only) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(0)}>
+                <View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                   <Animated.View style={cardScaleStyle}>
                     <Card gradientFill style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
@@ -1278,8 +1380,8 @@ export default function NutritionScreen({
                     </Card>
                   </Animated.View>
                 </Pressable>
-                </Animated.View>
-                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(5)}>
+                </View>
+                <View>
                   <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
@@ -1363,12 +1465,12 @@ export default function NutritionScreen({
                     </Card>
                   </Pressable>
                   </Animated.View>
-                </Animated.View>
+                </View>
               </View>
 
               {/* Page 1: Electrolytes top, Health Score bottom (flipped layout) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(10)}>
+                <View>
                   <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                     <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
@@ -1412,8 +1514,9 @@ export default function NutritionScreen({
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
                     </Card>
                   </Pressable>
-                </Animated.View>
-                <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(15)}>
+                  </Animated.View>
+                </View>
+                <View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
                   <Animated.View style={cardScaleStyle}>
                     <Card gradientFill style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
@@ -1433,9 +1536,8 @@ export default function NutritionScreen({
                     </Card>
                   </Animated.View>
                 </Pressable>
-                  </Animated.View>
-                </Animated.View>
-              </View>
+                  </View>
+                </View>
             </ScrollView>
 
             {/* Pagination dots (Nutrition: 2 pages only) */}
@@ -1445,7 +1547,7 @@ export default function NutritionScreen({
             </View>
 
             {/* Recently uploaded – below carousel, same width as calorie card (Nutrition only) */}
-            <Animated.View entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000).delay(20)}>
+            <View>
               <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
               <Card
                 gradientFill
@@ -1459,8 +1561,21 @@ export default function NutritionScreen({
                     alignSelf: 'center',
                   },
                 ]}
-              />
-            </Animated.View>
+              >
+                {!todayLog?.meals?.length ? (
+                  <Text style={styles.recentlyUploadedPlaceholder}>tap + to add your first meal of the day.</Text>
+                ) : (
+                  <View style={styles.recentlyUploadedList}>
+                    {todayLog.meals.map((meal) => (
+                      <View key={meal.id} style={styles.recentlyUploadedMealRow}>
+                        <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
+                        <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </Card>
+            </View>
           </View>
         )}
 
@@ -1984,6 +2099,11 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.md,
     marginRight: 0,
   },
+  stepRingValue: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
+  },
   threeCardsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -2109,6 +2229,38 @@ const styles = StyleSheet.create({
   },
   recentlyUploadedCard: {
     marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    justifyContent: 'center',
+  },
+  recentlyUploadedPlaceholder: {
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
+    textAlign: 'center',
+  },
+  recentlyUploadedList: {
+    gap: Spacing.sm,
+  },
+  recentlyUploadedMealRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recentlyUploadedMealName: {
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  recentlyUploadedMealCals: {
+    fontSize: CARD_LABEL_FONT_SIZE + 2,
+    fontWeight: '500',
+    color: CARD_LABEL_COLOR,
+    letterSpacing: -0.11,
   },
   cardHeader: {
     flexDirection: 'row',
