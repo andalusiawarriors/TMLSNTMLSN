@@ -24,7 +24,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
-import { onCardSelect, emitStreakPopupState } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState, emitProfileSheetState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import Animated, {
   useSharedValue,
@@ -1136,7 +1136,7 @@ export default function NutritionScreen({
           }}
           onPressIn={() => { profilePillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
           onPressOut={() => { profilePillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPress={() => {}}
+          onPress={() => emitProfileSheetState(true)}
         >
           <Animated.View style={[{ width: TOP_RIGHT_CIRCLE_SIZE, height: TOP_RIGHT_CIRCLE_SIZE }, profilePillScaleStyle]}>
             <View
@@ -1648,6 +1648,7 @@ export default function NutritionScreen({
       </Modal>
       </>
       )}
+
 
       {/* FAB is now rendered in _layout.tsx (inside the pill). Press event arrives via fabBridge. */}
 

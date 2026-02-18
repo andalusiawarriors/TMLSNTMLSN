@@ -11,15 +11,17 @@ import {
   StyleSheet,
   Animated as RNAnimated,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState } from '../../utils/fabBridge';
+import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { Search } from 'lucide-react-native';
 import { BarbellIcon, BarcodeIcon, BookmarkSimple, PlayIcon } from 'phosphor-react-native';
+import { ProfileSheet } from '../../components/ProfileSheet';
 
 // ── Pill constants ──
 const PILL_LABEL_COLOR = '#C6C6C6';
@@ -167,6 +169,20 @@ function TabButton({
   );
 }
 
+function TabBarPropsCapture({ props, onCapture }: { props: any; onCapture: (p: any) => void }) {
+  const propsRef = useRef(props);
+  propsRef.current = props;
+  const index = props?.state?.index ?? -1;
+  const prevIndexRef = useRef<number>(-2);
+  useEffect(() => {
+    if (prevIndexRef.current !== index) {
+      prevIndexRef.current = index;
+      onCapture(propsRef.current);
+    }
+  }, [index, onCapture]);
+  return null;
+}
+
 const MODAL_ROUTES = ['food-action-modal', 'start-empty-workout-modal', 'tmlsn-routines-modal', 'your-routines-modal'];
 const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r));
 
@@ -202,6 +218,22 @@ export default function TabsLayout() {
   const fabScaleAnim = useRef(new RNAnimated.Value(1)).current;
   const fabRotAnim = useRef(new RNAnimated.Value(0)).current;
   const [fabOpen, setFabOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [tabBarProps, setTabBarProps] = useState<any>(null);
+
+  useEffect(() => {
+    return onProfileSheetState((open) => setShowProfile(open));
+  }, []);
+
+  useEffect(() => {
+    if (!showProfile) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      emitProfileSheetState(false);
+      setShowProfile(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [showProfile]);
 
   // ══════════════════════════════════════════
   // Sliding selected pill
@@ -849,7 +881,7 @@ export default function TabsLayout() {
       <Tabs
         initialRouteName="nutrition"
         detachInactiveScreens={false}
-        tabBar={renderTabBar}
+        tabBar={(props) => <TabBarPropsCapture props={props} onCapture={setTabBarProps} />}
         screenOptions={{
           headerStyle: {
             backgroundColor: Colors.primaryDark,
@@ -897,6 +929,35 @@ export default function TabsLayout() {
           options={{ title: 'Profile', headerShown: false }}
         />
       </Tabs>
+
+      {/* Profile sheet — full screen, tab bar rendered on top (no bottom barrier) */}
+      {showProfile && (
+        <ProfileSheet
+          visible={showProfile}
+          onClose={() => {
+            emitProfileSheetState(false);
+            setShowProfile(false);
+          }}
+        />
+      )}
+
+      {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
+      {tabBarProps && (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: TAB_BAR_HEIGHT,
+            zIndex: 99999,
+            elevation: 99999,
+          }}
+          pointerEvents="box-none"
+        >
+          {renderTabBar(tabBarProps)}
+        </View>
+      )}
 
       {/* ══════════════════════════════════════════════════════════ */}
       {/* POPUP OVERLAY — rendered ABOVE Tabs so it's always on top */}

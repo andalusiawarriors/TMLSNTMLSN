@@ -292,6 +292,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     marginVertical: 0,
     marginBottom: Spacing.sm,
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(212, 184, 150, 0.35)',
   },
   promptCardInner: {
     flex: 1,
@@ -326,21 +328,24 @@ const styles = StyleSheet.create({
   categoryChip: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.primaryLight + '20',
+    backgroundColor: 'rgba(212, 184, 150, 0.12)',
+    borderColor: 'rgba(212, 184, 150, 0.25)',
+    borderWidth: 1,
     borderRadius: CARD_RADIUS,
     marginRight: Spacing.sm,
   },
   categoryChipActive: {
-    backgroundColor: Colors.primaryLight + '30',
+    backgroundColor: 'rgba(212, 184, 150, 0.12)',
+    borderColor: 'rgba(212, 184, 150, 0.25)',
   },
   categoryChipText: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
-    color: Colors.primaryLight,
+    color: '#D4B896',
     letterSpacing: -0.11,
   },
   categoryChipTextActive: {
-    color: CARD_LABEL_COLOR,
+    color: '#D4B896',
   },
   emptyText: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
@@ -364,7 +369,9 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
   },
   categoryBadge: {
-    backgroundColor: Colors.primaryLight + '20',
+    backgroundColor: 'rgba(212, 184, 150, 0.12)',
+    borderColor: 'rgba(212, 184, 150, 0.25)',
+    borderWidth: 1,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.sm,
@@ -372,7 +379,7 @@ const styles = StyleSheet.create({
   categoryBadgeText: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
-    color: CARD_LABEL_COLOR,
+    color: '#D4B896',
     letterSpacing: -0.11,
   },
   promptSummary: {

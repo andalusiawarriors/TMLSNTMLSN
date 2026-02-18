@@ -60,6 +60,19 @@ export function onWorkoutCardSelect(fn: (card: WorkoutCard) => void): VoidCb {
   };
 }
 
+// ── Profile sheet (nutrition → layout, so sheet can render with tab bar on top) ──
+const profileStateListeners: BoolCb[] = [];
+export function emitProfileSheetState(open: boolean) {
+  profileStateListeners.forEach(fn => fn(open));
+}
+export function onProfileSheetState(fn: BoolCb): VoidCb {
+  profileStateListeners.push(fn);
+  return () => {
+    const i = profileStateListeners.indexOf(fn);
+    if (i >= 0) profileStateListeners.splice(i, 1);
+  };
+}
+
 // ── Streak popup open/close (nutrition → layout, so tab bar shifts with content) ──
 const streakStateListeners: BoolCb[] = [];
 export function emitStreakPopupState(open: boolean) {
