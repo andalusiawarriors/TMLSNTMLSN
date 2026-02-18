@@ -158,8 +158,8 @@ export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
             </Pressable>
 
             <SectionHeader label="Invite Friends" />
-            <Pressable style={styles.card}>
-              <View style={[styles.row, styles.rowBorder]}>
+            <Pressable style={styles.inviteCard}>
+              <View style={[styles.row, styles.referRow]}>
                 <MaskedView
                   style={styles.referIconWrap}
                   maskElement={<Ionicons name="person-add-outline" size={ICON_SIZE} color="black" />}
@@ -305,6 +305,22 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
+  },
+  inviteCard: {
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+  },
+  referRow: {
+    height: undefined,
+    minHeight: ROW_HEIGHT,
+    paddingHorizontal: 0,
+    borderBottomWidth: 0,
   },
   row: {
     flexDirection: 'row',
