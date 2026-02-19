@@ -1614,7 +1614,7 @@ export default function NutritionScreen({
 
               <ScrollView
                 style={{ flex: 1 }}
-                contentContainerStyle={{ paddingBottom: 40 }}
+                contentContainerStyle={{ paddingBottom: 120 }}
                 showsVerticalScrollIndicator={false}
               >
                 {/* Day Streak + Badges Earned row */}
@@ -1738,7 +1738,7 @@ export default function NutritionScreen({
                   </View>
                 </View>
 
-                {/* Badge grid */}
+                {/* Badge grid — full Milestones set */}
                 <Text style={{ fontSize: Typography.h2, fontWeight: '600', color: Colors.primaryLight, marginBottom: Spacing.md }}>Badges</Text>
                 <View
                   style={{
@@ -1748,12 +1748,24 @@ export default function NutritionScreen({
                   }}
                 >
                   {[
-                    { title: 'Rookie', desc: '3 day streak', value: '3 STREAK' },
-                    { title: 'Getting Serious', desc: '10 day streak', value: '10 STREAK' },
-                    { title: 'Forking Around', desc: 'Logged 5 meals', value: '5' },
-                    { title: 'Salad Days', desc: 'Logged 10 salads', value: '10' },
-                    { title: 'Sweet Tooth', desc: '50 donuts logged', value: '50' },
-                    { title: 'Legend', desc: '500 day streak', value: '500' },
+                    { title: 'One Hit Wonder', desc: 'Hit daily calorie goal once', value: '1', earned: false },
+                    { title: 'Loyalty III', desc: 'Hit calorie goal 7 days straight', value: '7X', earned: false },
+                    { title: 'Bullseye', desc: 'Hit calorie goal 30 days straight', value: '30 Day', earned: false },
+                    { title: 'Helping Hand', desc: 'Invited 1 friend', value: '1', earned: false },
+                    { title: 'Peer Pressurer', desc: 'Invited 3 friends', value: '3', earned: false },
+                    { title: 'Cult Leader', desc: 'Invited 10 friends', value: '10', earned: false },
+                    { title: 'Hydrated', desc: 'Log water intake once', value: '1', earned: false },
+                    { title: "Sippin'", desc: 'Log water 3 days in a row', value: '3', earned: false },
+                    { title: 'Aquaholic', desc: 'Log water 10 days in a row', value: '10', earned: false },
+                    { title: 'Clean Sweep', desc: 'Log 3 meals in a day', value: '3', earned: true },
+                    { title: 'Sweat Equity', desc: 'Log 5 workouts', value: '5', earned: false },
+                    { title: 'Speed logger', desc: 'Save 10 meals', value: '10', earned: false },
+                    { title: 'Green Machine', desc: 'Eat leafy greens 5 days in a week', value: '5', earned: false },
+                    { title: 'Nut Case', desc: 'Eat nuts 4 days in a week', value: '4', earned: false },
+                    { title: 'Berry Suspicious', desc: 'Eat berries 3 days in a week', value: '3', earned: false },
+                    { title: 'Time Traveler', desc: 'Log a meal past midnight', value: '1', earned: false },
+                    { title: 'Gremlin', desc: 'Log a meal before 6am', value: '1', earned: true },
+                    { title: 'Health Nut', desc: 'Hit all macros 5 days in a row', value: '5', earned: false },
                   ].map((b, i) => (
                     <View
                       key={i}
@@ -1767,9 +1779,9 @@ export default function NutritionScreen({
                           width: 64,
                           height: 64,
                           borderRadius: 8,
-                          backgroundColor: i === 2 ? 'rgba(100,80,200,0.4)' : Colors.primaryDarkLighter,
+                          backgroundColor: b.earned ? 'rgba(100,80,200,0.4)' : Colors.primaryDarkLighter,
                           borderWidth: 1,
-                          borderColor: i === 2 ? Colors.accentBlue : 'rgba(255,255,255,0.1)',
+                          borderColor: b.earned ? Colors.accentBlue : 'rgba(255,255,255,0.1)',
                           alignItems: 'center',
                           justifyContent: 'center',
                           marginBottom: 8,
