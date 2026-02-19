@@ -19,8 +19,7 @@ import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
-import { Search } from 'lucide-react-native';
-import { BarbellIcon, BarcodeIcon, BookmarkSimple, PlayIcon } from 'phosphor-react-native';
+import { BarbellIcon, BarcodeIcon, BookmarkSimple, MagnifyingGlass, PlayIcon } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 
 // ── Pill constants ──
@@ -1014,7 +1013,7 @@ export default function TabsLayout() {
                       <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
                       <View style={popupStyles.pillShell}>
                         <View style={popupStyles.pillInner}>
-                          <Search size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
+                          <MagnifyingGlass size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
                           <Text style={popupStyles.pillLabel} numberOfLines={1}>search food</Text>
                         </View>
                       </View>
