@@ -87,7 +87,7 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     ),
   },
   workout: {
-    label: 'workout.',
+    label: 'explore.',
     tabIndex: 1,
     icon: (
       <Image
@@ -98,7 +98,7 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     ),
   },
   prompts: {
-    label: 'explore.',
+    label: 'TMLSN',
     tabIndex: 3,
     icon: (
       <Image

@@ -117,10 +117,11 @@ export default function NutritionScreen({
 }: NutritionScreenModalProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
-  const { openCard, addSavedFood, addFoodResult } = useLocalSearchParams<{
+  const { openCard, addSavedFood, addFoodResult, openScan } = useLocalSearchParams<{
     openCard?: string;
     addSavedFood?: string;
     addFoodResult?: string;
+    openScan?: 'barcode' | 'ai' | 'label';
   }>();
   const openCardProcessedRef = useRef(false);
   const addFoodParamProcessedRef = useRef(false);
@@ -522,7 +523,7 @@ export default function NutritionScreen({
     setShowFoodSearch(true);
   };
 
-  const handleChoiceScanFood = async () => {
+  const handleChoiceScanFood = async (mode: 'ai' | 'barcode' | 'label' = 'ai') => {
     if (!permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
@@ -530,7 +531,7 @@ export default function NutritionScreen({
         return;
       }
     }
-    setCameraMode('ai');
+    setCameraMode(mode);
     setCameraLoading(false);
     setShowAiDescribe(false);
     setAiPhotoBase64(null);
@@ -560,6 +561,20 @@ export default function NutritionScreen({
     else if (openCard === 'scan') handleChoiceScanFood();
     router.setParams({});
   }, [asModal, openCard]);
+
+  // When navigated from search-food with openScan param — open camera with that mode
+  const openScanProcessedRef = useRef(false);
+  useEffect(() => {
+    const m = openScan as 'barcode' | 'ai' | 'label' | undefined;
+    if (m !== 'barcode' && m !== 'ai' && m !== 'label') {
+      openScanProcessedRef.current = false;
+      return;
+    }
+    if (openScanProcessedRef.current) return;
+    openScanProcessedRef.current = true;
+    handleChoiceScanFood(m);
+    router.setParams({ openScan: undefined });
+  }, [openScan, router]);
 
   // When returning from full-screen Saved Foods or Search Food with a selection
   useEffect(() => {
