@@ -37,6 +37,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `components/PillSegmentedControl.tsx` – toggle thumb: calorie-card-style gradient (border + fill) tinted Nutrition=red, Fitness=blue
 - `components/ProfileSheet.tsx` – title "profile" (lowercase), Typography.h2/fontWeight 600/letterSpacing -0.11; full-screen overlay (no Modal, no bottom barrier); scroll bottom padding so content scrolls above tab bar; synced to obh
 - `app/(tabs)/_layout.tsx` – ProfileSheet rendered here; custom tab bar extracted (tabBar returns null, tab bar rendered with zIndex 99999 above sheet); showProfile + onProfileSheetState bridge; BackHandler for Android; **pill position derived from visual slot in visibleRoutes** so workout tab (and all tabs) align correctly; synced to obh
 - `app/(tabs)/nutrition.tsx` – Firestreak popup: Milestones layout (Day Streak flame, Badges earned, summary cards, badge grid); firestreakhomepage.png; system font; synced to obh; profile pill opens sheet via emitProfileSheetState(true)

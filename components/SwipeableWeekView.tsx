@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+// #region agent log
+const _dbg = (msg: string, data?: object) => { fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SwipeableWeekView',message:msg,data:data??{},timestamp:Date.now()})}).catch(()=>{}); };
+// #endregion
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -62,13 +64,11 @@ function formatHeader(monday: Date): string {
   return monthA !== monthB ? `${monthA} – ${monthB} ${sunday.getFullYear()}` : `${monthA} ${sunday.getFullYear()}`;
 }
 
-const PILL_WIDTH = 48;
-const PILL_HEIGHT = 52;
-const PILL_RADIUS = 28;
-const DATE_BADGE_WIDTH = 24;
-const DATE_BADGE_HEIGHT = 26;
-const DATE_BADGE_RADIUS = 12;
-const DAY_COLUMN_MARGIN = 6;
+const DAY_COLUMN_MARGIN = 4;
+const PILL_WIDTH = 42;
+const PILL_HEIGHT = 54;
+const PILL_RADIUS = 12;
+const DATE_CIRCLE_SIZE = 26;
 const CARD_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
 const CARD_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 const CARD_BORDER_INSET = 1;
@@ -103,40 +103,13 @@ interface DayCellProps {
   onPress?: () => void;
 }
 
-function StatusCircle({ status }: { status: DayStatus }) {
-  const size = 14;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r = 5;
-  if (status === 'none') {
-    return (
-      <Svg width={size} height={size} style={styles.statusCircleSvg}>
-        <Circle cx={cx} cy={cy} r={r} stroke="#4A4B4C" strokeWidth={1.5} fill="none" strokeDasharray="3 3" />
-      </Svg>
-    );
-  }
-  if (status === 'miss') {
-    return (
-      <Svg width={size} height={size} style={styles.statusCircleSvg}>
-        <Circle cx={cx} cy={cy} r={r} fill={Colors.accentRed} />
-      </Svg>
-    );
-  }
-  return (
-    <Svg width={size} height={size} style={styles.statusCircleSvg}>
-      <Circle cx={cx} cy={cy} r={r} fill={Colors.accentBlue} />
-    </Svg>
-  );
-}
-
 function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress }: DayCellProps) {
   const selectedOrHovered = isSelected || isHovered;
   const labelText = DAY_LABELS[index];
   const numText = date.getDate();
 
-  const statusEl = <StatusCircle status={dayStatus} />;
-  const dateBadge = (numberStyle: object, badgeStyle?: object) => (
-    <View style={[styles.dateBadge, { width: DATE_BADGE_WIDTH, height: DATE_BADGE_HEIGHT, borderRadius: DATE_BADGE_RADIUS }, badgeStyle]}>
+  const dateCircle = (numberStyle: object, circleStyle?: object) => (
+    <View style={[styles.dateCircle, { width: DATE_CIRCLE_SIZE, height: DATE_CIRCLE_SIZE, borderRadius: DATE_CIRCLE_SIZE / 2 }, circleStyle]}>
       <Text style={numberStyle}>{numText}</Text>
     </View>
   );
@@ -147,19 +120,11 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
     </Pressable>
   );
 
-  if (isToday) {
-    return (
-      <View style={styles.dayColumn}>
-        {wrap(
-          <View style={styles.dayCardToday}>
-            <Text style={styles.dayCardTodayLabel}>{labelText}</Text>
-            {dateBadge(styles.dayCardTodayNumber, styles.dateBadgeToday)}
-            {statusEl}
-          </View>
-        )}
-      </View>
-    );
-  }
+  const getCircleStyle = () => {
+    if (isToday) return styles.dateCircleToday;
+    if (dayStatus === 'none') return selectedOrHovered ? styles.dateCircleDashedSelected : styles.dateCircleDashedPlain;
+    return selectedOrHovered ? styles.dateCircleSelected : styles.dateCirclePlain;
+  };
 
   if (selectedOrHovered) {
     return (
@@ -185,8 +150,7 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
             />
             <View style={styles.dayCardInner}>
               <Text style={styles.dayCardLabel}>{labelText}</Text>
-              {dateBadge(styles.dayCardNumber, styles.dateBadgeSelected)}
-              {statusEl}
+              {dateCircle(styles.dayCardNumber, getCircleStyle())}
             </View>
           </View>
         )}
@@ -197,10 +161,9 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
   return (
     <View style={[styles.dayColumn, isPast && { opacity: 0.7 }]}>
       {wrap(
-        <View style={[styles.dayCardUnselected, { width: PILL_WIDTH, height: PILL_HEIGHT }]}>
-          <Text style={styles.dayCardUnselectedLabel}>{labelText}</Text>
-          {dateBadge(styles.dayCardUnselectedNumber, styles.dateBadgeUnselected)}
-          {statusEl}
+        <View style={styles.dayCardPlain}>
+          <Text style={styles.dayCardPlainLabel}>{labelText}</Text>
+          {dateCircle(styles.dayCardPlainNumber, getCircleStyle())}
         </View>
       )}
     </View>
@@ -306,6 +269,9 @@ export default function SwipeableWeekView({
   const resetConveyorPosition = useCallback(() => {
     translateX.value = 0;
     isAnimating.value = false;
+    // #region agent log
+    _dbg('resetConveyorPosition', { hypothesisId: 'H2' });
+    // #endregion
   }, []);
 
   useLayoutEffect(() => {
@@ -318,6 +284,9 @@ export default function SwipeableWeekView({
   // ── Week change ──────────────────────────────────────────────────────────────
 
   const commitWeekChange = useCallback((direction: -1 | 1) => {
+    // #region agent log
+    _dbg('commitWeekChange', { direction, hypothesisId: 'H5' });
+    // #endregion
     const newMonday = shiftWeek(currentMonday, direction);
     pendingConveyorReset.current = true;
     setCurrentMonday(newMonday);
@@ -337,15 +306,23 @@ export default function SwipeableWeekView({
   const handleDayPress = useCallback((date: Date) => {
     const tappedMonday = getMonday(date);
     if (tappedMonday.getTime() === nextMonday.getTime()) {
+      // #region agent log
+      _dbg('handleDayPress: isAnimating=true tapNext', { hypothesisId: 'H1' });
+      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(-weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
+        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(1);
       });
     } else if (tappedMonday.getTime() === prevMonday.getTime()) {
+      // #region agent log
+      _dbg('handleDayPress: isAnimating=true tapPrev', { hypothesisId: 'H1' });
+      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
+        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(-1);
       });
     }
@@ -431,6 +408,16 @@ export default function SwipeableWeekView({
     }, LONG_PRESS_MS);
   }, [weekWidth, selectedDayIndex, activateSliding, clearLongPressTimer]);
 
+  const logPanBegin = useCallback((x: number) => {
+    _dbg('pan onBegin', { x, hypothesisId: 'H4' });
+  }, []);
+  const logPanEnd = useCallback((dx: number, vx: number, anim: boolean) => {
+    _dbg('pan onEnd', { translationX: dx, velocityX: vx, isAnimating: anim, hypothesisId: 'H1' });
+  }, []);
+  const logSpringPan = useCallback((finished: boolean) => {
+    _dbg('springCallback pan', { finished, hypothesisId: 'H1' });
+  }, []);
+
   const panGesture = useMemo(() =>
     Gesture.Pan()
       .minDistance(0)
@@ -438,6 +425,7 @@ export default function SwipeableWeekView({
       .failOffsetY([-25, 25])
       .onBegin((e) => {
         'worklet';
+        runOnJS(logPanBegin)(e.x);
         runOnJS(startLongPressTimer)(e.x);
       })
       .onUpdate((e) => {
@@ -457,6 +445,7 @@ export default function SwipeableWeekView({
       .onEnd((e) => {
         'worklet';
         runOnJS(clearLongPressTimer)();
+        runOnJS(logPanEnd)(e.translationX, e.velocityX, isAnimating.value);
         if (slidingActive.value) {
           runOnJS(commitSliding)(e.x);
           return;
@@ -471,6 +460,8 @@ export default function SwipeableWeekView({
             -direction * weekWidth,
             { ...SNAP_SPRING_CONFIG, velocity: vx },
             (finished) => {
+              'worklet';
+              runOnJS(logSpringPan)(finished);
               if (finished) {
                 translateX.value = -direction * weekWidth;
                 runOnJS(commitWeekChange)(direction);
@@ -486,7 +477,7 @@ export default function SwipeableWeekView({
         runOnJS(clearLongPressTimer)();
       }),
     [weekWidth, distThreshold, commitWeekChange, startLongPressTimer, clearLongPressTimer,
-     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive]
+     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive, logPanBegin, logPanEnd, logSpringPan]
   );
 
   const composedGesture = useMemo(
@@ -550,18 +541,6 @@ const styles = StyleSheet.create({
     height: PILL_HEIGHT + Spacing.sm * 2,
   },
   dayColumn: { alignItems: 'center', justifyContent: 'center', flex: 1, overflow: 'visible', marginHorizontal: DAY_COLUMN_MARGIN },
-  dayCardToday: {
-    width: PILL_WIDTH, height: PILL_HEIGHT, borderRadius: PILL_RADIUS, backgroundColor: '#C6C6C6',
-    alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative',
-  },
-  dayCardTodayLabel: {
-    fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: Typography.label * -0.12, color: '#2F3031', paddingHorizontal: 2,
-  },
-  dayCardTodayNumber: {
-    fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
-    color: '#2F3031', marginTop: 2,
-  },
   dayCardSelectedWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
   dayCardInner: {
     position: 'absolute',
@@ -571,35 +550,38 @@ const styles = StyleSheet.create({
     bottom: CARD_BORDER_INSET,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   dayCardLabel: {
-    fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: Typography.label * -0.12, color: Colors.white, paddingHorizontal: 2,
+    fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
+    letterSpacing: -0.5, color: Colors.white, paddingHorizontal: 1,
   },
   dayCardNumber: {
-    fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
     color: Colors.white, marginTop: 2,
   },
-  dayCardUnselected: {
-    backgroundColor: UNSELECTED_BG, borderRadius: PILL_RADIUS,
-    alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative',
+  dayCardPlain: {
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
+    paddingHorizontal: 4, paddingVertical: 4,
   },
-  dayCardUnselectedLabel: {
-    fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: Typography.label * -0.12, color: Colors.primaryLight, opacity: 0.7, paddingHorizontal: 2,
+  dayCardPlainLabel: {
+    fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
+    letterSpacing: -0.5, color: Colors.primaryLight, opacity: 0.7, paddingHorizontal: 1,
   },
-  dayCardUnselectedNumber: {
-    fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
+  dayCardPlainNumber: {
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
     color: Colors.primaryLight, opacity: 0.7, marginTop: 2,
   },
-  dateBadge: {
+  dateCircle: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
-    borderWidth: 1.5,
+    marginTop: 2,
+    borderWidth: 1,
   },
-  dateBadgeToday: { borderColor: 'rgba(47,48,49,0.35)' },
-  dateBadgeSelected: { borderColor: 'rgba(255,255,255,0.25)' },
-  dateBadgeUnselected: { borderColor: 'rgba(198,198,198,0.25)' },
-  statusCircleSvg: { position: 'absolute', bottom: 6, right: 8 },
+  dateCircleToday: { borderColor: '#D4B896', borderWidth: 1.5 },
+  dateCircleSelected: { borderColor: 'rgba(255,255,255,0.25)' },
+  dateCirclePlain: { borderColor: 'rgba(198,198,198,0.25)' },
+  dateCircleDashedSelected: { borderColor: 'rgba(255,255,255,0.35)', borderStyle: 'dashed' },
+  dateCircleDashedPlain: { borderColor: 'rgba(198,198,198,0.4)', borderStyle: 'dashed' },
 });

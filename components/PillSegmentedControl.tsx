@@ -4,7 +4,7 @@
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, LayoutChangeEvent, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -12,9 +12,14 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography } from '../constants/theme';
+
+// Calorie-card-style gradients: border + fill (same gray as calorie card, no color tint)
+const THUMB_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
+const THUMB_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
+const THUMB_BORDER_INSET = 1;
 
 const PILL_RADIUS = 38;
 const PILL_HEIGHT = 38;
@@ -128,14 +133,28 @@ export function PillSegmentedControl({
     >
       <GestureDetector gesture={panGesture}>
       <View style={styles.outerPill}>
-        {/* Sliding selected pill – solid base (visible on all devices) + optional blur + glass overlay */}
+        {/* Sliding selected pill – calorie-card-style gradient (border + fill, gray) */}
         <Animated.View style={[styles.thumb, thumbStyle]}>
-          <View style={styles.thumbSolidBase} />
-          <BlurView
-            intensity={50}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-            {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+          <LinearGradient
+            colors={THUMB_BORDER_GRADIENT}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS - PILL_INSET }]}
+          />
+          <LinearGradient
+            colors={THUMB_FILL_GRADIENT}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[
+              StyleSheet.absoluteFillObject,
+              {
+                top: THUMB_BORDER_INSET,
+                left: THUMB_BORDER_INSET,
+                right: THUMB_BORDER_INSET,
+                bottom: THUMB_BORDER_INSET,
+                borderRadius: PILL_RADIUS - PILL_INSET - THUMB_BORDER_INSET,
+              },
+            ]}
           />
           <View style={styles.thumbGlassOverlay} />
         </Animated.View>
@@ -188,11 +207,6 @@ const styles = StyleSheet.create({
     bottom: PILL_INSET,
     borderRadius: PILL_RADIUS - PILL_INSET,
     overflow: 'hidden',
-  },
-  thumbSolidBase: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: PILL_RADIUS - PILL_INSET,
   },
   thumbGlassOverlay: {
     ...StyleSheet.absoluteFillObject,

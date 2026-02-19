@@ -176,12 +176,13 @@ export default function NutritionScreen({
   const leftLabelStyle = useAnimatedStyle(() => ({ opacity: leftLabelOp.value }));
   const eatenLabelStyle = useAnimatedStyle(() => ({ opacity: eatenLabelOp.value }));
 
-  // ── Day-switch card slide animation ──
+  // ── Day-switch: horizontal slide left/right only (quick, no diagonal) ──
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
   const cardSlideX = useSharedValue(0);
   const cardSlideOpacity = useSharedValue(1);
   const prevDateRef = useRef<string>(viewingDate);
-  const SLIDE_DISTANCE = SCREEN_WIDTH * 0.3;
+  const SLIDE_DISTANCE = 48;
+  const SLIDE_DURATION = 140;
 
   const cardSlideStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: cardSlideX.value }],
@@ -366,30 +367,31 @@ export default function NutritionScreen({
     return () => { cancelled = true; };
   }, [viewingDate, todayLog]);
 
-  const applyDateAndSlideIn = useCallback((dateString: string, forward: boolean) => {
+  const applyDateAndSlideIn = useCallback((dateString: string, direction: 'forward' | 'backward') => {
     setViewingDate(dateString);
     prevDateRef.current = dateString;
-    // Snap to entry position on the opposite side (forward = slid out left → enter from right)
-    cardSlideX.value = forward ? SLIDE_DISTANCE : -SLIDE_DISTANCE;
+    // Start from opposite side: forward = from right, backward = from left
+    const slideInX = direction === 'forward' ? SLIDE_DISTANCE : -SLIDE_DISTANCE;
+    cardSlideX.value = slideInX;
     cardSlideOpacity.value = 0;
     cardTextReveal.value = 0;
-    // Animate in: slide + fade + blur-to-focus text (~220ms easeOut)
-    cardSlideX.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
-    cardSlideOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
-    cardTextReveal.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
-  }, [cardSlideX, cardSlideOpacity, cardTextReveal, SLIDE_DISTANCE]);
+    // Animate in: horizontal slide only
+    cardSlideX.value = withTiming(0, { duration: SLIDE_DURATION, easing: Easing.out(Easing.quad) });
+    cardSlideOpacity.value = withTiming(1, { duration: SLIDE_DURATION, easing: Easing.out(Easing.quad) });
+    cardTextReveal.value = withTiming(1, { duration: SLIDE_DURATION, easing: Easing.out(Easing.quad) });
+  }, [cardSlideX, cardSlideOpacity, cardTextReveal, SLIDE_DISTANCE, SLIDE_DURATION]);
 
   const handleSelectDate = useCallback((dateString: string) => {
     if (dateString === prevDateRef.current) return;
-    const forward = dateString > prevDateRef.current;
+    const direction: 'forward' | 'backward' = dateString > prevDateRef.current ? 'forward' : 'backward';
+    const slideOutX = direction === 'forward' ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
 
-    // Animate out: slide and fade — ~180ms easeIn
-    const exitX = forward ? -SLIDE_DISTANCE : SLIDE_DISTANCE;
-    cardSlideX.value = withTiming(exitX, { duration: 180, easing: Easing.in(Easing.quad) });
-    cardSlideOpacity.value = withTiming(0, { duration: 180, easing: Easing.in(Easing.quad) }, () => {
-      runOnJS(applyDateAndSlideIn)(dateString, forward);
+    // Animate out: slide left or right only
+    cardSlideX.value = withTiming(slideOutX, { duration: SLIDE_DURATION, easing: Easing.in(Easing.quad) });
+    cardSlideOpacity.value = withTiming(0, { duration: SLIDE_DURATION, easing: Easing.in(Easing.quad) }, () => {
+      runOnJS(applyDateAndSlideIn)(dateString, direction);
     });
-  }, [cardSlideX, cardSlideOpacity, SLIDE_DISTANCE, applyDateAndSlideIn]);
+  }, [cardSlideX, cardSlideOpacity, SLIDE_DISTANCE, SLIDE_DURATION, applyDateAndSlideIn]);
 
   useEffect(() => {
     setAudioModeAsync({
@@ -1007,6 +1009,7 @@ export default function NutritionScreen({
         onScrollBeginDrag={handleMainScrollBeginDrag}
         onScrollEndDrag={handleMainScrollEndDrag}
         nestedScrollEnabled
+        directionalLockEnabled
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1183,6 +1186,7 @@ export default function NutritionScreen({
             exiting={FadeOut.duration(50)}
             style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}
           >
+            <Animated.View style={cardSlideStyle}>
             <ScrollView
               horizontal
               pagingEnabled
@@ -1243,6 +1247,7 @@ export default function NutritionScreen({
                 </View>
               )}
             </Card>
+            </Animated.View>
           </Animated.View>
         ) : (
           <Animated.View
