@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, Text, View } from 'react-native';
-import Svg, { Rect } from 'react-native-svg';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -11,12 +12,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography, Spacing } from '../constants/theme';
-
-// #region agent log
-const _dbg = (location: string, message: string, data: Record<string, unknown>) => {
-  fetch('http://127.0.0.1:7242/ingest/24d86888-ef82-444e-aad8-90b62a37b0c8', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location, message, data, timestamp: Date.now() }) }).catch(() => {});
-};
-// #endregion
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const VELOCITY_THRESHOLD = 500;
@@ -67,14 +62,31 @@ function formatHeader(monday: Date): string {
   return monthA !== monthB ? `${monthA} – ${monthB} ${sunday.getFullYear()}` : `${monthA} ${sunday.getFullYear()}`;
 }
 
+const PILL_WIDTH = 48;
+const PILL_HEIGHT = 52;
+const PILL_RADIUS = 28;
+const DATE_BADGE_WIDTH = 24;
+const DATE_BADGE_HEIGHT = 26;
+const DATE_BADGE_RADIUS = 12;
+const DAY_COLUMN_MARGIN = 6;
+const CARD_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
+const CARD_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
+const CARD_BORDER_INSET = 1;
+const UNSELECTED_BG = '#252627';
+
 function dayIndexFromX(x: number, weekWidth: number): number {
   const padding = Spacing.sm;
-  const margin = 8;
-  const cellWidth = (weekWidth - 2 * padding - 7 * 2 * margin) / 7;
-  const columnPitch = cellWidth + 2 * margin;
+  const margin = DAY_COLUMN_MARGIN;
+  const columnPitch = (weekWidth - 2 * padding) / 7;
   const startOffset = padding + margin;
   return Math.min(6, Math.max(0, Math.floor((x - startOffset) / columnPitch)));
 }
+
+function toDateString(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export type DayStatus = 'none' | 'miss' | 'hit';
 
 // ─── DayCell (pure visual) ─────────────────────────────────────────────────────
 
@@ -87,70 +99,108 @@ interface DayCellProps {
   isFuture: boolean;
   isSlidingHighlight: boolean;
   isHovered: boolean;
+  dayStatus?: DayStatus;
+  onPress?: () => void;
 }
 
-function DayCell({ date, index, isSelected, isToday, isPast, isSlidingHighlight, isHovered }: DayCellProps) {
-  const scale = useSharedValue(isSelected ? (isSlidingHighlight ? SLIDING_HIGHLIGHT_SCALE : 1) : 0.94);
+function StatusCircle({ status }: { status: DayStatus }) {
+  const size = 14;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 5;
+  if (status === 'none') {
+    return (
+      <Svg width={size} height={size} style={styles.statusCircleSvg}>
+        <Circle cx={cx} cy={cy} r={r} stroke="#4A4B4C" strokeWidth={1.5} fill="none" strokeDasharray="3 3" />
+      </Svg>
+    );
+  }
+  if (status === 'miss') {
+    return (
+      <Svg width={size} height={size} style={styles.statusCircleSvg}>
+        <Circle cx={cx} cy={cy} r={r} fill={Colors.accentRed} />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width={size} height={size} style={styles.statusCircleSvg}>
+      <Circle cx={cx} cy={cy} r={r} fill={Colors.accentBlue} />
+    </Svg>
+  );
+}
 
-  useEffect(() => {
-    const target = isSelected
-      ? (isSlidingHighlight ? SLIDING_HIGHLIGHT_SCALE : 1)
-      : isHovered ? 1.06 : 0.94;
-    scale.value = withSpring(target, SELECTION_SPRING);
-  }, [isSelected, isSlidingHighlight, isHovered, scale]);
+function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress }: DayCellProps) {
+  const selectedOrHovered = isSelected || isHovered;
+  const labelText = DAY_LABELS[index];
+  const numText = date.getDate();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const statusEl = <StatusCircle status={dayStatus} />;
+  const dateBadge = (numberStyle: object, badgeStyle?: object) => (
+    <View style={[styles.dateBadge, { width: DATE_BADGE_WIDTH, height: DATE_BADGE_HEIGHT, borderRadius: DATE_BADGE_RADIUS }, badgeStyle]}>
+      <Text style={numberStyle}>{numText}</Text>
+    </View>
+  );
+
+  const wrap = (content: React.ReactNode) => (
+    <Pressable onPress={onPress} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
+      {content}
+    </Pressable>
+  );
 
   if (isToday) {
     return (
       <View style={styles.dayColumn}>
-        <Animated.View style={[styles.dayCardToday, animatedStyle]}>
-          <Text style={styles.dayCardTodayLabel}>{DAY_LABELS[index]}</Text>
-          <Text style={styles.dayCardTodayNumber}>{date.getDate()}</Text>
-        </Animated.View>
-      </View>
-    );
-  }
-  if (isPast) {
-    if (isSelected || isHovered) {
-      return (
-        <View style={styles.dayColumn}>
-          <Animated.View style={[styles.dayCardSelected, animatedStyle]}>
-            <Text style={styles.dayCardLabel}>{DAY_LABELS[index]}</Text>
-            <Text style={styles.dayCardNumber}>{date.getDate()}</Text>
-          </Animated.View>
-        </View>
-      );
-    }
-    return (
-      <View style={[styles.dayColumn, { opacity: 0.7 }]}>
-        <View style={styles.dayCardPastWrap}>
-          <Svg style={StyleSheet.absoluteFill} width={42} height={45} viewBox="0 0 42 45">
-            <Rect x={1} y={1} width={40} height={43} rx={9} ry={9}
-              stroke={Colors.primaryLight} strokeWidth={2} fill="none" strokeDasharray="5 5" />
-          </Svg>
-          <View style={styles.dayCardPastContent}>
-            <Text style={[styles.dayLabel, styles.dayLabelGrey]}>{DAY_LABELS[index]}</Text>
-            <Text style={[styles.dayNumber, styles.dayNumberGrey]}>{date.getDate()}</Text>
+        {wrap(
+          <View style={styles.dayCardToday}>
+            <Text style={styles.dayCardTodayLabel}>{labelText}</Text>
+            {dateBadge(styles.dayCardTodayNumber, styles.dateBadgeToday)}
+            {statusEl}
           </View>
-        </View>
+        )}
       </View>
     );
   }
-  // Future or hovered
+
+  if (selectedOrHovered) {
+    return (
+      <View style={styles.dayColumn}>
+        {wrap(
+          <View style={[styles.dayCardSelectedWrap, { width: PILL_WIDTH, height: PILL_HEIGHT }]}>
+            <LinearGradient
+              colors={CARD_BORDER_GRADIENT}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
+            />
+            <LinearGradient
+              colors={CARD_FILL_GRADIENT}
+              style={{
+                position: 'absolute',
+                top: CARD_BORDER_INSET,
+                left: CARD_BORDER_INSET,
+                right: CARD_BORDER_INSET,
+                bottom: CARD_BORDER_INSET,
+                borderRadius: PILL_RADIUS - CARD_BORDER_INSET,
+              }}
+            />
+            <View style={styles.dayCardInner}>
+              <Text style={styles.dayCardLabel}>{labelText}</Text>
+              {dateBadge(styles.dayCardNumber, styles.dateBadgeSelected)}
+              {statusEl}
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.dayColumn}>
-      {(isSelected || isHovered) ? (
-        <Animated.View style={[styles.dayCardSelected, animatedStyle]}>
-          <Text style={styles.dayCardLabel}>{DAY_LABELS[index]}</Text>
-          <Text style={styles.dayCardNumber}>{date.getDate()}</Text>
-        </Animated.View>
-      ) : (
-        <View style={styles.dayUnselectedWrap}>
-          <Text style={[styles.dayLabel, styles.dayLabelGrey]}>{DAY_LABELS[index]}</Text>
-          <Text style={[styles.dayNumber, styles.dayNumberGrey]}>{date.getDate()}</Text>
+    <View style={[styles.dayColumn, isPast && { opacity: 0.7 }]}>
+      {wrap(
+        <View style={[styles.dayCardUnselected, { width: PILL_WIDTH, height: PILL_HEIGHT }]}>
+          <Text style={styles.dayCardUnselectedLabel}>{labelText}</Text>
+          {dateBadge(styles.dayCardUnselectedNumber, styles.dateBadgeUnselected)}
+          {statusEl}
         </View>
       )}
     </View>
@@ -166,9 +216,11 @@ interface WeekStripProps {
   weekWidth: number;
   slidingDateMode: boolean;
   hoveredDayIndex: number | null;
+  dayStatusByDate?: Record<string, DayStatus>;
+  onDayPress?: (date: Date) => void;
 }
 
-const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex }: WeekStripProps) => {
+const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex, dayStatusByDate, onDayPress }: WeekStripProps) => {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
@@ -181,6 +233,8 @@ const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingD
     <View style={[styles.weekStrip, { width: weekWidth }]} collapsable={false}>
       {days.map((date, i) => {
         const isSelected = isSameDay(date, selectedDate);
+        const dateKey = toDateString(date);
+        const dayStatus = dayStatusByDate?.[dateKey] ?? 'none';
         return (
           <DayCell
             key={i}
@@ -192,6 +246,8 @@ const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingD
             isFuture={isFutureDay(date, today)}
             isSlidingHighlight={isSelected && slidingDateMode}
             isHovered={slidingDateMode && selectedInThisWeek && hoveredDayIndex === i && !isSelected}
+            dayStatus={dayStatus}
+            onPress={onDayPress ? () => onDayPress(date) : undefined}
           />
         );
       })}
@@ -208,6 +264,7 @@ export interface SwipeableWeekViewProps {
   onWeekChange?: (monday: Date) => void;
   initialDate?: Date;
   showHeader?: boolean;
+  dayStatusByDate?: Record<string, DayStatus>;
 }
 
 export default function SwipeableWeekView({
@@ -217,6 +274,7 @@ export default function SwipeableWeekView({
   onWeekChange,
   initialDate,
   showHeader = false,
+  dayStatusByDate,
 }: SwipeableWeekViewProps) {
   const today = useMemo(() => new Date(), []);
   const [currentMonday, setCurrentMonday] = useState(() => getMonday(initialDate ?? today));
@@ -269,10 +327,6 @@ export default function SwipeableWeekView({
     if (controlledSelectedDate == null) {
       setInternalSelectedDate(newSelected);
     }
-    // When controlled, parent must be notified so cards and viewingDate stay in sync with the week strip.
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SwipeableWeekView:commitWeekChange',message:'week change',data:{direction,controlled:controlledSelectedDate!=null,newDate:newSelected.toISOString().slice(0,10)},timestamp:Date.now(),hypothesisId:'H_week'})}).catch(()=>{});
-    // #endregion
     if (onDaySelect) onDaySelect(newSelected);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onWeekChange?.(newMonday);
@@ -380,6 +434,8 @@ export default function SwipeableWeekView({
   const panGesture = useMemo(() =>
     Gesture.Pan()
       .minDistance(0)
+      .activeOffsetX([-15, 15])
+      .failOffsetY([-25, 25])
       .onBegin((e) => {
         'worklet';
         runOnJS(startLongPressTimer)(e.x);
@@ -460,13 +516,13 @@ export default function SwipeableWeekView({
         <Animated.View style={[styles.swipeContainer, { width: weekWidth }]}>
           <Animated.View style={[styles.conveyor, { width: weekWidth * 3 }, conveyorStyle]}>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, prevWeekOpacity]}>
-              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} />
+              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, currentWeekOpacity]}>
-              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} />
+              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, nextWeekOpacity]}>
-              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} />
+              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
           </Animated.View>
         </Animated.View>
@@ -483,7 +539,7 @@ const styles = StyleSheet.create({
   swipeContainer: {
     overflow: 'hidden',
     marginBottom: Spacing.md,
-    minHeight: 45 + Spacing.sm * 2,
+    minHeight: PILL_HEIGHT + Spacing.sm * 2,
   },
   conveyor: { flexDirection: 'row', alignItems: 'stretch' },
   weekSlot: { alignSelf: 'stretch', alignItems: 'flex-start' },
@@ -491,17 +547,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.sm,
-    height: 45 + Spacing.sm * 2,
+    height: PILL_HEIGHT + Spacing.sm * 2,
   },
-  dayColumn: { alignItems: 'center', justifyContent: 'center', flex: 1, overflow: 'visible', marginHorizontal: 8 },
-  dayUnselectedWrap: { height: 45, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6, overflow: 'visible' },
-  dayLabel: { fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase', letterSpacing: Typography.label * -0.12, paddingHorizontal: 2 },
-  dayLabelGrey: { color: Colors.primaryLight },
-  dayNumber: { fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03, marginTop: Spacing.xs },
-  dayNumberGrey: { color: Colors.primaryLight },
+  dayColumn: { alignItems: 'center', justifyContent: 'center', flex: 1, overflow: 'visible', marginHorizontal: DAY_COLUMN_MARGIN },
   dayCardToday: {
-    width: 42, height: 45, borderRadius: 11, backgroundColor: '#C6C6C6',
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, overflow: 'visible',
+    width: PILL_WIDTH, height: PILL_HEIGHT, borderRadius: PILL_RADIUS, backgroundColor: '#C6C6C6',
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative',
   },
   dayCardTodayLabel: {
     fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
@@ -511,14 +562,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
     color: '#2F3031', marginTop: 2,
   },
-  dayCardPastWrap: {
-    width: 42, height: 45, position: 'relative', alignItems: 'center', justifyContent: 'center',
-  },
-  dayCardPastContent: { paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
-  dayCardSelected: {
-    width: 42, height: 45, borderRadius: 11, borderWidth: 2, borderColor: '#C6C6C6',
-    backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 6, overflow: 'visible',
+  dayCardSelectedWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  dayCardInner: {
+    position: 'absolute',
+    top: CARD_BORDER_INSET,
+    left: CARD_BORDER_INSET,
+    right: CARD_BORDER_INSET,
+    bottom: CARD_BORDER_INSET,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dayCardLabel: {
     fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
@@ -528,4 +580,26 @@ const styles = StyleSheet.create({
     fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
     color: Colors.white, marginTop: 2,
   },
+  dayCardUnselected: {
+    backgroundColor: UNSELECTED_BG, borderRadius: PILL_RADIUS,
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible', position: 'relative',
+  },
+  dayCardUnselectedLabel: {
+    fontSize: Typography.label, fontWeight: '500', textTransform: 'lowercase',
+    letterSpacing: Typography.label * -0.12, color: Colors.primaryLight, opacity: 0.7, paddingHorizontal: 2,
+  },
+  dayCardUnselectedNumber: {
+    fontSize: Typography.body, fontWeight: '500', letterSpacing: Typography.body * -0.03,
+    color: Colors.primaryLight, opacity: 0.7, marginTop: 2,
+  },
+  dateBadge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    borderWidth: 1.5,
+  },
+  dateBadgeToday: { borderColor: 'rgba(47,48,49,0.35)' },
+  dateBadgeSelected: { borderColor: 'rgba(255,255,255,0.25)' },
+  dateBadgeUnselected: { borderColor: 'rgba(198,198,198,0.25)' },
+  statusCircleSvg: { position: 'absolute', bottom: 6, right: 8 },
 });

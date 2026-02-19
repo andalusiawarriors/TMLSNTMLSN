@@ -57,6 +57,7 @@ import { Input } from '../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 import {
   getNutritionLogByDate,
+  getNutritionLogs,
   saveNutritionLog,
   getUserSettings,
   saveUserSettings,
@@ -66,7 +67,7 @@ import {
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
-import SwipeableWeekView from '../../components/SwipeableWeekView';
+import SwipeableWeekView, { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
@@ -133,6 +134,13 @@ export default function NutritionScreen({
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
+  const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
+
+  // Reset carousel page when switching segment so pagination dots match content
+  useEffect(() => {
+    setCardPage(0);
+    setFitnessCardPage(0);
+  }, [homeSegment]);
 
   const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
 
@@ -320,6 +328,43 @@ export default function NutritionScreen({
     });
     return () => sub.remove();
   }, [loadData]);
+
+  // Compute day status for week strip (none/miss/hit) for visible week
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const weekStart = getWeekStart(viewingDateAsDate);
+      const dateStrings: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + i);
+        dateStrings.push(toDateString(d));
+      }
+      const logs = await getNutritionLogs();
+      const userSettings = await getUserSettings();
+      if (cancelled || !userSettings) return;
+      const goals = userSettings.dailyGoals;
+      const logByDate = Object.fromEntries(logs.map((l) => [l.date, l]));
+      const next: Record<string, DayStatus> = {};
+      for (const ds of dateStrings) {
+        const log = logByDate[ds];
+        if (!log || log.calories === 0) {
+          next[ds] = 'none';
+        } else if (
+          log.calories >= goals.calories &&
+          log.protein >= goals.protein &&
+          log.fat >= goals.fat
+        ) {
+          next[ds] = 'hit';
+        } else {
+          next[ds] = 'miss';
+        }
+      }
+      if (!cancelled) setDayStatusByDate(next);
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [viewingDate, todayLog]);
 
   const applyDateAndSlideIn = useCallback((dateString: string, forward: boolean) => {
     setViewingDate(dateString);
@@ -742,13 +787,11 @@ export default function NutritionScreen({
   const MACRO_CARD_WIDTH = Math.floor((CALORIES_CARD_WIDTH - 2 * Spacing.sm) / 3);
   const MACRO_CARD_HEIGHT = 140;
   const MACRO_CARD_RADIUS = 16;
+  const NUTRITION_CAROUSEL_PAGES = useMemo(() => [0, 1], []);
   const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setCardPage(Math.min(1, page));
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:handleCarouselScroll',message:'nutrition onScroll',data:{offsetX:Math.round(offsetX),page:Math.min(1,page),CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH)},timestamp:Date.now(),hypothesisId:'H_scroll'})}).catch(()=>{});
-    // #endregion
   };
 
   const handleFitnessCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -769,9 +812,6 @@ export default function NutritionScreen({
     playCardPressInSound();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     cardScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) });
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:onCardPressIn',message:'card pressIn fired',data:{x:e.nativeEvent.pageX,y:e.nativeEvent.pageY},timestamp:Date.now(),hypothesisId:'H_press'})}).catch(()=>{});
-    // #endregion
   };
 
   const onCardPressOut = (e: { nativeEvent: { pageX: number; pageY: number } }) => {
@@ -807,9 +847,6 @@ export default function NutritionScreen({
   };
 
   const onCarouselScrollBeginDrag = () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:beginDrag',message:'carousel drag started',data:{},timestamp:Date.now(),hypothesisId:'H_drag'})}).catch(()=>{});
-    // #endregion
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -969,6 +1006,7 @@ export default function NutritionScreen({
         onScroll={handleMainScroll}
         onScrollBeginDrag={handleMainScrollBeginDrag}
         onScrollEndDrag={handleMainScrollEndDrag}
+        nestedScrollEnabled
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1124,6 +1162,7 @@ export default function NutritionScreen({
           onDaySelect={(date) => handleSelectDate(toDateString(date))}
           initialDate={viewingDateAsDate}
           showHeader={false}
+          dayStatusByDate={dayStatusByDate}
         />
         </AnimatedFadeInUp>
         <AnimatedFadeInUp delay={55} duration={220} trigger={animTrigger}>
@@ -1151,6 +1190,9 @@ export default function NutritionScreen({
               onScroll={handleFitnessCarouselScroll}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
+              contentContainerStyle={{ width: CAROUSEL_WIDTH * 2 }}
+              nestedScrollEnabled
+              directionalLockEnabled
             >
               {/* Fitness page 0: heatmap */}
               <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
@@ -1207,37 +1249,15 @@ export default function NutritionScreen({
             key="nutrition-segment"
             entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000)}
             exiting={FadeOut.duration(50)}
-            onTouchStart={() => {
-              // #region agent log — touch on entering Animated.View
-              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:enteringViewTouch',message:'touch on entering Animated.View',data:{},timestamp:Date.now(),hypothesisId:'H_entering'})}).catch(()=>{});
-              // #endregion
-            }}
           >
-          {/* #region agent log — nutrition segment render marker */}
-          {(() => { fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:nutritionSegmentRender',message:'Nutrition segment rendering',data:{hasSettings:!!settings,hasTodayLog:!!todayLog,CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH)},timestamp:Date.now(),hypothesisId:'H_mount'})}).catch(()=>{}); return null; })()}
-          {/* #endregion */}
-          <Animated.View style={cardSlideStyle}
-            onTouchStart={() => {
-              // #region agent log — touch on cardSlide Animated.View
-              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:cardSlideTouch',message:'touch on cardSlide Animated.View',data:{},timestamp:Date.now(),hypothesisId:'H_cardslide'})}).catch(()=>{});
-              // #endregion
-            }}
-          >
-          <View style={{ position: 'relative' }}
-            onTouchStart={() => {
-              // #region agent log — touch on position:relative View
-              fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:relativeViewTouch',message:'touch on relative View',data:{},timestamp:Date.now(),hypothesisId:'H_relative'})}).catch(()=>{});
-              // #endregion
-            }}
-          >
+          <Animated.View style={cardSlideStyle}>
+          <View style={{ position: 'relative' }}>
             <View>
         {settings && todayLog && (
-          <View style={{ zIndex: 1 }} onTouchStart={() => {
-            // #region agent log — touch arrives at ScrollView container
-            fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:scrollContainerTouch',message:'touch reached ScrollView container',data:{homeSegment},timestamp:Date.now(),hypothesisId:'H_touch'})}).catch(()=>{});
-            // #endregion
-          }}>
-            <ScrollView
+          <View style={{ zIndex: 1 }}>
+            <FlatList
+              data={NUTRITION_CAROUSEL_PAGES}
+              keyExtractor={(i) => String(i)}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
@@ -1245,14 +1265,11 @@ export default function NutritionScreen({
               onScrollBeginDrag={onCarouselScrollBeginDrag}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
-              onLayout={(e) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:scrollViewLayout',message:'nutrition ScrollView onLayout',data:{width:e.nativeEvent.layout.width,height:e.nativeEvent.layout.height,CAROUSEL_WIDTH:Math.round(CAROUSEL_WIDTH),homeSegment},timestamp:Date.now(),hypothesisId:'H_layout'})}).catch(()=>{});
-                // #endregion
-              }}
-            >
-              {/* Page 0: Big card top, 3 small cards bottom (Nutrition only) */}
+              getItemLayout={(_, index) => ({ length: CAROUSEL_WIDTH, offset: index * CAROUSEL_WIDTH, index })}
+              renderItem={({ item: page }) => (
               <View style={{ width: CAROUSEL_WIDTH }}>
+                {page === 0 ? (
+                <>
                 <View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
                   <Animated.View style={cardScaleStyle}>
@@ -1371,8 +1388,9 @@ export default function NutritionScreen({
                   </Pressable>
                   </Animated.View>
                 </View>
-              </View>
-
+                </>
+                ) : (
+                <>
               {/* Page 1: Electrolytes top, Health Score bottom (flipped layout) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
                 <View>
@@ -1443,7 +1461,11 @@ export default function NutritionScreen({
                 </Pressable>
                   </View>
                 </View>
-            </ScrollView>
+                </>
+                )}
+              </View>
+            )}
+            />
 
             {/* Pagination dots (Nutrition: 2 pages only) */}
             <View style={styles.paginationDots}>
@@ -1542,22 +1564,20 @@ export default function NutritionScreen({
               </Svg>
             </View>
             <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: Spacing.lg }}>
+              {/* Header: back, title, share */}
               <View
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  justifyContent: 'space-between',
                   paddingHorizontal: 16,
                   paddingTop: 16,
-                  paddingBottom: 8,
-                  position: 'relative',
+                  paddingBottom: 24,
                 }}
               >
                 <TouchableOpacity
                   onPress={closeFireStreakPopup}
                   style={{
-                    position: 'absolute',
-                    left: 16,
                     width: 32,
                     height: 32,
                     borderRadius: 16,
@@ -1566,31 +1586,203 @@ export default function NutritionScreen({
                     justifyContent: 'center',
                   }}
                 >
-                  <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+                  <Ionicons name="arrow-back" size={18} color="rgba(255,255,255,0.7)" />
                 </TouchableOpacity>
                 <Text
                   style={{
-                    fontSize: Typography.h2,
-                    fontWeight: '600',
+                    fontSize: Typography.h1,
+                    fontWeight: '700',
                     letterSpacing: -0.11,
                     color: Colors.primaryLight,
-                    textAlign: 'center',
                   }}
                 >
-                  Fire Streak
+                  Milestones
                 </Text>
+                <TouchableOpacity
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
               </View>
-              <Text
-                style={{
-                  fontSize: CARD_LABEL_FONT_SIZE + 2,
-                  fontWeight: '500',
-                  letterSpacing: -0.11,
-                  color: '#FFFFFF',
-                  textAlign: 'center',
-                }}
+
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 40 }}
+                showsVerticalScrollIndicator={false}
               >
-                Your streak and fire stats will appear here.
-              </Text>
+                {/* Day Streak + Badges Earned row */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: Spacing.xl,
+                    marginBottom: Spacing.xl,
+                  }}
+                >
+                  {/* Day Streak: flame + number overlay + label */}
+                  <View style={{ alignItems: 'center' }}>
+                    <View style={{ position: 'relative', width: 80, height: 80, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="sparkles" size={12} color="#FFD700" style={{ position: 'absolute', top: -4, left: 0 }} />
+                      <Ionicons name="sparkles" size={12} color="#FFD700" style={{ position: 'absolute', top: -4, right: 0 }} />
+                      <Ionicons name="sparkles" size={12} color="#FFD700" style={{ position: 'absolute', top: 24, right: -8 }} />
+                      <Image
+                        source={require('../../assets/firestreakhomepage.png')}
+                        style={{ width: 72, height: 72 }}
+                        resizeMode="contain"
+                      />
+                      <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 22, fontWeight: '700', color: Colors.primaryLight }}>0</Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '500', color: Colors.primaryLight, marginTop: 8 }}>Day Streak</Text>
+                  </View>
+
+                  {/* Badges earned */}
+                  <View style={{ alignItems: 'center' }}>
+                    <View
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: Colors.accentGold,
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ionicons name="medal-outline" size={24} color={Colors.primaryLight} />
+                    </View>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: Colors.primaryLight, marginTop: 4 }}>3</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '500', color: Colors.primaryLight }}>Badges earned</Text>
+                  </View>
+                </View>
+
+                {/* Summary cards: Longest Streak | Badges Progress */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    gap: Spacing.md,
+                    marginBottom: Spacing.xl,
+                  }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: Colors.primaryDarkLighter,
+                      borderRadius: BorderRadius.md,
+                      padding: Spacing.md,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: Spacing.sm,
+                    }}
+                  >
+                    <Image
+                      source={require('../../assets/firestreakhomepage.png')}
+                      style={{ width: 28, height: 28 }}
+                      resizeMode="contain"
+                    />
+                    <View>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.primaryLight }}>2 days</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: Colors.primaryLight, opacity: 0.8 }}>longest streak</Text>
+                    </View>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: Colors.primaryDarkLighter,
+                      borderRadius: BorderRadius.md,
+                      padding: Spacing.md,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 6 }}>
+                      <View
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          backgroundColor: 'rgba(255,255,255,0.15)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Ionicons name="ellipse-outline" size={12} color={Colors.primaryLight} />
+                      </View>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.primaryLight }}>3/30 badges</Text>
+                    </View>
+                    <View
+                      style={{
+                        height: 4,
+                        borderRadius: 2,
+                        backgroundColor: 'rgba(255,255,255,0.15)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: '10%',
+                          height: '100%',
+                          backgroundColor: Colors.accentBlue,
+                          borderRadius: 2,
+                        }}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Badge grid */}
+                <Text style={{ fontSize: Typography.h2, fontWeight: '600', color: Colors.primaryLight, marginBottom: Spacing.md }}>Badges</Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: Spacing.md,
+                  }}
+                >
+                  {[
+                    { title: 'Rookie', desc: '3 day streak', value: '3 STREAK' },
+                    { title: 'Getting Serious', desc: '10 day streak', value: '10 STREAK' },
+                    { title: 'Forking Around', desc: 'Logged 5 meals', value: '5' },
+                    { title: 'Salad Days', desc: 'Logged 10 salads', value: '10' },
+                    { title: 'Sweet Tooth', desc: '50 donuts logged', value: '50' },
+                    { title: 'Legend', desc: '500 day streak', value: '500' },
+                  ].map((b, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        width: (SCREEN_WIDTH - Spacing.lg * 2 - Spacing.md * 2) / 3,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: 8,
+                          backgroundColor: i === 2 ? 'rgba(100,80,200,0.4)' : Colors.primaryDarkLighter,
+                          borderWidth: 1,
+                          borderColor: i === 2 ? Colors.accentBlue : 'rgba(255,255,255,0.1)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginBottom: 8,
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.primaryLight }}>{b.value}</Text>
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.primaryLight, textAlign: 'center' }}>{b.title}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '500', color: Colors.primaryLight, opacity: 0.8, textAlign: 'center' }}>{b.desc}</Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
           </RNAnimated.View>
         </View>

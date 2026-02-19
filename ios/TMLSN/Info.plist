@@ -26,6 +26,10 @@
 	<string>12.0</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>TMLSN needs camera access to log your meals via photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TMLSN needs photo library access to select meal photos.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
