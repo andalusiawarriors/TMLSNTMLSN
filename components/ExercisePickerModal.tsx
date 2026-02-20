@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 
 const CATEGORY_LABELS: Record<string, string> = {
   chest: 'Chest',
@@ -170,19 +170,19 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   title: {
-    fontFamily: Font.semiBold,
     fontSize: Typography.h2,
+    fontWeight: '600',
     color: Colors.primaryLight,
     textTransform: 'lowercase',
   },
   closeBtn: {
-    fontFamily: Font.monoMedium,
     fontSize: 18,
+    fontWeight: '500',
     color: Colors.primaryLight,
   },
   search: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
+    fontWeight: '500',
     color: Colors.primaryLight,
     backgroundColor: Colors.primaryDarkLighter,
     borderRadius: BorderRadius.md,
@@ -192,7 +192,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   categoryScroll: {
-    maxHeight: 44,
     marginBottom: Spacing.sm,
   },
   categoryRow: {
@@ -201,8 +200,9 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xs,
   },
   chip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
+    flexShrink: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.primaryDarkLighter,
     ...Shadows.card,
@@ -211,10 +211,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight,
   },
   chipText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight,
-    letterSpacing: -0.5,
+    letterSpacing: -0.11,
+    textTransform: 'uppercase',
+    flexShrink: 0,
   },
   chipTextActive: {
     color: Colors.primaryDark,
@@ -234,20 +236,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDarkLighter,
   },
   rowName: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
+    fontWeight: '500',
     color: Colors.primaryLight,
-    letterSpacing: -0.5,
+    letterSpacing: -0.11,
   },
   rowMeta: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500',
     color: Colors.primaryLight + '99',
+    letterSpacing: -0.11,
     marginTop: 2,
   },
   empty: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
+    fontWeight: '400',
     color: Colors.primaryLight + '80',
     fontStyle: 'italic',
     textAlign: 'center',

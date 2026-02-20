@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
-import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Font } from '../../../constants/theme';
 import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { Card } from '../../../components/Card';
@@ -254,37 +254,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   exerciseRowDotText: {
+    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    fontWeight: '700' as const,
     color: Colors.primaryLight + '60',
-    letterSpacing: -0.11,
+    letterSpacing: -0.5,
   },
   exerciseRowContent: {
     flex: 1,
   },
   exerciseRowName: {
+    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    fontWeight: '500',
     color: Colors.primaryLight,
-    letterSpacing: -0.11,
+    letterSpacing: -0.5,
   },
   exerciseRowDetail: {
+    fontFamily: Font.mono,
     fontSize: Typography.label,
-    fontWeight: '500',
     color: Colors.primaryLight + '50',
-    letterSpacing: -0.11,
+    letterSpacing: -0.5,
     marginTop: 1,
   },
 
   // ─── COLLAPSED PREVIEW ────────────────────────────────────────────────────
   exercisePreview: {
+    fontFamily: Font.mono,
     fontSize: Typography.label,
-    fontWeight: '500',
     color: Colors.primaryLight + '50',
     lineHeight: 18,
     marginTop: 10,
     marginBottom: 12,
-    letterSpacing: -0.11,
+    letterSpacing: -0.5,
   },
 
   // ─── START BUTTON ─────────────────────────────────────────────────────────

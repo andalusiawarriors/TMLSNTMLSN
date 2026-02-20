@@ -30,7 +30,7 @@ import {
 import { logStreakWorkout } from '../../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
 import { generateId, formatDuration } from '../../../utils/helpers';
-import { scheduleRestTimerNotification } from '../../../utils/notifications';
+import { scheduleRestTimerNotification, cancelNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
@@ -349,10 +349,6 @@ export default function WorkoutScreen({
       exercises: updatedExercises,
     });
 
-    if (restTimerActive && exercise.restTimer) {
-      startRestTimer(exercise.restTimer, updatedExercise.sets.length, exerciseIndex);
-    }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -389,6 +385,10 @@ export default function WorkoutScreen({
   };
 
   const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number) => {
+    if (restTimerNotificationId) {
+      await cancelNotification(restTimerNotificationId);
+      setRestTimerNotificationId(null);
+    }
     setRestTimeRemaining(seconds);
     setRestTimerActive(true);
     const idx = exerciseIdx ?? currentExerciseIndex;
@@ -405,13 +405,13 @@ export default function WorkoutScreen({
     }
   };
 
-  const skipRestTimer = () => {
-    setRestTimerActive(false);
-    setRestTimeRemaining(0);
+  const skipRestTimer = async () => {
     if (restTimerNotificationId) {
-      // Cancel the notification (would need to implement cancelNotification)
+      await cancelNotification(restTimerNotificationId);
       setRestTimerNotificationId(null);
     }
+    setRestTimerActive(false);
+    setRestTimeRemaining(0);
   };
 
   const nextExercise = () => {
@@ -467,7 +467,9 @@ export default function WorkoutScreen({
 
   const totalSets = activeWorkout?.exercises.reduce((acc, ex) => acc + ex.sets.length, 0) ?? 0;
   const totalVolume = activeWorkout?.exercises.reduce(
-    (acc, ex) => acc + ex.sets.reduce((s, set) => s + set.weight * set.reps, 0),
+    (acc, ex) =>
+      acc +
+      ex.sets.reduce((s, set) => (set.completed ? s + set.weight * set.reps : s), 0),
     0
   ) ?? 0;
 
@@ -552,8 +554,6 @@ export default function WorkoutScreen({
           <View style={styles.pageHeaderRight}>
           <Pressable
             style={styles.settingsButton}
-            onPressIn={playIn}
-            onPressOut={playOut}
             onPress={() => router.push('/workout/settings')}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
@@ -600,8 +600,6 @@ export default function WorkoutScreen({
             {/* Single page: progress card */}
             <View style={styles.swipePage}>
               <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={() => setShowHistory(true)}
                 style={styles.mainMenuButtonWrap}
               >
@@ -639,8 +637,6 @@ export default function WorkoutScreen({
       >
         <Pressable
           style={styles.modalOverlay}
-          onPressIn={playIn}
-          onPressOut={playOut}
           onPress={() => setShowHistory(false)}
         >
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
@@ -648,8 +644,6 @@ export default function WorkoutScreen({
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Progress</Text>
               <Pressable
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={() => setShowHistory(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.modalCloseButton}
@@ -684,7 +678,9 @@ export default function WorkoutScreen({
                 recentWorkouts.map((w) => {
                   const wSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
                   const wVolume = w.exercises.reduce(
-                    (a, e) => a + e.sets.reduce((s, set) => s + set.weight * set.reps, 0), 0
+                    (a, e) =>
+                      a +
+                      e.sets.reduce((s, set) => (set.completed ? s + set.weight * set.reps : s), 0),
                   );
                   return (
                     <View key={w.id} style={styles.historySessionCard}>
@@ -763,8 +759,6 @@ export default function WorkoutScreen({
             {/* ─── HEVY-STYLE TOP BAR ─── */}
             <View style={styles.logTopBar}>
               <Pressable
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={handleBackArrowPress}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.logBackArrowWrap}
@@ -777,8 +771,6 @@ export default function WorkoutScreen({
               </View>
               <Pressable
                 style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.85 }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={() =>
                   Alert.alert(
                     'Finish Workout',
@@ -826,24 +818,18 @@ export default function WorkoutScreen({
                 <View style={styles.restTimerButtonsRow}>
                   <Pressable
                     style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
                   >
                     <Text style={styles.restTimerAdjustButtonText}>−15s</Text>
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [styles.restTimerSkipButton, pressed && { opacity: 0.8 }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
                     onPress={skipRestTimer}
                   >
                     <Text style={styles.restTimerSkipButtonText}>Skip</Text>
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => prev + 15)}
                   >
                     <Text style={styles.restTimerAdjustButtonText}>+15s</Text>
@@ -856,8 +842,6 @@ export default function WorkoutScreen({
             {activeWorkout.exercises.length === 0 ? (
               <Pressable
                 style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
@@ -911,8 +895,6 @@ export default function WorkoutScreen({
                       renderRightActions={() => (
                         <Pressable
                           style={({ pressed }) => [styles.setRowDeleteAction, pressed && { opacity: 0.8 }]}
-                          onPressIn={playIn}
-                          onPressOut={playOut}
                           onPress={() => removeSet(exerciseIndex, setIndex)}
                         >
                           <Text style={styles.setRowDeleteText}>Delete</Text>
@@ -942,7 +924,7 @@ export default function WorkoutScreen({
                         <View style={{ width: 72, alignItems: 'center' }}>
                           {(set.weight > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight')) ? (
                             <Input
-                              value={String(set.weight)}
+                              value={set.weight > 0 ? String(set.weight) : ''}
                               onChangeText={(text) => updateSet(exerciseIndex, setIndex, { weight: parseFloat(text) || 0 })}
                               onBlur={() => setEditingCell(null)}
                               autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight'}
@@ -954,8 +936,6 @@ export default function WorkoutScreen({
                             />
                           ) : (
                             <Pressable
-                              onPressIn={playIn}
-                              onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'weight' })}
                               style={styles.setInputPlaceholder}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -969,7 +949,7 @@ export default function WorkoutScreen({
                         <View style={{ width: 56, alignItems: 'center' }}>
                           {(set.reps > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps')) ? (
                             <Input
-                              value={String(set.reps)}
+                              value={set.reps > 0 ? String(set.reps) : ''}
                               onChangeText={(text) => updateSet(exerciseIndex, setIndex, { reps: parseInt(text, 10) || 0 })}
                               onBlur={() => setEditingCell(null)}
                               autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps'}
@@ -981,8 +961,6 @@ export default function WorkoutScreen({
                             />
                           ) : (
                             <Pressable
-                              onPressIn={playIn}
-                              onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'reps' })}
                               style={styles.setInputPlaceholder}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1015,8 +993,6 @@ export default function WorkoutScreen({
                 {/* Add set button */}
                 <Pressable
                   style={({ pressed }) => [styles.addSetButtonBlock, pressed && { opacity: 0.85 }]}
-                  onPressIn={playIn}
-                  onPressOut={playOut}
                   onPress={() => addSet(exerciseIndex)}
                 >
                   <Text style={styles.addSetButtonBlockText}>+ Add Set</Text>
@@ -1026,8 +1002,6 @@ export default function WorkoutScreen({
             {activeWorkout.exercises.length > 0 ? (
               <Pressable
                 style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
                 onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
@@ -1738,9 +1712,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.primaryLight + '20',
   },
   setDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 32,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: Colors.primaryLight + '30',
     alignItems: 'center',
@@ -1801,7 +1775,7 @@ const styles = StyleSheet.create({
   },
   setCheckWrap: {
     width: 36,
-    height: 28,
+    height: 32,
     borderRadius: 8,
     borderWidth: 2,
     borderColor: Colors.primaryLight + '30',
