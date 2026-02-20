@@ -16,11 +16,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tmlsn.app",
       "infoPlist": {
-        "NSSupportsLiveActivities": true,
         "NSCameraUsageDescription": "TMLSN needs camera access to log your meals via photo.",
         "NSPhotoLibraryUsageDescription": "TMLSN needs photo library access to select meal photos."
-      },
-      "appleTeamId": "XDXCDRNUTP"
+      }
     },
     "android": {
       "adaptiveIcon": {

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
-import { Colors, Typography } from '../../constants/theme';
+import { Typography } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import {
   Platform,
   Text,
@@ -23,23 +24,20 @@ import { BarbellIcon, BarcodeIcon, BookmarkSimple, MagnifyingGlass, PlayIcon } f
 import { ProfileSheet } from '../../components/ProfileSheet';
 
 // ── Pill constants ──
-const PILL_LABEL_COLOR = '#C6C6C6';
-const TAB_LABEL_STYLE: any = {
+const getTabLabelStyle = (labelColor: string) => ({
   fontSize: 10,
-  fontWeight: '500',
+  fontWeight: '500' as const,
   letterSpacing: -0.10,
-  color: PILL_LABEL_COLOR,
+  color: labelColor,
   marginTop: 4,
   lineHeight: 12,
-};
+});
 const ICON_BOX_SIZE = 24;
 
 const PILL_BOTTOM = 19;
 const PILL_MARGIN_H = 19;
 const PILL_HEIGHT = 57;
 const PILL_RADIUS = 28;
-const PILL_BG_COLOR = '#2E2F30';
-const PILL_BORDER_COLOR = '#4A4B4C';
 
 // Selected-tab bubble
 const SELECTED_TAB_PILL_COLOR = 'rgba(108, 108, 108, 0.6)';
@@ -74,14 +72,14 @@ const POPUP_CARD_STAGGER_MS = 55;
 const POPUP_CARD_FONT = 'DMMono_500Medium';
 
 // ── Tab definitions (order matches Tabs.Screen order: index hidden, nutrition=0, workout=1, fab-action=2, prompts=3, profile=4) ──
-const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex: number }> = {
+const getTabMeta = (iconTint: string): Record<string, { label: string; icon: React.ReactNode; tabIndex: number }> => ({
   nutrition: {
     label: 'home.',
     tabIndex: 0,
     icon: (
       <Image
         source={require('../../assets/home-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE }}
+        style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, tintColor: iconTint }}
         resizeMode="contain"
       />
     ),
@@ -92,7 +90,7 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     icon: (
       <Image
         source={require('../../assets/workout-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE * 1.2, height: ICON_BOX_SIZE * 1.2, marginTop: 2 }}
+        style={{ width: ICON_BOX_SIZE * 1.2, height: ICON_BOX_SIZE * 1.2, marginTop: 2, tintColor: iconTint }}
         resizeMode="contain"
       />
     ),
@@ -103,7 +101,7 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     icon: (
       <Image
         source={require('../../assets/explore-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE * 1.11, height: ICON_BOX_SIZE * 1.11 }}
+        style={{ width: ICON_BOX_SIZE * 1.11, height: ICON_BOX_SIZE * 1.11, tintColor: iconTint }}
         resizeMode="contain"
       />
     ),
@@ -114,12 +112,12 @@ const TAB_META: Record<string, { label: string; icon: React.ReactNode; tabIndex:
     icon: (
       <Image
         source={require('../../assets/profile-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE }}
+        style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, tintColor: iconTint }}
         resizeMode="contain"
       />
     ),
   },
-};
+});
 
 // ── Tab button helper (no static selected background — the sliding pill handles it) ──
 function TabButton({
@@ -131,6 +129,7 @@ function TabButton({
   onTabPressIn,
   onTabPressOut,
   onTabLongPress,
+  labelColor,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -140,6 +139,7 @@ function TabButton({
   onTabPressIn?: () => void;
   onTabPressOut?: () => void;
   onTabLongPress?: () => void;
+  labelColor: string;
 }) {
   return (
     <Pressable
@@ -162,7 +162,7 @@ function TabButton({
         <View style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, alignItems: 'center', justifyContent: 'center' }}>
           {icon}
         </View>
-        <Text style={TAB_LABEL_STYLE}>{label}</Text>
+        <Text style={getTabLabelStyle(labelColor)}>{label}</Text>
       </RNAnimated.View>
     </Pressable>
   );
@@ -188,6 +188,7 @@ const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r))
 export default function TabsLayout() {
   const pathname = usePathname();
   const router = useRouter();
+  const { colors, theme } = useTheme();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
@@ -734,12 +735,12 @@ export default function TabsLayout() {
         >
           {/* Border gradient (matches top pills) */}
           <LinearGradient
-            colors={['#4E4F50', '#4A4B4C']}
+            colors={colors.tabBarBorder}
             style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
           />
           {/* Subtle gradient fill */}
           <LinearGradient
-            colors={['#363738', '#2E2F30']}
+            colors={colors.tabBarFill}
             style={{
               position: 'absolute',
               top: 1,
@@ -759,7 +760,7 @@ export default function TabsLayout() {
               width: SELECTED_TAB_PILL_WIDTH,
               height: SELECTED_TAB_PILL_HEIGHT,
               borderRadius: SELECTED_TAB_PILL_RADIUS,
-              backgroundColor: SELECTED_TAB_PILL_COLOR,
+              backgroundColor: colors.tabBarSelectedPill,
               transform: [
                 { translateX: pillTranslateX },
                 { scaleX: pillScaleX },
@@ -785,7 +786,7 @@ export default function TabsLayout() {
           }}
         >
           {visibleRoutes.map((route: any) => {
-            const meta = TAB_META[route.name];
+            const meta = getTabMeta(colors.cardIconTint)[route.name];
 
             // FAB center button
             if (route.name === 'fab-action') {
@@ -824,8 +825,8 @@ export default function TabsLayout() {
                         transform: [{ rotate: fabRotateInterpolate }],
                       }}
                     >
-                      <View style={{ position: 'absolute', width: 19.2, height: 2.88, borderRadius: 1.44, backgroundColor: '#2F3031' }} />
-                      <View style={{ position: 'absolute', width: 2.88, height: 19.2, borderRadius: 1.44, backgroundColor: '#2F3031' }} />
+                      <View style={{ position: 'absolute', width: 19.2, height: 2.88, borderRadius: 1.44, backgroundColor: colors.fabIconBg }} />
+                      <View style={{ position: 'absolute', width: 2.88, height: 19.2, borderRadius: 1.44, backgroundColor: colors.fabIconBg }} />
                     </RNAnimated.View>
                   </RNAnimated.View>
                 </Pressable>
@@ -843,6 +844,7 @@ export default function TabsLayout() {
                 label={meta.label}
                 icon={meta.icon}
                 selected={activeTabIndex === tabIdx}
+                labelColor={colors.primaryLight}
                 scaleAnim={tabScales[tabIdx]}
                 onTabPressIn={() => handleTabPressIn(tabIdx)}
                 onTabPressOut={() => handleTabPressOut(tabIdx)}
@@ -865,6 +867,7 @@ export default function TabsLayout() {
       </RNAnimated.View>
     );
   }, [
+    colors,
     streakShiftX,
     barScale, barTranslateY, barOpacity,
     pillTranslateX, pillScaleX, pillScaleY, pillOpacity,
@@ -876,16 +879,16 @@ export default function TabsLayout() {
 
   return (
     <StreakShiftContext.Provider value={streakShiftX}>
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: colors.primaryDark }}>
       <Tabs
         initialRouteName="nutrition"
         detachInactiveScreens={false}
         tabBar={(props) => <TabBarPropsCapture props={props} onCapture={setTabBarProps} />}
         screenOptions={{
           headerStyle: {
-            backgroundColor: Colors.primaryDark,
+            backgroundColor: colors.primaryDark,
           },
-          headerTintColor: Colors.white,
+          headerTintColor: theme === 'light' ? colors.primaryLight : colors.white,
           headerTitleStyle: {
             fontSize: Typography.h1,
             fontWeight: Typography.weights.bold,
@@ -937,6 +940,11 @@ export default function TabsLayout() {
             emitProfileSheetState(false);
             setShowProfile(false);
           }}
+          onPreferencesPress={() => {
+            emitProfileSheetState(false);
+            setShowProfile(false);
+            router.push('/preferences');
+          }}
         />
       )}
 
@@ -972,7 +980,7 @@ export default function TabsLayout() {
             >
               <BlurView
                 intensity={15}
-                tint="dark"
+                tint={theme === 'light' ? 'light' : 'dark'}
                 style={StyleSheet.absoluteFill}
                 {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
               />
@@ -997,11 +1005,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <BookmarkSimple size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>saved foods</Text>
+                          <BookmarkSimple size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>saved foods</Text>
                         </View>
                       </View>
                     </View>
@@ -1010,11 +1018,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card1Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('search')} onPressIn={() => cardPressIn(1)} onPressOut={() => cardPressOut(1)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <MagnifyingGlass size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>search food</Text>
+                          <MagnifyingGlass size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>search food</Text>
                         </View>
                       </View>
                     </View>
@@ -1023,11 +1031,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card2Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('scan')} onPressIn={() => cardPressIn(2)} onPressOut={() => cardPressOut(2)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <BarcodeIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>scan food</Text>
+                          <BarcodeIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>scan food</Text>
                         </View>
                       </View>
                     </View>
@@ -1039,11 +1047,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('tmlsn')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: undefined }} resizeMode="contain" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>tmlsn workouts</Text>
+                          <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: colors.cardIconTint }} resizeMode="contain" />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>tmlsn workouts</Text>
                         </View>
                       </View>
                     </View>
@@ -1052,11 +1060,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card4Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('your-routines')} onPressIn={() => cardPressIn(4)} onPressOut={() => cardPressOut(4)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <BarbellIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>your workouts</Text>
+                          <BarbellIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>your workouts</Text>
                         </View>
                       </View>
                     </View>
@@ -1065,11 +1073,11 @@ export default function TabsLayout() {
                 <RNAnimated.View style={[card5Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('empty')} onPressIn={() => cardPressIn(5)} onPressOut={() => cardPressOut(5)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={POPUP_PILL_BORDER_GRADIENT} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={popupStyles.pillShell}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <PlayIcon size={POPUP_PILL_ICON_SIZE} color="#FFFFFF" />
-                          <Text style={popupStyles.pillLabel} numberOfLines={1}>empty workout</Text>
+                          <PlayIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>empty workout</Text>
                         </View>
                       </View>
                     </View>
@@ -1111,7 +1119,6 @@ const popupStyles = StyleSheet.create({
     right: POPUP_PILL_BORDER_INSET,
     bottom: POPUP_PILL_BORDER_INSET,
     borderRadius: POPUP_PILL_RADIUS - POPUP_PILL_BORDER_INSET,
-    backgroundColor: '#2E2F30',
     overflow: 'hidden',
   },
   pillInner: {

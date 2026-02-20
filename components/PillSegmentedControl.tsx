@@ -14,11 +14,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { Colors, Typography } from '../constants/theme';
+import { Typography } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
-// Calorie-card-style gradients: border + fill (same gray as calorie card, no color tint)
-const THUMB_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
-const THUMB_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 const THUMB_BORDER_INSET = 1;
 
 const PILL_RADIUS = 38;
@@ -44,15 +42,22 @@ interface PillSegmentedControlProps {
 const DRAG_THRESHOLD = 0.25; // fraction of segment width to commit switch
 const VELOCITY_THRESHOLD = 200;
 
+const initialSegmentWidth = (w: number) => Math.max(0, (w - PILL_INSET * 2) / 2);
+
 export function PillSegmentedControl({
   value,
   onValueChange,
   width,
 }: PillSegmentedControlProps) {
+  const { colors } = useTheme();
   const selectedIndex = SEGMENTS.indexOf(value);
   const indexValue = useSharedValue(selectedIndex);
-  const segmentWidth = useSharedValue(0);
+  const segmentWidth = useSharedValue(width != null ? initialSegmentWidth(width) : 0);
   const dragOffset = useSharedValue(0);
+
+  useEffect(() => {
+    if (width != null) segmentWidth.value = initialSegmentWidth(width);
+  }, [width, segmentWidth]);
 
   useEffect(() => {
     indexValue.value = withSpring(selectedIndex, SPRING_CONFIG);
@@ -62,7 +67,7 @@ export function PillSegmentedControl({
   const onLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const w = e.nativeEvent.layout.width;
-      segmentWidth.value = (w - PILL_INSET * 2) / 2;
+      segmentWidth.value = initialSegmentWidth(w);
     },
     [segmentWidth]
   );
@@ -132,17 +137,17 @@ export function PillSegmentedControl({
       onLayout={onLayout}
     >
       <GestureDetector gesture={panGesture}>
-      <View style={styles.outerPill}>
-        {/* Sliding selected pill – calorie-card-style gradient (border + fill, gray) */}
+      <View style={[styles.outerPill, { backgroundColor: colors.primaryDarkLighter }]}>
+        {/* Sliding selected pill – theme gradients */}
         <Animated.View style={[styles.thumb, thumbStyle]}>
           <LinearGradient
-            colors={THUMB_BORDER_GRADIENT}
+            colors={colors.pillBorderGradient}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS - PILL_INSET }]}
           />
           <LinearGradient
-            colors={THUMB_FILL_GRADIENT}
+            colors={colors.pillFillGradient}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={[
@@ -156,7 +161,7 @@ export function PillSegmentedControl({
               },
             ]}
           />
-          <View style={styles.thumbGlassOverlay} />
+          <View style={[styles.thumbGlassOverlay, { borderColor: colors.primaryLight + '20' }]} />
         </Animated.View>
         {/* Segment labels */}
         <View style={styles.segmentsRow}>
@@ -171,7 +176,9 @@ export function PillSegmentedControl({
               <Text
                 style={[
                   styles.segmentText,
-                  selectedIndex === index ? styles.segmentTextSelected : styles.segmentTextUnselected,
+                  {
+                    color: selectedIndex === index ? colors.primaryLight : colors.primaryLight + '80',
+                  },
                 ]}
               >
                 {label.toLowerCase()}
@@ -195,7 +202,6 @@ const styles = StyleSheet.create({
   outerPill: {
     height: PILL_HEIGHT,
     borderRadius: PILL_RADIUS,
-    backgroundColor: '#2F3031',
     padding: PILL_INSET,
     justifyContent: 'center',
     overflow: 'hidden',
@@ -210,10 +216,9 @@ const styles = StyleSheet.create({
   },
   thumbGlassOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(128, 128, 128, 0.08)',
     borderRadius: PILL_RADIUS - PILL_INSET,
     borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   segmentsRow: {
     flexDirection: 'row',
@@ -230,11 +235,5 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: Typography.label,
     fontWeight: '500',
-  },
-  segmentTextSelected: {
-    color: Colors.white,
-  },
-  segmentTextUnselected: {
-    color: Colors.white + '80',
   },
 });

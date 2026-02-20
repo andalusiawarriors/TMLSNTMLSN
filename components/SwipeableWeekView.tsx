@@ -13,7 +13,8 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { Colors, Typography, Spacing } from '../constants/theme';
+import { Typography, Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const VELOCITY_THRESHOLD = 500;
@@ -69,10 +70,7 @@ const PILL_WIDTH = 42;
 const PILL_HEIGHT = 54;
 const PILL_RADIUS = 12;
 const DATE_CIRCLE_SIZE = 26;
-const CARD_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
-const CARD_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 const CARD_BORDER_INSET = 1;
-const UNSELECTED_BG = '#252627';
 
 function dayIndexFromX(x: number, weekWidth: number): number {
   const padding = Spacing.sm;
@@ -101,9 +99,13 @@ interface DayCellProps {
   isHovered: boolean;
   dayStatus?: DayStatus;
   onPress?: () => void;
+  cardBorderGradient: [string, string];
+  cardFillGradient: [string, string];
+  cardTextColor: string;
+  plainTextColor: string;
 }
 
-function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress }: DayCellProps) {
+function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress, cardBorderGradient, cardFillGradient, cardTextColor, plainTextColor }: DayCellProps) {
   const selectedOrHovered = isSelected || isHovered;
   const labelText = DAY_LABELS[index];
   const numText = date.getDate();
@@ -132,13 +134,13 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
         {wrap(
           <View style={[styles.dayCardSelectedWrap, { width: PILL_WIDTH, height: PILL_HEIGHT }]}>
             <LinearGradient
-              colors={CARD_BORDER_GRADIENT}
+              colors={cardBorderGradient}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
               style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
             />
             <LinearGradient
-              colors={CARD_FILL_GRADIENT}
+              colors={cardFillGradient}
               style={{
                 position: 'absolute',
                 top: CARD_BORDER_INSET,
@@ -149,8 +151,8 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
               }}
             />
             <View style={styles.dayCardInner}>
-              <Text style={styles.dayCardLabel}>{labelText}</Text>
-              {dateCircle(styles.dayCardNumber, getCircleStyle())}
+              <Text style={[styles.dayCardLabel, { color: cardTextColor }]}>{labelText}</Text>
+              {dateCircle([styles.dayCardNumber, { color: cardTextColor }], getCircleStyle())}
             </View>
           </View>
         )}
@@ -162,8 +164,8 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
     <View style={[styles.dayColumn, isPast && { opacity: 0.7 }]}>
       {wrap(
         <View style={styles.dayCardPlain}>
-          <Text style={styles.dayCardPlainLabel}>{labelText}</Text>
-          {dateCircle(styles.dayCardPlainNumber, getCircleStyle())}
+          <Text style={[styles.dayCardPlainLabel, { color: plainTextColor }]}>{labelText}</Text>
+          {dateCircle([styles.dayCardPlainNumber, { color: plainTextColor }], getCircleStyle())}
         </View>
       )}
     </View>
@@ -181,9 +183,13 @@ interface WeekStripProps {
   hoveredDayIndex: number | null;
   dayStatusByDate?: Record<string, DayStatus>;
   onDayPress?: (date: Date) => void;
+  cardBorderGradient: [string, string];
+  cardFillGradient: [string, string];
+  cardTextColor: string;
+  plainTextColor: string;
 }
 
-const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex, dayStatusByDate, onDayPress }: WeekStripProps) => {
+const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex, dayStatusByDate, onDayPress, cardBorderGradient, cardFillGradient, cardTextColor, plainTextColor }: WeekStripProps) => {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
@@ -211,6 +217,10 @@ const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingD
             isHovered={slidingDateMode && selectedInThisWeek && hoveredDayIndex === i && !isSelected}
             dayStatus={dayStatus}
             onPress={onDayPress ? () => onDayPress(date) : undefined}
+            cardBorderGradient={cardBorderGradient}
+            cardFillGradient={cardFillGradient}
+            cardTextColor={cardTextColor}
+            plainTextColor={plainTextColor}
           />
         );
       })}
@@ -239,6 +249,7 @@ export default function SwipeableWeekView({
   showHeader = false,
   dayStatusByDate,
 }: SwipeableWeekViewProps) {
+  const { colors } = useTheme();
   const today = useMemo(() => new Date(), []);
   const [currentMonday, setCurrentMonday] = useState(() => getMonday(initialDate ?? today));
   const [internalSelectedDate, setInternalSelectedDate] = useState(initialDate ?? today);
@@ -500,20 +511,27 @@ export default function SwipeableWeekView({
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
+  const stripProps = {
+    cardBorderGradient: colors.cardBorderGradient,
+    cardFillGradient: colors.cardFillGradient,
+    cardTextColor: colors.cardIconTint,
+    plainTextColor: colors.primaryLight,
+  };
+
   return (
     <View style={styles.rootContainer}>
-      {showHeader && <Text style={styles.headerText}>{formatHeader(currentMonday)}</Text>}
+      {showHeader && <Text style={[styles.headerText, { color: colors.primaryLight }]}>{formatHeader(currentMonday)}</Text>}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.swipeContainer, { width: weekWidth }]}>
           <Animated.View style={[styles.conveyor, { width: weekWidth * 3 }, conveyorStyle]}>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, prevWeekOpacity]}>
-              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
+              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, currentWeekOpacity]}>
-              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
+              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, nextWeekOpacity]}>
-              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
+              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
             </Animated.View>
           </Animated.View>
         </Animated.View>
@@ -526,7 +544,7 @@ export default function SwipeableWeekView({
 
 const styles = StyleSheet.create({
   rootContainer: { width: '100%' },
-  headerText: { color: Colors.primaryLight, fontSize: Typography.label, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.sm, opacity: 0.7 },
+  headerText: { fontSize: Typography.label, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.sm, opacity: 0.7 },
   swipeContainer: {
     overflow: 'hidden',
     marginBottom: Spacing.md,
@@ -555,11 +573,10 @@ const styles = StyleSheet.create({
   },
   dayCardLabel: {
     fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: -0.5, color: Colors.white, paddingHorizontal: 1,
+    letterSpacing: -0.5, paddingHorizontal: 1,
   },
   dayCardNumber: {
-    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
-    color: Colors.white, marginTop: 2,
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3, marginTop: 2,
   },
   dayCardPlain: {
     alignItems: 'center', justifyContent: 'center', overflow: 'visible',
@@ -567,11 +584,10 @@ const styles = StyleSheet.create({
   },
   dayCardPlainLabel: {
     fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: -0.5, color: Colors.primaryLight, opacity: 0.7, paddingHorizontal: 1,
+    letterSpacing: -0.5, opacity: 0.7, paddingHorizontal: 1,
   },
   dayCardPlainNumber: {
-    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
-    color: Colors.primaryLight, opacity: 0.7, marginTop: 2,
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3, opacity: 0.7, marginTop: 2,
   },
   dateCircle: {
     alignItems: 'center',
@@ -580,8 +596,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   dateCircleToday: { borderColor: '#D4B896', borderWidth: 1.5 },
-  dateCircleSelected: { borderColor: 'rgba(255,255,255,0.25)' },
-  dateCirclePlain: { borderColor: 'rgba(198,198,198,0.25)' },
-  dateCircleDashedSelected: { borderColor: 'rgba(255,255,255,0.35)', borderStyle: 'dashed' },
-  dateCircleDashedPlain: { borderColor: 'rgba(198,198,198,0.4)', borderStyle: 'dashed' },
+  dateCircleSelected: { borderColor: 'rgba(128,128,128,0.5)' },
+  dateCirclePlain: { borderColor: 'rgba(128,128,128,0.35)' },
+  dateCircleDashedSelected: { borderColor: 'rgba(128,128,128,0.5)', borderStyle: 'dashed' },
+  dateCircleDashedPlain: { borderColor: 'rgba(128,128,128,0.4)', borderStyle: 'dashed' },
 });

@@ -16,6 +16,7 @@ import {
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Typography, Font } from '../../../constants/theme';
+import { useTheme } from '../../../context/ThemeContext';
 import { getUserSettings } from '../../../utils/storage';
 import { scheduleStreak6HourNotification, cancelNotification } from '../../../utils/notifications';
 import { BlurRollNumber } from '../../../components/BlurRollNumber';
@@ -125,6 +126,9 @@ const LiveBar = React.memo(function LiveBar({
   display,
   index,
   dead,
+  trackBg,
+  numColor,
+  unitColor,
 }: {
   config: { key: string; label: string };
   palette: { fill: string; glow: string };
@@ -132,6 +136,9 @@ const LiveBar = React.memo(function LiveBar({
   display: number;
   index: number;
   dead: boolean;
+  trackBg: string;
+  numColor: string;
+  unitColor: string;
 }) {
   const animPct = useRef(new Animated.Value(0)).current;
   const entrance = useRef(new Animated.Value(0)).current;
@@ -199,13 +206,13 @@ const LiveBar = React.memo(function LiveBar({
           eatenValue={eatenVal}
           isEaten={isEaten}
           trigger={rollTrigger}
-          textStyle={styles.barNum}
+          textStyle={[styles.barNum, { color: numColor }]}
           height={BAR_NUM_HEIGHT}
         />
-        <Text style={styles.barUnit}>{config.label}</Text>
+        <Text style={[styles.barUnit, { color: unitColor }]}>{config.label}</Text>
       </View>
 
-      <View style={styles.barTrack}>
+      <View style={[styles.barTrack, { backgroundColor: trackBg }]}>
         <Animated.View
           style={[styles.barFill, { backgroundColor: palette.fill, width: widthInterp }]}
         />
@@ -218,6 +225,15 @@ const LiveBar = React.memo(function LiveBar({
 const BAR_H = 42;
 
 export default function StreakScreen() {
+  const { colors } = useTheme();
+  const themePalette = React.useMemo(() => [
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+    { fill: colors.primaryLight, glow: colors.primaryLight + '50' },
+  ], [colors.primaryLight]);
   const [streakStart, setStreakStart] = useState<Date | null>(null);
   const [lastWorkout, setLastWorkout] = useState<Date | null>(null);
   const [exemptWeek, setExemptWeek] = useState<string | null>(null);
@@ -352,21 +368,21 @@ export default function StreakScreen() {
   const exemptThisWeek = exemptWeek === getWeekKey(new Date());
   const cdUrgent = countdown < 3600;
   const cdWarning = !cdUrgent && countdown < 10800;
-  const cdColor = cdUrgent ? Colors.accentRed : cdWarning ? Colors.primaryLight : Colors.primaryLight;
+  const cdColor = cdUrgent ? colors.accentRed : colors.primaryLight;
   const cdPct = (countdown / COUNTDOWN_TOTAL) * 100;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
       <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-      <View style={styles.widget}>
+      <View style={[styles.widget, { backgroundColor: colors.primaryDark }]}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>
+          <Text style={[styles.title, { color: colors.primaryLight }]}>
             {streakDead
               ? "your streak ended"
               : !streakStart
@@ -381,45 +397,48 @@ export default function StreakScreen() {
             <LiveBar
               key={cfg.key}
               config={cfg}
-              palette={PALETTE[i]}
+              palette={themePalette[i]}
               frac={barData ? barData.frac[cfg.key as keyof typeof barData.frac] : 0}
               display={barData ? barData.display[cfg.key as keyof typeof barData.display] : 0}
               index={i}
               dead={streakDead}
+              trackBg={colors.primaryDarkLighter}
+              numColor={colors.primaryLight}
+              unitColor={colors.primaryLight + '99'}
             />
           ))}
         </View>
 
         {/* Next reset on top, rest day below */}
         <View style={styles.widgetsCol}>
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>next reset</Text>
+            <View style={[styles.card, { backgroundColor: colors.primaryDark }]}>
+              <Text style={[styles.cardEyebrow, { color: colors.primaryLight + '99' }]}>next reset</Text>
               <Text style={[styles.cdValue, { color: cdColor }]}>
                 {formatCountdown(countdown)}
               </Text>
-              <View style={styles.cdTrack}>
+              <View style={[styles.cdTrack, { backgroundColor: colors.primaryLight + '30' }]}>
                 <View
                   style={[styles.cdFill, { width: `${cdPct}%`, backgroundColor: cdColor }]}
                 />
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>rest day</Text>
+            <View style={[styles.card, { backgroundColor: colors.primaryDark }]}>
+              <Text style={[styles.cardEyebrow, { color: colors.primaryLight + '99' }]}>rest day</Text>
               {!exemptThisWeek ? (
                 <TouchableOpacity
-                  style={styles.rdBtn}
+                  style={[styles.rdBtn, { backgroundColor: colors.primaryLight }]}
                   onPress={useRestDay}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.rdBtnText}>use</Text>
+                  <Text style={[styles.rdBtnText, { color: colors.primaryDark }]}>use</Text>
                 </TouchableOpacity>
               ) : (
-                <View style={styles.rdDone}>
-                  <Text style={styles.rdDoneText}>✓</Text>
+                <View style={[styles.rdDone, { borderColor: colors.primaryLight }]}>
+                  <Text style={[styles.rdDoneText, { color: colors.primaryLight }]}>✓</Text>
                 </View>
               )}
-              <Text style={styles.cardNote}>1× week</Text>
+              <Text style={[styles.cardNote, { color: colors.primaryLight + '50' }]}>1× week</Text>
             </View>
         </View>
 
@@ -428,7 +447,7 @@ export default function StreakScreen() {
           onPress={resetStreak}
           activeOpacity={0.8}
         >
-          <Text style={styles.resetLabel}>reset streak</Text>
+          <Text style={[styles.resetLabel, { color: colors.primaryLight + '50' }]}>reset streak</Text>
         </TouchableOpacity>
 
         {__DEV__ && (
@@ -437,7 +456,7 @@ export default function StreakScreen() {
             onPress={() => scheduleStreak6HourNotification()}
             activeOpacity={0.8}
           >
-            <Text style={styles.resetLabel}>test 6h notification</Text>
+            <Text style={[styles.resetLabel, { color: colors.primaryLight + '50' }]}>test 6h notification</Text>
           </TouchableOpacity>
         )}
       </View>

@@ -1,10 +1,11 @@
 import { Stack, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Pressable, Text } from 'react-native';
-import { Colors } from '../../../constants/theme';
+import { useTheme } from '../../../context/ThemeContext';
 
 export default function WorkoutLayout() {
   const router = useRouter();
+  const { colors } = useTheme();
 
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -14,10 +15,10 @@ export default function WorkoutLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: Colors.primaryDark },
-        headerTintColor: Colors.primaryLight,
+        headerStyle: { backgroundColor: colors.primaryDark },
+        headerTintColor: colors.primaryLight,
         headerBackVisible: false,
-        contentStyle: { backgroundColor: Colors.primaryDark },
+        contentStyle: { backgroundColor: colors.primaryDark },
         animation: 'slide_from_right',
         animationDuration: 220,
         headerLeft: () => (
@@ -36,7 +37,7 @@ export default function WorkoutLayout() {
             ]}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Text style={{ color: Colors.primaryLight, fontSize: 15 }}>‹ Back</Text>
+            <Text style={{ color: colors.primaryLight, fontSize: 15 }}>‹ Back</Text>
           </Pressable>
         ),
       }}

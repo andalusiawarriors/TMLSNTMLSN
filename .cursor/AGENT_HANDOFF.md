@@ -39,6 +39,9 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/_layout.tsx` – theme: container bg, tab PNG tintColor (getTabMeta), popup pills icon/label colors, BlurView tint
+- `app/(tabs)/index.tsx`, `profile.tsx`, `prompts.tsx` – theme: backgrounds, text colors, modal content
+- `app/(tabs)/workout/index.tsx` – theme: container, settings pill, progress modal, exercise menu
 - `app/search-food.tsx` – layout from reference: search bar (magnifying glass, clear X), History tabs (All/My Meals/My Recipes/My Foods), action buttons (Barcode scan, Meal scan only), History cards (layout only, no ingredient names); background Colors.primaryDark to match workout full screen; synced to obh worktree
 - `components/PillSegmentedControl.tsx` – toggle thumb: calorie-card-style gradient (border + fill) tinted Nutrition=red, Fitness=blue
 - `components/ProfileSheet.tsx` – title "profile" (lowercase), Typography.h2/fontWeight 600/letterSpacing -0.11; full-screen overlay (no Modal, no bottom barrier); scroll bottom padding so content scrolls above tab bar; synced to obh
@@ -58,6 +61,17 @@
 - `app/(tabs)/nutrition.tsx` – top-left pill flame icon, pull-to-refresh flywheel, card swipe day animation, TMLSN AI logo, FAB popup close sound (Person 2)
 - `app/(tabs)/_layout.tsx` – Home tab in center pill (4 tabs: TMLSN CAL, Home, WORKOUT TRACKER, PROMPTS)
 - `app/(tabs)/index.tsx` – Home page (TMLSN title + subtitle)
+- `app/(tabs)/nutrition.tsx` – Edit Goals modal: theme-aware modalContent bg, modalTitle; StyleSheet colors reverted to Colors (inline overrides handle theme)
+- `components/Input.tsx` – theme-aware: label, input bg/border/text, placeholder use useTheme colors
+- `app/(tabs)/workout/index.tsx` – Explore: pageHeading, progress/achievements cards (cardIconTint), Progress modal (stats pills, session cards, empty state), swipe dot
+- `app/(tabs)/workout/statistics.tsx` – container bg theme-aware; MuscleBodyHeatmap already themed
+- `app/(tabs)/workout/tmlsn-routines.tsx` – full theme: screen title, routine cards (cardIcon/cardTitle/cardStat/chevron), exercise rows, start button
+- `app/(tabs)/workout/your-routines.tsx` – full theme: container, screen title, new routine button, empty state, routine cards, builder overlay (top bar, exercise blocks, add button)
+- `app/(tabs)/workout/settings.tsx` – full theme: container, loading, labels, hints, segment buttons, option chips, switches
+- `app/(tabs)/workout/index.tsx` – exercise overlay: overlay bg, top bar, summary stats, rest timer panel, exercise blocks, set rows, add set/add exercise buttons
+- `components/ExercisePickerModal.tsx` – full theme: modal, title, close, search, chips, rows, empty
+- `components/BackButton.tsx` – theme: pill gradients, icon color
+- `app/tmlsn-routines-modal.tsx` – wrapper bg theme-aware
 
 ---
 
