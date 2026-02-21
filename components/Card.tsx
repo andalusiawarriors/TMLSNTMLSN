@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, BorderRadius, Spacing, Shadows } from '../constants/theme';
 
@@ -11,7 +11,7 @@ const CARD_BORDER_RADIUS = BorderRadius.lg; // 16, matches nutrition cards
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   /** When true, uses bottom-pill-style border + gradient fill (no spacing/centering change) */
   gradientFill?: boolean;
   /** Override border radius when gradientFill (e.g. 38 for workout cards) */

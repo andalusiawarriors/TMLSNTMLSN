@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   Image,
+  ImageBackground,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -46,12 +47,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import { Asset } from 'expo-asset';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
@@ -74,11 +75,14 @@ import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
+import { isObviouslyBranded } from '../../utils/foodFilters';
+import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
 import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
+import { CalendarOverlay } from '../../components/CalendarOverlay';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -139,6 +143,7 @@ export default function NutritionScreen({
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
+  const [showCalendar, setShowCalendar] = useState(false);
   // Reset page when switching segment
   useEffect(() => {
     setNutritionPage(0);
@@ -161,11 +166,6 @@ export default function NutritionScreen({
   const profilePillScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profilePillScale.value }],
   }));
-  const calendarPillScale = useSharedValue(1);
-  const calendarPillScaleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: calendarPillScale.value }],
-  }));
-
   const isEaten = useSharedValue(0);
   const rollTrigger = useSharedValue(0);
 
@@ -406,6 +406,14 @@ export default function NutritionScreen({
       shouldPlayInBackground: false,
       interruptionMode: 'duckOthers',
     }).catch(() => {});
+  }, []);
+
+  // Preload card sounds so they work in Expo Go (assets may not be ready otherwise)
+  useEffect(() => {
+    Asset.loadAsync([
+      require('../../assets/sounds/card-press-in.mp4'),
+      require('../../assets/sounds/card-press-out.mp4'),
+    ]).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -667,14 +675,30 @@ export default function NutritionScreen({
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     if (!query.trim()) { setFoodSearchResults([]); return; }
     searchTimeoutRef.current = setTimeout(async () => {
+      // Instantly show cached matches from history
+      const cached = await searchFoodHistory(query);
+      if (cached.length > 0) {
+        setFoodSearchResults(cached);
+      }
       setFoodSearchLoading(true);
-      const results = await searchFoods(query);
-      setFoodSearchResults(results);
-      setFoodSearchLoading(false);
+      try {
+        const list = await searchFoods(query);
+        const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
+        const apiOnly = list.filter((f) => !historyNames.has(f.name.toLowerCase()));
+        setFoodSearchResults([...cached, ...apiOnly]);
+      } catch (err) {
+        if (cached.length === 0) {
+          setFoodSearchResults([]);
+        }
+        // Keep cached results on API failure
+      } finally {
+        setFoodSearchLoading(false);
+      }
     }, 500);
   }, []);
 
   const handleSelectFood = (food: ParsedNutrition) => {
+    addToFoodHistory(food);
     setShowFoodSearch(false);
     fillAndShowForm(food);
   };
@@ -754,8 +778,8 @@ export default function NutritionScreen({
       return;
     }
 
-    const result = await ImagePicker.launchImagePickerAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.7,
@@ -994,10 +1018,19 @@ export default function NutritionScreen({
   });
 
   const insets = useSafeAreaInsets();
-  const headerTop = insets.top + 19;
+  const headerTop = 54;
+  const headerMeasureRef = useRef<View>(null);
+  const onHeaderLayout = useCallback(() => {
+    headerMeasureRef.current?.measureInWindow((x, y) => {
+      fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:onHeaderLayout',message:'Header measured Y',data:{measuredY:y,headerTop,insetsTop:insets.top,expectedY:insets.top+19,gapFromNotch:y-insets.top},timestamp:Date.now(),hypothesisId:'measure'})}).catch(()=>{});
+    });
+  }, [headerTop, insets.top]);
   const calorieCardLeft = CONTENT_PADDING + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
   const TOP_RIGHT_CIRCLE_SIZE = 40;
   const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2;
+  const HEADER_PILL_SIZE = TOP_RIGHT_CIRCLE_SIZE; // 40 — circles, same y line as profile
+  const HEADER_PILL_RADIUS = HEADER_PILL_SIZE / 2;
+  const PILL_TO_DATE_GAP = 8;
   const prevDay = useMemo(() => {
     const d = new Date(viewingDate + 'T12:00:00');
     d.setDate(d.getDate() - 1);
@@ -1014,62 +1047,19 @@ export default function NutritionScreen({
       {!asModal && (
       <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Layered mesh gradient background: champagne circles + specular + dark fade */}
-        <View style={styles.homeBackgroundImage} pointerEvents="none">
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#2F3031' }]} />
-          {/* Layer 1: Mesh gradient — 3 champagne circles */}
-          <View
-            style={{
-              position: 'absolute',
-              left: -SCREEN_WIDTH * 0.3,
-              top: -SCREEN_HEIGHT * 0.15,
-              width: SCREEN_WIDTH * 1.2,
-              height: SCREEN_WIDTH * 1.2,
-              borderRadius: 9999,
-              backgroundColor: 'rgba(212, 184, 150, 0.15)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              right: -SCREEN_WIDTH * 0.4,
-              top: SCREEN_HEIGHT * 0.2,
-              width: SCREEN_WIDTH * 1.0,
-              height: SCREEN_WIDTH * 1.0,
-              borderRadius: 9999,
-              backgroundColor: 'rgba(168, 137, 94, 0.12)',
-            }}
-          />
-          <View
-            style={{
-              position: 'absolute',
-              left: -SCREEN_WIDTH * 0.2,
-              bottom: -SCREEN_HEIGHT * 0.2,
-              width: SCREEN_WIDTH * 1.4,
-              height: SCREEN_WIDTH * 1.4,
-              borderRadius: 9999,
-              backgroundColor: 'rgba(212, 184, 150, 0.10)',
-            }}
-          />
-          <BlurView
-            intensity={80}
-            tint="dark"
-            {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-            style={StyleSheet.absoluteFill}
-          />
-          {/* Layer 2: Specular sweep */}
-          <LinearGradient
-            colors={['transparent', 'rgba(180, 180, 180, 0.06)', 'rgba(200, 200, 200, 0.09)', 'rgba(180, 180, 180, 0.06)', 'transparent']}
-            start={{ x: 0, y: 0.3 }}
-            end={{ x: 1, y: 0.6 }}
-            style={StyleSheet.absoluteFill}
-          />
-          {/* Layer 3: Dark fade-down — reaches #2F3031, then #1a1a1a much earlier to nav bar */}
-          <LinearGradient
-            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-            locations={[0, 0.2, 0.35, 0.45, 0.65]}
-            style={StyleSheet.absoluteFill}
-          />
+        {/* Background: picture + bottom gradient to black only */}
+        <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
+          <ImageBackground
+            source={require('../../assets/home-bg.png')}
+            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, position: 'absolute', top: 0, left: 0 }}
+            resizeMode="cover"
+          >
+            <LinearGradient
+              colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+              locations={[0, 0.2, 0.35, 0.45, 0.65]}
+              style={StyleSheet.absoluteFill}
+            />
+          </ImageBackground>
         </View>
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
@@ -1101,41 +1091,35 @@ export default function NutritionScreen({
           { paddingTop: headerTop + 40 },
         ]}
       >
-        {/* Top-left pill — fire streak */}
+        {/* Top-left pill — fire streak (circle, 0 superimposed on fire) */}
         <Pressable
+          ref={headerMeasureRef}
+          onLayout={onHeaderLayout}
           style={{
             position: 'absolute',
             top: headerTop,
             left: calorieCardLeft,
             zIndex: 10,
-            width: 60,
-            height: 40,
+            width: HEADER_PILL_SIZE,
+            height: HEADER_PILL_SIZE,
           }}
           onPressIn={() => { streakPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
           onPressOut={() => { streakPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
           onPress={() => setFireStreakPopupVisible(true)}
         >
-
-
-
-
-
-
-          <Animated.View style={[{ width: 60, height: 40 }, streakPillScaleStyle]}>
+          <Animated.View style={[{ width: HEADER_PILL_SIZE, height: HEADER_PILL_SIZE }, streakPillScaleStyle]}>
             <View
               style={{
-                width: 60,
-                height: 40,
-                borderRadius: 28,
+                width: HEADER_PILL_SIZE,
+                height: HEADER_PILL_SIZE,
+                borderRadius: HEADER_PILL_RADIUS,
                 overflow: 'hidden',
               }}
             >
-              {/* Border gradient (same idea as bottom pill) */}
               <LinearGradient
                 colors={['#4E4F50', '#4A4B4C']}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: HEADER_PILL_RADIUS }}
               />
-              {/* Fill gradient */}
               <LinearGradient
                 colors={['#363738', '#2E2F30']}
                 style={{
@@ -1144,9 +1128,10 @@ export default function NutritionScreen({
                   left: 1,
                   right: 1,
                   bottom: 1,
-                  borderRadius: 27,
+                  borderRadius: HEADER_PILL_RADIUS - 1,
                 }}
               />
+              {/* Fire centered (3–4% bigger), 0 superimposed slightly lower */}
               <View
                 style={{
                   position: 'absolute',
@@ -1154,47 +1139,28 @@ export default function NutritionScreen({
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 2.9,
                 }}
               >
-                <View
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2.9, transform: [{ translateX: -0.17 }] }}
-                >
-                  <Image
-                    source={require('../../assets/firestreakhomepage.png')}
-                    style={{ width: 19, height: 19 }}
-                    resizeMode="contain"
-                  />
-                  <Text style={[styles.caloriesLeftValue, { fontSize: 13, color: '#C6C6C6', letterSpacing: 13 * -0.03 }]}>0</Text>
+                <Image
+                  source={require('../../assets/firestreakhomepage.png')}
+                  style={{ width: 23, height: 23 }}
+                  resizeMode="contain"
+                />
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: '#ffffff',
+                      letterSpacing: 14 * -0.03,
+                      transform: [{ translateY: 2 }],
+                    }}
+                  >
+                    0
+                  </Text>
                 </View>
-              </View>
-            </View>
-          </Animated.View>
-        </Pressable>
-
-        {/* Calendar pill — left of profile */}
-        <Pressable
-          style={{
-            position: 'absolute',
-            top: headerTop,
-            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8,
-            zIndex: 10,
-            width: 60,
-            height: 40,
-          }}
-          onPressIn={() => { calendarPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPressOut={() => { calendarPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPress={() => { /* calendar action placeholder */ }}
-        >
-          <Animated.View style={[{ width: 60, height: 40 }, calendarPillScaleStyle]}>
-            <View style={{ width: 60, height: 40, borderRadius: 28, overflow: 'hidden' }}>
-              <LinearGradient colors={['#4E4F50', '#4A4B4C']} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }} />
-              <LinearGradient colors={['#363738', '#2E2F30']} style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 27 }} />
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="calendar-outline" size={17} color="#C6C6C6" />
               </View>
             </View>
           </Animated.View>
@@ -1261,32 +1227,33 @@ export default function NutritionScreen({
           </Animated.View>
         </Pressable>
 
-        {/* Date row — centered in space between fire streak and calendar pills */}
+        {/* Date row — arrows 10px from date, centered */}
         <View
           style={{
             position: 'absolute',
             top: headerTop,
-            left: calorieCardLeft + 60 + 8,
-            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8 + 60 + 8,
+            left: calorieCardLeft + HEADER_PILL_SIZE + PILL_TO_DATE_GAP,
+            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + PILL_TO_DATE_GAP,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
+            gap: 10,
             zIndex: 10,
-            height: 40,
+            height: HEADER_PILL_SIZE,
           }}
           pointerEvents="box-none"
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 6 }} hitSlop={8}>
-              <Ionicons name="chevron-back" size={14} color={Colors.primaryLight} />
-            </Pressable>
-            <Text style={{ fontSize: 11, color: Colors.primaryLight, marginHorizontal: 4, fontWeight: '500' }}>
+          <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 1 }} hitSlop={8}>
+            <Ionicons name="chevron-back" size={16} color={Colors.primaryLight} />
+          </Pressable>
+          <Pressable onPress={() => setShowCalendar(true)} style={{ padding: 4 }} hitSlop={8}>
+            <Text style={{ fontSize: 14, color: Colors.primaryLight, fontWeight: '500' }}>
               {viewingDateAsDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
             </Text>
-            <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 6 }} hitSlop={8}>
-              <Ionicons name="chevron-forward" size={14} color={Colors.primaryLight} />
-            </Pressable>
-          </View>
+          </Pressable>
+          <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 1 }} hitSlop={8}>
+            <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
+          </Pressable>
         </View>
         <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger}>
         {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
@@ -1332,11 +1299,11 @@ export default function NutritionScreen({
               </View>
             </ScrollView>
             <View style={styles.paginationDots}>
-              <View style={[styles.dot, fitnessCardPage === 0 && styles.dotActive]} />
-              <View style={[styles.dot, fitnessCardPage === 1 && styles.dotActive]} />
+              <View style={[styles.dot, fitnessCardPage === 0 ? styles.dotActive : undefined]} />
+              <View style={[styles.dot, fitnessCardPage === 1 ? styles.dotActive : undefined]} />
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
             </View>
             {/* Recently uploaded – below toggle */}
             <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
@@ -1568,21 +1535,20 @@ export default function NutritionScreen({
                 </View>
               </View>
             </ScrollView>
-                )}
           </View>
-            )}
+        )}
 
             {/* Nutrition carousel dots — macros | electrolytes+health score */}
             <View style={[styles.paginationDots, { marginBottom: Spacing.xs }]}>
               <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(0); }} style={{ padding: 12, margin: -12 }}>
-                <View style={[styles.dot, nutritionPage === 0 && styles.dotActive]} />
+                <View style={[styles.dot, nutritionPage === 0 ? styles.dotActive : undefined]} />
               </Pressable>
               <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(1); }} style={{ padding: 12, margin: -12 }}>
-                <View style={[styles.dot, nutritionPage === 1 && styles.dotActive]} />
+                <View style={[styles.dot, nutritionPage === 1 ? styles.dotActive : undefined]} />
               </Pressable>
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
             </View>
             {/* Recently uploaded – below toggle */}
             <View>
@@ -1616,16 +1582,7 @@ export default function NutritionScreen({
             </View>
           </View>
 
-            <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, blurOverlayStyle]} pointerEvents="none">
-              <BlurView
-                intensity={100}
-                tint="dark"
-                {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-                style={StyleSheet.absoluteFill}
-              />
-              {/* Strong frosted tint so diffuse/out-of-focus is visible even when native blur is subtle */}
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.72)' }]} />
-            </Animated.View>
+            {/* Blur overlay hidden — was blocking background image on some platforms; blur-to-focus disabled */}
           </View>
           </Animated.View>
         </Animated.View>
@@ -1642,11 +1599,11 @@ export default function NutritionScreen({
         onRequestClose={closeFireStreakPopup}
         statusBarTranslucent
       >
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}>
-          <Pressable
-            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'transparent', zIndex: 0 }]}
-            onPress={closeFireStreakPopup}
-          />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent', zIndex: 100000, elevation: 100000, overflow: 'visible' }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeFireStreakPopup}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.5)' }]} />
+          </Pressable>
           <RNAnimated.View
             pointerEvents="box-none"
             collapsable={false}
@@ -1659,73 +1616,33 @@ export default function NutritionScreen({
               zIndex: 1,
               elevation: 20,
               transform: [{ translateX: fireStreakSlideX }],
+              overflow: 'visible',
             }}
           >
-            <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
-              <Svg width={SCREEN_WIDTH} height={SCREEN_HEIGHT} style={StyleSheet.absoluteFill}>
-                <Defs>
-                  <RadialGradient id="streakBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
-                    <Stop offset="0" stopColor="#2f3031" />
-                    <Stop offset="1" stopColor="#1a1a1a" />
-                  </RadialGradient>
-                </Defs>
-                <Rect x="0" y="0" width={SCREEN_WIDTH} height={SCREEN_HEIGHT} fill="url(#streakBgGrad)" />
-              </Svg>
-            </View>
-            <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: Spacing.lg }}>
-              {/* Header: back, title, share */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: 16,
-                  paddingTop: 16,
-                  paddingBottom: 24,
+            <View style={{ flex: 1, overflow: 'visible' }}>
+              <ScrollView
+                style={{ flex: 1, overflow: 'visible' }}
+                contentContainerStyle={{
+                  paddingTop: insets.top + 16,
+                  paddingBottom: 120 + insets.bottom,
+                  paddingHorizontal: Spacing.lg,
                 }}
+                showsVerticalScrollIndicator={false}
               >
-                <TouchableOpacity
-                  onPress={closeFireStreakPopup}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Ionicons name="arrow-back" size={18} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
+                {/* Milestones title — scrolls with content */}
                 <Text
                   style={{
                     fontSize: Typography.h1,
                     fontWeight: '700',
                     letterSpacing: -0.11,
                     color: Colors.primaryLight,
+                    marginBottom: Spacing.xl,
+                    textAlign: 'center',
+                    alignSelf: 'center',
                   }}
                 >
-                  Milestones
+                  milestones
                 </Text>
-                <TouchableOpacity
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingBottom: 120 }}
-                showsVerticalScrollIndicator={false}
-              >
                 {/* Day Streak + Badges Earned row */}
                 <View
                   style={{
@@ -1904,10 +1821,64 @@ export default function NutritionScreen({
                   ))}
                 </View>
               </ScrollView>
+              {/* Back and share — fixed, overlap everything, always on top */}
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingHorizontal: Spacing.lg,
+                  paddingTop: insets.top + 8,
+                  zIndex: 100,
+                  elevation: 100,
+                  pointerEvents: 'box-none',
+                }}
+              >
+                <TouchableOpacity
+                  onPress={closeFireStreakPopup}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="arrow-back" size={18} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+                <View style={{ width: 32 }} />
+                <TouchableOpacity
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: 'rgba(255,255,255,0.08)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              </View>
             </View>
           </RNAnimated.View>
         </View>
       </Modal>
+
+      <CalendarOverlay
+        visible={showCalendar}
+        onClose={() => setShowCalendar(false)}
+        selectedDate={viewingDateAsDate}
+        onSelectDate={(date) => {
+          handleSelectDate(toDateString(date));
+          setShowCalendar(false);
+        }}
+      />
       </>
       )}
 
@@ -2038,29 +2009,48 @@ export default function NutritionScreen({
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
                   <View style={styles.foodSearchCardLeft}>
-                    {item.brand ? (
-                      <Text style={styles.foodSearchBrand} numberOfLines={1} ellipsizeMode="tail">
-                        {item.brand}
-                      </Text>
-                    ) : (
-                      <MaskedView
-                        maskElement={
-                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
-                            tmlsn basics
+                    {(() => {
+                      const brandLabel = (item.brand && item.brand.trim())
+                        ? item.brand
+                        : isObviouslyBranded(item.name)
+                          ? ''
+                          : 'TMLSN BASICS';
+                      if (brandLabel === 'TMLSN BASICS') {
+                        const TMLSN_BASICS_CHECKMARK_SIZE = 14;
+                        return (
+                          <View style={styles.foodSearchTmlsnBasicsRow}>
+                            <MaskedView
+                              maskElement={
+                                <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
+                                  tmlsn basics
+                                </Text>
+                              }
+                            >
+                              <LinearGradient
+                                colors={['#D4B896', '#A8895E']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                              >
+                                <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { opacity: 0 }]}>
+                                  tmlsn basics
+                                </Text>
+                              </LinearGradient>
+                            </MaskedView>
+                            <View style={styles.foodSearchTmlsnBasicsCheckmarkWrap}>
+                              <Ionicons name="checkmark-circle" size={TMLSN_BASICS_CHECKMARK_SIZE} color="#D4B896" />
+                            </View>
+                          </View>
+                        );
+                      }
+                      if (brandLabel) {
+                        return (
+                          <Text style={styles.foodSearchBrand} numberOfLines={1} ellipsizeMode="tail">
+                            {brandLabel}
                           </Text>
-                        }
-                      >
-                        <LinearGradient
-                          colors={['#D4B896', '#A8895E']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                        >
-                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { opacity: 0 }]}>
-                            tmlsn basics
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                    )}
+                        );
+                      }
+                      return null;
+                    })()}
                     <Text style={styles.foodSearchName} numberOfLines={1} ellipsizeMode="tail">
                       {item.name}
                     </Text>
@@ -2840,10 +2830,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.3,
   },
+  foodSearchTmlsnBasicsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  foodSearchTmlsnBasicsCheckmarkWrap: {
+    marginLeft: 3,
+  },
   foodSearchName: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.white,
+  },
+  foodSearchMacros: {
+    fontSize: 12,
+    color: Colors.primaryLight,
+    marginTop: 2,
   },
   foodSearchMacrosRow: {
     flexDirection: 'row',

@@ -1,5 +1,19 @@
 // Dual-source food API: Open Food Facts (global branded) + USDA (US generic)
-import { filterResults, filterSingleFood } from './foodFilters';
+import { filterResults, filterSingleFood, isObviouslyBranded, KNOWN_BRAND_KEYWORDS, latinRatio } from './foodFilters';
+import { translateFoodName, translateToEnglish } from './translateQuery';
+
+// expo-localization requires a native rebuild (npx expo run:ios). Until then, skip
+// translation to avoid "Cannot find native module 'ExpoLocalization'" in Expo Go.
+async function getDeviceLanguage(): Promise<string> {
+  return 'en';
+  // To enable: run npx expo run:ios, then uncomment:
+  // try {
+  //   const { getLocales } = await import('expo-localization');
+  //   return getLocales()[0]?.languageCode ?? 'en';
+  // } catch {
+  //   return 'en';
+  // }
+}
 // OFF: 4M+ products, 150 countries, Lidl/Aldi/Carrefour/Mars/Twix etc. Free, 10 search/min, 100 product/min.
 // USDA: https://fdc.nal.usda.gov/api-guide — Free, 1000 req/hour.
 // Docs: https://wiki.openfoodfacts.org/API
@@ -120,8 +134,30 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
   const carbs = Math.round(n.carbohydrates_100g ?? n.carbohydrates ?? 0);
   const fat = Math.round(n.fat_100g ?? n.fat ?? 0);
 
-  const rawName = (p.product_name ?? p.product_name_en ?? p.generic_name ?? 'unknown').trim();
-  const rawBrand = (p.brands ?? '').trim();
+  const rawBrandField = (p.brands ?? '').trim();
+  const rawDescription = (p.product_name ?? p.product_name_en ?? p.generic_name ?? 'unknown').trim();
+
+  let rawBrand: string;
+  let rawName: string;
+
+  if (rawBrandField) {
+    rawBrand = rawBrandField;
+    rawName = rawDescription;
+  } else {
+    const extracted = extractBrandFromDescription(rawDescription);
+    rawBrand = extracted.brand;
+    rawName = extracted.cleanName;
+  }
+  if (!rawBrand && isObviouslyBranded(rawName)) {
+    const lower = rawName.toLowerCase();
+    for (const keyword of KNOWN_BRAND_KEYWORDS) {
+      if (lower.includes(keyword)) {
+        rawBrand = keyword;
+        break;
+      }
+    }
+  }
+
   const name = rawName.toLowerCase();
 
   return {
@@ -138,6 +174,41 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
 /* ------------------------------------------------------------------ */
 /*  USDA nutrient mapping                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Extract brand from food description if not provided in dedicated fields.
+ * Catches patterns like:
+ *   "(Archway)" — brand in parentheses
+ *   "ARCHWAY Cookies" — brand as uppercase prefix
+ *   "Brand Name, Food Item" — brand before comma when description has ALL-CAPS brand
+ */
+function extractBrandFromDescription(description: string): { brand: string; cleanName: string } {
+  // 1. Check for brand in parentheses: "Cookies, Oatmeal, (Archway)"
+  const parenMatch = description.match(/\(([^)]+)\)\s*$/);
+  if (parenMatch) {
+    const brand = parenMatch[1].trim();
+    const cleanName = description.replace(/\s*\([^)]+\)\s*$/, '').trim();
+    return { brand, cleanName };
+  }
+
+  // 2. Check for brand in parentheses anywhere: "(Archway) Cookies, Oatmeal"
+  const parenAnyMatch = description.match(/^\(([^)]+)\)\s*/);
+  if (parenAnyMatch) {
+    const brand = parenAnyMatch[1].trim();
+    const cleanName = description.replace(/^\([^)]+\)\s*/, '').trim();
+    return { brand, cleanName };
+  }
+
+  // 3. Check for ALL-CAPS prefix brand: "ARCHWAY Cookies, Oatmeal"
+  const capsMatch = description.match(/^([A-Z][A-Z\s&'./-]{1,30}?)\s+(?=[A-Z][a-z])/);
+  if (capsMatch) {
+    const brand = capsMatch[1].trim();
+    const cleanName = description.slice(brand.length).trim().replace(/^,\s*/, '');
+    return { brand, cleanName };
+  }
+
+  return { brand: '', cleanName: description };
+}
 
 const NUTRIENT_MAP: Record<string, keyof Pick<ParsedNutrition, 'calories' | 'protein' | 'carbs' | 'fat'>> = {
   '208': 'calories',
@@ -187,9 +258,41 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition {
   const carbs = Math.round(rawCarbs.value * scale);
   const fat = Math.round(rawFat.value * scale);
 
-  const rawName = naturalizeUSDAName((food.description ?? 'unknown food').trim());
-  const rawBrand = (food.brandOwner ?? food.brandName ?? '').trim();
+  const rawBrandField = (food.brandOwner ?? food.brandName ?? '').trim();
+  const rawDescription = (food.description ?? 'unknown food').trim();
+
+  let rawBrand: string;
+  let rawName: string;
+
+  if (rawBrandField) {
+    rawBrand = rawBrandField;
+    rawName = naturalizeUSDAName(rawDescription);
+  } else {
+    const extracted = extractBrandFromDescription(rawDescription);
+    rawBrand = extracted.brand;
+    rawName = naturalizeUSDAName(extracted.cleanName);
+  }
+  if (!rawBrand && isObviouslyBranded(rawName)) {
+    const lower = rawName.toLowerCase();
+    for (const keyword of KNOWN_BRAND_KEYWORDS) {
+      if (lower.includes(keyword)) {
+        rawBrand = keyword;
+        break;
+      }
+    }
+  }
+
   const name = rawName.toLowerCase();
+
+  if (__DEV__) {
+    console.log('[parseUSDA]', {
+      description: food.description,
+      brandOwner: food.brandOwner,
+      brandName: food.brandName,
+      parsedBrand: rawBrand,
+      parsedName: rawName,
+    });
+  }
 
   return {
     name,
@@ -299,6 +402,43 @@ async function searchFoodsUSDA(query: string, pageSize: number): Promise<ParsedN
 }
 
 /* ------------------------------------------------------------------ */
+/*  Dedup, scoring, and search internals                               */
+/* ------------------------------------------------------------------ */
+
+function scoreResult(item: ParsedNutrition, query: string): number {
+  let score = 0;
+  const q = query.toLowerCase().trim();
+  const words = q.split(/\s+/);
+
+  // If query is a simple food word (no brand signals), prioritize unbranded
+  const hasBrandSignal = words.some(
+    (w) => w[0] === w[0].toUpperCase() && w[0] !== w[0].toLowerCase(),
+  ) || q.includes("'s") || q.includes('brand');
+
+  if (!hasBrandSignal && !item.brand) {
+    score += 100; // push unbranded basics to top
+  }
+
+  if (hasBrandSignal && item.brand && item.brand.includes(q)) {
+    score += 80; // brand match
+  }
+
+  // Exact name match
+  if (item.name === q) score += 50;
+
+  // Name starts with query
+  if (item.name.startsWith(q)) score += 30;
+
+  // Name contains query
+  if (item.name.includes(q)) score += 10;
+
+  // Latin ratio as secondary sort factor
+  score += Math.round(latinRatio(item.name) * 5);
+
+  return score;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Public API — OFF first, USDA fallback                              */
 /* ------------------------------------------------------------------ */
 
@@ -309,41 +449,70 @@ export async function searchByBarcode(barcode: string): Promise<ParsedNutrition 
   return filterSingleFood(result);
 }
 
-/** Text search: USDA + Open Food Facts in parallel, merged (USDA first, then OFF). */
+/** Text search: USDA + Open Food Facts in parallel, merged. Non-English queries show OFF (native names) first. */
 export async function searchFoods(query: string, pageSize = 15): Promise<ParsedNutrition[]> {
   if (!query.trim()) return [];
+
   const half = Math.ceil(pageSize / 2);
-  let usda: ParsedNutrition[] = [];
-  let off: ParsedNutrition[] = [];
-  let usdaErr: unknown = null;
-  let offErr: unknown = null;
-  const [usdaRes, offRes] = await Promise.allSettled([
+
+  // Fire everything in parallel — no waiting
+  const [translateRes, usdaOrigRes, offRes] = await Promise.allSettled([
+    translateToEnglish(query),
     searchFoodsUSDA(query, half),
     searchFoodsOFF(query, half),
   ]);
-  if (usdaRes.status === 'fulfilled') usda = usdaRes.value;
-  else usdaErr = usdaRes.reason;
-  if (offRes.status === 'fulfilled') off = offRes.value;
-  else offErr = offRes.reason;
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    console.log('[foodApi] search:', query, '| USDA:', usda.length, usdaErr ? `(err: ${String(usdaErr)})` : '', '| OFF:', off.length, offErr ? `(err: ${String(offErr)})` : '');
+
+  const translated = translateRes.status === 'fulfilled' ? translateRes.value : null;
+  const usdaOrig = usdaOrigRes.status === 'fulfilled' ? usdaOrigRes.value : [];
+  const off = offRes.status === 'fulfilled' ? offRes.value : [];
+
+  // If translation returned something different, fire second USDA search
+  let usdaTranslated: ParsedNutrition[] = [];
+  if (translated && translated !== query.toLowerCase().trim()) {
+    try {
+      usdaTranslated = await searchFoodsUSDA(translated, half);
+    } catch {}
   }
+
+  // Merge: if non-English query detected, OFF first (native language names)
+  // then USDA translated results, then USDA original
+  const isNonEnglish = translated != null;
+  const ordered = isNonEnglish
+    ? [...off, ...usdaTranslated, ...usdaOrig]
+    : [...usdaOrig, ...usdaTranslated, ...off];
+
   const seen = new Set<string>();
   const merged: ParsedNutrition[] = [];
-  for (const f of [...usda, ...off]) {
+  for (const f of ordered) {
     const key = `${f.name}|${f.brand}`.toLowerCase();
     if (!seen.has(key) && merged.length < pageSize) {
       seen.add(key);
       merged.push(f);
     }
   }
+
+  merged.sort((a, b) => {
+    const aUnbranded = !a.brand || a.brand.trim() === '';
+    const bUnbranded = !b.brand || b.brand.trim() === '';
+    if (aUnbranded && !bUnbranded) return -1;
+    if (!aUnbranded && bUnbranded) return 1;
+    return 0; // preserve existing language-priority order within each group
+  });
+
   const filtered = filterResults(merged);
-  if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    if (merged.length > 0 && filtered.length === 0) {
-      console.warn('[foodApi] filter removed all', merged.length, 'results for query:', query);
-    } else if (merged.length === 0) {
-      console.warn('[foodApi] no results for query:', query, '| USDA err:', usdaErr ? String(usdaErr).slice(0, 80) : '-', '| OFF err:', offErr ? String(offErr).slice(0, 80) : '-');
-    }
+
+  // Translate USDA English names to user's language
+  const lang = await getDeviceLanguage();
+  if (lang !== 'en') {
+    await Promise.all(
+      filtered.map(async (item) => {
+        const isLikelyEnglish = /^[a-z\s,'-]+$/.test(item.name);
+        if (isLikelyEnglish) {
+          item.name = await translateFoodName(item.name, lang);
+        }
+      }),
+    );
   }
+
   return filtered;
 }

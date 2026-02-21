@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { searchFoods, ParsedNutrition } from '../utils/foodApi';
+import { isObviouslyBranded } from '../utils/foodFilters';
+import { searchFoodHistory, addToFoodHistory } from '../utils/foodHistory';
 import { Colors, Spacing } from '../constants/theme';
 import { BackButton } from '../components/BackButton';
 
@@ -34,23 +36,29 @@ export default function SearchFoodScreen() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const runSearch = useCallback((q: string) => {
+  const runSearch = useCallback(async (q: string) => {
     if (!q.trim()) {
       setResults([]);
       setSearchError(null);
       return;
     }
+    const cached = await searchFoodHistory(q);
+    if (cached.length > 0) setResults(cached);
     setLoading(true);
     setSearchError(null);
     searchFoods(q)
       .then((list) => {
-        setResults(list);
+        const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
+        const apiOnly = list.filter((f) => !historyNames.has(f.name.toLowerCase()));
+        setResults([...cached, ...apiOnly]);
         setLoading(false);
       })
       .catch((err) => {
+        if (cached.length === 0) {
+          setResults([]);
+          setSearchError(err?.message || 'Search failed');
+        }
         setLoading(false);
-        setResults([]);
-        setSearchError(err?.message || 'Search failed');
       });
   }, []);
 
@@ -61,6 +69,7 @@ export default function SearchFoodScreen() {
   };
 
   const handleSelect = (food: ParsedNutrition) => {
+    addToFoodHistory(food);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.replace({
       pathname: '/(tabs)/nutrition',
@@ -212,29 +221,48 @@ export default function SearchFoodScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={styles.historyCardLeft}>
-                    {item.brand ? (
-                      <Text style={styles.resultBrand} numberOfLines={1} ellipsizeMode="tail">
-                        {item.brand}
-                      </Text>
-                    ) : (
-                      <MaskedView
-                        maskElement={
-                          <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
-                            tmlsn basics
+                    {(() => {
+                      const brandLabel = (item.brand && item.brand.trim())
+                        ? item.brand
+                        : isObviouslyBranded(item.name)
+                          ? ''
+                          : 'TMLSN BASICS';
+                      if (brandLabel === 'TMLSN BASICS') {
+                        const TMLSN_BASICS_CHECKMARK_SIZE = 14;
+                        return (
+                          <View style={styles.tmlsnBasicsRow}>
+                            <MaskedView
+                              maskElement={
+                                <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
+                                  tmlsn basics
+                                </Text>
+                              }
+                            >
+                              <LinearGradient
+                                colors={['#D4B896', '#A8895E']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                              >
+                                <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { opacity: 0 }]}>
+                                  tmlsn basics
+                                </Text>
+                              </LinearGradient>
+                            </MaskedView>
+                            <View style={styles.tmlsnBasicsCheckmarkWrap}>
+                              <Ionicons name="checkmark-circle" size={TMLSN_BASICS_CHECKMARK_SIZE} color="#D4B896" />
+                            </View>
+                          </View>
+                        );
+                      }
+                      if (brandLabel) {
+                        return (
+                          <Text style={styles.resultBrand} numberOfLines={1} ellipsizeMode="tail">
+                            {brandLabel}
                           </Text>
-                        }
-                      >
-                        <LinearGradient
-                          colors={['#D4B896', '#A8895E']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
-                        >
-                          <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { opacity: 0 }]}>
-                            tmlsn basics
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                    )}
+                        );
+                      }
+                      return null;
+                    })()}
                     <Text style={styles.resultName} numberOfLines={1} ellipsizeMode="tail">
                       {item.name}
                     </Text>
@@ -440,6 +468,14 @@ const styles = StyleSheet.create({
     color: Colors.accentChampagne,
     fontWeight: '600',
     letterSpacing: 0.3,
+  },
+  tmlsnBasicsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  tmlsnBasicsCheckmarkWrap: {
+    marginLeft: 3,
   },
   resultName: {
     fontSize: 15,
