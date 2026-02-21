@@ -39,7 +39,10 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/_layout.tsx` – theme: container bg, tab PNG tintColor (getTabMeta), popup pills icon/label colors, BlurView tint
+- `app/_layout.tsx` – ActiveWorkoutProvider wrap
+- `app/(tabs)/_layout.tsx` – ActiveWorkoutPill above tab bar; theme: container bg, tab PNG tintColor, popup pills
+- `app/(tabs)/workout/index.tsx` – useActiveWorkout(), sync initialActiveWorkout to context
+- `context/ActiveWorkoutContext.tsx`, `components/ActiveWorkoutPill.tsx` – persistent workout pill
 - `app/(tabs)/index.tsx`, `profile.tsx`, `prompts.tsx` – theme: backgrounds, text colors, modal content
 - `app/(tabs)/workout/index.tsx` – theme: container, settings pill, progress modal, exercise menu
 - `app/search-food.tsx` – layout from reference: search bar (magnifying glass, clear X), History tabs (All/My Meals/My Recipes/My Foods), action buttons (Barcode scan, Meal scan only), History cards (layout only, no ingredient names); background Colors.primaryDark to match workout full screen; synced to obh worktree

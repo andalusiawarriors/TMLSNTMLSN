@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import {
   useFonts,
   EBGaramond_400Regular,
@@ -17,20 +17,21 @@ import { Inconsolata_400Regular } from '@expo-google-fonts/inconsolata';
 import { RobotoMono_400Regular } from '@expo-google-fonts/roboto-mono';
 import { registerForPushNotifications } from '../utils/notifications';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { ActiveWorkoutProvider } from '../context/ActiveWorkoutContext';
+import { ActiveWorkoutPill } from '../components/ActiveWorkoutPill';
 
 function RootLayoutInner() {
-  const { colors, theme } = useTheme();
-  const statusBarStyle = theme === 'light' ? 'dark' : 'light';
+  const { colors } = useTheme();
 
   return (
-    <>
-      <StatusBar style={statusBarStyle} />
+    <View style={styles.rootInner}>
+      <StatusBar style="light" />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.primaryDark },
-          headerTintColor: theme === 'light' ? colors.primaryLight : colors.white,
+          headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '600' },
-          contentStyle: { backgroundColor: theme === 'light' ? colors.primaryDark : colors.black },
+          contentStyle: { backgroundColor: colors.black },
         }}
       >
         <Stack.Screen
@@ -104,7 +105,9 @@ function RootLayoutInner() {
           }}
         />
       </Stack>
-    </>
+      {/* Active workout pill at root — visible above modals and overlay */}
+      <ActiveWorkoutPill />
+    </View>
   );
 }
 
@@ -133,7 +136,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider>
-        <RootLayoutInner />
+        <ActiveWorkoutProvider>
+          <RootLayoutInner />
+        </ActiveWorkoutProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
@@ -141,4 +146,5 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  rootInner: { flex: 1 },
 });

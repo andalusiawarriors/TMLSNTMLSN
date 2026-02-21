@@ -188,7 +188,7 @@ const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r))
 export default function TabsLayout() {
   const pathname = usePathname();
   const router = useRouter();
-  const { colors, theme } = useTheme();
+  const { colors } = useTheme();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
@@ -888,7 +888,7 @@ export default function TabsLayout() {
           headerStyle: {
             backgroundColor: colors.primaryDark,
           },
-          headerTintColor: theme === 'light' ? colors.primaryLight : colors.white,
+          headerTintColor: colors.white,
           headerTitleStyle: {
             fontSize: Typography.h1,
             fontWeight: Typography.weights.bold,
@@ -980,7 +980,7 @@ export default function TabsLayout() {
             >
               <BlurView
                 intensity={15}
-                tint={theme === 'light' ? 'light' : 'dark'}
+                tint="dark"
                 style={StyleSheet.absoluteFill}
                 {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
               />

@@ -29,7 +29,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   restTimerSound: true,
   defaultRestTimer: 120,
   defaultRestTimerEnabled: true,
-  appearanceTheme: 'dark',
 };
 
 // Nutrition Storage Functions

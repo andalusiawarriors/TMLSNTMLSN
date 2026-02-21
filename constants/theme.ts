@@ -76,36 +76,6 @@ export const DarkPalette: ColorPalette = {
   pillFillGradient: ['#363738', '#2E2F30'],
 };
 
-/**
- * Light theme – inverse of dark.
- * Main background: #C6C6C6. All text: #2F3031 (dark, readable).
- * Surfaces (cards, pills) use subtle variations for depth.
- */
-export const LightPalette: ColorPalette = {
-  // Main bg (was dark #2F3031)
-  primaryDark: '#C6C6C6',
-  // Slightly darker for elevated/recessed surfaces (was #3D3E3F)
-  primaryDarkLighter: '#B0B0B0',
-  // All text – dark for readability on light bg (inverse of dark theme text #C6C6C6)
-  primaryLight: '#2F3031',
-  accentRed,
-  accentBlue,
-  accentGold,
-  accentGoldDark,
-  white,
-  black,
-  tabBarBorder: ['#989898', '#8A8A8A'],
-  tabBarFill: ['#B8B8B8', '#A8A8A8'],
-  tabBarSelectedPill: 'rgba(200, 200, 200, 0.7)',
-  fabIconBg: '#2F3031',
-  backgroundGradient: ['#C6C6C6', '#B0B0B0'],
-  cardBorderGradient: ['#989898', '#8A8A8A'],
-  cardFillGradient: ['#D0D0D0', '#C6C6C6'],
-  cardIconTint: '#2F3031',
-  pillBorderGradient: ['#989898', '#8A8A8A'],
-  pillFillGradient: ['#D8D8D8', '#C8C8C8'],
-};
-
 /** Default/fallback – use useTheme() for theme-aware colors */
 export const Colors = DarkPalette;
 

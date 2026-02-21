@@ -95,17 +95,16 @@ function Card({ children, bg, border }: { children: React.ReactNode; bg?: string
 
 export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
-  const { colors, theme } = useTheme();
-  const isLight = theme === 'light';
-  const cardBg = isLight ? 'rgba(255,255,255,0.85)' : 'rgba(40,40,40,0.6)';
-  const cardBorder = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
-  const gradientStart = isLight ? '#C6C6C6' : '#2f3031';
-  const gradientEnd = isLight ? '#B0B0B0' : '#1a1a1a';
-  const iconColor = isLight ? colors.primaryLight + 'CC' : 'rgba(255,255,255,0.7)';
-  const labelColor = isLight ? colors.primaryLight : colors.white;
-  const closeBtnBg = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
-  const closeBtnIcon = isLight ? colors.primaryLight : 'rgba(255,255,255,0.7)';
-  const rowBorderColor = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
+  const { colors } = useTheme();
+  const cardBg = 'rgba(40,40,40,0.6)';
+  const cardBorder = 'rgba(255,255,255,0.06)';
+  const gradientStart = '#2f3031';
+  const gradientEnd = '#1a1a1a';
+  const iconColor = 'rgba(255,255,255,0.7)';
+  const labelColor = colors.white;
+  const closeBtnBg = 'rgba(255,255,255,0.08)';
+  const closeBtnIcon = 'rgba(255,255,255,0.7)';
+  const rowBorderColor = 'rgba(255,255,255,0.08)';
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 

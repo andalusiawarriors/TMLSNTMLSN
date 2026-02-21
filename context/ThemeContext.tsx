@@ -1,38 +1,15 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { DarkPalette, LightPalette, type ColorPalette } from '../constants/theme';
-import { getUserSettings, saveUserSettings } from '../utils/storage';
-import type { AppearanceTheme } from '../types';
+import React, { createContext, useContext } from 'react';
+import { DarkPalette, type ColorPalette } from '../constants/theme';
 
 type ThemeContextValue = {
-  theme: AppearanceTheme;
   colors: ColorPalette;
-  setTheme: (t: AppearanceTheme) => Promise<void>;
-  isLoading: boolean;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<AppearanceTheme>('dark');
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    getUserSettings().then((s) => {
-      setThemeState(s.appearanceTheme ?? 'dark');
-      setIsLoading(false);
-    });
-  }, []);
-
-  const setTheme = useCallback(async (t: AppearanceTheme) => {
-    const s = await getUserSettings();
-    setThemeState(t);
-    await saveUserSettings({ ...s, appearanceTheme: t });
-  }, []);
-
-  const colors = theme === 'light' ? LightPalette : DarkPalette;
-
   return (
-    <ThemeContext.Provider value={{ theme, colors, setTheme, isLoading }}>
+    <ThemeContext.Provider value={{ colors: DarkPalette }}>
       {children}
     </ThemeContext.Provider>
   );

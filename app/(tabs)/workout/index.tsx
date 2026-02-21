@@ -8,7 +8,6 @@ import {
   Pressable,
   Modal,
   Alert,
-  Animated,
   Dimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -33,12 +32,19 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
+import AnimatedReanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 import { useTheme } from '../../../context/ThemeContext';
+import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { SlidersHorizontal } from 'phosphor-react-native';
 
 
@@ -77,14 +83,28 @@ export default function WorkoutScreen({
 }: WorkoutScreenModalProps = {}) {
   const router = useRouter();
   const { colors } = useTheme();
+  const {
+    activeWorkout,
+    setActiveWorkout,
+    currentExerciseIndex,
+    setCurrentExerciseIndex,
+    minimized,
+    minimizeWorkout,
+  } = useActiveWorkout();
   const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
     startRoutineId?: string;
     startEmpty?: string;
   }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
-  const [activeWorkout, setActiveWorkout] = useState<WorkoutSession | null>(initialActiveWorkout ?? null);
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+
+  // Sync initialActiveWorkout (e.g. from modal) into context
+  useEffect(() => {
+    if (initialActiveWorkout) {
+      setActiveWorkout(initialActiveWorkout);
+      setCurrentExerciseIndex(0);
+    }
+  }, [initialActiveWorkout, setActiveWorkout, setCurrentExerciseIndex]);
   const [showSplitSelection, setShowSplitSelection] = useState(false);
   const [showExerciseEntry, setShowExerciseEntry] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -201,7 +221,6 @@ export default function WorkoutScreen({
   };
 
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
-    slideAnim.setValue(1);
     const exercises: Exercise[] = split.exercises.map((template) => ({
       id: generateId(),
       name: template.name,
@@ -226,7 +245,6 @@ export default function WorkoutScreen({
   };
 
   const startWorkoutFromSavedRoutine = (routine: SavedRoutine) => {
-    slideAnim.setValue(1);
     const exercises: Exercise[] = routine.exercises.map((ex) => ({
       id: generateId(),
       name: ex.name,
@@ -251,7 +269,6 @@ export default function WorkoutScreen({
   };
 
   const startFreeformWorkout = () => {
-    slideAnim.setValue(1);
     const newWorkout: WorkoutSession = {
       id: generateId(),
       date: new Date().toISOString(),
@@ -482,48 +499,45 @@ export default function WorkoutScreen({
     onCloseModal?.();
   };
 
-  const slideAnim = useRef(new Animated.Value(asModal ? 0 : 1)).current;
-  const windowHeight = Dimensions.get('window').height;
-  const PAN_DOWN_DURATION = 280;
-  const PAN_UP_DURATION = 350;
+  const handleMinimize = () => {
+    setShowExerciseEntry(false);
+    setRestTimerActive(false);
+    setRestTimeRemaining(0);
+    // Close overlay immediately — pill shows when minimized
+    minimizeWorkout();
+    onCloseModal?.();
+  };
 
-  useLayoutEffect(() => {
-    if (asModal && activeWorkout) slideAnim.setValue(0);
-  }, [asModal]);
+  const windowHeight = Dimensions.get('window').height;
+  const overlayEntranceY = useSharedValue(24);
+  const overlayEntranceOpacity = useSharedValue(0);
+  const [overlayTrigger, setOverlayTrigger] = useState(0);
 
   useEffect(() => {
-    if (activeWorkout && !asModal) {
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: PAN_UP_DURATION,
-        useNativeDriver: true,
-      }).start();
+    if (activeWorkout && !minimized) {
+      setOverlayTrigger((t) => t + 1);
+      overlayEntranceY.value = 24;
+      overlayEntranceOpacity.value = 0;
+      overlayEntranceY.value = withTiming(0, {
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+      });
+      overlayEntranceOpacity.value = withTiming(1, {
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+      });
     }
-  }, [activeWorkout?.id, asModal]);
+  }, [activeWorkout?.id, minimized]);
 
-  const runPanDownAnimation = () => {
-    Animated.timing(slideAnim, {
-      toValue: 1,
-      duration: PAN_DOWN_DURATION,
-      useNativeDriver: true,
-    }).start(() => {
-      goBackToMainMenu();
-      // Don't reset slideAnim here – it would flash the overlay back for one frame. Reset when starting next workout.
-    });
-  };
+  const overlayEntranceStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: overlayEntranceY.value }],
+    opacity: overlayEntranceOpacity.value,
+  }));
 
   const handleBackArrowPress = () => {
     if (!activeWorkout) return;
-    const count = activeWorkout.exercises.length;
-    const exerciseWord = count === 1 ? 'exercise' : 'exercises';
-    Alert.alert(
-      'Leave workout?',
-      `You have ${count} ${exerciseWord} left. Are you sure you want to leave the workout?`,
-      [
-        { text: 'Cancel', style: 'cancel', onPress: runPanDownAnimation },
-        { text: 'Leave', style: 'destructive', onPress: goBackToMainMenu },
-      ]
-    );
+    // Down arrow = minimize (HEVY-style), show pill, keep workout active
+    handleMinimize();
   };
 
   const insets = useSafeAreaInsets();
@@ -738,23 +752,13 @@ export default function WorkoutScreen({
       </>
       )}
 
-      {/* Workout log overlay – pans down when Cancel is pressed on leave dialog */}
-      {activeWorkout && (
-        <Animated.View
+      {/* Workout log overlay – entrance animation + minimize on down arrow */}
+      {activeWorkout && !minimized && (
+        <AnimatedReanimated.View
           style={[
             styles.workoutOverlay,
-            { backgroundColor: colors.primaryDark },
-            {
-              height: windowHeight,
-              transform: [
-                {
-                  translateY: slideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, windowHeight],
-                  }),
-                },
-              ],
-            },
+            { backgroundColor: colors.primaryDark, height: windowHeight },
+            overlayEntranceStyle,
           ]}
         >
           <ScrollView
@@ -764,8 +768,9 @@ export default function WorkoutScreen({
             ]}
           >
             {/* ─── HEVY-STYLE TOP BAR ─── */}
+            <AnimatedFadeInUp delay={0} duration={280} trigger={overlayTrigger} instant>
             <View style={styles.logTopBar}>
-              <Pressable
+              <AnimatedPressable
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={handleBackArrowPress}
@@ -773,13 +778,13 @@ export default function WorkoutScreen({
                 style={styles.logBackArrowWrap}
               >
                 <Text style={[styles.logBackArrow, { color: colors.primaryLight }]}>▼</Text>
-              </Pressable>
+              </AnimatedPressable>
               <View style={styles.logTopCenter}>
                 <Text style={[styles.logTitle, { color: colors.primaryLight }]}>{activeWorkout.name || 'Workout'}</Text>
                 <Text style={[styles.logTimer, { color: colors.primaryLight + '99' }]}>{formatElapsed(elapsedSeconds)}</Text>
               </View>
-              <Pressable
-                style={({ pressed }) => [styles.finishButton, { backgroundColor: colors.primaryLight }, pressed && { opacity: 0.85 }]}
+              <AnimatedPressable
+                style={[styles.finishButton, { backgroundColor: colors.primaryLight }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() =>
@@ -794,10 +799,12 @@ export default function WorkoutScreen({
                 }
               >
                 <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
-              </Pressable>
+              </AnimatedPressable>
             </View>
+            </AnimatedFadeInUp>
 
             {/* ─── HEVY-STYLE SUMMARY STATS ROW ─── */}
+            <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
             <View style={styles.summaryRow}>
               <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
                 <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
@@ -815,9 +822,11 @@ export default function WorkoutScreen({
                 <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>exercises</Text>
               </View>
             </View>
+            </AnimatedFadeInUp>
 
             {/* ─── HEVY-STYLE REST TIMER PANEL ─── */}
             {restTimerActive && restTimeRemaining > 0 && (
+              <AnimatedFadeInUp delay={80} duration={300} trigger={overlayTrigger} instant>
               <View style={[styles.restTimerPanel, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '20' }]}>
                 <View style={styles.restTimerHeader}>
                   <Text style={[styles.restTimerLabel, { color: colors.primaryLight + '80' }]}>REST TIMER</Text>
@@ -827,47 +836,51 @@ export default function WorkoutScreen({
                   <View style={[styles.restTimerProgressFill, { backgroundColor: colors.primaryLight, width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
                 </View>
                 <View style={styles.restTimerButtonsRow}>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.8 }]}
+                  <AnimatedPressable
+                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
                   >
                     <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>−15s</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }, pressed && { opacity: 0.8 }]}
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={skipRestTimer}
                   >
                     <Text style={[styles.restTimerSkipButtonText, { color: colors.primaryDark }]}>Skip</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.8 }]}
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => prev + 15)}
                   >
                     <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>+15s</Text>
-                  </Pressable>
+                  </AnimatedPressable>
                 </View>
               </View>
+              </AnimatedFadeInUp>
             )}
 
             {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
             {activeWorkout.exercises.length === 0 ? (
-              <Pressable
-                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
+              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+              <AnimatedPressable
+                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={openExercisePicker}
               >
                 <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
-              </Pressable>
+              </AnimatedPressable>
+              </AnimatedFadeInUp>
             ) : null}
             {activeWorkout.exercises.map((exercise, exerciseIndex) => (
-              <View key={exercise.id} style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}>
+              <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
+              <View style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}>
                 {/* Exercise header */}
                 <View style={styles.exerciseBlockHeader}>
                   <View style={styles.exerciseBlockTitleRow}>
@@ -1025,19 +1038,22 @@ export default function WorkoutScreen({
                   <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
                 </Pressable>
               </View>
+            </AnimatedFadeInUp>
             ))}
             {activeWorkout.exercises.length > 0 ? (
-              <Pressable
-                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
+              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+              <AnimatedPressable
+                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
-              </Pressable>
+              </AnimatedPressable>
+              </AnimatedFadeInUp>
             ) : null}
           </ScrollView>
-        </Animated.View>
+        </AnimatedReanimated.View>
       )}
 
       {activeWorkout && exerciseMenuIndex !== null && (

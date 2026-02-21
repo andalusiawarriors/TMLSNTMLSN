@@ -94,9 +94,6 @@ export interface Prompt {
   category?: string;
 }
 
-// Appearance theme (colors swap, gold accents stay)
-export type AppearanceTheme = 'dark' | 'light';
-
 // User Settings
 export interface UserSettings {
   dailyGoals: DailyGoals;
@@ -106,7 +103,6 @@ export interface UserSettings {
   restTimerSound: boolean;
   defaultRestTimer?: number; // seconds, for new exercises (workout)
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
-  appearanceTheme?: AppearanceTheme;
 }
 
 // Saved Food (for quick re-logging)

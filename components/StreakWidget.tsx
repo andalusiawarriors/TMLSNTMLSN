@@ -28,7 +28,7 @@ const RELEASE_DURATION_MS = 280; // snappy return, then boom onto page
 export function StreakWidget() {
   const router = useRouter();
   const { playIn, playOut } = useButtonSound();
-  const { colors, theme } = useTheme();
+  const { colors } = useTheme();
   const [days, setDays] = useState(0);
   const rotation = useSharedValue(0);
   const loadStreak = () => {
@@ -82,7 +82,7 @@ export function StreakWidget() {
         {Platform.OS === 'ios' ? (
           <BlurView
             intensity={40}
-            tint={theme === 'light' ? 'light' : 'dark'}
+            tint="dark"
             style={StyleSheet.absoluteFill}
           />
         ) : null}
