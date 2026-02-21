@@ -29,8 +29,6 @@
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none)*     | —                 | —                         | —               | —       |
 
-*Previously: tab layout — pill labels swapped (workout→explore, explore→TMLSN); synced to obh*
-
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
 ---
@@ -39,6 +37,15 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/nutrition.tsx` – electrolytes visibility fix: replaced Animated.View+entering with plain View for macros/electrolytes carousel wrappers (Reanimated FadeIn could leave electrolytes invisible on mount); synced to obh worktree
+- `app/(tabs)/nutrition.tsx`, `components/PillSegmentedControl.tsx` – home screen redesign: mesh gradient, date+arrows+calendar pill, narrower toggle, Card removed from calorie/macro, single toggle dot
+- `app/(tabs)/nutrition.tsx`, `components/SwipeableWeekView.tsx` – fix calorie card tap switching date: SwipeableWeekView ignores taps with y outside strip bounds; remount delay 320ms→100ms for faster swipe/tap on reload; removed debug instrumentation
+- `utils/foodApi.ts`, `utils/foodFilters.ts` – fix "no results for pear": removed `(.)\1{3,}` from junk pattern (was wrongly filtering "pear, raw"), 90s OFF timeout, __DEV__-safe logging; `npm run test:food` verifies; synced to obh
+- `utils/foodApi.ts`, `utils/foodFilters.ts`, `app/search-food.tsx`, `app/(tabs)/nutrition.tsx` – standardize food search: per-100g, brand-first lowercase names, display `per 100g: X cal Xg protein Xg carb Xg fat`; fillAndShowForm uses data.name; synced to obh worktree
+- `utils/foodFilters.ts` – new: sanitizeFoodName, isAcceptableFood, filterResults, filterSingleFood; profanity blocklist, emoji strip, junk regex; synced to obh
+- `utils/foodApi.ts` – foodFilters integration: filterResults/filterSingleFood applied to searchFoods and searchByBarcode; synced to obh
+- `utils/foodApi.ts` – USDA + OFF in parallel; merged search (USDA + Survey FNDDS); obh .env.local created with USDA key; synced to obh
+- `app/(tabs)/_layout.tsx` – tab pill labels: workout→explore, explore→TMLSN; synced to obh worktree
 - `app/search-food.tsx` – layout from reference: search bar (magnifying glass, clear X), History tabs (All/My Meals/My Recipes/My Foods), action buttons (Barcode scan, Meal scan only), History cards (layout only, no ingredient names); background Colors.primaryDark to match workout full screen; synced to obh worktree
 - `components/PillSegmentedControl.tsx` – toggle thumb: calorie-card-style gradient (border + fill) tinted Nutrition=red, Fitness=blue
 - `components/ProfileSheet.tsx` – title "profile" (lowercase), Typography.h2/fontWeight 600/letterSpacing -0.11; full-screen overlay (no Modal, no bottom barrier); scroll bottom padding so content scrolls above tab bar; synced to obh

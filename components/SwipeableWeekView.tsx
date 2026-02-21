@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-// #region agent log
-const _dbg = (msg: string, data?: object) => { fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SwipeableWeekView',message:msg,data:data??{},timestamp:Date.now()})}).catch(()=>{}); };
-// #endregion
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -269,9 +266,6 @@ export default function SwipeableWeekView({
   const resetConveyorPosition = useCallback(() => {
     translateX.value = 0;
     isAnimating.value = false;
-    // #region agent log
-    _dbg('resetConveyorPosition', { hypothesisId: 'H2' });
-    // #endregion
   }, []);
 
   useLayoutEffect(() => {
@@ -284,9 +278,6 @@ export default function SwipeableWeekView({
   // ── Week change ──────────────────────────────────────────────────────────────
 
   const commitWeekChange = useCallback((direction: -1 | 1) => {
-    // #region agent log
-    _dbg('commitWeekChange', { direction, hypothesisId: 'H5' });
-    // #endregion
     const newMonday = shiftWeek(currentMonday, direction);
     pendingConveyorReset.current = true;
     setCurrentMonday(newMonday);
@@ -306,23 +297,15 @@ export default function SwipeableWeekView({
   const handleDayPress = useCallback((date: Date) => {
     const tappedMonday = getMonday(date);
     if (tappedMonday.getTime() === nextMonday.getTime()) {
-      // #region agent log
-      _dbg('handleDayPress: isAnimating=true tapNext', { hypothesisId: 'H1' });
-      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(-weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
-        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(1);
       });
     } else if (tappedMonday.getTime() === prevMonday.getTime()) {
-      // #region agent log
-      _dbg('handleDayPress: isAnimating=true tapPrev', { hypothesisId: 'H1' });
-      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
-        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(-1);
       });
     }
@@ -377,9 +360,11 @@ export default function SwipeableWeekView({
 
   // ── Tap gesture (day selection) ──────────────────────────────────────────────
 
-  const handleTap = useCallback((x: number) => {
+  const STRIP_HEIGHT = PILL_HEIGHT + Spacing.sm * 2;
+  const handleTap = useCallback((x: number, y: number) => {
     clearLongPressTimer();
     if (slidingActive.value) return;
+    if (y < 0 || y > STRIP_HEIGHT) return;
     const idx = dayIndexFromX(x, weekWidth);
     const mon = currentMondayRef.current;
     const date = new Date(mon);
@@ -391,7 +376,7 @@ export default function SwipeableWeekView({
     Gesture.Tap()
       .onEnd((e) => {
         'worklet';
-        runOnJS(handleTap)(e.x);
+        runOnJS(handleTap)(e.x, e.y);
       }),
     [handleTap]
   );
@@ -408,16 +393,6 @@ export default function SwipeableWeekView({
     }, LONG_PRESS_MS);
   }, [weekWidth, selectedDayIndex, activateSliding, clearLongPressTimer]);
 
-  const logPanBegin = useCallback((x: number) => {
-    _dbg('pan onBegin', { x, hypothesisId: 'H4' });
-  }, []);
-  const logPanEnd = useCallback((dx: number, vx: number, anim: boolean) => {
-    _dbg('pan onEnd', { translationX: dx, velocityX: vx, isAnimating: anim, hypothesisId: 'H1' });
-  }, []);
-  const logSpringPan = useCallback((finished: boolean) => {
-    _dbg('springCallback pan', { finished, hypothesisId: 'H1' });
-  }, []);
-
   const panGesture = useMemo(() =>
     Gesture.Pan()
       .minDistance(0)
@@ -425,7 +400,6 @@ export default function SwipeableWeekView({
       .failOffsetY([-25, 25])
       .onBegin((e) => {
         'worklet';
-        runOnJS(logPanBegin)(e.x);
         runOnJS(startLongPressTimer)(e.x);
       })
       .onUpdate((e) => {
@@ -445,7 +419,6 @@ export default function SwipeableWeekView({
       .onEnd((e) => {
         'worklet';
         runOnJS(clearLongPressTimer)();
-        runOnJS(logPanEnd)(e.translationX, e.velocityX, isAnimating.value);
         if (slidingActive.value) {
           runOnJS(commitSliding)(e.x);
           return;
@@ -461,7 +434,6 @@ export default function SwipeableWeekView({
             { ...SNAP_SPRING_CONFIG, velocity: vx },
             (finished) => {
               'worklet';
-              runOnJS(logSpringPan)(finished);
               if (finished) {
                 translateX.value = -direction * weekWidth;
                 runOnJS(commitWeekChange)(direction);
@@ -477,7 +449,7 @@ export default function SwipeableWeekView({
         runOnJS(clearLongPressTimer)();
       }),
     [weekWidth, distThreshold, commitWeekChange, startLongPressTimer, clearLongPressTimer,
-     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive, logPanBegin, logPanEnd, logSpringPan]
+     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive]
   );
 
   const composedGesture = useMemo(

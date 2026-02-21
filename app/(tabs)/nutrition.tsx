@@ -20,6 +20,7 @@ import {
   AppStateStatus,
   RefreshControl,
   Animated as RNAnimated,
+  InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
@@ -37,6 +38,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  FadeIn,
   FadeInUp,
   FadeOut,
   SlideInLeft,
@@ -47,6 +49,7 @@ import * as Haptics from 'expo-haptics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurView } from 'expo-blur';
+import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,7 +70,7 @@ import {
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
-import SwipeableWeekView, { type DayStatus } from '../../components/SwipeableWeekView';
+import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
@@ -130,16 +133,15 @@ export default function NutritionScreen({
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
-  const [cardPage, setCardPage] = useState(0);
+  const [nutritionPage, setNutritionPage] = useState(0); // 0 = macros, 1 = electrolytes
   const [fitnessCardPage, setFitnessCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
-
-  // Reset carousel page when switching segment so pagination dots match content
+  // Reset page when switching segment
   useEffect(() => {
-    setCardPage(0);
+    setNutritionPage(0);
     setFitnessCardPage(0);
   }, [homeSegment]);
 
@@ -158,6 +160,10 @@ export default function NutritionScreen({
   const profilePillScale = useSharedValue(1);
   const profilePillScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profilePillScale.value }],
+  }));
+  const calendarPillScale = useSharedValue(1);
+  const calendarPillScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: calendarPillScale.value }],
   }));
 
   const isEaten = useSharedValue(0);
@@ -443,7 +449,7 @@ export default function NutritionScreen({
   };
 
   const fillAndShowForm = (data: ParsedNutrition) => {
-    setMealName(data.brand ? `${data.name} (${data.brand})` : data.name);
+    setMealName(data.name);
     setCalories(String(data.calories || ''));
     setProtein(String(data.protein || ''));
     setCarbs(String(data.carbs || ''));
@@ -786,7 +792,6 @@ export default function NutritionScreen({
     return Math.min(Math.round((current / goal) * 100), 100);
   };
 
-  const insets = useSafeAreaInsets();
   const headerHeight = 44;
 
   // Carousel (horizontal paging between normal and flipped card layouts)
@@ -804,18 +809,21 @@ export default function NutritionScreen({
   const MACRO_CARD_WIDTH = Math.floor((CALORIES_CARD_WIDTH - 2 * Spacing.sm) / 3);
   const MACRO_CARD_HEIGHT = 140;
   const MACRO_CARD_RADIUS = 16;
-  const NUTRITION_CAROUSEL_PAGES = useMemo(() => [0, 1], []);
-  const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const page = Math.round(offsetX / CAROUSEL_WIDTH);
-    setCardPage(Math.min(1, page));
-  };
-
   const handleFitnessCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setFitnessCardPage(Math.min(1, page));
   };
+
+  const nutritionScrollRef = useRef<ScrollView>(null);
+  const handleNutritionCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const page = Math.round(offsetX / CAROUSEL_WIDTH);
+    setNutritionPage(Math.min(1, page));
+  };
+  useEffect(() => {
+    nutritionScrollRef.current?.scrollTo({ x: nutritionPage * CAROUSEL_WIDTH, animated: true });
+  }, [nutritionPage]);
 
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
   const cardTouchStart = useRef({ x: 0, y: 0 });
@@ -863,7 +871,8 @@ export default function NutritionScreen({
     }
   };
 
-  const onCarouselScrollBeginDrag = () => {
+  const _unused = () => {
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition:onCarouselScrollBeginDrag',message:'carousel scroll drag started',data:{hypothesisId:'H3'},timestamp:Date.now()})}).catch(()=>{});
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -984,32 +993,87 @@ export default function NutritionScreen({
     };
   });
 
-  // Top pills: 54pt from screen top; horizontal padding = calorie card inset (Spacing.md + centering offset)
-  const TOP_LEFT_PILL_TOP = 54;
+  const insets = useSafeAreaInsets();
+  const headerTop = insets.top + 19;
   const calorieCardLeft = CONTENT_PADDING + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
-  const TOP_RIGHT_CIRCLE_SIZE = 40; // circle, same stroke as pill
-  const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2; // 20
+  const TOP_RIGHT_CIRCLE_SIZE = 40;
+  const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2;
+  const prevDay = useMemo(() => {
+    const d = new Date(viewingDate + 'T12:00:00');
+    d.setDate(d.getDate() - 1);
+    return d;
+  }, [viewingDate]);
+  const nextDay = useMemo(() => {
+    const d = new Date(viewingDate + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    return d;
+  }, [viewingDate]);
 
   return (
     <View style={[styles.container, asModal && { backgroundColor: 'transparent' }]}>
       {!asModal && (
       <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Circular gradient background at 0% 0%: #2f3031 → #1a1a1a */}
+        {/* Layered mesh gradient background: champagne circles + specular + dark fade */}
         <View style={styles.homeBackgroundImage} pointerEvents="none">
-          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-            <Defs>
-              <RadialGradient id="homeBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
-                <Stop offset="0" stopColor="#2f3031" />
-                <Stop offset="1" stopColor="#1a1a1a" />
-              </RadialGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill="url(#homeBgGrad)" />
-          </Svg>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#2F3031' }]} />
+          {/* Layer 1: Mesh gradient — 3 champagne circles */}
+          <View
+            style={{
+              position: 'absolute',
+              left: -SCREEN_WIDTH * 0.3,
+              top: -SCREEN_HEIGHT * 0.15,
+              width: SCREEN_WIDTH * 1.2,
+              height: SCREEN_WIDTH * 1.2,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(212, 184, 150, 0.15)',
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              right: -SCREEN_WIDTH * 0.4,
+              top: SCREEN_HEIGHT * 0.2,
+              width: SCREEN_WIDTH * 1.0,
+              height: SCREEN_WIDTH * 1.0,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(168, 137, 94, 0.12)',
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              left: -SCREEN_WIDTH * 0.2,
+              bottom: -SCREEN_HEIGHT * 0.2,
+              width: SCREEN_WIDTH * 1.4,
+              height: SCREEN_WIDTH * 1.4,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(212, 184, 150, 0.10)',
+            }}
+          />
+          <BlurView
+            intensity={80}
+            tint="dark"
+            {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Layer 2: Specular sweep */}
+          <LinearGradient
+            colors={['transparent', 'rgba(180, 180, 180, 0.06)', 'rgba(200, 200, 200, 0.09)', 'rgba(180, 180, 180, 0.06)', 'transparent']}
+            start={{ x: 0, y: 0.3 }}
+            end={{ x: 1, y: 0.6 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Layer 3: Dark fade-down — reaches #2F3031, then #1a1a1a much earlier to nav bar */}
+          <LinearGradient
+            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+            locations={[0, 0.2, 0.35, 0.45, 0.65]}
+            style={StyleSheet.absoluteFill}
+          />
         </View>
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
-          style={[styles.flywheelOverlay, { top: TOP_LEFT_PILL_TOP + 12 }]}
+          style={[styles.flywheelOverlay, { top: headerTop + 12 }]}
           pointerEvents="none"
         >
           <Animated.View style={[styles.flywheelWrap, flywheelStyle]}>
@@ -1034,14 +1098,14 @@ export default function NutritionScreen({
         }
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: TOP_LEFT_PILL_TOP },
+          { paddingTop: headerTop + 40 },
         ]}
       >
-        {/* Top-left pill — same stroke as bottom pill + slight gradient; scale animation like calorie card (no sound) */}
+        {/* Top-left pill — fire streak */}
         <Pressable
           style={{
             position: 'absolute',
-            top: TOP_LEFT_PILL_TOP,
+            top: headerTop,
             left: calorieCardLeft,
             zIndex: 10,
             width: 60,
@@ -1111,11 +1175,36 @@ export default function NutritionScreen({
           </Animated.View>
         </Pressable>
 
-        {/* Top-right circle — same stroke + slight gradient; scale animation like calorie card (no sound) */}
+        {/* Calendar pill — left of profile */}
         <Pressable
           style={{
             position: 'absolute',
-            top: TOP_LEFT_PILL_TOP,
+            top: headerTop,
+            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8,
+            zIndex: 10,
+            width: 60,
+            height: 40,
+          }}
+          onPressIn={() => { calendarPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPressOut={() => { calendarPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPress={() => { /* calendar action placeholder */ }}
+        >
+          <Animated.View style={[{ width: 60, height: 40 }, calendarPillScaleStyle]}>
+            <View style={{ width: 60, height: 40, borderRadius: 28, overflow: 'hidden' }}>
+              <LinearGradient colors={['#4E4F50', '#4A4B4C']} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }} />
+              <LinearGradient colors={['#363738', '#2E2F30']} style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 27 }} />
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="calendar-outline" size={17} color="#C6C6C6" />
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
+
+        {/* Top-right circle — profile */}
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: headerTop,
             right: calorieCardLeft,
             zIndex: 10,
             width: TOP_RIGHT_CIRCLE_SIZE,
@@ -1172,26 +1261,33 @@ export default function NutritionScreen({
           </Animated.View>
         </Pressable>
 
-        <AnimatedFadeInUp delay={0} duration={220} trigger={animTrigger}>
-        <View style={{ height: (Typography.h2 + 10) * 1.2 * 1.1 + Spacing.md, marginBottom: 0 }} />
-        <SwipeableWeekView
-          weekWidth={WEEK_STRIP_PAGE_WIDTH}
-          selectedDate={viewingDateAsDate}
-          onDaySelect={(date) => handleSelectDate(toDateString(date))}
-          initialDate={viewingDateAsDate}
-          showHeader={false}
-          dayStatusByDate={dayStatusByDate}
-        />
-        </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={55} duration={220} trigger={animTrigger}>
-        <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: -6, marginBottom: 4 }}>
-          <PillSegmentedControl
-            value={homeSegment}
-            onValueChange={setHomeSegment}
-            width={WEEK_STRIP_PAGE_WIDTH}
-          />
+        {/* Date row — centered in space between fire streak and calendar pills */}
+        <View
+          style={{
+            position: 'absolute',
+            top: headerTop,
+            left: calorieCardLeft + 60 + 8,
+            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8 + 60 + 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10,
+            height: 40,
+          }}
+          pointerEvents="box-none"
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 6 }} hitSlop={8}>
+              <Ionicons name="chevron-back" size={14} color={Colors.primaryLight} />
+            </Pressable>
+            <Text style={{ fontSize: 11, color: Colors.primaryLight, marginHorizontal: 4, fontWeight: '500' }}>
+              {viewingDateAsDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </Text>
+            <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 6 }} hitSlop={8}>
+              <Ionicons name="chevron-forward" size={14} color={Colors.primaryLight} />
+            </Pressable>
+          </View>
         </View>
-        </AnimatedFadeInUp>
         <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger}>
         {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
         {homeSegment === 'Fitness' ? (
@@ -1213,9 +1309,9 @@ export default function NutritionScreen({
               nestedScrollEnabled
               directionalLockEnabled
             >
-              {/* Fitness page 0: heatmap */}
+              {/* Fitness page 0: heatmap — isolated (no card wrapper) */}
               <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
-                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
               </View>
               {/* Fitness page 1: steps card only */}
               <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
@@ -1239,7 +1335,10 @@ export default function NutritionScreen({
               <View style={[styles.dot, fitnessCardPage === 0 && styles.dotActive]} />
               <View style={[styles.dot, fitnessCardPage === 1 && styles.dotActive]} />
             </View>
-            {/* Recently uploaded – below carousel (same as Nutrition) */}
+            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
+              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+            </View>
+            {/* Recently uploaded – below toggle */}
             <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
             <Card
               gradientFill
@@ -1274,59 +1373,56 @@ export default function NutritionScreen({
           <View style={{ position: 'relative' }}>
             <View>
         {settings && todayLog && (
-          <View style={{ zIndex: 1 }}>
-            <FlatList
-              data={NUTRITION_CAROUSEL_PAGES}
-              keyExtractor={(i) => String(i)}
+          <View style={{ width: CAROUSEL_WIDTH }}>
+            <ScrollView
+              ref={nutritionScrollRef}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              onScroll={handleCarouselScroll}
-              onScrollBeginDrag={onCarouselScrollBeginDrag}
+              onScroll={handleNutritionCarouselScroll}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
-              getItemLayout={(_, index) => ({ length: CAROUSEL_WIDTH, offset: index * CAROUSEL_WIDTH, index })}
-              renderItem={({ item: page }) => (
+              contentContainerStyle={{ width: CAROUSEL_WIDTH * 2 }}
+              nestedScrollEnabled
+              directionalLockEnabled
+            >
+              {/* Nutrition page 0: macros (calories + protein/carbs/fat) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                {page === 0 ? (
-                <>
                 <View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                  <Animated.View style={cardScaleStyle}>
-                    <Card gradientFill style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
-                      <View style={styles.caloriesLeftContent}>
-                        <View style={styles.caloriesLeftTextWrap}>
-                          <BlurRollNumber
-                            leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
-                            eatenValue={String(todayLog.calories)}
-                            eatenSuffix={`/${settings.dailyGoals.calories}`}
-                            isEaten={isEaten}
-                            trigger={rollTrigger}
-                            textStyle={styles.caloriesLeftValue}
-                            suffixStyle={styles.caloriesEatenGoal}
-                            height={40}
-                          />
-                          <View>
-                            <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
-                            <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
-                          </View>
+                  <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: 22, marginBottom: Spacing.sm }]}>
+                    <View style={styles.caloriesLeftContent}>
+                      <View style={styles.caloriesLeftTextWrap}>
+                        <BlurRollNumber
+                          leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
+                          eatenValue={String(todayLog.calories)}
+                          eatenSuffix={`/${settings.dailyGoals.calories}`}
+                          isEaten={isEaten}
+                          trigger={rollTrigger}
+                          textStyle={styles.caloriesLeftValue}
+                          suffixStyle={styles.caloriesEatenGoal}
+                          height={40}
+                        />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
                         </View>
-                        <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                          <Image
-                            source={require('../../assets/calorie-ring-flame.png')}
-                            style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF' }}
-                            resizeMode="contain"
-                          />
-                        </View>
-                        </View>
-                    </Card>
+                      </View>
+                      <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Image
+                          source={require('../../assets/calorie-ring-flame.png')}
+                          style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
                   </Animated.View>
                 </Pressable>
                 </View>
                 <View>
                   <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`}
@@ -1350,10 +1446,10 @@ export default function NutritionScreen({
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`}
@@ -1377,10 +1473,10 @@ export default function NutritionScreen({
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`}
@@ -1404,19 +1500,16 @@ export default function NutritionScreen({
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   </Animated.View>
                 </View>
-                </>
-                ) : (
-                <>
-              {/* Page 1: Electrolytes top, Health Score bottom (flipped layout) */}
+              </View>
+              {/* Nutrition page 1: electrolytes + health score (bare, no card) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <View>
-                  <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -1426,11 +1519,11 @@ export default function NutritionScreen({
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>sodium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -1440,11 +1533,11 @@ export default function NutritionScreen({
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>potassium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
@@ -1454,46 +1547,44 @@ export default function NutritionScreen({
                           <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>magnesium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
-                  </Animated.View>
-                </View>
-                <View>
-                <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
-                  <Animated.View style={cardScaleStyle}>
-                    <Card gradientFill style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
-                      <View style={styles.healthScoreHeaderRow}>
-                        <Text style={styles.healthScoreTitle}>health score</Text>
-                      </View>
+                </Animated.View>
+                <View style={{ marginTop: Spacing.sm }}>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
+                    <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', position: 'relative', ...styles.healthScoreCard }]}>
+                      <Text style={styles.healthScoreTitle}>health score</Text>
                       {(!todayLog?.meals?.length) && (
                         <View style={styles.healthScoreNaWrap} pointerEvents="none">
-                          <Text style={styles.healthScoreNa} numberOfLines={1}>
-                            N/A
-                          </Text>
+                          <Text style={styles.healthScoreNa} numberOfLines={1}>N/A</Text>
                         </View>
                       )}
                       <View style={styles.healthScoreBarTrack}>
                         <View style={styles.healthScoreBarFill} />
                       </View>
-                    </Card>
-                  </Animated.View>
-                </Pressable>
-                  </View>
+                    </Animated.View>
+                  </Pressable>
                 </View>
-                </>
-                )}
               </View>
+            </ScrollView>
+                )}
+          </View>
             )}
-            />
 
-            {/* Pagination dots (Nutrition: 2 pages only) */}
-            <View style={styles.paginationDots}>
-              <View style={[styles.dot, cardPage === 0 && styles.dotActive]} />
-              <View style={[styles.dot, cardPage === 1 && styles.dotActive]} />
+            {/* Nutrition carousel dots — macros | electrolytes+health score */}
+            <View style={[styles.paginationDots, { marginBottom: Spacing.xs }]}>
+              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(0); }} style={{ padding: 12, margin: -12 }}>
+                <View style={[styles.dot, nutritionPage === 0 && styles.dotActive]} />
+              </Pressable>
+              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(1); }} style={{ padding: 12, margin: -12 }}>
+                <View style={[styles.dot, nutritionPage === 1 && styles.dotActive]} />
+              </Pressable>
             </View>
-
-            {/* Recently uploaded – below carousel, same width as calorie card (Nutrition only) */}
+            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
+              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+            </View>
+            {/* Recently uploaded – below toggle */}
             <View>
               <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
               <Card
@@ -1524,9 +1615,7 @@ export default function NutritionScreen({
               </Card>
             </View>
           </View>
-        )}
 
-            </View>
             <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, blurOverlayStyle]} pointerEvents="none">
               <BlurView
                 intensity={100}
@@ -1948,12 +2037,54 @@ export default function NutritionScreen({
               keyExtractor={(_, i) => String(i)}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
-                  <Text style={styles.foodSearchName}>{item.name}</Text>
-                  {item.brand ? <Text style={styles.foodSearchBrand}>{item.brand}</Text> : null}
-                  <Text style={styles.foodSearchMacros}>
-                    {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
-                    {item.servingSize ? ` · ${item.servingSize}` : ''}
-                  </Text>
+                  <View style={styles.foodSearchCardLeft}>
+                    {item.brand ? (
+                      <Text style={styles.foodSearchBrand} numberOfLines={1} ellipsizeMode="tail">
+                        {item.brand}
+                      </Text>
+                    ) : (
+                      <MaskedView
+                        maskElement={
+                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
+                            tmlsn basics
+                          </Text>
+                        }
+                      >
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { opacity: 0 }]}>
+                            tmlsn basics
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    )}
+                    <Text style={styles.foodSearchName} numberOfLines={1} ellipsizeMode="tail">
+                      {item.name}
+                    </Text>
+                    <View style={styles.foodSearchMacrosRow}>
+                      <Text style={styles.foodSearchMacrosPrefix}>per 100g</Text>
+                      <MaskedView
+                        maskElement={
+                          <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        }
+                      >
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '500', opacity: 0 }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    </View>
+                  </View>
                 </TouchableOpacity>
               )}
               ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
@@ -2169,7 +2300,8 @@ const styles = StyleSheet.create({
     zIndex: 1, // behind scroll content so logo is always on top
   },
   scrollViewLayer: {
-    zIndex: 2, // scroll content (including logo) always in front of flywheel
+    zIndex: 2,
+    backgroundColor: 'transparent',
   },
   flywheelWrap: {
     width: 28,
@@ -2692,19 +2824,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(198,198,198,0.15)',
   },
-  foodSearchName: {
-    fontSize: 14,
-    color: '#FFFFFF',
+  foodSearchCardLeft: {
+    flex: 1,
   },
   foodSearchBrand: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 2,
+    fontSize: 11,
+    color: Colors.primaryLight,
+    fontWeight: '400',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
-  foodSearchMacros: {
-    fontSize: 12,
-    color: '#C6C6C6',
+  foodSearchBrandTmlsnBasics: {
+    color: Colors.accentChampagne,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  foodSearchName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  foodSearchMacrosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+    gap: 4,
+  },
+  foodSearchMacrosPrefix: {
+    fontSize: 10,
+    color: Colors.primaryLight,
+  },
+  foodSearchMacrosValues: {
+    fontSize: 12,
+    color: Colors.accentChampagne,
+    fontWeight: '500',
   },
   addButton: {
     marginTop: Spacing.md,

@@ -24,6 +24,8 @@ export const Colors = {
   accentBlue: '#0000FF',     // Positive feedback, completion, success states
   accentGold: '#C9A227',     // Profile sheet: section headers, avatar border, refer icon
   accentGoldDark: '#9A7B1A', // Darker gold for borders/pills
+  accentChampagne: '#D4B896',
+  accentChampagneDark: '#A8895E',
   
   // Neutral
   white: '#FFFFFF',           // Explicit highlights, high-priority headings

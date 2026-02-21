@@ -21,9 +21,9 @@ const THUMB_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
 const THUMB_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 const THUMB_BORDER_INSET = 1;
 
-const PILL_RADIUS = 38;
-const PILL_HEIGHT = 38;
-const PILL_INSET = 3;
+const PILL_RADIUS = 15;
+const PILL_HEIGHT = 30;
+const PILL_INSET = 2;
 const SEGMENTS = ['Nutrition', 'Fitness'] as const;
 export type SegmentValue = (typeof SEGMENTS)[number];
 
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   segmentText: {
-    fontSize: Typography.label,
+    fontSize: 11,
     fontWeight: '500',
   },
   segmentTextSelected: {

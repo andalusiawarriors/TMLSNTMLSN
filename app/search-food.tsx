@@ -8,10 +8,14 @@ import {
   TextInput,
   ActivityIndicator,
   Pressable,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import MaskedView from '@react-native-masked-view/masked-view';
+import { LinearGradient } from 'expo-linear-gradient';
 import { searchFoods, ParsedNutrition } from '../utils/foodApi';
 import { Colors, Spacing } from '../constants/theme';
 import { BackButton } from '../components/BackButton';
@@ -25,19 +29,29 @@ export default function SearchFoodScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ParsedNutrition[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [historyTab, setHistoryTab] = useState<HistoryTab>('all');
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const runSearch = useCallback((q: string) => {
     if (!q.trim()) {
       setResults([]);
+      setSearchError(null);
       return;
     }
     setLoading(true);
-    searchFoods(q).then((list) => {
-      setResults(list);
-      setLoading(false);
-    });
+    setSearchError(null);
+    searchFoods(q)
+      .then((list) => {
+        setResults(list);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setLoading(false);
+        setResults([]);
+        setSearchError(err?.message || 'Search failed');
+      });
   }, []);
 
   const handleChangeText = (text: string) => {
@@ -72,7 +86,13 @@ export default function SearchFoodScreen() {
   return (
     <View style={styles.container}>
       <BackButton />
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -95,7 +115,7 @@ export default function SearchFoodScreen() {
             {query.length > 0 && (
               <TouchableOpacity
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => { setQuery(''); setResults([]); }}
+                onPress={() => { setQuery(''); setResults([]); setSearchError(null); }}
                 style={styles.clearButton}
               >
                 <Ionicons name="close-circle" size={20} color={Colors.primaryLight} />
@@ -123,25 +143,25 @@ export default function SearchFoodScreen() {
         {/* Action cards — Barcode scan, Meal scan, Scan label — open camera with correct mode */}
         <View style={styles.actionRow}>
           <Pressable
-            onPress={() => router.replace({ pathname: '/(tabs)/nutrition', params: { openScan: 'barcode' } })}
+            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'barcode' } })}
             style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
           >
             <Ionicons name="barcode-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>Barcode scan</Text>
+            <Text style={styles.actionCardText}>barcode scan</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.replace({ pathname: '/(tabs)/nutrition', params: { openScan: 'ai' } })}
+            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'ai' } })}
             style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
           >
             <Ionicons name="restaurant-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>Meal scan</Text>
+            <Text style={styles.actionCardText}>meal scan</Text>
           </Pressable>
           <Pressable
-            onPress={() => router.replace({ pathname: '/(tabs)/nutrition', params: { openScan: 'label' } })}
+            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'label' } })}
             style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
           >
             <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>Scan label</Text>
+            <Text style={styles.actionCardText}>label scan</Text>
           </Pressable>
         </View>
 
@@ -155,63 +175,104 @@ export default function SearchFoodScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Placeholder cards — layout only, no names */}
-          <View style={styles.historyCards}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={styles.historyCard}>
-                <View style={styles.historyCardLeft} />
+          {/* Cards area: preloaded placeholders OR search results (replaces placeholders) */}
+          {loading && (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={Colors.primaryLight} />
+            </View>
+          )}
+          {!loading && query.trim().length > 0 && results.length === 0 && !searchError && (
+            <Text style={styles.emptyText}>No results found</Text>
+          )}
+          {!loading && searchError && (
+            <Text style={styles.emptyText}>{searchError}</Text>
+          )}
+          {!loading && (query.trim().length === 0 ? (
+            <View style={styles.historyCards}>
+              {[0, 1, 2].map((i) => (
+                <View key={i} style={styles.historyCard}>
+                  <View style={styles.historyCardLeft} />
+                  <TouchableOpacity
+                    style={styles.historyCardAddButton}
+                    onPress={() => {}}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : results.length > 0 && (
+            <View style={styles.historyCards}>
+              {results.map((item, i) => (
                 <TouchableOpacity
-                  style={styles.historyCardAddButton}
-                  onPress={() => {}}
+                  key={i}
+                  style={styles.historyCard}
+                  onPress={() => handleSelect(item)}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="add" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-
-          {/* Search results — same card layout */}
-          {query.trim().length > 0 && (
-            <>
-              {loading && (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color={Colors.primaryLight} />
-                </View>
-              )}
-              {!loading && results.length > 0 && (
-                <View style={styles.resultsSection}>
-                  {results.map((item, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={styles.historyCard}
-                      onPress={() => handleSelect(item)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.historyCardLeft}>
-                        <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.resultMeta} numberOfLines={1}>
-                          {item.calories} cal{item.servingSize ? ` · ${item.servingSize}` : ''}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.historyCardAddButton}
-                        onPress={() => handleSelect(item)}
-                        activeOpacity={0.7}
+                  <View style={styles.historyCardLeft}>
+                    {item.brand ? (
+                      <Text style={styles.resultBrand} numberOfLines={1} ellipsizeMode="tail">
+                        {item.brand}
+                      </Text>
+                    ) : (
+                      <MaskedView
+                        maskElement={
+                          <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
+                            tmlsn basics
+                          </Text>
+                        }
                       >
-                        <Ionicons name="add" size={20} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {!loading && query.trim().length > 0 && results.length === 0 && (
-                <Text style={styles.emptyText}>No results found</Text>
-              )}
-            </>
-          )}
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { opacity: 0 }]}>
+                            tmlsn basics
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    )}
+                    <Text style={styles.resultName} numberOfLines={1} ellipsizeMode="tail">
+                      {item.name}
+                    </Text>
+                    <View style={styles.macrosRow}>
+                      <Text style={styles.macrosPrefix}>per 100g</Text>
+                      <MaskedView
+                        maskElement={
+                          <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        }
+                      >
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '500', opacity: 0 }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.historyCardAddButton}
+                    onPress={() => handleSelect(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -222,12 +283,15 @@ const SEARCH_BAR_TOP = BACK_BUTTON_TOP + BACK_BUTTON_SIZE + Spacing.sm;
 const SEARCH_BAR_HEIGHT = 44;
 const ACTION_CARD_HEIGHT = 64;
 const ACTION_CARD_RADIUS = 12;
-const CARD_HEIGHT = 72;
+const CARD_HEIGHT = 88;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.primaryDark,
+  },
+  keyboardAvoid: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -364,20 +428,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resultsSection: {
-    gap: Spacing.sm,
+  resultBrand: {
+    fontSize: 11,
+    color: Colors.primaryLight,
+    fontWeight: '400',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  resultBrandTmlsnBasics: {
+    color: Colors.accentChampagne,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   resultName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: Colors.white,
     letterSpacing: -0.11,
   },
-  resultMeta: {
-    fontSize: 13,
-    color: Colors.primaryLight,
+  macrosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
-    letterSpacing: -0.11,
+    gap: 4,
+  },
+  macrosPrefix: {
+    fontSize: 10,
+    color: Colors.primaryLight,
+  },
+  macrosValues: {
+    fontSize: 12,
+    color: Colors.accentChampagne,
+    fontWeight: '500',
   },
   loadingRow: {
     paddingVertical: Spacing.lg,

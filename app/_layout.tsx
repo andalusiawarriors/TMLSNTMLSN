@@ -1,8 +1,12 @@
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
+
+// Keep native splash visible until fonts load (avoids blank screen)
+SplashScreen.preventAutoHideAsync();
 import {
   useFonts,
   EBGaramond_400Regular,
@@ -34,9 +38,12 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    // Register for push notifications on app start
     registerForPushNotifications();
   }, []);
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
 
@@ -77,6 +84,16 @@ export default function RootLayout() {
             headerShown: false,
             animation: 'slide_from_right',
             contentStyle: { backgroundColor: Colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="scan-food-camera"
+          options={{
+            title: 'Scan food',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+            presentation: 'fullScreenModal',
+            contentStyle: { backgroundColor: '#000' },
           }}
         />
         <Stack.Screen

@@ -219,11 +219,14 @@ interface HeatmapPreviewWidgetSideBySideProps {
   heatmapData: HeatmapData[];
   /** Card width to fit carousel (e.g. CAROUSEL_WIDTH). Default: full width minus padding. */
   cardWidth?: number;
+  /** If true, render without card background/border (isolated like calorie/macro displays). */
+  bare?: boolean;
 }
 
 export function HeatmapPreviewWidgetSideBySide({
   heatmapData,
   cardWidth = Dimensions.get('window').width - 38,
+  bare = false,
 }: HeatmapPreviewWidgetSideBySideProps) {
   const weekAggregate = useMemo(
     () => aggregateHeatmapLast7Days(heatmapData),
@@ -256,8 +259,12 @@ export function HeatmapPreviewWidgetSideBySide({
     Math.floor(bodyHeight / 1.5)
   );
 
+  const containerStyle = bare
+    ? { width: cardWidth, height: TARGET_WIDGET_HEIGHT, alignSelf: 'center' as const, alignItems: 'center' as const, justifyContent: 'center' as const, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md }
+    : [styles.sideBySideCard, { width: cardWidth, height: TARGET_WIDGET_HEIGHT }];
+
   return (
-    <View style={[styles.sideBySideCard, { width: cardWidth, height: TARGET_WIDGET_HEIGHT }]}>
+    <View style={containerStyle}>
       <Text style={styles.sideBySideTitle}>muscles hit · last 7 days</Text>
       <View style={styles.sideBySideRow}>
         <View style={styles.sideBySideCell}>
