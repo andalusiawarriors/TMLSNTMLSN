@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
+import { useTheme } from '../../../context/ThemeContext';
 import { getUserSettings, saveUserSettings } from '../../../utils/storage';
 import type { UserSettings } from '../../../types';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
@@ -22,6 +23,7 @@ const REST_TIMER_LABELS: Record<number, string> = {
 };
 
 export default function WorkoutSettingsScreen() {
+  const { colors } = useTheme();
   const [settings, setSettings] = useState<UserSettings | null>(null);
 
   const loadSettings = useCallback(async () => {
@@ -44,15 +46,15 @@ export default function WorkoutSettingsScreen() {
 
   if (!settings) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
         <HomeGradientBackground />
-        <Text style={styles.loadingText}>loading...</Text>
+        <Text style={[styles.loadingText, { color: colors.primaryLight }]}>loading...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
       <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}
@@ -61,15 +63,16 @@ export default function WorkoutSettingsScreen() {
       >
       {/* Weight unit */}
       <View style={styles.section}>
-        <Text style={[styles.settingLabel, { marginBottom: Spacing.xs }]}>weight unit</Text>
-        <Text style={styles.settingHint}>kg or lbs</Text>
+        <Text style={[styles.settingLabel, { marginBottom: Spacing.xs, color: colors.primaryLight }]}>weight unit</Text>
+        <Text style={[styles.settingHint, { color: colors.primaryLight + '99' }]}>kg or lbs</Text>
         <View style={[styles.segmentRow, { marginTop: Spacing.sm }]}>
           {(['kg', 'lb'] as const).map((unit) => (
             <TouchableOpacity
               key={unit}
               style={[
                 styles.segmentButton,
-                settings.weightUnit === unit && styles.segmentButtonActive,
+                { backgroundColor: colors.primaryDarkLighter },
+                settings.weightUnit === unit && { backgroundColor: colors.primaryLight },
               ]}
               onPress={() => updateSettings({ weightUnit: unit })}
               activeOpacity={0.8}
@@ -77,7 +80,8 @@ export default function WorkoutSettingsScreen() {
               <Text
                 style={[
                   styles.segmentButtonText,
-                  settings.weightUnit === unit && styles.segmentButtonTextActive,
+                  { color: colors.primaryLight },
+                  settings.weightUnit === unit && { color: colors.primaryDark },
                 ]}
               >
                 {unit === 'kg' ? 'kg' : 'lbs'}
@@ -90,15 +94,15 @@ export default function WorkoutSettingsScreen() {
       {/* Default rest timer */}
       <View style={styles.section}>
         <View style={styles.row}>
-          <Text style={styles.settingLabel}>default rest timer</Text>
+          <Text style={[styles.settingLabel, { color: colors.primaryLight }]}>default rest timer</Text>
           <Switch
             value={settings.defaultRestTimerEnabled !== false}
             onValueChange={(v) => updateSettings({ defaultRestTimerEnabled: v })}
-            trackColor={{ false: Colors.primaryLight + '40', true: Colors.primaryLight + '80' }}
-            thumbColor={(settings.defaultRestTimerEnabled !== false) ? Colors.primaryDark : Colors.primaryLight}
+            trackColor={{ false: colors.primaryLight + '40', true: colors.primaryLight + '80' }}
+            thumbColor={(settings.defaultRestTimerEnabled !== false) ? colors.primaryDark : colors.primaryLight}
           />
         </View>
-        <Text style={styles.settingHint}>used when adding new exercises</Text>
+        <Text style={[styles.settingHint, { color: colors.primaryLight + '99' }]}>used when adding new exercises</Text>
         {(settings.defaultRestTimerEnabled !== false) && (
           <View style={[styles.optionsRow, { marginTop: Spacing.sm }]}>
               {REST_TIMER_OPTIONS.map((sec) => (
@@ -106,7 +110,8 @@ export default function WorkoutSettingsScreen() {
                   key={sec}
                   style={[
                     styles.optionChip,
-                    (settings.defaultRestTimer ?? 120) === sec && styles.optionChipActive,
+                    { backgroundColor: colors.primaryLight + '15' },
+                    (settings.defaultRestTimer ?? 120) === sec && { backgroundColor: colors.accentBlue },
                   ]}
                   onPress={() => updateSettings({ defaultRestTimer: sec })}
                   activeOpacity={0.8}
@@ -114,7 +119,8 @@ export default function WorkoutSettingsScreen() {
                   <Text
                     style={[
                       styles.optionChipText,
-                      (settings.defaultRestTimer ?? 120) === sec && styles.optionChipTextActive,
+                      { color: colors.primaryLight + '80' },
+                      (settings.defaultRestTimer ?? 120) === sec && { color: colors.white },
                     ]}
                   >
                     {REST_TIMER_LABELS[sec]}
@@ -130,29 +136,29 @@ export default function WorkoutSettingsScreen() {
           {/* Rest timer sound */}
           <View style={styles.section}>
             <View style={styles.row}>
-              <Text style={styles.settingLabel}>rest timer sound</Text>
+              <Text style={[styles.settingLabel, { color: colors.primaryLight }]}>rest timer sound</Text>
               <Switch
                 value={settings.restTimerSound}
                 onValueChange={(v) => updateSettings({ restTimerSound: v })}
-                trackColor={{ false: Colors.primaryLight + '40', true: Colors.primaryLight + '80' }}
-                thumbColor={settings.restTimerSound ? Colors.primaryDark : Colors.primaryLight}
+                trackColor={{ false: colors.primaryLight + '40', true: colors.primaryLight + '80' }}
+                thumbColor={settings.restTimerSound ? colors.primaryDark : colors.primaryLight}
               />
             </View>
-            <Text style={styles.settingHint}>play sound when rest timer completes</Text>
+            <Text style={[styles.settingHint, { color: colors.primaryLight + '99' }]}>play sound when rest timer completes</Text>
           </View>
 
           {/* Rest timer notification */}
           <View style={styles.section}>
             <View style={styles.row}>
-              <Text style={styles.settingLabel}>rest timer notification</Text>
+              <Text style={[styles.settingLabel, { color: colors.primaryLight }]}>rest timer notification</Text>
               <Switch
                 value={settings.notificationsEnabled}
                 onValueChange={(v) => updateSettings({ notificationsEnabled: v })}
-                trackColor={{ false: Colors.primaryLight + '40', true: Colors.primaryLight + '80' }}
-                thumbColor={settings.notificationsEnabled ? Colors.primaryDark : Colors.primaryLight}
+                trackColor={{ false: colors.primaryLight + '40', true: colors.primaryLight + '80' }}
+                thumbColor={settings.notificationsEnabled ? colors.primaryDark : colors.primaryLight}
               />
             </View>
-            <Text style={styles.settingHint}>push notification when rest timer completes</Text>
+            <Text style={[styles.settingHint, { color: colors.primaryLight + '99' }]}>push notification when rest timer completes</Text>
           </View>
         </>
       )}

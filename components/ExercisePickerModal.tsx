@@ -16,6 +16,7 @@ import {
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 const CATEGORY_LABELS: Record<string, string> = {
   chest: 'Chest',
@@ -47,6 +48,7 @@ export function ExercisePickerModal({
   onSelect,
   defaultRestTimer = 120,
 }: ExercisePickerModalProps) {
+  const { colors } = useTheme();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -81,18 +83,18 @@ export function ExercisePickerModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
-        <View style={styles.modal}>
+        <View style={[styles.modal, { backgroundColor: colors.primaryDark }]}>
           <View style={styles.header}>
-            <Text style={styles.title}>add exercise</Text>
+            <Text style={[styles.title, { color: colors.primaryLight }]}>add exercise</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={styles.closeBtn}>✕</Text>
+              <Text style={[styles.closeBtn, { color: colors.primaryLight }]}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <TextInput
-            style={styles.search}
+            style={[styles.search, { color: colors.primaryLight, backgroundColor: colors.primaryDarkLighter }]}
             placeholder="search exercises..."
-            placeholderTextColor={Colors.primaryLight + '80'}
+            placeholderTextColor={colors.primaryLight + '80'}
             value={search}
             onChangeText={setSearch}
           />
@@ -104,18 +106,18 @@ export function ExercisePickerModal({
             contentContainerStyle={styles.categoryRow}
           >
             <TouchableOpacity
-              style={[styles.chip, !selectedCategory && styles.chipActive]}
+              style={[styles.chip, { backgroundColor: colors.primaryDarkLighter }, !selectedCategory && { backgroundColor: colors.primaryLight }]}
               onPress={() => setSelectedCategory(null)}
             >
-              <Text style={[styles.chipText, !selectedCategory && styles.chipTextActive]}>all</Text>
+              <Text style={[styles.chipText, { color: colors.primaryLight }, !selectedCategory && { color: colors.primaryDark }]}>all</Text>
             </TouchableOpacity>
             {categories.map((cat) => (
               <TouchableOpacity
                 key={cat}
-                style={[styles.chip, selectedCategory === cat && styles.chipActive]}
+                style={[styles.chip, { backgroundColor: colors.primaryDarkLighter }, selectedCategory === cat && { backgroundColor: colors.primaryLight }]}
                 onPress={() => setSelectedCategory(cat)}
               >
-                <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
+                <Text style={[styles.chipText, { color: colors.primaryLight }, selectedCategory === cat && { color: colors.primaryDark }]}>
                   {CATEGORY_LABELS[cat] ?? cat}
                 </Text>
               </TouchableOpacity>
@@ -129,18 +131,18 @@ export function ExercisePickerModal({
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.row}
+                style={[styles.row, { backgroundColor: colors.primaryDarkLighter }]}
                 onPress={() => handleSelect(item)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.rowName}>{item.name}</Text>
-                <Text style={styles.rowMeta}>
+                <Text style={[styles.rowName, { color: colors.primaryLight }]}>{item.name}</Text>
+                <Text style={[styles.rowMeta, { color: colors.primaryLight + '99' }]}>
                   {item.equipment.join(', ')} · {item.movementType}
                 </Text>
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              <Text style={styles.empty}>No exercises match your search.</Text>
+              <Text style={[styles.empty, { color: colors.primaryLight + '80' }]}>No exercises match your search.</Text>
             }
           />
         </View>

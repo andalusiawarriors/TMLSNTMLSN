@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 // Keep native splash visible until fonts load (avoids blank screen)
 SplashScreen.preventAutoHideAsync();
@@ -20,7 +20,100 @@ import { SpaceMono_400Regular } from '@expo-google-fonts/space-mono';
 import { Inconsolata_400Regular } from '@expo-google-fonts/inconsolata';
 import { RobotoMono_400Regular } from '@expo-google-fonts/roboto-mono';
 import { registerForPushNotifications } from '../utils/notifications';
-import { Colors } from '../constants/theme';
+import { ThemeProvider, useTheme } from '../context/ThemeContext';
+import { ActiveWorkoutProvider } from '../context/ActiveWorkoutContext';
+import { ActiveWorkoutPill } from '../components/ActiveWorkoutPill';
+
+function RootLayoutInner() {
+  const { colors } = useTheme();
+
+  return (
+    <View style={styles.rootInner}>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.primaryDark },
+          headerTintColor: colors.white,
+          headerTitleStyle: { fontWeight: '600' },
+          contentStyle: { backgroundColor: colors.black },
+        }}
+      >
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="saved-foods"
+          options={{
+            title: 'Saved Foods',
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="search-food"
+          options={{
+            title: 'Search food',
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="tmlsn-routines-modal"
+          options={{
+            presentation: 'modal',
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
+            headerShown: false,
+            title: 'TMLSN routines',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="your-routines-modal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            title: 'Your routines',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="start-empty-workout-modal"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            title: 'Workout',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="food-action-modal"
+          options={{
+            presentation: 'transparentModal',
+            headerShown: false,
+            title: 'Food',
+            contentStyle: { backgroundColor: 'transparent' },
+          }}
+        />
+        <Stack.Screen
+          name="preferences"
+          options={{
+            title: 'Preferences',
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+            headerStyle: { backgroundColor: colors.primaryDark },
+            headerTintColor: colors.primaryLight,
+          }}
+        />
+      </Stack>
+      {/* Active workout pill at root — visible above modals and overlay */}
+      <ActiveWorkoutPill />
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -49,94 +142,16 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: Colors.primaryDark,
-          },
-          headerTintColor: Colors.white,
-          headerTitleStyle: {
-            fontWeight: '600',
-          },
-          contentStyle: {
-            backgroundColor: Colors.black,
-          },
-        }}
-      >
-        <Stack.Screen
-          name="(tabs)"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="saved-foods"
-          options={{
-            title: 'Saved Foods',
-            headerShown: false,
-            animation: 'slide_from_right',
-            contentStyle: { backgroundColor: Colors.primaryDark },
-          }}
-        />
-        <Stack.Screen
-          name="search-food"
-          options={{
-            title: 'Search food',
-            headerShown: false,
-            animation: 'slide_from_right',
-            contentStyle: { backgroundColor: Colors.primaryDark },
-          }}
-        />
-        <Stack.Screen
-          name="scan-food-camera"
-          options={{
-            title: 'Scan food',
-            headerShown: false,
-            animation: 'slide_from_bottom',
-            presentation: 'fullScreenModal',
-            contentStyle: { backgroundColor: '#000' },
-          }}
-        />
-        <Stack.Screen
-          name="tmlsn-routines-modal"
-          options={{
-            presentation: 'modal',
-            gestureEnabled: true,
-            gestureDirection: 'vertical',
-            headerShown: false,
-            title: 'TMLSN routines',
-            contentStyle: { backgroundColor: Colors.primaryDark },
-          }}
-        />
-        <Stack.Screen
-          name="your-routines-modal"
-          options={{
-            presentation: 'modal',
-            headerShown: false,
-            title: 'Your routines',
-          }}
-        />
-        <Stack.Screen
-          name="start-empty-workout-modal"
-          options={{
-            presentation: 'modal',
-            headerShown: false,
-            title: 'Workout',
-          }}
-        />
-        <Stack.Screen
-          name="food-action-modal"
-          options={{
-            presentation: 'transparentModal',
-            headerShown: false,
-            title: 'Food',
-            contentStyle: { backgroundColor: 'transparent' },
-          }}
-        />
-      </Stack>
+      <ThemeProvider>
+        <ActiveWorkoutProvider>
+          <RootLayoutInner />
+        </ActiveWorkoutProvider>
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  rootInner: { flex: 1 },
 });

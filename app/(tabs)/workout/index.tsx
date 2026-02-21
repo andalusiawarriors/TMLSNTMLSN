@@ -8,7 +8,6 @@ import {
   Pressable,
   Modal,
   Alert,
-  Animated,
   Dimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -33,11 +32,19 @@ import { generateId, formatDuration } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
+import AnimatedReanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
+import { useTheme } from '../../../context/ThemeContext';
+import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { SlidersHorizontal } from 'phosphor-react-native';
 
 
@@ -75,14 +82,29 @@ export default function WorkoutScreen({
   onCloseModal,
 }: WorkoutScreenModalProps = {}) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const {
+    activeWorkout,
+    setActiveWorkout,
+    currentExerciseIndex,
+    setCurrentExerciseIndex,
+    minimized,
+    minimizeWorkout,
+  } = useActiveWorkout();
   const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
     startRoutineId?: string;
     startEmpty?: string;
   }>();
   const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
-  const [activeWorkout, setActiveWorkout] = useState<WorkoutSession | null>(initialActiveWorkout ?? null);
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+
+  // Sync initialActiveWorkout (e.g. from modal) into context
+  useEffect(() => {
+    if (initialActiveWorkout) {
+      setActiveWorkout(initialActiveWorkout);
+      setCurrentExerciseIndex(0);
+    }
+  }, [initialActiveWorkout, setActiveWorkout, setCurrentExerciseIndex]);
   const [showSplitSelection, setShowSplitSelection] = useState(false);
   const [showExerciseEntry, setShowExerciseEntry] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -199,7 +221,6 @@ export default function WorkoutScreen({
   };
 
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
-    slideAnim.setValue(1);
     const exercises: Exercise[] = split.exercises.map((template) => ({
       id: generateId(),
       name: template.name,
@@ -224,7 +245,6 @@ export default function WorkoutScreen({
   };
 
   const startWorkoutFromSavedRoutine = (routine: SavedRoutine) => {
-    slideAnim.setValue(1);
     const exercises: Exercise[] = routine.exercises.map((ex) => ({
       id: generateId(),
       name: ex.name,
@@ -249,7 +269,6 @@ export default function WorkoutScreen({
   };
 
   const startFreeformWorkout = () => {
-    slideAnim.setValue(1);
     const newWorkout: WorkoutSession = {
       id: generateId(),
       date: new Date().toISOString(),
@@ -480,54 +499,51 @@ export default function WorkoutScreen({
     onCloseModal?.();
   };
 
-  const slideAnim = useRef(new Animated.Value(asModal ? 0 : 1)).current;
-  const windowHeight = Dimensions.get('window').height;
-  const PAN_DOWN_DURATION = 280;
-  const PAN_UP_DURATION = 350;
+  const handleMinimize = () => {
+    setShowExerciseEntry(false);
+    setRestTimerActive(false);
+    setRestTimeRemaining(0);
+    // Close overlay immediately — pill shows when minimized
+    minimizeWorkout();
+    onCloseModal?.();
+  };
 
-  useLayoutEffect(() => {
-    if (asModal && activeWorkout) slideAnim.setValue(0);
-  }, [asModal]);
+  const windowHeight = Dimensions.get('window').height;
+  const overlayEntranceY = useSharedValue(24);
+  const overlayEntranceOpacity = useSharedValue(0);
+  const [overlayTrigger, setOverlayTrigger] = useState(0);
 
   useEffect(() => {
-    if (activeWorkout && !asModal) {
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: PAN_UP_DURATION,
-        useNativeDriver: true,
-      }).start();
+    if (activeWorkout && !minimized) {
+      setOverlayTrigger((t) => t + 1);
+      overlayEntranceY.value = 24;
+      overlayEntranceOpacity.value = 0;
+      overlayEntranceY.value = withTiming(0, {
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+      });
+      overlayEntranceOpacity.value = withTiming(1, {
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+      });
     }
-  }, [activeWorkout?.id, asModal]);
+  }, [activeWorkout?.id, minimized]);
 
-  const runPanDownAnimation = () => {
-    Animated.timing(slideAnim, {
-      toValue: 1,
-      duration: PAN_DOWN_DURATION,
-      useNativeDriver: true,
-    }).start(() => {
-      goBackToMainMenu();
-      // Don't reset slideAnim here – it would flash the overlay back for one frame. Reset when starting next workout.
-    });
-  };
+  const overlayEntranceStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: overlayEntranceY.value }],
+    opacity: overlayEntranceOpacity.value,
+  }));
 
   const handleBackArrowPress = () => {
     if (!activeWorkout) return;
-    const count = activeWorkout.exercises.length;
-    const exerciseWord = count === 1 ? 'exercise' : 'exercises';
-    Alert.alert(
-      'Leave workout?',
-      `You have ${count} ${exerciseWord} left. Are you sure you want to leave the workout?`,
-      [
-        { text: 'Cancel', style: 'cancel', onPress: runPanDownAnimation },
-        { text: 'Leave', style: 'destructive', onPress: goBackToMainMenu },
-      ]
-    );
+    // Down arrow = minimize (HEVY-style), show pill, keep workout active
+    handleMinimize();
   };
 
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
       <HomeGradientBackground />
       {/* Main menu – hidden when asModal (FAB opened from another tab); only overlay is shown */}
       {!asModal && (
@@ -547,7 +563,7 @@ export default function WorkoutScreen({
         <View style={styles.pageHeaderRow}>
           <View style={styles.pageHeaderLeft} />
           <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
-            <Text style={styles.pageHeading}>tmlsn tracker.</Text>
+            <Text style={[styles.pageHeading, { color: colors.primaryLight }]}>tmlsn tracker.</Text>
           </View>
           <View style={styles.pageHeaderRight}>
           <Pressable
@@ -559,17 +575,17 @@ export default function WorkoutScreen({
           >
             <View style={styles.settingsPill}>
               <LinearGradient
-                colors={['#4E4F50', '#4A4B4C']}
+                colors={colors.pillBorderGradient}
                 style={[StyleSheet.absoluteFillObject, { borderRadius: SETTINGS_CIRCLE_SIZE / 2 }]}
               />
               <LinearGradient
-                colors={['#363738', '#2E2F30']}
+                colors={colors.pillFillGradient}
                 style={[
                   StyleSheet.absoluteFillObject,
                   { top: 1, left: 1, right: 1, bottom: 1, borderRadius: SETTINGS_CIRCLE_SIZE / 2 - 1 },
                 ]}
               />
-              <SlidersHorizontal size={20} color={Colors.primaryLight} weight="regular" />
+              <SlidersHorizontal size={20} color={colors.primaryLight} weight="regular" />
             </View>
           </Pressable>
           </View>
@@ -606,13 +622,13 @@ export default function WorkoutScreen({
                 style={styles.mainMenuButtonWrap}
               >
                 <Card gradientFill borderRadius={38} style={styles.progressCard}>
-                  <Text style={styles.mainMenuButtonText}>progress</Text>
+                  <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>progress</Text>
                 </Card>
               </AnimatedPressable>
             </View>
           </ScrollView>
           <View style={styles.swipeDots}>
-            <View style={[styles.swipeDot, styles.swipeDotActive]} />
+            <View style={[styles.swipeDot, styles.swipeDotActive, { backgroundColor: colors.primaryLight }]} />
           </View>
         </View>
         </AnimatedFadeInUp>
@@ -622,7 +638,7 @@ export default function WorkoutScreen({
         <View style={styles.achievementsStack}>
           <AnimatedPressable style={styles.achievementCardWrap}>
             <Card gradientFill borderRadius={38} style={styles.achievementCard}>
-              <Text style={styles.mainMenuButtonText}>achievements</Text>
+              <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>achievements</Text>
             </Card>
           </AnimatedPressable>
         </View>
@@ -643,32 +659,32 @@ export default function WorkoutScreen({
           onPressOut={playOut}
           onPress={() => setShowHistory(false)}
         >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+          <View style={[styles.modalContent, { backgroundColor: colors.primaryDark }]} onStartShouldSetResponder={() => true}>
             {/* Modal header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Progress</Text>
+              <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Progress</Text>
               <Pressable
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() => setShowHistory(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={styles.modalCloseButton}
+                style={[styles.modalCloseButton, { backgroundColor: colors.primaryLight + '15' }]}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <Text style={[styles.modalCloseText, { color: colors.primaryLight + '80' }]}>✕</Text>
               </Pressable>
             </View>
 
             {/* Stats summary */}
             <View style={styles.historyStatsRow}>
-              <View style={styles.historyStatPill}>
-                <Text style={styles.historyStatValue}>{recentWorkouts.length}</Text>
-                <Text style={styles.historyStatLabel}>Sessions</Text>
+              <View style={[styles.historyStatPill, { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' }]}>
+                <Text style={[styles.historyStatValue, { color: colors.primaryLight }]}>{recentWorkouts.length}</Text>
+                <Text style={[styles.historyStatLabel, { color: colors.primaryLight + '50' }]}>Sessions</Text>
               </View>
-              <View style={styles.historyStatPill}>
-                <Text style={styles.historyStatValue}>
+              <View style={[styles.historyStatPill, { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' }]}>
+                <Text style={[styles.historyStatValue, { color: colors.primaryLight }]}>
                   {recentWorkouts.reduce((acc, w) => acc + w.exercises.reduce((a, e) => a + e.sets.length, 0), 0)}
                 </Text>
-                <Text style={styles.historyStatLabel}>Total Sets</Text>
+                <Text style={[styles.historyStatLabel, { color: colors.primaryLight + '50' }]}>Total Sets</Text>
               </View>
             </View>
 
@@ -676,9 +692,9 @@ export default function WorkoutScreen({
             <ScrollView style={styles.historyList} showsVerticalScrollIndicator={false}>
               {recentWorkouts.length === 0 ? (
                 <View style={styles.historyEmpty}>
-                  <Text style={styles.historyEmptyIcon}>◇</Text>
-                  <Text style={styles.historyEmptyText}>No workouts yet</Text>
-                  <Text style={styles.historyEmptySubtext}>Start one to see your progress</Text>
+                  <Text style={[styles.historyEmptyIcon, { color: colors.primaryLight + '30' }]}>◇</Text>
+                  <Text style={[styles.historyEmptyText, { color: colors.primaryLight + '60' }]}>No workouts yet</Text>
+                  <Text style={[styles.historyEmptySubtext, { color: colors.primaryLight + '40' }]}>Start one to see your progress</Text>
                 </View>
               ) : (
                 recentWorkouts.map((w) => {
@@ -687,15 +703,15 @@ export default function WorkoutScreen({
                     (a, e) => a + e.sets.reduce((s, set) => s + set.weight * set.reps, 0), 0
                   );
                   return (
-                    <View key={w.id} style={styles.historySessionCard}>
+                    <View key={w.id} style={[styles.historySessionCard, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '12' }]}>
                       {/* Session header */}
                       <View style={styles.historySessionHeader}>
-                        <View style={styles.historySessionIcon}>
-                          <Text style={styles.historySessionIconText}>◆</Text>
+                        <View style={[styles.historySessionIcon, { backgroundColor: colors.primaryLight + '15' }]}>
+                          <Text style={[styles.historySessionIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                         </View>
                         <View style={styles.historySessionTitleCol}>
-                          <Text style={styles.historySessionName}>{w.name}</Text>
-                          <Text style={styles.historySessionDate}>
+                          <Text style={[styles.historySessionName, { color: colors.primaryLight }]}>{w.name}</Text>
+                          <Text style={[styles.historySessionDate, { color: colors.primaryLight + '50' }]}>
                             {new Date(w.date).toLocaleDateString('en-US', {
                               weekday: 'short',
                               month: 'short',
@@ -706,22 +722,22 @@ export default function WorkoutScreen({
                       </View>
                       {/* Session stats */}
                       <View style={styles.historySessionStats}>
-                        <View style={styles.historySessionStatItem}>
-                          <Text style={styles.historySessionStatIcon}>◎</Text>
-                          <Text style={styles.historySessionStatText}>{w.exercises.length} exercises</Text>
+                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
+                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◎</Text>
+                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.exercises.length} exercises</Text>
                         </View>
-                        <View style={styles.historySessionStatItem}>
-                          <Text style={styles.historySessionStatIcon}>◉</Text>
-                          <Text style={styles.historySessionStatText}>{wSets} sets</Text>
+                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
+                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◉</Text>
+                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wSets} sets</Text>
                         </View>
-                        <View style={styles.historySessionStatItem}>
-                          <Text style={styles.historySessionStatIcon}>⏱</Text>
-                          <Text style={styles.historySessionStatText}>{w.duration} min</Text>
+                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
+                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⏱</Text>
+                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.duration} min</Text>
                         </View>
                         {wVolume > 0 && (
-                          <View style={styles.historySessionStatItem}>
-                            <Text style={styles.historySessionStatIcon}>⚖</Text>
-                            <Text style={styles.historySessionStatText}>{wVolume.toLocaleString()} {weightUnit}</Text>
+                          <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
+                            <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⚖</Text>
+                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wVolume.toLocaleString()} {weightUnit}</Text>
                           </View>
                         )}
                       </View>
@@ -736,22 +752,13 @@ export default function WorkoutScreen({
       </>
       )}
 
-      {/* Workout log overlay – pans down when Cancel is pressed on leave dialog */}
-      {activeWorkout && (
-        <Animated.View
+      {/* Workout log overlay – entrance animation + minimize on down arrow */}
+      {activeWorkout && !minimized && (
+        <AnimatedReanimated.View
           style={[
             styles.workoutOverlay,
-            {
-              height: windowHeight,
-              transform: [
-                {
-                  translateY: slideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, windowHeight],
-                  }),
-                },
-              ],
-            },
+            { backgroundColor: colors.primaryDark, height: windowHeight },
+            overlayEntranceStyle,
           ]}
         >
           <ScrollView
@@ -761,22 +768,23 @@ export default function WorkoutScreen({
             ]}
           >
             {/* ─── HEVY-STYLE TOP BAR ─── */}
+            <AnimatedFadeInUp delay={0} duration={280} trigger={overlayTrigger} instant>
             <View style={styles.logTopBar}>
-              <Pressable
+              <AnimatedPressable
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={handleBackArrowPress}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.logBackArrowWrap}
               >
-                <Text style={styles.logBackArrow}>▼</Text>
-              </Pressable>
+                <Text style={[styles.logBackArrow, { color: colors.primaryLight }]}>▼</Text>
+              </AnimatedPressable>
               <View style={styles.logTopCenter}>
-                <Text style={styles.logTitle}>{activeWorkout.name || 'Workout'}</Text>
-                <Text style={styles.logTimer}>{formatElapsed(elapsedSeconds)}</Text>
+                <Text style={[styles.logTitle, { color: colors.primaryLight }]}>{activeWorkout.name || 'Workout'}</Text>
+                <Text style={[styles.logTimer, { color: colors.primaryLight + '99' }]}>{formatElapsed(elapsedSeconds)}</Text>
               </View>
-              <Pressable
-                style={({ pressed }) => [styles.finishButton, pressed && { opacity: 0.85 }]}
+              <AnimatedPressable
+                style={[styles.finishButton, { backgroundColor: colors.primaryLight }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() =>
@@ -790,116 +798,124 @@ export default function WorkoutScreen({
                   )
                 }
               >
-                <Text style={styles.finishButtonText}>Finish</Text>
-              </Pressable>
+                <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
+              </AnimatedPressable>
             </View>
+            </AnimatedFadeInUp>
 
             {/* ─── HEVY-STYLE SUMMARY STATS ROW ─── */}
+            <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
             <View style={styles.summaryRow}>
-              <View style={styles.summaryStatPill}>
-                <Text style={styles.summaryStatIcon}>⚖</Text>
-                <Text style={styles.summaryStatValue}>{totalVolume.toLocaleString()}</Text>
-                <Text style={styles.summaryStatUnit}>{weightUnit}</Text>
+              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
+                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{totalVolume.toLocaleString()}</Text>
+                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
               </View>
-              <View style={styles.summaryStatPill}>
-                <Text style={styles.summaryStatIcon}>◉</Text>
-                <Text style={styles.summaryStatValue}>{totalSets}</Text>
-                <Text style={styles.summaryStatUnit}>sets</Text>
+              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
+                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{totalSets}</Text>
+                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
               </View>
-              <View style={styles.summaryStatPill}>
-                <Text style={styles.summaryStatIcon}>◎</Text>
-                <Text style={styles.summaryStatValue}>{activeWorkout.exercises.length}</Text>
-                <Text style={styles.summaryStatUnit}>exercises</Text>
+              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◎</Text>
+                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{activeWorkout.exercises.length}</Text>
+                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>exercises</Text>
               </View>
             </View>
+            </AnimatedFadeInUp>
 
             {/* ─── HEVY-STYLE REST TIMER PANEL ─── */}
             {restTimerActive && restTimeRemaining > 0 && (
-              <View style={styles.restTimerPanel}>
+              <AnimatedFadeInUp delay={80} duration={300} trigger={overlayTrigger} instant>
+              <View style={[styles.restTimerPanel, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '20' }]}>
                 <View style={styles.restTimerHeader}>
-                  <Text style={styles.restTimerLabel}>REST TIMER</Text>
+                  <Text style={[styles.restTimerLabel, { color: colors.primaryLight + '80' }]}>REST TIMER</Text>
                 </View>
-                <Text style={styles.restTimerCountdown}>{formatDuration(restTimeRemaining)}</Text>
-                <View style={styles.restTimerProgressTrack}>
-                  <View style={[styles.restTimerProgressFill, { width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
+                <Text style={[styles.restTimerCountdown, { color: colors.primaryLight }]}>{formatDuration(restTimeRemaining)}</Text>
+                <View style={[styles.restTimerProgressTrack, { backgroundColor: colors.primaryLight + '15' }]}>
+                  <View style={[styles.restTimerProgressFill, { backgroundColor: colors.primaryLight, width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
                 </View>
                 <View style={styles.restTimerButtonsRow}>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
+                  <AnimatedPressable
+                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
                   >
-                    <Text style={styles.restTimerAdjustButtonText}>−15s</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerSkipButton, pressed && { opacity: 0.8 }]}
+                    <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>−15s</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={skipRestTimer}
                   >
-                    <Text style={styles.restTimerSkipButtonText}>Skip</Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [styles.restTimerAdjustButton, pressed && { opacity: 0.8 }]}
+                    <Text style={[styles.restTimerSkipButtonText, { color: colors.primaryDark }]}>Skip</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={() => setRestTimeRemaining((prev) => prev + 15)}
                   >
-                    <Text style={styles.restTimerAdjustButtonText}>+15s</Text>
-                  </Pressable>
+                    <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>+15s</Text>
+                  </AnimatedPressable>
                 </View>
               </View>
+              </AnimatedFadeInUp>
             )}
 
             {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
             {activeWorkout.exercises.length === 0 ? (
-              <Pressable
-                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
+              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+              <AnimatedPressable
+                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={openExercisePicker}
               >
-                <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
-              </Pressable>
+                <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
+              </AnimatedPressable>
+              </AnimatedFadeInUp>
             ) : null}
             {activeWorkout.exercises.map((exercise, exerciseIndex) => (
-              <View key={exercise.id} style={styles.exerciseBlock}>
+              <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
+              <View style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}>
                 {/* Exercise header */}
                 <View style={styles.exerciseBlockHeader}>
                   <View style={styles.exerciseBlockTitleRow}>
-                    <View style={styles.exerciseBlockIcon}>
-                      <Text style={styles.exerciseBlockIconText}>◆</Text>
+                    <View style={[styles.exerciseBlockIcon, { backgroundColor: colors.primaryLight + '15' }]}>
+                      <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                     </View>
-                    <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
+                    <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
                   </View>
                   <TouchableOpacity
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     onPress={() => showExerciseMenu(exerciseIndex)}
                   >
-                    <Text style={styles.exerciseBlockMenu}>⋮</Text>
+                    <Text style={[styles.exerciseBlockMenu, { color: colors.primaryLight + '60' }]}>⋮</Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Rest timer badge */}
                 {exercise.restTimer ? (
-                  <View style={styles.restTimerBadge}>
-                    <Text style={styles.restTimerBadgeText}>
+                  <View style={[styles.restTimerBadge, { backgroundColor: colors.primaryLight + '10' }]}>
+                    <Text style={[styles.restTimerBadgeText, { color: colors.primaryLight + '80' }]}>
                       Rest: {formatDuration(exercise.restTimer)}
                     </Text>
                   </View>
                 ) : null}
 
                 {/* Notes */}
-                <Text style={styles.notesPlaceholder}>+ Add notes</Text>
+                <Text style={[styles.notesPlaceholder, { color: colors.primaryLight + '50' }]}>+ Add notes</Text>
 
                 {/* Set table header */}
                 <View style={styles.setTableHeader}>
-                  <Text style={[styles.setTableHeaderCell, { width: 36 }]}>SET</Text>
-                  <Text style={[styles.setTableHeaderCell, { flex: 1 }]}>PREVIOUS</Text>
-                  <Text style={[styles.setTableHeaderCell, { width: 72 }]}>{weightUnit.toUpperCase()}</Text>
-                  <Text style={[styles.setTableHeaderCell, { width: 56 }]}>REPS</Text>
-                  <Text style={[styles.setTableHeaderCell, { width: 36 }]}>✓</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 36, color: colors.primaryLight + '50' }]}>SET</Text>
+                  <Text style={[styles.setTableHeaderCell, { flex: 1, color: colors.primaryLight + '50' }]}>PREVIOUS</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 72, color: colors.primaryLight + '50' }]}>{weightUnit.toUpperCase()}</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 56, color: colors.primaryLight + '50' }]}>REPS</Text>
+                  <Text style={[styles.setTableHeaderCell, { width: 36, color: colors.primaryLight + '50' }]}>✓</Text>
                 </View>
 
                 {/* Set rows – Hevy style */}
@@ -921,17 +937,17 @@ export default function WorkoutScreen({
                       friction={2}
                       rightThreshold={40}
                     >
-                      <View style={[styles.setRow, isCompleted && styles.setRowCompleted]}>
+                      <View style={[styles.setRow, isCompleted && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20' }]}>
                         {/* Set number dot */}
-                        <View style={[styles.setDot, isCompleted && styles.setDotCompleted]}>
-                          <Text style={[styles.setDotText, isCompleted && styles.setDotTextCompleted]}>
+                        <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
+                          <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
                             {setIndex + 1}
                           </Text>
                         </View>
 
                         {/* Previous */}
                         <View style={{ flex: 1, alignItems: 'center' }}>
-                          <Text style={[styles.setCellDim, isCompleted && styles.setCellDimCompleted]}>
+                          <Text style={[styles.setCellDim, { color: colors.primaryLight + '50' }, isCompleted && { color: colors.primaryLight + '70' }]}>
                             {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
                               ? `${exercise.sets[setIndex - 1].weight}×${exercise.sets[setIndex - 1].reps}`
                               : '—'}
@@ -949,18 +965,18 @@ export default function WorkoutScreen({
                               keyboardType="numeric"
                               placeholder="—"
                               containerStyle={styles.setInputContainer}
-                              style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
-                              placeholderTextColor={Colors.primaryLight + '60'}
+                              style={[styles.setInputText, { color: colors.primaryLight }, isCompleted && { color: colors.primaryDark }]}
+                              placeholderTextColor={colors.primaryLight + '60'}
                             />
                           ) : (
                             <Pressable
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'weight' })}
-                              style={styles.setInputPlaceholder}
+                              style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={styles.setInputPlaceholderText}>—</Text>
+                              <Text style={[styles.setInputPlaceholderText, { color: colors.primaryLight + '40' }]}>—</Text>
                             </Pressable>
                           )}
                         </View>
@@ -976,25 +992,25 @@ export default function WorkoutScreen({
                               keyboardType="numeric"
                               placeholder="—"
                               containerStyle={styles.setInputContainer}
-                              style={[styles.setInputText, isCompleted && styles.setInputTextCompleted]}
-                              placeholderTextColor={Colors.primaryLight + '60'}
+                              style={[styles.setInputText, { color: colors.primaryLight }, isCompleted && { color: colors.primaryDark }]}
+                              placeholderTextColor={colors.primaryLight + '60'}
                             />
                           ) : (
                             <Pressable
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => setEditingCell({ exerciseIndex, setIndex, field: 'reps' })}
-                              style={styles.setInputPlaceholder}
+                              style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={styles.setInputPlaceholderText}>—</Text>
+                              <Text style={[styles.setInputPlaceholderText, { color: colors.primaryLight + '40' }]}>—</Text>
                             </Pressable>
                           )}
                         </View>
 
                         {/* Completion checkmark */}
                         <Pressable
-                          style={[styles.setCheckWrap, isCompleted && styles.setCheckWrapCompleted]}
+                          style={[styles.setCheckWrap, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}
                           onPressIn={playIn}
                           onPressOut={playOut}
                           onPress={() => {
@@ -1005,7 +1021,7 @@ export default function WorkoutScreen({
                           }}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={[styles.setCheckText, isCompleted && styles.setCheckTextCompleted]}>✓</Text>
+                          <Text style={[styles.setCheckText, { color: colors.primaryLight + '40' }, isCompleted && { color: colors.primaryDark }]}>✓</Text>
                         </Pressable>
                       </View>
                     </Swipeable>
@@ -1014,49 +1030,52 @@ export default function WorkoutScreen({
 
                 {/* Add set button */}
                 <Pressable
-                  style={({ pressed }) => [styles.addSetButtonBlock, pressed && { opacity: 0.85 }]}
+                  style={({ pressed }) => [styles.addSetButtonBlock, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
                   onPressIn={playIn}
                   onPressOut={playOut}
                   onPress={() => addSet(exerciseIndex)}
                 >
-                  <Text style={styles.addSetButtonBlockText}>+ Add Set</Text>
+                  <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
                 </Pressable>
               </View>
+            </AnimatedFadeInUp>
             ))}
             {activeWorkout.exercises.length > 0 ? (
-              <Pressable
-                style={({ pressed }) => [styles.addSetButtonBlock, styles.addExerciseBlock, pressed && { opacity: 0.85 }]}
+              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+              <AnimatedPressable
+                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={openExercisePicker}
               >
                 <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
-              </Pressable>
+              </AnimatedPressable>
+              </AnimatedFadeInUp>
             ) : null}
           </ScrollView>
-        </Animated.View>
+        </AnimatedReanimated.View>
       )}
 
       {activeWorkout && exerciseMenuIndex !== null && (
         <Modal visible animationType="fade" transparent>
           <Pressable style={styles.exerciseMenuOverlay} onPress={closeExerciseMenu}>
-            <Pressable style={styles.exerciseMenuCard} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.exerciseMenuTitle} numberOfLines={1}>
+            <Pressable style={[styles.exerciseMenuCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]} onPress={(e) => e.stopPropagation()}>
+              <Text style={[styles.exerciseMenuTitle, { color: colors.primaryLight }]} numberOfLines={1}>
                 {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
               </Text>
               <TouchableOpacity
-                style={styles.exerciseMenuOption}
+                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
                 onPress={handleReplaceFromMenu}
                 activeOpacity={0.7}
               >
-                <Text style={styles.exerciseMenuOptionText}>Replace exercise</Text>
+                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Replace exercise</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.exerciseMenuOption}
+                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
                 onPress={handleDeleteFromMenu}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.exerciseMenuOptionText, styles.exerciseMenuOptionDestructive]}>
+                <Text style={[styles.exerciseMenuOptionText, styles.exerciseMenuOptionDestructive, { color: colors.accentRed }]}>
                   Delete exercise
                 </Text>
               </TouchableOpacity>
@@ -1065,7 +1084,7 @@ export default function WorkoutScreen({
                 onPress={closeExerciseMenu}
                 activeOpacity={0.7}
               >
-                <Text style={styles.exerciseMenuOptionText}>Cancel</Text>
+                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Cancel</Text>
               </TouchableOpacity>
             </Pressable>
           </Pressable>

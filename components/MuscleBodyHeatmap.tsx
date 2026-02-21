@@ -7,7 +7,8 @@ import { View, Text, StyleSheet, Dimensions, Pressable } from 'react-native';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { getWeekStart, DAY_NAMES, MUSCLE_GROUP_DISPLAY_NAMES } from '../utils/weeklyMuscleTracker';
 import type { MuscleGroup } from '../utils/exerciseDb/types';
-import { Colors, Spacing, BorderRadius, Shadows, Typography, Font } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Font } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { BodyAnatomySvg } from './BodyAnatomySvg';
 
 const BODY_WIDTH = Math.min(160, Dimensions.get('window').width / 2 - Spacing.lg);
@@ -30,6 +31,7 @@ interface MuscleBodyHeatmapProps {
 }
 
 export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
+  const { colors } = useTheme();
   const weekStart = useMemo(() => getWeekStart(), []);
   const weekDates = useMemo(() => {
     return DAY_NAMES.map((_, i) => {
@@ -94,10 +96,10 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>last 7 days body graph</Text>
+      <Text style={[styles.sectionTitle, { color: colors.primaryLight }]}>last 7 days body graph</Text>
 
       {/* Week range */}
-      <Text style={styles.weekRange}>{weekRangeText}</Text>
+      <Text style={[styles.weekRange, { color: colors.primaryLight + '99' }]}>{weekRangeText}</Text>
 
       {/* Day selector */}
       <View style={styles.dayRow}>
@@ -114,17 +116,18 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
               <View
                 style={[
                   styles.dayButton,
-                  isSelected && styles.dayButtonSelected,
+                  { backgroundColor: colors.primaryDarkLighter },
+                  isSelected && { backgroundColor: colors.primaryLight },
                 ]}
               >
-                <Text style={[styles.dayLetter, isSelected && styles.dayLetterSelected]}>
+                <Text style={[styles.dayLetter, { color: colors.primaryLight }, isSelected && { color: colors.primaryDark }]}>
                   {letter}
                 </Text>
-                <Text style={[styles.dayDate, isSelected && styles.dayLetterSelected]}>
+                <Text style={[styles.dayDate, { color: colors.primaryLight }, isSelected && { color: colors.primaryDark }]}>
                   {d.getDate()}
                 </Text>
               </View>
-              {setsForDay > 0 && !isSelected && <View style={styles.activityDot} />}
+              {setsForDay > 0 && !isSelected && <View style={[styles.activityDot, { backgroundColor: colors.primaryLight }]} />}
             </Pressable>
           );
         })}
@@ -157,28 +160,33 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
       </View>
 
       {/* Muscle list */}
-      <View style={styles.muscleList}>
+      <View style={[styles.muscleList, { borderTopColor: colors.primaryLight + '30' }]}>
         <View style={styles.muscleListHeader}>
-          <Text style={styles.muscleListHeaderText}>Muscle</Text>
-          <Text style={styles.muscleListHeaderText}>Sets</Text>
+          <Text style={[styles.muscleListHeaderText, { color: colors.primaryLight + '99' }]}>Muscle</Text>
+          <Text style={[styles.muscleListHeaderText, { color: colors.primaryLight + '99' }]}>Sets</Text>
         </View>
         <Pressable
           style={({ pressed }) => [
             styles.muscleListRow,
-            pressed && styles.muscleListRowPressed,
+            { borderBottomColor: colors.primaryLight + '15' },
+            pressed && { backgroundColor: colors.primaryLight + '20' },
           ]}
           onPress={() => setPressedMuscleGroup(null)}
         >
-          <Text style={styles.muscleListName}>Total</Text>
-          <Text style={styles.muscleListSets}>{totalSetsForDay}</Text>
+          <Text style={[styles.muscleListName, { color: colors.primaryLight }]}>Total</Text>
+          <Text style={[styles.muscleListSets, { color: colors.primaryLight }]}>{totalSetsForDay}</Text>
         </Pressable>
         <Pressable
-          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          style={({ pressed }) => [
+            styles.dropdownHeader,
+            { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' },
+            pressed && { backgroundColor: colors.primaryLight + '15' },
+          ]}
           onPress={() => setUpperExpanded((e) => !e)}
         >
-          <Text style={styles.dropdownChevron}>{upperExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownLabel}>Upper</Text>
-          <Text style={styles.dropdownSets}>
+          <Text style={[styles.dropdownChevron, { color: colors.primaryLight + '99' }]}>{upperExpanded ? '▼' : '▶'}</Text>
+          <Text style={[styles.dropdownLabel, { color: colors.primaryLight + 'CC' }]}>Upper</Text>
+          <Text style={[styles.dropdownSets, { color: colors.primaryLight + '99' }]}>
             {muscleListForDay.upper.reduce((s, m) => s + m.sets, 0)}
           </Text>
         </Pressable>
@@ -188,31 +196,38 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
               key={m.group}
               style={({ pressed }) => [
                 styles.muscleListRow,
-                (pressed || pressedMuscleGroup === m.group) && styles.muscleListRowPressed,
+                { borderBottomColor: colors.primaryLight + '15' },
+                (pressed || pressedMuscleGroup === m.group) && { backgroundColor: colors.primaryLight + '20' },
               ]}
               onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
             >
               <Text style={[
                 styles.muscleListName,
-                pressedMuscleGroup === m.group && styles.muscleListNameSelected,
+                { color: colors.primaryLight },
+                pressedMuscleGroup === m.group && { color: colors.cardIconTint, fontWeight: '600' },
               ]}>
                 {m.displayName}
               </Text>
               <Text style={[
                 styles.muscleListSets,
-                pressedMuscleGroup === m.group && styles.muscleListSetsSelected,
+                { color: colors.primaryLight },
+                pressedMuscleGroup === m.group && { color: colors.cardIconTint },
               ]}>
                 {m.sets}
               </Text>
             </Pressable>
           ))}
         <Pressable
-          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          style={({ pressed }) => [
+            styles.dropdownHeader,
+            { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' },
+            pressed && { backgroundColor: colors.primaryLight + '15' },
+          ]}
           onPress={() => setLowerExpanded((e) => !e)}
         >
-          <Text style={styles.dropdownChevron}>{lowerExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownLabel}>Lower</Text>
-          <Text style={styles.dropdownSets}>
+          <Text style={[styles.dropdownChevron, { color: colors.primaryLight + '99' }]}>{lowerExpanded ? '▼' : '▶'}</Text>
+          <Text style={[styles.dropdownLabel, { color: colors.primaryLight + 'CC' }]}>Lower</Text>
+          <Text style={[styles.dropdownSets, { color: colors.primaryLight + '99' }]}>
             {muscleListForDay.lower.reduce((s, m) => s + m.sets, 0)}
           </Text>
         </Pressable>
@@ -222,19 +237,22 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
             key={m.group}
             style={({ pressed }) => [
               styles.muscleListRow,
-              (pressed || pressedMuscleGroup === m.group) && styles.muscleListRowPressed,
+              { borderBottomColor: colors.primaryLight + '15' },
+              (pressed || pressedMuscleGroup === m.group) && { backgroundColor: colors.primaryLight + '20' },
             ]}
             onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
           >
             <Text style={[
               styles.muscleListName,
-              pressedMuscleGroup === m.group && styles.muscleListNameSelected,
+              { color: colors.primaryLight },
+              pressedMuscleGroup === m.group && { color: colors.cardIconTint, fontWeight: '600' },
             ]}>
               {m.displayName}
             </Text>
             <Text style={[
               styles.muscleListSets,
-              pressedMuscleGroup === m.group && styles.muscleListSetsSelected,
+              { color: colors.primaryLight },
+              pressedMuscleGroup === m.group && { color: colors.cardIconTint },
             ]}>
               {m.sets}
             </Text>
@@ -254,13 +272,11 @@ const styles = StyleSheet.create({
     fontFamily: Font.extraBold,
     fontSize: Typography.label,
     letterSpacing: -0.5,
-    color: Colors.primaryLight,
     marginBottom: Spacing.sm,
   },
   weekRange: {
     fontFamily: Font.mono,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '99',
     marginBottom: Spacing.sm,
   },
   dayRow: {
@@ -277,25 +293,16 @@ const styles = StyleSheet.create({
     width: 36,
     height: 44,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primaryDarkLighter,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dayButtonSelected: {
-    backgroundColor: Colors.primaryLight,
   },
   dayLetter: {
     fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
-  },
-  dayLetterSelected: {
-    color: Colors.primaryDark,
   },
   dayDate: {
     fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
     marginTop: 2,
   },
   bodyRow: {
@@ -311,12 +318,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.primaryLight,
     marginTop: 4,
   },
   muscleList: {
     borderTopWidth: 1,
-    borderTopColor: Colors.primaryLight + '30',
     paddingTop: Spacing.sm,
   },
   muscleListHeader: {
@@ -329,7 +334,6 @@ const styles = StyleSheet.create({
   muscleListHeaderText: {
     fontFamily: Font.mono,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '99',
   },
   dropdownHeader: {
     flexDirection: 'row',
@@ -337,18 +341,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.sm,
     marginTop: Spacing.sm,
-    backgroundColor: Colors.primaryLight + '0A',
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
-  },
-  dropdownHeaderPressed: {
-    backgroundColor: Colors.primaryLight + '15',
   },
   dropdownChevron: {
     fontFamily: Font.mono,
     fontSize: 10,
-    color: Colors.primaryLight + '99',
     marginRight: Spacing.xs,
     width: 14,
   },
@@ -356,14 +354,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: Font.extraBold,
     fontSize: Typography.label,
-    color: Colors.primaryLight + 'CC',
     textTransform: 'uppercase' as const,
     letterSpacing: 1,
   },
   dropdownSets: {
     fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '99',
     fontWeight: '600',
   },
   muscleListRow: {
@@ -373,28 +369,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '15',
-  },
-  muscleListRowPressed: {
-    backgroundColor: Colors.primaryLight + '20',
   },
   muscleListName: {
     fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
   muscleListSets: {
     fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
     fontWeight: '600',
-  },
-  muscleListNameSelected: {
-    color: Colors.white,
-    fontWeight: '600',
-  },
-  muscleListSetsSelected: {
-    color: Colors.white,
   },
 });

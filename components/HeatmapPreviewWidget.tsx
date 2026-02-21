@@ -20,7 +20,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { BodyAnatomySvg } from './BodyAnatomySvg';
-import { Colors, Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
+import { Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const BODY_WIDTH = Math.min(180, PROGRESS_CARD_WIDTH - Spacing.lg * 2);
@@ -63,6 +64,7 @@ interface HeatmapPreviewWidgetProps {
 }
 
 export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps) {
+  const { colors } = useTheme();
   const [pageIndex, setPageIndex] = useState(0);
 
   const todayDayOfWeek = useMemo(() => {
@@ -85,7 +87,7 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
   };
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.primaryDark }]}>
       <ScrollView
         horizontal
         pagingEnabled
@@ -124,8 +126,8 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
       </ScrollView>
       {/* Page dots */}
       <View style={styles.dots}>
-        <AnimatedDot active={pageIndex === 0} />
-        <AnimatedDot active={pageIndex === 1} />
+        <View style={[styles.dot, { backgroundColor: colors.primaryLight + '40' }, pageIndex === 0 && { backgroundColor: colors.primaryLight }]} />
+        <View style={[styles.dot, { backgroundColor: colors.primaryLight + '40' }, pageIndex === 1 && { backgroundColor: colors.primaryLight }]} />
       </View>
     </View>
   );
@@ -142,7 +144,6 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     overflow: 'hidden',
     borderRadius: 38,
-    backgroundColor: Colors.primaryDark,
     ...Shadows.card,
   },
   scrollView: {
@@ -167,10 +168,6 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.primaryLight + '40',
-  },
-  dotActive: {
-    backgroundColor: Colors.primaryLight,
   },
 
   // ─── Side-by-side (front + back) for home carousel – last 7 days ─────────
@@ -181,15 +178,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.xl,
-    backgroundColor: Colors.primaryDark,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
     ...Shadows.card,
   },
   sideBySideTitle: {
     fontSize: Typography.label,
     fontWeight: '500',
-    color: Colors.primaryLight + 'CC',
     textTransform: 'lowercase' as const,
     letterSpacing: -0.11,
     marginBottom: Spacing.sm,
@@ -206,7 +200,6 @@ const styles = StyleSheet.create({
   sideBySideLabel: {
     fontSize: 10,
     fontWeight: '500',
-    color: Colors.primaryLight + '99',
     textTransform: 'lowercase' as const,
     letterSpacing: -0.11,
     marginTop: 2,
@@ -219,15 +212,13 @@ interface HeatmapPreviewWidgetSideBySideProps {
   heatmapData: HeatmapData[];
   /** Card width to fit carousel (e.g. CAROUSEL_WIDTH). Default: full width minus padding. */
   cardWidth?: number;
-  /** If true, render without card background/border (isolated like calorie/macro displays). */
-  bare?: boolean;
 }
 
 export function HeatmapPreviewWidgetSideBySide({
   heatmapData,
   cardWidth = Dimensions.get('window').width - 38,
-  bare = false,
 }: HeatmapPreviewWidgetSideBySideProps) {
+  const { colors } = useTheme();
   const weekAggregate = useMemo(
     () => aggregateHeatmapLast7Days(heatmapData),
     [heatmapData]
@@ -259,13 +250,9 @@ export function HeatmapPreviewWidgetSideBySide({
     Math.floor(bodyHeight / 1.5)
   );
 
-  const containerStyle = bare
-    ? { width: cardWidth, height: TARGET_WIDGET_HEIGHT, alignSelf: 'center' as const, alignItems: 'center' as const, justifyContent: 'center' as const, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md }
-    : [styles.sideBySideCard, { width: cardWidth, height: TARGET_WIDGET_HEIGHT }];
-
   return (
-    <View style={containerStyle}>
-      <Text style={styles.sideBySideTitle}>muscles hit · last 7 days</Text>
+    <View style={[styles.sideBySideCard, { width: cardWidth, height: TARGET_WIDGET_HEIGHT, backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}>
+      <Text style={[styles.sideBySideTitle, { color: colors.primaryLight + 'CC' }]}>muscles hit · last 7 days</Text>
       <View style={styles.sideBySideRow}>
         <View style={styles.sideBySideCell}>
           <BodyAnatomySvg
@@ -277,7 +264,7 @@ export function HeatmapPreviewWidgetSideBySide({
             width={bodyWidth}
             height={bodyHeight}
           />
-          <Text style={styles.sideBySideLabel}>front</Text>
+          <Text style={[styles.sideBySideLabel, { color: colors.primaryLight + '99' }]}>front</Text>
         </View>
         <View style={[styles.sideBySideCell, { marginLeft: gap }]}>
           <BodyAnatomySvg
@@ -289,7 +276,7 @@ export function HeatmapPreviewWidgetSideBySide({
             width={bodyWidth}
             height={bodyHeight}
           />
-          <Text style={styles.sideBySideLabel}>back</Text>
+          <Text style={[styles.sideBySideLabel, { color: colors.primaryLight + '99' }]}>back</Text>
         </View>
       </View>
     </View>

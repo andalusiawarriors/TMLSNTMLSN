@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextInput, Text, View, StyleSheet, TextInputProps, StyleProp, ViewStyle } from 'react-native';
 import { Colors, Typography, BorderRadius, Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -17,16 +18,17 @@ export const Input: React.FC<InputProps> = ({
   fontFamily,
   ...props
 }) => {
-  const labelStyle = fontFamily ? [styles.label, { fontFamily }] : styles.label;
+  const { colors } = useTheme();
+  const labelStyle = fontFamily ? [styles.label, { fontFamily, color: colors.primaryLight }] : [styles.label, { color: colors.primaryLight }];
   const inputStyle = fontFamily
-    ? [styles.input, { fontFamily }, error && styles.inputError, style]
-    : [styles.input, error && styles.inputError, style];
+    ? [styles.input, { fontFamily }, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight, color: colors.primaryLight }, error && styles.inputError, style]
+    : [styles.input, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight, color: colors.primaryLight }, error && styles.inputError, style];
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={labelStyle}>{label}</Text>}
       <TextInput
         style={inputStyle}
-        placeholderTextColor={Colors.primaryLight}
+        placeholderTextColor={colors.primaryLight + '99'}
         {...props}
       />
       {error && <Text style={[styles.error, fontFamily && { fontFamily }]}>{error}</Text>}
