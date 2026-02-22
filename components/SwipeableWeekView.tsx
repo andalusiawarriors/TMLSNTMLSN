@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-// #region agent log
-const _dbg = (msg: string, data?: object) => { fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SwipeableWeekView',message:msg,data:data??{},timestamp:Date.now()})}).catch(()=>{}); };
-// #endregion
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   interpolate,
@@ -13,8 +10,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { Typography, Spacing } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
+import { Colors, Typography, Spacing } from '../constants/theme';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const VELOCITY_THRESHOLD = 500;
@@ -70,7 +66,10 @@ const PILL_WIDTH = 42;
 const PILL_HEIGHT = 54;
 const PILL_RADIUS = 12;
 const DATE_CIRCLE_SIZE = 26;
+const CARD_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
+const CARD_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 const CARD_BORDER_INSET = 1;
+const UNSELECTED_BG = '#252627';
 
 function dayIndexFromX(x: number, weekWidth: number): number {
   const padding = Spacing.sm;
@@ -99,13 +98,9 @@ interface DayCellProps {
   isHovered: boolean;
   dayStatus?: DayStatus;
   onPress?: () => void;
-  cardBorderGradient: [string, string];
-  cardFillGradient: [string, string];
-  cardTextColor: string;
-  plainTextColor: string;
 }
 
-function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress, cardBorderGradient, cardFillGradient, cardTextColor, plainTextColor }: DayCellProps) {
+function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSlidingHighlight, isHovered, dayStatus = 'none', onPress }: DayCellProps) {
   const selectedOrHovered = isSelected || isHovered;
   const labelText = DAY_LABELS[index];
   const numText = date.getDate();
@@ -134,13 +129,13 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
         {wrap(
           <View style={[styles.dayCardSelectedWrap, { width: PILL_WIDTH, height: PILL_HEIGHT }]}>
             <LinearGradient
-              colors={cardBorderGradient}
+              colors={CARD_BORDER_GRADIENT}
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
               style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
             />
             <LinearGradient
-              colors={cardFillGradient}
+              colors={CARD_FILL_GRADIENT}
               style={{
                 position: 'absolute',
                 top: CARD_BORDER_INSET,
@@ -151,8 +146,8 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
               }}
             />
             <View style={styles.dayCardInner}>
-              <Text style={[styles.dayCardLabel, { color: cardTextColor }]}>{labelText}</Text>
-              {dateCircle([styles.dayCardNumber, { color: cardTextColor }], getCircleStyle())}
+              <Text style={styles.dayCardLabel}>{labelText}</Text>
+              {dateCircle(styles.dayCardNumber, getCircleStyle())}
             </View>
           </View>
         )}
@@ -164,8 +159,8 @@ function DayCell({ date, index, isSelected, isToday, isPast, isFuture, isSliding
     <View style={[styles.dayColumn, isPast && { opacity: 0.7 }]}>
       {wrap(
         <View style={styles.dayCardPlain}>
-          <Text style={[styles.dayCardPlainLabel, { color: plainTextColor }]}>{labelText}</Text>
-          {dateCircle([styles.dayCardPlainNumber, { color: plainTextColor }], getCircleStyle())}
+          <Text style={styles.dayCardPlainLabel}>{labelText}</Text>
+          {dateCircle(styles.dayCardPlainNumber, getCircleStyle())}
         </View>
       )}
     </View>
@@ -183,13 +178,9 @@ interface WeekStripProps {
   hoveredDayIndex: number | null;
   dayStatusByDate?: Record<string, DayStatus>;
   onDayPress?: (date: Date) => void;
-  cardBorderGradient: [string, string];
-  cardFillGradient: [string, string];
-  cardTextColor: string;
-  plainTextColor: string;
 }
 
-const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex, dayStatusByDate, onDayPress, cardBorderGradient, cardFillGradient, cardTextColor, plainTextColor }: WeekStripProps) => {
+const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingDateMode, hoveredDayIndex, dayStatusByDate, onDayPress }: WeekStripProps) => {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
@@ -217,10 +208,6 @@ const WeekStrip = React.memo(({ monday, today, selectedDate, weekWidth, slidingD
             isHovered={slidingDateMode && selectedInThisWeek && hoveredDayIndex === i && !isSelected}
             dayStatus={dayStatus}
             onPress={onDayPress ? () => onDayPress(date) : undefined}
-            cardBorderGradient={cardBorderGradient}
-            cardFillGradient={cardFillGradient}
-            cardTextColor={cardTextColor}
-            plainTextColor={plainTextColor}
           />
         );
       })}
@@ -249,7 +236,6 @@ export default function SwipeableWeekView({
   showHeader = false,
   dayStatusByDate,
 }: SwipeableWeekViewProps) {
-  const { colors } = useTheme();
   const today = useMemo(() => new Date(), []);
   const [currentMonday, setCurrentMonday] = useState(() => getMonday(initialDate ?? today));
   const [internalSelectedDate, setInternalSelectedDate] = useState(initialDate ?? today);
@@ -280,9 +266,6 @@ export default function SwipeableWeekView({
   const resetConveyorPosition = useCallback(() => {
     translateX.value = 0;
     isAnimating.value = false;
-    // #region agent log
-    _dbg('resetConveyorPosition', { hypothesisId: 'H2' });
-    // #endregion
   }, []);
 
   useLayoutEffect(() => {
@@ -295,9 +278,6 @@ export default function SwipeableWeekView({
   // ── Week change ──────────────────────────────────────────────────────────────
 
   const commitWeekChange = useCallback((direction: -1 | 1) => {
-    // #region agent log
-    _dbg('commitWeekChange', { direction, hypothesisId: 'H5' });
-    // #endregion
     const newMonday = shiftWeek(currentMonday, direction);
     pendingConveyorReset.current = true;
     setCurrentMonday(newMonday);
@@ -317,23 +297,15 @@ export default function SwipeableWeekView({
   const handleDayPress = useCallback((date: Date) => {
     const tappedMonday = getMonday(date);
     if (tappedMonday.getTime() === nextMonday.getTime()) {
-      // #region agent log
-      _dbg('handleDayPress: isAnimating=true tapNext', { hypothesisId: 'H1' });
-      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(-weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
-        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(1);
       });
     } else if (tappedMonday.getTime() === prevMonday.getTime()) {
-      // #region agent log
-      _dbg('handleDayPress: isAnimating=true tapPrev', { hypothesisId: 'H1' });
-      // #endregion
       isAnimating.value = true;
       translateX.value = withSpring(weekWidth, SNAP_SPRING_CONFIG, (finished) => {
         'worklet';
-        runOnJS(_dbg)('springCallback tap', { finished, hypothesisId: 'H1' });
         if (finished) runOnJS(commitWeekChange)(-1);
       });
     }
@@ -388,9 +360,11 @@ export default function SwipeableWeekView({
 
   // ── Tap gesture (day selection) ──────────────────────────────────────────────
 
-  const handleTap = useCallback((x: number) => {
+  const STRIP_HEIGHT = PILL_HEIGHT + Spacing.sm * 2;
+  const handleTap = useCallback((x: number, y: number) => {
     clearLongPressTimer();
     if (slidingActive.value) return;
+    if (y < 0 || y > STRIP_HEIGHT) return;
     const idx = dayIndexFromX(x, weekWidth);
     const mon = currentMondayRef.current;
     const date = new Date(mon);
@@ -402,7 +376,7 @@ export default function SwipeableWeekView({
     Gesture.Tap()
       .onEnd((e) => {
         'worklet';
-        runOnJS(handleTap)(e.x);
+        runOnJS(handleTap)(e.x, e.y);
       }),
     [handleTap]
   );
@@ -419,16 +393,6 @@ export default function SwipeableWeekView({
     }, LONG_PRESS_MS);
   }, [weekWidth, selectedDayIndex, activateSliding, clearLongPressTimer]);
 
-  const logPanBegin = useCallback((x: number) => {
-    _dbg('pan onBegin', { x, hypothesisId: 'H4' });
-  }, []);
-  const logPanEnd = useCallback((dx: number, vx: number, anim: boolean) => {
-    _dbg('pan onEnd', { translationX: dx, velocityX: vx, isAnimating: anim, hypothesisId: 'H1' });
-  }, []);
-  const logSpringPan = useCallback((finished: boolean) => {
-    _dbg('springCallback pan', { finished, hypothesisId: 'H1' });
-  }, []);
-
   const panGesture = useMemo(() =>
     Gesture.Pan()
       .minDistance(0)
@@ -436,7 +400,6 @@ export default function SwipeableWeekView({
       .failOffsetY([-25, 25])
       .onBegin((e) => {
         'worklet';
-        runOnJS(logPanBegin)(e.x);
         runOnJS(startLongPressTimer)(e.x);
       })
       .onUpdate((e) => {
@@ -456,7 +419,6 @@ export default function SwipeableWeekView({
       .onEnd((e) => {
         'worklet';
         runOnJS(clearLongPressTimer)();
-        runOnJS(logPanEnd)(e.translationX, e.velocityX, isAnimating.value);
         if (slidingActive.value) {
           runOnJS(commitSliding)(e.x);
           return;
@@ -472,7 +434,6 @@ export default function SwipeableWeekView({
             { ...SNAP_SPRING_CONFIG, velocity: vx },
             (finished) => {
               'worklet';
-              runOnJS(logSpringPan)(finished);
               if (finished) {
                 translateX.value = -direction * weekWidth;
                 runOnJS(commitWeekChange)(direction);
@@ -488,7 +449,7 @@ export default function SwipeableWeekView({
         runOnJS(clearLongPressTimer)();
       }),
     [weekWidth, distThreshold, commitWeekChange, startLongPressTimer, clearLongPressTimer,
-     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive, logPanBegin, logPanEnd, logSpringPan]
+     updateHover, commitSliding, cancelSliding, isAnimating, slidingActive]
   );
 
   const composedGesture = useMemo(
@@ -511,27 +472,20 @@ export default function SwipeableWeekView({
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const stripProps = {
-    cardBorderGradient: colors.cardBorderGradient,
-    cardFillGradient: colors.cardFillGradient,
-    cardTextColor: colors.cardIconTint,
-    plainTextColor: colors.primaryLight,
-  };
-
   return (
     <View style={styles.rootContainer}>
-      {showHeader && <Text style={[styles.headerText, { color: colors.primaryLight }]}>{formatHeader(currentMonday)}</Text>}
+      {showHeader && <Text style={styles.headerText}>{formatHeader(currentMonday)}</Text>}
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.swipeContainer, { width: weekWidth }]}>
           <Animated.View style={[styles.conveyor, { width: weekWidth * 3 }, conveyorStyle]}>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, prevWeekOpacity]}>
-              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
+              <WeekStrip monday={prevMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, currentWeekOpacity]}>
-              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
+              <WeekStrip monday={currentMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
             <Animated.View style={[styles.weekSlot, { width: weekWidth }, nextWeekOpacity]}>
-              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} {...stripProps} />
+              <WeekStrip monday={nextMonday} today={today} selectedDate={selectedDate} weekWidth={weekWidth} slidingDateMode={slidingDateMode} hoveredDayIndex={hoveredDayIndex} dayStatusByDate={dayStatusByDate} onDayPress={handleDayPress} />
             </Animated.View>
           </Animated.View>
         </Animated.View>
@@ -544,7 +498,7 @@ export default function SwipeableWeekView({
 
 const styles = StyleSheet.create({
   rootContainer: { width: '100%' },
-  headerText: { fontSize: Typography.label, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.sm, opacity: 0.7 },
+  headerText: { color: Colors.primaryLight, fontSize: Typography.label, fontWeight: '600', textAlign: 'center', marginBottom: Spacing.sm, opacity: 0.7 },
   swipeContainer: {
     overflow: 'hidden',
     marginBottom: Spacing.md,
@@ -573,10 +527,11 @@ const styles = StyleSheet.create({
   },
   dayCardLabel: {
     fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: -0.5, paddingHorizontal: 1,
+    letterSpacing: -0.5, color: Colors.white, paddingHorizontal: 1,
   },
   dayCardNumber: {
-    fontSize: 14, fontWeight: '600', letterSpacing: -0.3, marginTop: 2,
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
+    color: Colors.white, marginTop: 2,
   },
   dayCardPlain: {
     alignItems: 'center', justifyContent: 'center', overflow: 'visible',
@@ -584,10 +539,11 @@ const styles = StyleSheet.create({
   },
   dayCardPlainLabel: {
     fontSize: 11, fontWeight: '500', textTransform: 'lowercase',
-    letterSpacing: -0.5, opacity: 0.7, paddingHorizontal: 1,
+    letterSpacing: -0.5, color: Colors.primaryLight, opacity: 0.7, paddingHorizontal: 1,
   },
   dayCardPlainNumber: {
-    fontSize: 14, fontWeight: '600', letterSpacing: -0.3, opacity: 0.7, marginTop: 2,
+    fontSize: 14, fontWeight: '600', letterSpacing: -0.3,
+    color: Colors.primaryLight, opacity: 0.7, marginTop: 2,
   },
   dateCircle: {
     alignItems: 'center',
@@ -596,8 +552,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   dateCircleToday: { borderColor: '#D4B896', borderWidth: 1.5 },
-  dateCircleSelected: { borderColor: 'rgba(128,128,128,0.5)' },
-  dateCirclePlain: { borderColor: 'rgba(128,128,128,0.35)' },
-  dateCircleDashedSelected: { borderColor: 'rgba(128,128,128,0.5)', borderStyle: 'dashed' },
-  dateCircleDashedPlain: { borderColor: 'rgba(128,128,128,0.4)', borderStyle: 'dashed' },
+  dateCircleSelected: { borderColor: 'rgba(255,255,255,0.25)' },
+  dateCirclePlain: { borderColor: 'rgba(198,198,198,0.25)' },
+  dateCircleDashedSelected: { borderColor: 'rgba(255,255,255,0.35)', borderStyle: 'dashed' },
+  dateCircleDashedPlain: { borderColor: 'rgba(198,198,198,0.4)', borderStyle: 'dashed' },
 });

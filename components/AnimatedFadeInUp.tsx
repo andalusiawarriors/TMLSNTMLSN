@@ -22,8 +22,6 @@ interface AnimatedFadeInUpProps {
   style?: ViewStyle;
   /** When this value changes, the animation restarts (e.g. for replay on screen focus) */
   trigger?: number;
-  /** Skip animation and render immediately visible — use for swipeable/touchable content so it's interactive from first frame */
-  instant?: boolean;
 }
 
 export function AnimatedFadeInUp({
@@ -32,17 +30,11 @@ export function AnimatedFadeInUp({
   duration = DEFAULT_DURATION,
   style,
   trigger = 0,
-  instant = false,
 }: AnimatedFadeInUpProps) {
-  const opacity = useSharedValue(instant ? 1 : 0);
-  const translateY = useSharedValue(instant ? 0 : 20);
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(20);
 
   useEffect(() => {
-    if (instant) {
-      opacity.value = 1;
-      translateY.value = 0;
-      return;
-    }
     opacity.value = 0;
     translateY.value = 20;
     opacity.value = withDelay(
@@ -53,7 +45,7 @@ export function AnimatedFadeInUp({
       delay,
       withTiming(0, { duration, easing: Easing.out(Easing.cubic) })
     );
-  }, [delay, duration, trigger, instant]);
+  }, [delay, duration, trigger]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

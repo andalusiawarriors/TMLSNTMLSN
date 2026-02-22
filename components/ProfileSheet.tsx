@@ -12,23 +12,23 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Typography, Spacing } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
+import { Colors, Typography, Spacing } from '../constants/theme';
 
 const ACCENT_GOLD = '#D4B896';
 const ACCENT_GOLD_DARK = '#A8895E';
 const ACCENT_GRADIENT: [string, string] = [ACCENT_GOLD, ACCENT_GOLD_DARK];
 
 const TAB_BAR_HEIGHT = 76; // PILL_BOTTOM(19) + PILL_HEIGHT(57) from _layout
+const CARD_BG = 'rgba(40,40,40,0.6)';
+const CARD_BORDER = 'rgba(255,255,255,0.06)';
 const ROW_HEIGHT = 56;
 const ICON_SIZE = 22;
+const ICON_COLOR = 'rgba(255,255,255,0.7)';
 const AVATAR_SIZE = 56;
 
 export type ProfileSheetProps = {
   visible: boolean;
   onClose: () => void;
-  /** Called when user taps Preferences — typically closes sheet and navigates to preferences */
-  onPreferencesPress?: () => void;
 };
 
 function Row({
@@ -38,9 +38,6 @@ function Row({
   rightText,
   onPress,
   last,
-  iconColor,
-  labelColor,
-  rowBorderColor,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -48,22 +45,19 @@ function Row({
   rightText?: string;
   onPress?: () => void;
   last?: boolean;
-  iconColor: string;
-  labelColor: string;
-  rowBorderColor?: string;
 }) {
-  const rowStyle = [styles.row, !last && [styles.rowBorder, rowBorderColor && { borderBottomColor: rowBorderColor }]];
+  const rowStyle = [styles.row, !last && styles.rowBorder];
   const children = (
     <>
-      <Ionicons name={icon} size={ICON_SIZE} color={iconColor} style={styles.rowIcon} />
+      <Ionicons name={icon} size={ICON_SIZE} color={ICON_COLOR} style={styles.rowIcon} />
       <View style={styles.rowTextWrap}>
-        <Text style={[styles.rowLabel, { color: labelColor }]}>{label}</Text>
-        {subtitle ? <Text style={[styles.rowSubtitle, { color: iconColor }]}>{subtitle}</Text> : null}
+        <Text style={styles.rowLabel}>{label}</Text>
+        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
       </View>
       {rightText ? (
-        <Text style={[styles.rowRight, { color: iconColor }]}>{rightText}</Text>
+        <Text style={styles.rowRight}>{rightText}</Text>
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={iconColor} />
+        <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
       )}
     </>
   );
@@ -89,22 +83,12 @@ function SectionHeader({ label }: { label: string }) {
   );
 }
 
-function Card({ children, bg, border }: { children: React.ReactNode; bg?: string; border?: string }) {
-  return <View style={[styles.card, bg && { backgroundColor: bg }, border && { borderColor: border }]}>{children}</View>;
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
 }
 
-export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
+export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
-  const cardBg = 'rgba(40,40,40,0.6)';
-  const cardBorder = 'rgba(255,255,255,0.06)';
-  const gradientStart = '#2f3031';
-  const gradientEnd = '#1a1a1a';
-  const iconColor = 'rgba(255,255,255,0.7)';
-  const labelColor = colors.white;
-  const closeBtnBg = 'rgba(255,255,255,0.08)';
-  const closeBtnIcon = 'rgba(255,255,255,0.7)';
-  const rowBorderColor = 'rgba(255,255,255,0.08)';
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 
@@ -118,8 +102,8 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
             <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
               <Defs>
                 <RadialGradient id="profileBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
-                  <Stop offset="0" stopColor={gradientStart} />
-                  <Stop offset="1" stopColor={gradientEnd} />
+                  <Stop offset="0" stopColor="#2f3031" />
+                  <Stop offset="1" stopColor="#1a1a1a" />
                 </RadialGradient>
               </Defs>
               <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileBgGrad)" />
@@ -149,32 +133,32 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
                   width: 32,
                   height: 32,
                   borderRadius: 16,
-                  backgroundColor: closeBtnBg,
+                  backgroundColor: 'rgba(255,255,255,0.08)',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Ionicons name="close" size={18} color={closeBtnIcon} />
+                <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
               </TouchableOpacity>
-              <Text style={[styles.profileTitle, { textAlign: 'center', color: labelColor }]}>profile</Text>
+              <Text style={[styles.profileTitle, { textAlign: 'center' }]}>profile</Text>
             </View>
 
-            <Pressable style={[styles.profileRowCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Pressable style={styles.profileRowCard}>
               <View style={styles.avatarRing}>
                 <LinearGradient colors={ACCENT_GRADIENT} style={[StyleSheet.absoluteFill, { borderRadius: (AVATAR_SIZE + 4) / 2 }]} />
-                <View style={[styles.avatar, { backgroundColor: colors.primaryDark }]}>
-                  <Text style={[styles.avatarPlaceholder, { color: colors.primaryLight }]}>?</Text>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarPlaceholder}>?</Text>
                 </View>
               </View>
               <View style={styles.profileRowText}>
-                <Text style={[styles.profileRowMain, { color: labelColor }]}>Tap to set name</Text>
-                <Text style={[styles.profileRowSub, { color: iconColor }]}>and username</Text>
+                <Text style={styles.profileRowMain}>Tap to set name</Text>
+                <Text style={styles.profileRowSub}>and username</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={iconColor} />
+              <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
             </Pressable>
 
             <SectionHeader label="Invite Friends" />
-            <Pressable style={[styles.inviteCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Pressable style={styles.inviteCard}>
               <View style={[styles.row, styles.referRow]}>
                 <MaskedView
                   style={styles.referIconWrap}
@@ -183,52 +167,52 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
                   <LinearGradient colors={ACCENT_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
                 </MaskedView>
                 <View style={[styles.rowTextWrap, styles.referRowText]}>
-                  <Text style={[styles.rowLabel, { color: labelColor }]}>Refer a friend and earn $10</Text>
-                  <Text style={[styles.rowSubtitle, { color: iconColor }]}>Earn $10 per friend that signs up with your promo code.</Text>
+                  <Text style={styles.rowLabel}>Refer a friend and earn $10</Text>
+                  <Text style={styles.rowSubtitle}>Earn $10 per friend that signs up with your promo code.</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={iconColor} />
+                <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
               </View>
             </Pressable>
 
             <SectionHeader label="Account" />
-            <Card bg={cardBg} border={cardBorder}>
-              <Row icon="card-outline" label="Personal Details" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="settings-outline" label="Preferences" last={false} onPress={onPreferencesPress} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="language-outline" label="Language" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
+            <Card>
+              <Row icon="card-outline" label="Personal Details" last={false} onPress={() => {}} />
+              <Row icon="settings-outline" label="Preferences" last={false} onPress={() => {}} />
+              <Row icon="language-outline" label="Language" last={false} onPress={() => {}} />
+              <Row icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} />
             </Card>
 
             <SectionHeader label="Goals & Tracking" />
-            <Card bg={cardBg} border={cardBorder}>
-              <Row icon="heart-outline" label="Apple Health" rightText="✓ Connected" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="locate-outline" label="Edit Nutrition Goals" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="chatbox-outline" label="Goals & current weight" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="notifications-outline" label="Tracking Reminders" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="time-outline" label="Weight History" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="radio-button-on-outline" label="Ring Colors Explained" last onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
+            <Card>
+              <Row icon="heart-outline" label="Apple Health" rightText="✓ Connected" last={false} onPress={() => {}} />
+              <Row icon="locate-outline" label="Edit Nutrition Goals" last={false} onPress={() => {}} />
+              <Row icon="chatbox-outline" label="Goals & current weight" last={false} onPress={() => {}} />
+              <Row icon="notifications-outline" label="Tracking Reminders" last={false} onPress={() => {}} />
+              <Row icon="time-outline" label="Weight History" last={false} onPress={() => {}} />
+              <Row icon="radio-button-on-outline" label="Ring Colors Explained" last onPress={() => {}} />
             </Card>
 
             <SectionHeader label="Support & Legal" />
-            <Card bg={cardBg} border={cardBorder}>
-              <Row icon="megaphone-outline" label="Request a Feature" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="mail-outline" label="Support Email" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="share-outline" label="Export PDF Summary Report" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="sync-outline" label="Sync Data" rightText="Last Synced: 2:41 PM" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="document-text-outline" label="Terms and Conditions" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="shield-checkmark-outline" label="Privacy Policy" last onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
+            <Card>
+              <Row icon="megaphone-outline" label="Request a Feature" last={false} onPress={() => {}} />
+              <Row icon="mail-outline" label="Support Email" last={false} onPress={() => {}} />
+              <Row icon="share-outline" label="Export PDF Summary Report" last={false} onPress={() => {}} />
+              <Row icon="sync-outline" label="Sync Data" rightText="Last Synced: 2:41 PM" last={false} onPress={() => {}} />
+              <Row icon="document-text-outline" label="Terms and Conditions" last={false} onPress={() => {}} />
+              <Row icon="shield-checkmark-outline" label="Privacy Policy" last onPress={() => {}} />
             </Card>
 
             <SectionHeader label="Follow Us" />
-            <Card bg={cardBg} border={cardBorder}>
-              <Row icon="logo-instagram" label="Instagram" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="logo-tiktok" label="TikTok" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="close" label="X" last onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
+            <Card>
+              <Row icon="logo-instagram" label="Instagram" last={false} onPress={() => {}} />
+              <Row icon="logo-tiktok" label="TikTok" last={false} onPress={() => {}} />
+              <Row icon="close" label="X" last onPress={() => {}} />
             </Card>
 
             <SectionHeader label="Account Actions" />
-            <Card bg={cardBg} border={cardBorder}>
-              <Row icon="log-out-outline" label="Logout" last={false} onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
-              <Row icon="person-remove-outline" label="Delete Account" last onPress={() => {}} iconColor={iconColor} labelColor={labelColor} rowBorderColor={rowBorderColor} />
+            <Card>
+              <Row icon="log-out-outline" label="Logout" last={false} onPress={() => {}} />
+              <Row icon="person-remove-outline" label="Delete Account" last onPress={() => {}} />
             </Card>
 
             <View style={{ height: Spacing.xxl }} />
@@ -258,12 +242,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.h2,
     fontWeight: '600',
     letterSpacing: -0.11,
+    color: Colors.primaryLight,
     marginBottom: Spacing.md,
   },
   profileRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: CARD_BG,
     borderWidth: 1,
+    borderColor: CARD_BORDER,
     borderRadius: 18,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
@@ -282,11 +269,13 @@ const styles = StyleSheet.create({
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: Colors.primaryDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarPlaceholder: {
     fontSize: 24,
+    color: Colors.primaryLight,
   },
   profileRowText: {
     flex: 1,
@@ -295,9 +284,11 @@ const styles = StyleSheet.create({
   profileRowMain: {
     fontSize: 16,
     fontWeight: '500',
+    color: Colors.white,
   },
   profileRowSub: {
     fontSize: 13,
+    color: ICON_COLOR,
     marginTop: 2,
   },
   sectionHeader: {
@@ -308,15 +299,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   card: {
-    backgroundColor: 'rgba(40,40,40,0.6)', // fallback, overridden by bg prop
+    backgroundColor: CARD_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)', // fallback, overridden by border prop
+    borderColor: CARD_BORDER,
     borderRadius: 18,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
   },
   inviteCard: {
+    backgroundColor: CARD_BG,
     borderWidth: 1,
+    borderColor: CARD_BORDER,
     borderRadius: 18,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
@@ -337,7 +330,7 @@ const styles = StyleSheet.create({
   },
   rowBorder: {
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(128,128,128,0.3)', // fallback, Row uses inline override
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   rowPressed: {
     opacity: 0.8,
@@ -359,13 +352,16 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 16,
     fontWeight: '500',
+    color: Colors.white,
   },
   rowSubtitle: {
     fontSize: 13,
+    color: ICON_COLOR,
     marginTop: 2,
   },
   rowRight: {
     fontSize: 13,
+    color: ICON_COLOR,
     marginLeft: Spacing.sm,
   },
 });

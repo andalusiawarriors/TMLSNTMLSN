@@ -9,8 +9,7 @@ import { useRouter } from 'expo-router';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { AnimatedPressable } from './AnimatedPressable';
 import { Card } from './Card';
-import { Font, Typography } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
+import { Colors, Font, Typography } from '../constants/theme';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const PROGRESS_CARD_HEIGHT = 237;
@@ -18,7 +17,6 @@ const PROGRESS_CARD_HEIGHT = 237;
 export function StatisticsButtonWidget() {
   const router = useRouter();
   const { playIn, playOut } = useButtonSound();
-  const { colors } = useTheme();
 
   return (
     <AnimatedPressable
@@ -28,7 +26,7 @@ export function StatisticsButtonWidget() {
       style={styles.wrap}
     >
       <Card gradientFill borderRadius={38} style={styles.card}>
-        <Text style={[styles.cardText, { color: colors.cardIconTint }]}>statistics</Text>
+        <Text style={styles.cardText}>statistics</Text>
       </Card>
     </AnimatedPressable>
   );
@@ -54,6 +52,7 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
     lineHeight: 16,
     letterSpacing: -0.1,
+    color: '#C6C6C6',
     textAlign: 'center',
   },
 });

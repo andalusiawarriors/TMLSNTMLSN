@@ -17,8 +17,7 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { getStreakData } from '../utils/streak';
-import { Font, Typography } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
+import { Colors, Font, Typography } from '../constants/theme';
 
 const ROTATION_PRESSED = -45; // degrees on press
 const ROTATION_RELEASED = 0; // anticlockwise back to original rest position
@@ -28,7 +27,6 @@ const RELEASE_DURATION_MS = 280; // snappy return, then boom onto page
 export function StreakWidget() {
   const router = useRouter();
   const { playIn, playOut } = useButtonSound();
-  const { colors } = useTheme();
   const [days, setDays] = useState(0);
   const rotation = useSharedValue(0);
   const loadStreak = () => {
@@ -78,7 +76,7 @@ export function StreakWidget() {
       onPress={handlePress}
       style={styles.pressable}
     >
-      <View style={[styles.glassWrap, { borderColor: colors.primaryLight + '25' }]}>
+      <View style={styles.glassWrap}>
         {Platform.OS === 'ios' ? (
           <BlurView
             intensity={40}
@@ -89,18 +87,18 @@ export function StreakWidget() {
         <View
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: colors.primaryDark + 'E6', borderRadius: 20 },
+            { backgroundColor: Colors.primaryDark + 'E6', borderRadius: 20 },
           ]}
         />
         <View style={[styles.content, { backgroundColor: 'transparent' }]}>
           <Animated.View style={[styles.ensoWrap, ensoAnimatedStyle]}>
             <Image
               source={require('../assets/enso.png')}
-              style={[styles.ensoIcon, { backgroundColor: 'transparent', tintColor: colors.cardIconTint }]}
+              style={[styles.ensoIcon, { backgroundColor: 'transparent' }]}
               resizeMode="contain"
             />
           </Animated.View>
-          <Text style={[styles.number, { color: colors.primaryLight }]}>{days}</Text>
+          <Text style={styles.number}>{days}</Text>
         </View>
       </View>
     </Pressable>
@@ -122,6 +120,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     minWidth: 70,
     borderWidth: 1,
+    borderColor: Colors.primaryLight + '25',
   },
   content: {
     flexDirection: 'row',
@@ -141,5 +140,6 @@ const styles = StyleSheet.create({
     fontFamily: Font.monoMedium,
     fontWeight: '500',
     fontSize: Typography.promptText,
+    color: Colors.primaryLight,
   },
 });

@@ -6,7 +6,6 @@ import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 import type { WorkoutSplit } from '../../../types';
 import { useButtonSound } from '../../../hooks/useButtonSound';
-import { useTheme } from '../../../context/ThemeContext';
 import { Card } from '../../../components/Card';
 import { BackButton } from '../../../components/BackButton';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
@@ -28,7 +27,6 @@ type TmlsnRoutinesScreenProps = {
 
 export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp }: TmlsnRoutinesScreenProps = {}) {
   const router = useRouter();
-  const { colors } = useTheme();
   const { playIn, playOut } = useButtonSound();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -50,10 +48,10 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+    <View style={styles.container}>
       <BackButton />
       <View style={styles.titleRow} pointerEvents="box-none">
-        <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>TMLSN Routines</Text>
+        <Text style={styles.screenTitle}>TMLSN Routines</Text>
       </View>
       <HomeGradientBackground />
       <ScrollView
@@ -76,19 +74,19 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
               onPress={() => toggleExpand(split.id)}
             >
               <View style={styles.cardHeaderLeft}>
-                <View style={[styles.cardIcon, { backgroundColor: colors.primaryLight + '15' }]}>
-                  <Text style={[styles.cardIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
+                <View style={styles.cardIcon}>
+                  <Text style={styles.cardIconText}>◆</Text>
                 </View>
                 <View style={styles.cardTitleCol}>
-                  <Text style={[styles.cardTitle, { color: colors.cardIconTint }]}>{formatRoutineTitle(split.name)}</Text>
+                  <Text style={styles.cardTitle}>{formatRoutineTitle(split.name)}</Text>
                   <View style={styles.cardStatsRow}>
-                    <Text style={[styles.cardStat, { color: colors.primaryLight + '60' }]}>{exerciseCount} exercises</Text>
-                    <Text style={[styles.cardStatDot, { color: colors.primaryLight + '30' }]}>·</Text>
-                    <Text style={[styles.cardStat, { color: colors.primaryLight + '60' }]}>{totalSets} sets</Text>
+                    <Text style={styles.cardStat}>{exerciseCount} exercises</Text>
+                    <Text style={styles.cardStatDot}>·</Text>
+                    <Text style={styles.cardStat}>{totalSets} sets</Text>
                   </View>
                 </View>
               </View>
-              <Text style={[styles.chevron, isExpanded && styles.chevronExpanded, { color: colors.primaryLight + '50' }]}>›</Text>
+              <Text style={[styles.chevron, isExpanded && styles.chevronExpanded]}>›</Text>
             </Pressable>
 
             {/* Expanded exercise list */}
@@ -96,12 +94,12 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
               <View style={styles.exerciseListExpanded}>
                 {split.exercises.map((ex, i) => (
                   <View key={i} style={styles.exerciseRow}>
-                    <View style={[styles.exerciseRowDot, { borderColor: colors.primaryLight + '25' }]}>
-                      <Text style={[styles.exerciseRowDotText, { color: colors.primaryLight + '60' }]}>{i + 1}</Text>
+                    <View style={styles.exerciseRowDot}>
+                      <Text style={styles.exerciseRowDotText}>{i + 1}</Text>
                     </View>
                     <View style={styles.exerciseRowContent}>
-                      <Text style={[styles.exerciseRowName, { color: colors.cardIconTint }]}>{ex.name}</Text>
-                      <Text style={[styles.exerciseRowDetail, { color: colors.primaryLight + '50' }]}>
+                      <Text style={styles.exerciseRowName}>{ex.name}</Text>
+                      <Text style={styles.exerciseRowDetail}>
                         {ex.targetSets}×{ex.targetReps} · Rest {Math.floor(ex.restTimer / 60)}:{String(ex.restTimer % 60).padStart(2, '0')}
                       </Text>
                     </View>
@@ -112,19 +110,19 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
 
             {/* Collapsed preview */}
             {!isExpanded && (
-              <Text style={[styles.exercisePreview, { color: colors.primaryLight + '50' }]} numberOfLines={2} ellipsizeMode="tail">
+              <Text style={styles.exercisePreview} numberOfLines={2} ellipsizeMode="tail">
                 {split.exercises.map((ex) => ex.name).join(' · ')}
               </Text>
             )}
 
             {/* Start button */}
             <Pressable
-              style={({ pressed }) => [styles.startButton, { backgroundColor: colors.primaryLight }, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85 }]}
               onPressIn={playIn}
               onPressOut={playOut}
               onPress={() => handleStartRoutine(split)}
             >
-              <Text style={[styles.startButtonText, { color: colors.primaryDark }]}>Start Routine</Text>
+              <Text style={styles.startButtonText}>Start Routine</Text>
             </Pressable>
           </Card>
         );

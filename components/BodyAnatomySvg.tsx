@@ -8,16 +8,17 @@ import React from 'react';
 import Svg, { Path, G, Rect, Line } from 'react-native-svg';
 import type { MuscleGroup } from '../utils/exerciseDb/types';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
-import { useTheme } from '../context/ThemeContext';
+import { Colors } from '../constants/theme';
 
 const VIEWBOX = '0 0 660.46 1206.46';
 
-function getVolumeColor(sets: number, maxSets: number, primaryLight: string): string {
-  if (sets <= 0) return primaryLight + '40';
+// TMLSN brand: volume gradient from muted primaryLight → full primaryLight (no blue)
+function getVolumeColor(sets: number, maxSets: number): string {
+  if (sets <= 0) return Colors.primaryLight + '40';
   const ratio = Math.min(1, sets / Math.max(maxSets, 1));
   const alphaVal = 0.4 + ratio * 0.6;
-  if (alphaVal >= 1) return primaryLight;
-  return primaryLight + Math.round(alphaVal * 255).toString(16).padStart(2, '0');
+  if (alphaVal >= 1) return Colors.primaryLight;
+  return Colors.primaryLight + Math.round(alphaVal * 255).toString(16).padStart(2, '0');
 }
 
 // ── LiftShift Front (MaleFrontBodyMapGroupPart1) ─────────────────────────────
@@ -283,7 +284,6 @@ export function BodyAnatomySvg({
   width,
   height,
 }: BodyAnatomySvgProps) {
-  const { colors } = useTheme();
   const mappings = variant === 'front' ? FRONT_MAPPINGS : BACK_MAPPINGS;
   const bodyOutline = variant === 'front' ? FRONT_BODY_OUTLINE : BACK_BODY_OUTLINE;
 
@@ -296,8 +296,8 @@ export function BodyAnatomySvg({
           const sets = getMaxSetsForGroups(heatmapData, groups, selectedDay);
           const isPressed = isAnyGroupPressed(groups, pressedMuscleGroup);
           const fill = isPressed
-            ? colors.primaryLight
-            : getVolumeColor(sets, maxVolume, colors.primaryLight);
+            ? Colors.white
+            : getVolumeColor(sets, maxVolume);
           return (
             <G key={`${variant}-${i}`}>
               {paths.map((d, j) => (
@@ -305,7 +305,7 @@ export function BodyAnatomySvg({
                   key={`${variant}-${i}-${j}`}
                   d={d}
                   fill={fill}
-                  stroke={isPressed ? colors.primaryLight : 'none'}
+                  stroke={isPressed ? Colors.white : 'none'}
                   strokeWidth={isPressed ? 1.5 : 0}
                 />
               ))}
@@ -314,7 +314,7 @@ export function BodyAnatomySvg({
         })}
       </G>
       {/* Body outline strokes (Part2) — full anatomy */}
-      <G stroke={colors.primaryLight} strokeWidth={BODY_STROKE_WIDTH} fill="none" strokeLinecap="round" strokeLinejoin="round">
+      <G stroke={Colors.primaryLight} strokeWidth={BODY_STROKE_WIDTH} fill="none" strokeLinecap="round" strokeLinejoin="round">
         {bodyOutline.map((el, i) =>
           el.type === 'path' ? (
             <Path key={`outline-${variant}-${i}`} d={el.d} />

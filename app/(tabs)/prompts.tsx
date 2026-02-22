@@ -20,7 +20,6 @@ import { Button } from '../../components/Button';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { useTheme } from '../../context/ThemeContext';
 import { getPrompts, savePrompts } from '../../utils/storage';
 import { SAMPLE_PROMPTS } from '../../constants/samplePrompts';
 import { Prompt } from '../../types';
@@ -32,7 +31,6 @@ const CARD_LABEL_COLOR = '#FFFFFF';
 
 export default function PromptsScreen() {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -185,8 +183,8 @@ export default function PromptsScreen() {
             </Pressable>
           </View>
           <View style={styles.headerWrap}>
-            <Text style={[styles.headerTitle, { color: colors.primaryLight }]}>prompts.</Text>
-            <Text style={[styles.headerSubtitle, { color: colors.primaryLight }]}>
+            <Text style={styles.headerTitle}>prompts.</Text>
+            <Text style={styles.headerSubtitle}>
               actionable AI prompts to execute the advice from our content
             </Text>
           </View>
@@ -242,7 +240,7 @@ export default function PromptsScreen() {
         {filteredPrompts.length === 0 ? (
           <AnimatedFadeInUp delay={100} duration={380} trigger={animTrigger}>
             <Card gradientFill borderRadius={CARD_RADIUS} style={styles.promptCard}>
-              <Text style={[styles.emptyText, { color: colors.cardIconTint }]}>
+              <Text style={styles.emptyText}>
                 No prompts available yet. Check back weekly for new actionable prompts!
               </Text>
             </Card>
@@ -250,20 +248,20 @@ export default function PromptsScreen() {
         ) : (
           filteredPrompts.map((prompt, index) => (
             <AnimatedFadeInUp key={prompt.id} delay={100 + index * 45} duration={380} trigger={animTrigger}>
-<Card gradientFill borderRadius={CARD_RADIUS} style={styles.promptCard}>
-              <TouchableOpacity onPress={() => openPromptDetail(prompt)} style={styles.promptCardInner}>
+              <Card gradientFill borderRadius={CARD_RADIUS} style={styles.promptCard}>
+                <TouchableOpacity onPress={() => openPromptDetail(prompt)} style={styles.promptCardInner}>
                   <View style={styles.promptHeader}>
-                    <Text style={[styles.promptTitle, { color: colors.cardIconTint }]}>{prompt.title}</Text>
+                    <Text style={styles.promptTitle}>{prompt.title}</Text>
                     {prompt.category && (
                       <View style={styles.categoryBadge}>
                         <Text style={styles.categoryBadgeText}>{prompt.category}</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.promptSummary, { color: colors.cardIconTint }]}>{prompt.summary}</Text>
+                  <Text style={styles.promptSummary}>{prompt.summary}</Text>
                   <View style={styles.promptFooter}>
-                    <Text style={[styles.promptSource, { color: colors.cardIconTint }]}>From: {prompt.source}</Text>
-                    <Text style={[styles.promptDate, { color: colors.cardIconTint }]}>
+                    <Text style={styles.promptSource}>From: {prompt.source}</Text>
+                    <Text style={styles.promptDate}>
                       {new Date(prompt.dateAdded).toLocaleDateString()}
                     </Text>
                   </View>
@@ -282,12 +280,12 @@ export default function PromptsScreen() {
         onRequestClose={() => setShowDetailModal(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.primaryDark }]}>
+          <View style={styles.modalContent}>
             {selectedPrompt && (
               <>
                 <View style={styles.modalHeader}>
                   <View style={styles.modalTitleContainer}>
-                    <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>{selectedPrompt.title}</Text>
+                    <Text style={styles.modalTitle}>{selectedPrompt.title}</Text>
                     {selectedPrompt.category && (
                       <View style={styles.categoryBadge}>
                         <Text style={styles.categoryBadgeText}>
@@ -298,43 +296,43 @@ export default function PromptsScreen() {
                   </View>
                   <TouchableOpacity
                     onPress={() => setShowDetailModal(false)}
-                    style={[styles.closeButton, { backgroundColor: colors.primaryLight + '20' }]}
+                    style={styles.closeButton}
                   >
-                    <Text style={[styles.closeButtonText, { color: colors.primaryLight }]}>✕</Text>
+                    <Text style={styles.closeButtonText}>✕</Text>
                   </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.modalBody}>
-                  <Text style={[styles.modalSummary, { color: colors.primaryLight }]}>{selectedPrompt.summary}</Text>
+                  <Text style={styles.modalSummary}>{selectedPrompt.summary}</Text>
 
                   <TouchableOpacity
                     style={styles.sourceLink}
                     onPress={openSourceLink}
                   >
-                    <Text style={[styles.sourceLinkText, { color: colors.primaryLight }]}>
+                    <Text style={styles.sourceLinkText}>
                       📄 {selectedPrompt.source}
                     </Text>
                   </TouchableOpacity>
 
                   <View style={styles.promptTextContainer}>
-                    <Text style={[styles.promptTextLabel, { color: colors.primaryLight }]}>Prompt:</Text>
+                    <Text style={styles.promptTextLabel}>Prompt:</Text>
                     <ScrollView style={styles.promptTextScroll}>
-                      <Text style={[styles.promptText, { color: colors.white, backgroundColor: colors.black }]}>{selectedPrompt.fullText}</Text>
+                      <Text style={styles.promptText}>{selectedPrompt.fullText}</Text>
                     </ScrollView>
                   </View>
 
-                  <View style={[styles.instructionsBox, { backgroundColor: colors.primaryLight + '10', borderColor: colors.primaryLight + '30' }]}>
-                    <Text style={[styles.instructionsTitle, { color: colors.primaryLight }]}>How to use:</Text>
-                    <Text style={[styles.instructionsText, { color: colors.primaryLight }]}>
+                  <View style={styles.instructionsBox}>
+                    <Text style={styles.instructionsTitle}>How to use:</Text>
+                    <Text style={styles.instructionsText}>
                       1. Tap "Copy to Clipboard" below
                     </Text>
-                    <Text style={[styles.instructionsText, { color: colors.primaryLight }]}>
+                    <Text style={styles.instructionsText}>
                       2. Open ChatGPT or your preferred AI tool
                     </Text>
-                    <Text style={[styles.instructionsText, { color: colors.primaryLight }]}>
+                    <Text style={styles.instructionsText}>
                       3. Paste and fill in [YOUR_INFO] placeholders
                     </Text>
-                    <Text style={[styles.instructionsText, { color: colors.primaryLight }]}>
+                    <Text style={styles.instructionsText}>
                       4. Get your personalized protocol!
                     </Text>
                   </View>
@@ -344,7 +342,7 @@ export default function PromptsScreen() {
                   <Button
                     title="📋 Copy to Clipboard"
                     onPress={copyPromptToClipboard}
-                    style={[styles.copyButton, { backgroundColor: colors.primaryDarkLighter }]}
+                    style={styles.copyButton}
                   />
                   <Button
                     title="Close"

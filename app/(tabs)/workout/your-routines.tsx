@@ -13,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { getSavedRoutines, saveSavedRoutine } from '../../../utils/storage';
 import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../../constants/theme';
-import { useTheme } from '../../../context/ThemeContext';
 import { SavedRoutine } from '../../../types';
 import { generateId, formatDuration } from '../../../utils/helpers';
 import { useButtonSound } from '../../../hooks/useButtonSound';
@@ -30,7 +29,6 @@ type YourRoutinesScreenProps = {
 
 export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp }: YourRoutinesScreenProps = {}) {
   const router = useRouter();
-  const { colors } = useTheme();
   const { playIn, playOut } = useButtonSound();
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
@@ -129,10 +127,10 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
   return (
     <>
-      <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+      <View style={styles.container}>
         <BackButton />
         <View style={styles.titleRow} pointerEvents="box-none">
-          <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>Your Routines</Text>
+          <Text style={styles.screenTitle}>Your Routines</Text>
         </View>
         <HomeGradientBackground />
         <ScrollView
@@ -142,20 +140,20 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
         >
         {/* New routine button */}
         <Pressable
-          style={({ pressed }) => [styles.newRoutineButton, { backgroundColor: colors.accentBlue }, pressed && { opacity: 0.85 }]}
+          style={({ pressed }) => [styles.newRoutineButton, pressed && { opacity: 0.85 }]}
           onPressIn={playIn}
           onPressOut={playOut}
           onPress={openRoutineBuilder}
         >
-          <Text style={[styles.newRoutineButtonText, { color: colors.white }]}>+ New Routine</Text>
+          <Text style={styles.newRoutineButtonText}>+ New Routine</Text>
         </Pressable>
 
         {/* Routine list */}
         {savedRoutines.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyIcon, { color: colors.primaryLight + '30' }]}>◇</Text>
-            <Text style={[styles.emptyText, { color: colors.primaryLight + '60' }]}>No routines yet</Text>
-            <Text style={[styles.emptySubtext, { color: colors.primaryLight + '40' }]}>Create your first routine above</Text>
+            <Text style={styles.emptyIcon}>◇</Text>
+            <Text style={styles.emptyText}>No routines yet</Text>
+            <Text style={styles.emptySubtext}>Create your first routine above</Text>
           </View>
         ) : (
           <View style={styles.routineList}>
@@ -169,20 +167,20 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
               >
                 <Card gradientFill borderRadius={18} style={styles.routineCard}>
                 <View style={styles.routineCardLeft}>
-                  <View style={[styles.routineCardIcon, { backgroundColor: colors.primaryLight + '15' }]}>
-                    <Text style={[styles.routineCardIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
+                  <View style={styles.routineCardIcon}>
+                    <Text style={styles.routineCardIconText}>◆</Text>
                   </View>
                   <View style={styles.routineCardContent}>
-                    <Text style={[styles.routineCardName, { color: colors.cardIconTint }]}>{routine.name}</Text>
+                    <Text style={styles.routineCardName}>{routine.name}</Text>
                     <View style={styles.routineCardStatsRow}>
-                      <Text style={[styles.routineCardStat, { color: colors.primaryLight + '60' }]}>{routine.exercises.length} exercises</Text>
+                      <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
                     </View>
-                    <Text style={[styles.routineCardPreview, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">
+                    <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
                       {routine.exercises.map((e) => e.name).join(' · ')}
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.routineCardChevron, { color: colors.primaryLight + '50' }]}>›</Text>
+                <Text style={styles.routineCardChevron}>›</Text>
                 </Card>
               </Pressable>
             ))}
@@ -193,7 +191,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
       {/* ─── ROUTINE BUILDER OVERLAY (Hevy-style) ─── */}
       {showRoutineBuilder && (
-        <View style={[styles.overlay, { height: windowHeight, backgroundColor: colors.primaryDark }]}>
+        <View style={[styles.overlay, { height: windowHeight }]}>
           <ScrollView
             style={styles.overlayScroll}
             contentContainerStyle={styles.overlayContent}
@@ -210,7 +208,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.builderBackWrap}
               >
-                <Text style={[styles.builderBackArrow, { color: colors.primaryLight }]}>▼</Text>
+                <Text style={styles.builderBackArrow}>▼</Text>
               </Pressable>
               <Pressable
                 onPressIn={playIn}
@@ -230,36 +228,36 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                 }
                 style={styles.builderTitleWrap}
               >
-                <Text style={[styles.builderTitle, { color: colors.primaryLight }]}>{editingRoutine.name}</Text>
-                <Text style={[styles.builderTitleHint, { color: colors.primaryLight + '80' }]}>tap to rename</Text>
+                <Text style={styles.builderTitle}>{editingRoutine.name}</Text>
+                <Text style={styles.builderTitleHint}>tap to rename</Text>
               </Pressable>
               <Pressable
-                style={({ pressed }) => [styles.builderSaveButton, { backgroundColor: colors.primaryLight }, pressed && { opacity: 0.85 }]}
+                style={({ pressed }) => [styles.builderSaveButton, pressed && { opacity: 0.85 }]}
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={saveRoutine}
               >
-                <Text style={[styles.builderSaveButtonText, { color: colors.primaryDark }]}>Save</Text>
+                <Text style={styles.builderSaveButtonText}>Save</Text>
               </Pressable>
             </View>
 
             {/* Exercise count */}
             <View style={styles.builderSummary}>
-              <Text style={[styles.builderSummaryText, { color: colors.primaryLight }]}>
+              <Text style={styles.builderSummaryText}>
                 {editingRoutine.exercises.length} exercise{editingRoutine.exercises.length !== 1 ? 's' : ''}
               </Text>
             </View>
 
             {/* Exercise blocks */}
             {editingRoutine.exercises.map((ex, i) => (
-              <View key={ex.id} style={[styles.builderExerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}>
+              <View key={ex.id} style={styles.builderExerciseBlock}>
                 <View style={styles.builderExerciseRow}>
-                  <View style={[styles.builderExerciseDot, { borderColor: colors.primaryLight + '25' }]}>
-                    <Text style={[styles.builderExerciseDotText, { color: colors.primaryLight + '60' }]}>{i + 1}</Text>
+                  <View style={styles.builderExerciseDot}>
+                    <Text style={styles.builderExerciseDotText}>{i + 1}</Text>
                   </View>
                   <View style={styles.builderExerciseContent}>
-                    <Text style={[styles.builderExerciseName, { color: colors.primaryLight }]}>{ex.name}</Text>
-                    <Text style={[styles.builderExerciseDetail, { color: colors.primaryLight + '50' }]}>
+                    <Text style={styles.builderExerciseName}>{ex.name}</Text>
+                    <Text style={styles.builderExerciseDetail}>
                       Rest: {formatDuration(ex.restTimer)}
                     </Text>
                   </View>
@@ -268,9 +266,9 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                     onPressOut={playOut}
                     onPress={() => removeExerciseFromRoutine(ex.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={[styles.builderRemoveButton, { backgroundColor: colors.accentRed + '15' }]}
+                    style={styles.builderRemoveButton}
                   >
-                    <Text style={[styles.builderRemoveButtonText, { color: colors.accentRed + 'CC' }]}>✕</Text>
+                    <Text style={styles.builderRemoveButtonText}>✕</Text>
                   </Pressable>
                 </View>
               </View>
@@ -278,12 +276,12 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
             {/* Add exercise button */}
             <Pressable
-              style={({ pressed }) => [styles.builderAddButton, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.builderAddButton, pressed && { opacity: 0.85 }]}
               onPressIn={playIn}
               onPressOut={playOut}
               onPress={() => setShowExercisePicker(true)}
             >
-              <Text style={[styles.builderAddButtonText, { color: colors.primaryLight + '80' }]}>+ Add Exercise</Text>
+              <Text style={styles.builderAddButtonText}>+ Add Exercise</Text>
             </Pressable>
 
             <ExercisePickerModal

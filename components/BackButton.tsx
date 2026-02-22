@@ -10,7 +10,6 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft } from 'phosphor-react-native';
 import { Spacing } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
 
 const CONTENT_PADDING = 19;
 const TOP_LEFT_PILL_TOP = 54;
@@ -28,6 +27,7 @@ function getCalorieCardLeft(): number {
 const SIZE = 40;
 const BORDER_RADIUS = 20;
 const INNER_RADIUS = 19;
+const ICON_COLOR = '#C6C6C6';
 
 type BackButtonProps = {
   onPress?: () => void;
@@ -36,7 +36,6 @@ type BackButtonProps = {
 
 export function BackButton({ onPress, style }: BackButtonProps) {
   const router = useRouter();
-  const { colors } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -72,15 +71,15 @@ export function BackButton({ onPress, style }: BackButtonProps) {
       <Animated.View style={[styles.outer, animatedStyle]}>
         <View style={styles.pill}>
           <LinearGradient
-            colors={colors.pillBorderGradient}
+            colors={['#4E4F50', '#4A4B4C']}
             style={styles.borderGradient}
           />
           <LinearGradient
-            colors={colors.pillFillGradient}
+            colors={['#363738', '#2E2F30']}
             style={styles.fillGradient}
           />
           <View style={styles.iconWrap}>
-            <ArrowLeft size={20} color={colors.cardIconTint} weight="regular" />
+            <ArrowLeft size={20} color={ICON_COLOR} weight="regular" />
           </View>
         </View>
       </Animated.View>

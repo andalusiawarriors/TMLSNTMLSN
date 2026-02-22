@@ -20,6 +20,7 @@ import {
   AppStateStatus,
   RefreshControl,
   Animated as RNAnimated,
+  InteractionManager,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
@@ -37,6 +38,7 @@ import Animated, {
   Easing,
   cancelAnimation,
   interpolate,
+  FadeIn,
   FadeInUp,
   FadeOut,
   SlideInLeft,
@@ -47,6 +49,7 @@ import * as Haptics from 'expo-haptics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { BlurView } from 'expo-blur';
+import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,11 +67,10 @@ import {
   getSavedFoods,
   saveSavedFood,
   getWorkoutSessions,
-  DEFAULT_SETTINGS,
 } from '../../utils/storage';
 import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
-import SwipeableWeekView, { type DayStatus } from '../../components/SwipeableWeekView';
+import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
@@ -77,7 +79,6 @@ import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
 import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
-import { useTheme } from '../../context/ThemeContext';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -92,7 +93,8 @@ const Font = {
 const CardFont = { letterSpacing: -0.1 } as const;
 
 const HeadingLetterSpacing = -1;
-const CARD_LABEL_COLOR = '#FFFFFF'; // fallback for static styles; card text uses colors.cardIconTint override
+const CARD_LABEL_COLOR = '#FFFFFF';
+const CARD_NUMBER_COLOR = '#FFFFFF'; // quantity text on cards – full white, animation restores to this
 const CARD_UNIFIED_HEIGHT = Math.round(100 * 1.2); // 20% taller, all cards same height (120)
 const MAIN_CARD_RING_SIZE = 100;
 const SMALL_CARD_RING_SIZE = Math.round(61 * 0.95); // 5% smaller (58)
@@ -118,7 +120,6 @@ export default function NutritionScreen({
 }: NutritionScreenModalProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
-  const { colors } = useTheme();
   const { openCard, addSavedFood, addFoodResult, openScan } = useLocalSearchParams<{
     openCard?: string;
     addSavedFood?: string;
@@ -128,29 +129,19 @@ export default function NutritionScreen({
   const openCardProcessedRef = useRef(false);
   const addFoodParamProcessedRef = useRef(false);
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
-  const [todayLog, setTodayLog] = useState<NutritionLog | null>(() => ({
-    id: generateId(),
-    date: getTodayDateString(),
-    calories: 0,
-    protein: 0,
-    carbs: 0,
-    fat: 0,
-    water: 0,
-    meals: [],
-  }));
-  const [settings, setSettings] = useState<UserSettings | null>(() => DEFAULT_SETTINGS);
+  const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showEditGoals, setShowEditGoals] = useState(false);
-  const [cardPage, setCardPage] = useState(0);
+  const [nutritionPage, setNutritionPage] = useState(0); // 0 = macros, 1 = electrolytes
   const [fitnessCardPage, setFitnessCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
-
-  // Reset carousel page when switching segment so pagination dots match content
+  // Reset page when switching segment
   useEffect(() => {
-    setCardPage(0);
+    setNutritionPage(0);
     setFitnessCardPage(0);
   }, [homeSegment]);
 
@@ -169,6 +160,10 @@ export default function NutritionScreen({
   const profilePillScale = useSharedValue(1);
   const profilePillScaleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profilePillScale.value }],
+  }));
+  const calendarPillScale = useSharedValue(1);
+  const calendarPillScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: calendarPillScale.value }],
   }));
 
   const isEaten = useSharedValue(0);
@@ -454,7 +449,7 @@ export default function NutritionScreen({
   };
 
   const fillAndShowForm = (data: ParsedNutrition) => {
-    setMealName(data.brand ? `${data.name} (${data.brand})` : data.name);
+    setMealName(data.name);
     setCalories(String(data.calories || ''));
     setProtein(String(data.protein || ''));
     setCarbs(String(data.carbs || ''));
@@ -797,7 +792,6 @@ export default function NutritionScreen({
     return Math.min(Math.round((current / goal) * 100), 100);
   };
 
-  const insets = useSafeAreaInsets();
   const headerHeight = 44;
 
   // Carousel (horizontal paging between normal and flipped card layouts)
@@ -815,18 +809,21 @@ export default function NutritionScreen({
   const MACRO_CARD_WIDTH = Math.floor((CALORIES_CARD_WIDTH - 2 * Spacing.sm) / 3);
   const MACRO_CARD_HEIGHT = 140;
   const MACRO_CARD_RADIUS = 16;
-  const NUTRITION_CAROUSEL_PAGES = useMemo(() => [0, 1], []);
-  const handleCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const page = Math.round(offsetX / CAROUSEL_WIDTH);
-    setCardPage(Math.min(1, page));
-  };
-
   const handleFitnessCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const page = Math.round(offsetX / CAROUSEL_WIDTH);
     setFitnessCardPage(Math.min(1, page));
   };
+
+  const nutritionScrollRef = useRef<ScrollView>(null);
+  const handleNutritionCarouselScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const page = Math.round(offsetX / CAROUSEL_WIDTH);
+    setNutritionPage(Math.min(1, page));
+  };
+  useEffect(() => {
+    nutritionScrollRef.current?.scrollTo({ x: nutritionPage * CAROUSEL_WIDTH, animated: true });
+  }, [nutritionPage]);
 
   const TAP_SLOP = 20; // px – only commit toggle on release when finger moved less than this (larger for Mac/simulator)
   const cardTouchStart = useRef({ x: 0, y: 0 });
@@ -874,7 +871,8 @@ export default function NutritionScreen({
     }
   };
 
-  const onCarouselScrollBeginDrag = () => {
+  const _unused = () => {
+    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition:onCarouselScrollBeginDrag',message:'carousel scroll drag started',data:{hypothesisId:'H3'},timestamp:Date.now()})}).catch(()=>{});
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -995,32 +993,87 @@ export default function NutritionScreen({
     };
   });
 
-  // Top pills: 54pt from screen top; horizontal padding = calorie card inset (Spacing.md + centering offset)
-  const TOP_LEFT_PILL_TOP = 54;
+  const insets = useSafeAreaInsets();
+  const headerTop = insets.top + 19;
   const calorieCardLeft = CONTENT_PADDING + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
-  const TOP_RIGHT_CIRCLE_SIZE = 40; // circle, same stroke as pill
-  const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2; // 20
+  const TOP_RIGHT_CIRCLE_SIZE = 40;
+  const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2;
+  const prevDay = useMemo(() => {
+    const d = new Date(viewingDate + 'T12:00:00');
+    d.setDate(d.getDate() - 1);
+    return d;
+  }, [viewingDate]);
+  const nextDay = useMemo(() => {
+    const d = new Date(viewingDate + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    return d;
+  }, [viewingDate]);
 
   return (
-    <View style={[styles.container, { backgroundColor: asModal ? 'transparent' : colors.primaryDark }]}>
+    <View style={[styles.container, asModal && { backgroundColor: 'transparent' }]}>
       {!asModal && (
       <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Circular gradient background at 0% 0%: #2f3031 → #1a1a1a */}
+        {/* Layered mesh gradient background: champagne circles + specular + dark fade */}
         <View style={styles.homeBackgroundImage} pointerEvents="none">
-          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-            <Defs>
-              <RadialGradient id="homeBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
-                <Stop offset="0" stopColor={colors.backgroundGradient[0]} />
-                <Stop offset="1" stopColor={colors.backgroundGradient[1]} />
-              </RadialGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100%" height="100%" fill="url(#homeBgGrad)" />
-          </Svg>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#2F3031' }]} />
+          {/* Layer 1: Mesh gradient — 3 champagne circles */}
+          <View
+            style={{
+              position: 'absolute',
+              left: -SCREEN_WIDTH * 0.3,
+              top: -SCREEN_HEIGHT * 0.15,
+              width: SCREEN_WIDTH * 1.2,
+              height: SCREEN_WIDTH * 1.2,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(212, 184, 150, 0.15)',
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              right: -SCREEN_WIDTH * 0.4,
+              top: SCREEN_HEIGHT * 0.2,
+              width: SCREEN_WIDTH * 1.0,
+              height: SCREEN_WIDTH * 1.0,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(168, 137, 94, 0.12)',
+            }}
+          />
+          <View
+            style={{
+              position: 'absolute',
+              left: -SCREEN_WIDTH * 0.2,
+              bottom: -SCREEN_HEIGHT * 0.2,
+              width: SCREEN_WIDTH * 1.4,
+              height: SCREEN_WIDTH * 1.4,
+              borderRadius: 9999,
+              backgroundColor: 'rgba(212, 184, 150, 0.10)',
+            }}
+          />
+          <BlurView
+            intensity={80}
+            tint="dark"
+            {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Layer 2: Specular sweep */}
+          <LinearGradient
+            colors={['transparent', 'rgba(180, 180, 180, 0.06)', 'rgba(200, 200, 200, 0.09)', 'rgba(180, 180, 180, 0.06)', 'transparent']}
+            start={{ x: 0, y: 0.3 }}
+            end={{ x: 1, y: 0.6 }}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Layer 3: Dark fade-down — reaches #2F3031, then #1a1a1a much earlier to nav bar */}
+          <LinearGradient
+            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+            locations={[0, 0.2, 0.35, 0.45, 0.65]}
+            style={StyleSheet.absoluteFill}
+          />
         </View>
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
-          style={[styles.flywheelOverlay, { top: TOP_LEFT_PILL_TOP + 12 }]}
+          style={[styles.flywheelOverlay, { top: headerTop + 12 }]}
           pointerEvents="none"
         >
           <Animated.View style={[styles.flywheelWrap, flywheelStyle]}>
@@ -1045,14 +1098,14 @@ export default function NutritionScreen({
         }
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: TOP_LEFT_PILL_TOP },
+          { paddingTop: headerTop + 40 },
         ]}
       >
-        {/* Top-left pill — same stroke as bottom pill + slight gradient; scale animation like calorie card (no sound) */}
+        {/* Top-left pill — fire streak */}
         <Pressable
           style={{
             position: 'absolute',
-            top: TOP_LEFT_PILL_TOP,
+            top: headerTop,
             left: calorieCardLeft,
             zIndex: 10,
             width: 60,
@@ -1079,12 +1132,12 @@ export default function NutritionScreen({
             >
               {/* Border gradient (same idea as bottom pill) */}
               <LinearGradient
-                colors={colors.pillBorderGradient}
+                colors={['#4E4F50', '#4A4B4C']}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }}
               />
               {/* Fill gradient */}
               <LinearGradient
-                colors={colors.pillFillGradient}
+                colors={['#363738', '#2E2F30']}
                 style={{
                   position: 'absolute',
                   top: 1,
@@ -1115,18 +1168,43 @@ export default function NutritionScreen({
                     style={{ width: 19, height: 19 }}
                     resizeMode="contain"
                   />
-                  <Text style={[styles.caloriesLeftValue, { fontSize: 13, color: colors.primaryLight, letterSpacing: 13 * -0.03 }]}>0</Text>
+                  <Text style={[styles.caloriesLeftValue, { fontSize: 13, color: '#C6C6C6', letterSpacing: 13 * -0.03 }]}>0</Text>
                 </View>
               </View>
             </View>
           </Animated.View>
         </Pressable>
 
-        {/* Top-right circle — same stroke + slight gradient; scale animation like calorie card (no sound) */}
+        {/* Calendar pill — left of profile */}
         <Pressable
           style={{
             position: 'absolute',
-            top: TOP_LEFT_PILL_TOP,
+            top: headerTop,
+            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8,
+            zIndex: 10,
+            width: 60,
+            height: 40,
+          }}
+          onPressIn={() => { calendarPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPressOut={() => { calendarPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
+          onPress={() => { /* calendar action placeholder */ }}
+        >
+          <Animated.View style={[{ width: 60, height: 40 }, calendarPillScaleStyle]}>
+            <View style={{ width: 60, height: 40, borderRadius: 28, overflow: 'hidden' }}>
+              <LinearGradient colors={['#4E4F50', '#4A4B4C']} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 28 }} />
+              <LinearGradient colors={['#363738', '#2E2F30']} style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 27 }} />
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="calendar-outline" size={17} color="#C6C6C6" />
+              </View>
+            </View>
+          </Animated.View>
+        </Pressable>
+
+        {/* Top-right circle — profile */}
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: headerTop,
             right: calorieCardLeft,
             zIndex: 10,
             width: TOP_RIGHT_CIRCLE_SIZE,
@@ -1147,12 +1225,12 @@ export default function NutritionScreen({
             >
               {/* Border gradient (same as bottom pill) */}
               <LinearGradient
-                colors={colors.pillBorderGradient}
+                colors={['#4E4F50', '#4A4B4C']}
                 style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: TOP_RIGHT_CIRCLE_RADIUS }}
               />
               {/* Fill gradient */}
               <LinearGradient
-                colors={colors.pillFillGradient}
+                colors={['#363738', '#2E2F30']}
                 style={{
                   position: 'absolute',
                   top: 1,
@@ -1175,7 +1253,7 @@ export default function NutritionScreen({
               >
                 <Image
                   source={require('../../assets/profile-top-icon.png')}
-                  style={{ width: TOP_RIGHT_CIRCLE_SIZE - 8, height: TOP_RIGHT_CIRCLE_SIZE - 8, tintColor: colors.cardIconTint }}
+                  style={{ width: TOP_RIGHT_CIRCLE_SIZE - 8, height: TOP_RIGHT_CIRCLE_SIZE - 8 }}
                   resizeMode="contain"
                 />
               </View>
@@ -1183,27 +1261,34 @@ export default function NutritionScreen({
           </Animated.View>
         </Pressable>
 
-        <AnimatedFadeInUp delay={0} duration={220} trigger={animTrigger} instant>
-        <View style={{ height: (Typography.h2 + 10) * 1.2 * 1.1 + Spacing.md, marginBottom: 0 }} />
-        <SwipeableWeekView
-          weekWidth={WEEK_STRIP_PAGE_WIDTH}
-          selectedDate={viewingDateAsDate}
-          onDaySelect={(date) => handleSelectDate(toDateString(date))}
-          initialDate={viewingDateAsDate}
-          showHeader={false}
-          dayStatusByDate={dayStatusByDate}
-        />
-        </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={55} duration={220} trigger={animTrigger} instant>
-        <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: -6, marginBottom: 4 }}>
-          <PillSegmentedControl
-            value={homeSegment}
-            onValueChange={setHomeSegment}
-            width={WEEK_STRIP_PAGE_WIDTH}
-          />
+        {/* Date row — centered in space between fire streak and calendar pills */}
+        <View
+          style={{
+            position: 'absolute',
+            top: headerTop,
+            left: calorieCardLeft + 60 + 8,
+            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + 8 + 60 + 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10,
+            height: 40,
+          }}
+          pointerEvents="box-none"
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 6 }} hitSlop={8}>
+              <Ionicons name="chevron-back" size={14} color={Colors.primaryLight} />
+            </Pressable>
+            <Text style={{ fontSize: 11, color: Colors.primaryLight, marginHorizontal: 4, fontWeight: '500' }}>
+              {viewingDateAsDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </Text>
+            <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 6 }} hitSlop={8}>
+              <Ionicons name="chevron-forward" size={14} color={Colors.primaryLight} />
+            </Pressable>
+          </View>
         </View>
-        </AnimatedFadeInUp>
-        <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger} instant>
+        <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger}>
         {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
         {homeSegment === 'Fitness' ? (
           <Animated.View
@@ -1224,9 +1309,9 @@ export default function NutritionScreen({
               nestedScrollEnabled
               directionalLockEnabled
             >
-              {/* Fitness page 0: heatmap */}
+              {/* Fitness page 0: heatmap — isolated (no card wrapper) */}
               <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
-                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} />
+                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
               </View>
               {/* Fitness page 1: steps card only */}
               <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
@@ -1236,22 +1321,25 @@ export default function NutritionScreen({
                 >
                   <View style={styles.caloriesLeftContent}>
                     <View style={styles.caloriesLeftTextWrap}>
-                      <Text style={[styles.caloriesLeftValue, { color: colors.cardIconTint }]}>—</Text>
-                      <Text style={[styles.caloriesLeftLabel, { color: colors.cardIconTint }]}>steps today</Text>
+                      <Text style={styles.caloriesLeftValue}>—</Text>
+                      <Text style={styles.caloriesLeftLabel}>steps today</Text>
                     </View>
                     <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                      <Text style={[styles.stepRingValue, { color: colors.cardIconTint }]}>—</Text>
+                      <Text style={styles.stepRingValue}>—</Text>
                     </View>
                   </View>
                 </Card>
               </View>
             </ScrollView>
             <View style={styles.paginationDots}>
-              <View style={[styles.dot, { backgroundColor: colors.primaryLight + '4D' }, fitnessCardPage === 0 && { backgroundColor: colors.primaryLight + 'E6' }]} />
-              <View style={[styles.dot, { backgroundColor: colors.primaryLight + '4D' }, fitnessCardPage === 1 && { backgroundColor: colors.primaryLight + 'E6' }]} />
+              <View style={[styles.dot, fitnessCardPage === 0 && styles.dotActive]} />
+              <View style={[styles.dot, fitnessCardPage === 1 && styles.dotActive]} />
             </View>
-            {/* Recently uploaded – below carousel (same as Nutrition) */}
-            <Text style={[styles.recentlyUploadedTitle, { color: colors.primaryLight }]}>Recently uploaded</Text>
+            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
+              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+            </View>
+            {/* Recently uploaded – below toggle */}
+            <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
             <Card
               gradientFill
               style={[
@@ -1261,13 +1349,13 @@ export default function NutritionScreen({
               ]}
             >
               {!todayLog?.meals?.length ? (
-                <Text style={[styles.recentlyUploadedPlaceholder, { color: colors.primaryLight }]}>tap + to add a workout</Text>
+                <Text style={styles.recentlyUploadedPlaceholder}>tap + to add a workout</Text>
               ) : (
                 <View style={styles.recentlyUploadedList}>
                   {todayLog.meals.map((meal) => (
                     <View key={meal.id} style={styles.recentlyUploadedMealRow}>
                       <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
-                      <Text style={[styles.recentlyUploadedMealCals, { color: colors.cardIconTint }]}>{meal.calories} kcal</Text>
+                      <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
                     </View>
                   ))}
                 </View>
@@ -1285,59 +1373,56 @@ export default function NutritionScreen({
           <View style={{ position: 'relative' }}>
             <View>
         {settings && todayLog && (
-          <View style={{ zIndex: 1 }}>
-            <FlatList
-              data={NUTRITION_CAROUSEL_PAGES}
-              keyExtractor={(i) => String(i)}
+          <View style={{ width: CAROUSEL_WIDTH }}>
+            <ScrollView
+              ref={nutritionScrollRef}
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
-              onScroll={handleCarouselScroll}
-              onScrollBeginDrag={onCarouselScrollBeginDrag}
+              onScroll={handleNutritionCarouselScroll}
               scrollEventThrottle={16}
               style={{ width: CAROUSEL_WIDTH }}
-              getItemLayout={(_, index) => ({ length: CAROUSEL_WIDTH, offset: index * CAROUSEL_WIDTH, index })}
-              renderItem={({ item: page }) => (
+              contentContainerStyle={{ width: CAROUSEL_WIDTH * 2 }}
+              nestedScrollEnabled
+              directionalLockEnabled
+            >
+              {/* Nutrition page 0: macros (calories + protein/carbs/fat) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                {page === 0 ? (
-                <>
                 <View>
                 <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                  <Animated.View style={cardScaleStyle}>
-                    <Card gradientFill style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
-                      <View style={styles.caloriesLeftContent}>
-                        <View style={styles.caloriesLeftTextWrap}>
-                          <BlurRollNumber
-                            leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
-                            eatenValue={String(todayLog.calories)}
-                            eatenSuffix={`/${settings.dailyGoals.calories}`}
-                            isEaten={isEaten}
-                            trigger={rollTrigger}
-                            textStyle={[styles.caloriesLeftValue, { color: colors.cardIconTint }]}
-                            suffixStyle={[styles.caloriesEatenGoal, { color: colors.cardIconTint }]}
-                            height={40}
-                          />
-                          <View>
-                            <Animated.View style={leftLabelStyle}><Text style={[styles.caloriesLeftLabel, { color: colors.cardIconTint }]}>calories left</Text></Animated.View>
-                            <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.caloriesEatenLabel, { color: colors.cardIconTint }]}>calories eaten</Text></Animated.View>
-                          </View>
+                  <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: 22, marginBottom: Spacing.sm }]}>
+                    <View style={styles.caloriesLeftContent}>
+                      <View style={styles.caloriesLeftTextWrap}>
+                        <BlurRollNumber
+                          leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
+                          eatenValue={String(todayLog.calories)}
+                          eatenSuffix={`/${settings.dailyGoals.calories}`}
+                          isEaten={isEaten}
+                          trigger={rollTrigger}
+                          textStyle={styles.caloriesLeftValue}
+                          suffixStyle={styles.caloriesEatenGoal}
+                          height={40}
+                        />
+                        <View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
                         </View>
-                        <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                          <Image
-                            source={require('../../assets/calorie-ring-flame.png')}
-                            style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: colors.cardIconTint }}
-                            resizeMode="contain"
-                          />
-                        </View>
-                        </View>
-                    </Card>
+                      </View>
+                      <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
+                        <Image
+                          source={require('../../assets/calorie-ring-flame.png')}
+                          style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF' }}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    </View>
                   </Animated.View>
                 </Pressable>
                 </View>
                 <View>
                   <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`}
@@ -1345,26 +1430,26 @@ export default function NutritionScreen({
                           eatenSuffix={`/${settings.dailyGoals.protein}g`}
                           isEaten={isEaten}
                           trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]}
-                          suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>protein left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>protein eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>protein left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>protein eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
                         <Image
                           source={require('../../assets/protein-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: colors.cardIconTint, transform: [{ rotate: '325deg' }] }}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF', transform: [{ rotate: '325deg' }] }}
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`}
@@ -1372,26 +1457,26 @@ export default function NutritionScreen({
                           eatenSuffix={`/${settings.dailyGoals.carbs}g`}
                           isEaten={isEaten}
                           trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]}
-                          suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>carbs left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>carbs eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>carbs left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>carbs eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
                         <Image
                           source={require('../../assets/carbs-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.45, height: SMALL_CARD_RING_SIZE * 0.45, tintColor: colors.cardIconTint, transform: [{ rotate: '-45deg' }] }}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.45, height: SMALL_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF', transform: [{ rotate: '-45deg' }] }}
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber
                           leftValue={`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`}
@@ -1399,114 +1484,109 @@ export default function NutritionScreen({
                           eatenSuffix={`/${settings.dailyGoals.fat}g`}
                           isEaten={isEaten}
                           trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]}
-                          suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]}
+                          textStyle={styles.macroLeftValue}
+                          suffixStyle={styles.macroEatenGoal}
                           height={20}
                         />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>fat left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>fat eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>fat left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>fat eaten</Text></Animated.View>
                         </View>
                       </View>
                       <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
                         <Image
                           source={require('../../assets/fat-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: colors.cardIconTint }}
+                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF' }}
                           resizeMode="contain"
                         />
                       </View>
-                    </Card>
+                    </View>
                   </Pressable>
                   </Animated.View>
                 </View>
-                </>
-                ) : (
-                <>
-              {/* Page 1: Electrolytes top, Health Score bottom (flipped layout) */}
+              </View>
+              {/* Nutrition page 1: electrolytes + health score (bare, no card) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
-                <View>
-                  <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
+                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]} suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]} height={20} />
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>sodium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>sodium eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>sodium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>sodium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]} suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]} height={20} />
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>potassium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>potassium eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>potassium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>potassium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <Card gradientFill style={[styles.macroLeftCard, { width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, borderRadius: MACRO_CARD_RADIUS, flex: 0 }]}>
+                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
                       <View style={styles.macroLeftTextWrap}>
                         <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
                           isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={[styles.macroLeftValue, { color: colors.cardIconTint }]} suffixStyle={[styles.macroEatenGoal, { color: colors.cardIconTint }]} height={20} />
+                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
                         <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={[styles.macroLeftLabel, { color: colors.cardIconTint }]}>magnesium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={[styles.macroEatenLabel, { color: colors.cardIconTint }]}>magnesium eaten</Text></Animated.View>
+                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>magnesium left</Text></Animated.View>
+                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>magnesium eaten</Text></Animated.View>
                         </View>
                       </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2 }]} />
-                    </Card>
+                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                    </View>
                   </Pressable>
-                  </Animated.View>
-                </View>
-                <View>
-                <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
-                  <Animated.View style={cardScaleStyle}>
-                    <Card gradientFill style={[styles.caloriesLeftCard, styles.healthScoreCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' }]}>
-                      <View style={styles.healthScoreHeaderRow}>
-                        <Text style={[styles.healthScoreTitle, { color: colors.cardIconTint }]}>health score</Text>
-                      </View>
+                </Animated.View>
+                <View style={{ marginTop: Spacing.sm }}>
+                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
+                    <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', position: 'relative', ...styles.healthScoreCard }]}>
+                      <Text style={styles.healthScoreTitle}>health score</Text>
                       {(!todayLog?.meals?.length) && (
                         <View style={styles.healthScoreNaWrap} pointerEvents="none">
-                          <Text style={[styles.healthScoreNa, { color: colors.cardIconTint }]} numberOfLines={1}>
-                            N/A
-                          </Text>
+                          <Text style={styles.healthScoreNa} numberOfLines={1}>N/A</Text>
                         </View>
                       )}
                       <View style={styles.healthScoreBarTrack}>
                         <View style={styles.healthScoreBarFill} />
                       </View>
-                    </Card>
-                  </Animated.View>
-                </Pressable>
-                  </View>
+                    </Animated.View>
+                  </Pressable>
                 </View>
-                </>
-                )}
               </View>
+            </ScrollView>
+                )}
+          </View>
             )}
-            />
 
-            {/* Pagination dots (Nutrition: 2 pages only) */}
-            <View style={styles.paginationDots}>
-              <View style={[styles.dot, { backgroundColor: colors.primaryLight + '4D' }, cardPage === 0 && { backgroundColor: colors.primaryLight + 'E6' }]} />
-              <View style={[styles.dot, { backgroundColor: colors.primaryLight + '4D' }, cardPage === 1 && { backgroundColor: colors.primaryLight + 'E6' }]} />
+            {/* Nutrition carousel dots — macros | electrolytes+health score */}
+            <View style={[styles.paginationDots, { marginBottom: Spacing.xs }]}>
+              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(0); }} style={{ padding: 12, margin: -12 }}>
+                <View style={[styles.dot, nutritionPage === 0 && styles.dotActive]} />
+              </Pressable>
+              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(1); }} style={{ padding: 12, margin: -12 }}>
+                <View style={[styles.dot, nutritionPage === 1 && styles.dotActive]} />
+              </Pressable>
             </View>
-
-            {/* Recently uploaded – below carousel, same width as calorie card (Nutrition only) */}
+            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
+              <PillSegmentedControl value={homeSegment} onValueChange={setHomeSegment} width={160} />
+            </View>
+            {/* Recently uploaded – below toggle */}
             <View>
-              <Text style={[styles.recentlyUploadedTitle, { color: colors.primaryLight }]}>Recently uploaded</Text>
+              <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
               <Card
                 gradientFill
                 style={[
@@ -1521,13 +1601,13 @@ export default function NutritionScreen({
                 ]}
               >
                 {!todayLog?.meals?.length ? (
-                  <Text style={[styles.recentlyUploadedPlaceholder, { color: colors.primaryLight }]}>tap + to add your first meal of the day.</Text>
+                  <Text style={styles.recentlyUploadedPlaceholder}>tap + to add your first meal of the day.</Text>
                 ) : (
                   <View style={styles.recentlyUploadedList}>
                     {todayLog.meals.map((meal) => (
                       <View key={meal.id} style={styles.recentlyUploadedMealRow}>
-                        <Text style={[styles.recentlyUploadedMealName, { color: colors.cardIconTint }]} numberOfLines={1}>{meal.name}</Text>
-                        <Text style={[styles.recentlyUploadedMealCals, { color: colors.cardIconTint }]}>{meal.calories} kcal</Text>
+                        <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
+                        <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
                       </View>
                     ))}
                   </View>
@@ -1535,9 +1615,7 @@ export default function NutritionScreen({
               </Card>
             </View>
           </View>
-        )}
 
-            </View>
             <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, blurOverlayStyle]} pointerEvents="none">
               <BlurView
                 intensity={100}
@@ -1624,7 +1702,7 @@ export default function NutritionScreen({
                     fontSize: Typography.h1,
                     fontWeight: '700',
                     letterSpacing: -0.11,
-                    color: colors.primaryLight,
+                    color: Colors.primaryLight,
                   }}
                 >
                   Milestones
@@ -1670,10 +1748,10 @@ export default function NutritionScreen({
                         resizeMode="contain"
                       />
                       <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 22, fontWeight: '700', color: colors.primaryLight }}>0</Text>
+                        <Text style={{ fontSize: 22, fontWeight: '700', color: Colors.primaryLight }}>0</Text>
                       </View>
                     </View>
-                    <Text style={{ fontSize: 14, fontWeight: '500', color: colors.primaryLight, marginTop: 8 }}>Day Streak</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '500', color: Colors.primaryLight, marginTop: 8 }}>Day Streak</Text>
                   </View>
 
                   {/* Badges earned */}
@@ -1684,16 +1762,16 @@ export default function NutritionScreen({
                         height: 48,
                         borderRadius: 8,
                         borderWidth: 1,
-                        borderColor: colors.accentGold,
+                        borderColor: Colors.accentGold,
                         backgroundColor: 'rgba(255,255,255,0.06)',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <Ionicons name="medal-outline" size={24} color={colors.primaryLight} />
+                      <Ionicons name="medal-outline" size={24} color={Colors.primaryLight} />
                     </View>
-                    <Text style={{ fontSize: 20, fontWeight: '700', color: colors.primaryLight, marginTop: 4 }}>3</Text>
-                    <Text style={{ fontSize: 12, fontWeight: '500', color: colors.primaryLight }}>Badges earned</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: Colors.primaryLight, marginTop: 4 }}>3</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '500', color: Colors.primaryLight }}>Badges earned</Text>
                   </View>
                 </View>
 
@@ -1708,7 +1786,7 @@ export default function NutritionScreen({
                   <View
                     style={{
                       flex: 1,
-                      backgroundColor: colors.primaryDarkLighter,
+                      backgroundColor: Colors.primaryDarkLighter,
                       borderRadius: BorderRadius.md,
                       padding: Spacing.md,
                       flexDirection: 'row',
@@ -1722,14 +1800,14 @@ export default function NutritionScreen({
                       resizeMode="contain"
                     />
                     <View>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.primaryLight }}>2 days</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '500', color: colors.primaryLight, opacity: 0.8 }}>longest streak</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.primaryLight }}>2 days</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '500', color: Colors.primaryLight, opacity: 0.8 }}>longest streak</Text>
                     </View>
                   </View>
                   <View
                     style={{
                       flex: 1,
-                      backgroundColor: colors.primaryDarkLighter,
+                      backgroundColor: Colors.primaryDarkLighter,
                       borderRadius: BorderRadius.md,
                       padding: Spacing.md,
                     }}
@@ -1745,9 +1823,9 @@ export default function NutritionScreen({
                           justifyContent: 'center',
                         }}
                       >
-                        <Ionicons name="ellipse-outline" size={12} color={colors.primaryLight} />
+                        <Ionicons name="ellipse-outline" size={12} color={Colors.primaryLight} />
                       </View>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.primaryLight }}>3/30 badges</Text>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.primaryLight }}>3/30 badges</Text>
                     </View>
                     <View
                       style={{
@@ -1761,7 +1839,7 @@ export default function NutritionScreen({
                         style={{
                           width: '10%',
                           height: '100%',
-                          backgroundColor: colors.accentBlue,
+                          backgroundColor: Colors.accentBlue,
                           borderRadius: 2,
                         }}
                       />
@@ -1770,7 +1848,7 @@ export default function NutritionScreen({
                 </View>
 
                 {/* Badge grid — full Milestones set */}
-                <Text style={{ fontSize: Typography.h2, fontWeight: '600', color: colors.primaryLight, marginBottom: Spacing.md }}>Badges</Text>
+                <Text style={{ fontSize: Typography.h2, fontWeight: '600', color: Colors.primaryLight, marginBottom: Spacing.md }}>Badges</Text>
                 <View
                   style={{
                     flexDirection: 'row',
@@ -1810,18 +1888,18 @@ export default function NutritionScreen({
                           width: 64,
                           height: 64,
                           borderRadius: 8,
-                          backgroundColor: b.earned ? 'rgba(100,80,200,0.4)' : colors.primaryDarkLighter,
+                          backgroundColor: b.earned ? 'rgba(100,80,200,0.4)' : Colors.primaryDarkLighter,
                           borderWidth: 1,
-                          borderColor: b.earned ? colors.accentBlue : 'rgba(128,128,128,0.2)',
+                          borderColor: b.earned ? Colors.accentBlue : 'rgba(255,255,255,0.1)',
                           alignItems: 'center',
                           justifyContent: 'center',
                           marginBottom: 8,
                         }}
                       >
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.primaryLight }}>{b.value}</Text>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: Colors.primaryLight }}>{b.value}</Text>
                       </View>
-                      <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primaryLight, textAlign: 'center' }}>{b.title}</Text>
-                      <Text style={{ fontSize: 10, fontWeight: '500', color: colors.primaryLight, opacity: 0.8, textAlign: 'center' }}>{b.desc}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: Colors.primaryLight, textAlign: 'center' }}>{b.title}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '500', color: Colors.primaryLight, opacity: 0.8, textAlign: 'center' }}>{b.desc}</Text>
                     </View>
                   ))}
                 </View>
@@ -1855,28 +1933,28 @@ export default function NutritionScreen({
             />
           )}
           {showAiDescribe && (
-            <View style={[styles.aiDescribeOverlay, { backgroundColor: colors.primaryDark }]}>
-              <Text style={[styles.aiDescribeTitle, { color: colors.primaryLight }]}>Describe your food</Text>
-              <Text style={[styles.aiDescribeHint, { color: colors.primaryLight + '99' }]}>Optional — helps the AI estimate better</Text>
+            <View style={styles.aiDescribeOverlay}>
+              <Text style={styles.aiDescribeTitle}>Describe your food</Text>
+              <Text style={styles.aiDescribeHint}>Optional — helps the AI estimate better</Text>
               <TextInput
-                style={[styles.aiDescribeInput, { backgroundColor: colors.primaryDarkLighter, color: colors.primaryLight }]}
+                style={styles.aiDescribeInput}
                 placeholder="e.g. grilled chicken breast with rice"
                 placeholderTextColor="#888"
                 value={aiDescription}
                 onChangeText={setAiDescription}
                 multiline
               />
-              <TouchableOpacity style={[styles.aiDescribeButton, { backgroundColor: colors.primaryLight }]} onPress={handleAiSubmit} disabled={cameraLoading}>
-                {cameraLoading ? <ActivityIndicator color={colors.primaryLight} /> : <Text style={[styles.aiDescribeButtonText, { color: colors.primaryDark }]}>Analyze</Text>}
+              <TouchableOpacity style={styles.aiDescribeButton} onPress={handleAiSubmit} disabled={cameraLoading}>
+                {cameraLoading ? <ActivityIndicator color="#2F3031" /> : <Text style={styles.aiDescribeButtonText}>Analyze</Text>}
               </TouchableOpacity>
               <TouchableOpacity onPress={() => { setShowAiDescribe(false); setAiPhotoBase64(null); }} style={{ marginTop: 12 }}>
-                <Text style={{ color: colors.primaryLight, fontSize: 14 }}>Retake</Text>
+                <Text style={{ color: '#C6C6C6', fontSize: 14 }}>Retake</Text>
               </TouchableOpacity>
             </View>
           )}
           <View style={styles.cameraTopBar}>
             <TouchableOpacity onPress={() => { setShowCamera(false); setShowAiDescribe(false); asModal && onCloseModal?.(); }}>
-              <Text style={[styles.cameraCloseText, { color: colors.primaryLight }]}>Close</Text>
+              <Text style={styles.cameraCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
           {!showAiDescribe && (
@@ -1884,10 +1962,10 @@ export default function NutritionScreen({
               {(['ai', 'barcode', 'label'] as const).map((mode) => (
                 <TouchableOpacity
                   key={mode}
-                  style={[styles.cameraModeBubble, { backgroundColor: colors.primaryLight + '26' }, cameraMode === mode && { backgroundColor: colors.primaryLight }]}
+                  style={[styles.cameraModeBubble, cameraMode === mode && styles.cameraModeBubbleActive]}
                   onPress={() => setCameraMode(mode)}
                 >
-                  <Text style={[styles.cameraModeBubbleText, { color: colors.cardIconTint }, cameraMode === mode && { color: colors.primaryDark }]}>
+                  <Text style={[styles.cameraModeBubbleText, cameraMode === mode && styles.cameraModeBubbleTextActive]}>
                     {mode === 'ai' ? 'Scan Food (AI)' : mode === 'barcode' ? 'Barcode' : 'Food Label'}
                   </Text>
                 </TouchableOpacity>
@@ -1897,17 +1975,17 @@ export default function NutritionScreen({
           {!showAiDescribe && cameraMode !== 'barcode' && (
             <View style={styles.cameraShutterRow}>
               {cameraLoading ? (
-                <ActivityIndicator size="large" color={colors.primaryLight} />
+                <ActivityIndicator size="large" color="#C6C6C6" />
               ) : (
-                <TouchableOpacity style={[styles.shutterButton, { borderColor: colors.primaryLight }]} onPress={handleCameraShutter}>
-                  <View style={[styles.shutterButtonInner, { backgroundColor: colors.primaryLight }]} />
+                <TouchableOpacity style={styles.shutterButton} onPress={handleCameraShutter}>
+                  <View style={styles.shutterButtonInner} />
                 </TouchableOpacity>
               )}
             </View>
           )}
           {!showAiDescribe && cameraMode === 'barcode' && cameraLoading && (
             <View style={styles.cameraShutterRow}>
-              <ActivityIndicator size="large" color={colors.primaryLight} />
+              <ActivityIndicator size="large" color="#C6C6C6" />
             </View>
           )}
         </View>
@@ -1916,18 +1994,18 @@ export default function NutritionScreen({
       {/* Saved Foods Modal */}
       <Modal visible={showSavedFoods} animationType="slide" transparent onRequestClose={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }}>
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { maxHeight: '80%', backgroundColor: colors.primaryDark }]}>
-            <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Saved Foods</Text>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Saved Foods</Text>
             {savedFoodsList.length === 0 ? (
-              <Text style={[styles.emptyText, { color: colors.primaryLight }]}>No saved foods yet. Foods you log will appear here.</Text>
+              <Text style={styles.emptyText}>No saved foods yet. Foods you log will appear here.</Text>
             ) : (
               <FlatList
                 data={savedFoodsList}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
-                  <TouchableOpacity style={[styles.foodSearchItem, { borderBottomColor: colors.primaryLight + '26' }]} onPress={() => handleSelectSavedFood(item)}>
-                    <Text style={[styles.foodSearchName, { color: colors.primaryLight }]}>{item.name}</Text>
-                    {item.brand ? <Text style={[styles.foodSearchBrand, { color: colors.primaryLight + '99' }]}>{item.brand}</Text> : null}
+                  <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectSavedFood(item)}>
+                    <Text style={styles.foodSearchName}>{item.name}</Text>
+                    {item.brand ? <Text style={styles.foodSearchBrand}>{item.brand}</Text> : null}
                     <Text style={styles.foodSearchMacros}>
                       {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
                     </Text>
@@ -1935,7 +2013,7 @@ export default function NutritionScreen({
                 )}
               />
             )}
-            <Button title="Close" onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }} />
+            <Button title="Close" onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
           </View>
         </View>
       </Modal>
@@ -1943,8 +2021,8 @@ export default function NutritionScreen({
       {/* Food Database Search Modal */}
       <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }}>
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { maxHeight: '85%', backgroundColor: colors.primaryDark }]}>
-            <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Search food</Text>
+          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+            <Text style={styles.modalTitle}>Search food</Text>
             <TextInput
               style={styles.searchInput}
               placeholder="Search foods…"
@@ -1953,23 +2031,65 @@ export default function NutritionScreen({
               onChangeText={handleFoodSearch}
               autoFocus
             />
-            {foodSearchLoading && <ActivityIndicator style={{ marginVertical: 12 }} color={colors.primaryLight} />}
+            {foodSearchLoading && <ActivityIndicator style={{ marginVertical: 12 }} color="#C6C6C6" />}
             <FlatList
               data={foodSearchResults}
               keyExtractor={(_, i) => String(i)}
               renderItem={({ item }) => (
-                <TouchableOpacity style={[styles.foodSearchItem, { borderBottomColor: colors.primaryLight + '26' }]} onPress={() => handleSelectFood(item)}>
-                  <Text style={[styles.foodSearchName, { color: colors.primaryLight }]}>{item.name}</Text>
-                  {item.brand ? <Text style={[styles.foodSearchBrand, { color: colors.primaryLight + '99' }]}>{item.brand}</Text> : null}
-                  <Text style={styles.foodSearchMacros}>
-                    {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
-                    {item.servingSize ? ` · ${item.servingSize}` : ''}
-                  </Text>
+                <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
+                  <View style={styles.foodSearchCardLeft}>
+                    {item.brand ? (
+                      <Text style={styles.foodSearchBrand} numberOfLines={1} ellipsizeMode="tail">
+                        {item.brand}
+                      </Text>
+                    ) : (
+                      <MaskedView
+                        maskElement={
+                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
+                            tmlsn basics
+                          </Text>
+                        }
+                      >
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { opacity: 0 }]}>
+                            tmlsn basics
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    )}
+                    <Text style={styles.foodSearchName} numberOfLines={1} ellipsizeMode="tail">
+                      {item.name}
+                    </Text>
+                    <View style={styles.foodSearchMacrosRow}>
+                      <Text style={styles.foodSearchMacrosPrefix}>per 100g</Text>
+                      <MaskedView
+                        maskElement={
+                          <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        }
+                      >
+                        <LinearGradient
+                          colors={['#D4B896', '#A8895E']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '500', opacity: 0 }}>
+                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                    </View>
+                  </View>
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={[styles.emptyText, { color: colors.primaryLight }]}>No results found</Text> : null}
+              ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
             />
-            <Button title="Close" onPress={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }} />
+            <Button title="Close" onPress={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
           </View>
         </View>
       </Modal>
@@ -1982,10 +2102,10 @@ export default function NutritionScreen({
         onRequestClose={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.primaryDark }]}>
-            <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Add Meal</Text>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Meal</Text>
 
-            <Text style={[styles.inputLabel, { color: colors.primaryLight }]}>Meal type</Text>
+            <Text style={styles.inputLabel}>Meal type</Text>
             <View style={styles.mealTypeRow}>
               {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
                 <TouchableOpacity
@@ -2022,14 +2142,14 @@ export default function NutritionScreen({
                 onPress={takePhoto}
                 variant="secondary"
                 style={styles.photoButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="🖼️ Choose Photo"
                 onPress={pickImage}
                 variant="secondary"
                 style={styles.photoButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
 
@@ -2078,13 +2198,13 @@ export default function NutritionScreen({
                 onPress={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
                 variant="secondary"
                 style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="Add Meal"
                 onPress={handleAddMeal}
                 style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
           </View>
@@ -2099,8 +2219,8 @@ export default function NutritionScreen({
         onRequestClose={() => setShowEditGoals(false)}
       >
         <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.primaryDark }]}>
-            <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Daily goals</Text>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Daily goals</Text>
             <Input
               label="Calories"
               value={editCalories}
@@ -2147,13 +2267,13 @@ export default function NutritionScreen({
                 onPress={() => setShowEditGoals(false)}
                 variant="secondary"
                 style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
               <Button
                 title="Save"
                 onPress={handleSaveGoals}
                 style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: colors.primaryLight }}
+                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
           </View>
@@ -2166,6 +2286,7 @@ export default function NutritionScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.primaryDark,
   },
   homeBackgroundImage: {
     ...StyleSheet.absoluteFillObject,
@@ -2179,7 +2300,8 @@ const styles = StyleSheet.create({
     zIndex: 1, // behind scroll content so logo is always on top
   },
   scrollViewLayer: {
-    zIndex: 2, // scroll content (including logo) always in front of flywheel
+    zIndex: 2,
+    backgroundColor: 'transparent',
   },
   flywheelWrap: {
     width: 28,
@@ -2201,7 +2323,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
   },
   pillStreakCount: {
-    color: Colors.primaryLight,
+    color: '#C6C6C6',
     fontSize: 13,
     fontWeight: '500',
   },
@@ -2241,23 +2363,27 @@ const styles = StyleSheet.create({
   caloriesLeftValue: {
     fontSize: 36,
     fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
     letterSpacing: 36 * -0.03, // -3% letter spacing (-1.08)
   },
   caloriesLeftLabel: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
+    color: CARD_LABEL_COLOR,
     marginTop: -3,
     letterSpacing: -0.11,
   },
   caloriesEatenLabel: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
+    color: CARD_LABEL_COLOR,
     marginTop: -3,
     letterSpacing: -0.11,
   },
   caloriesEatenGoal: {
     fontSize: CARD_LABEL_FONT_SIZE + 2,
     fontWeight: '500',
+    color: CARD_LABEL_COLOR,
     letterSpacing: -0.11,
   },
   mainCardRing: {
@@ -2270,6 +2396,7 @@ const styles = StyleSheet.create({
   stepRingValue: {
     fontSize: 18,
     fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
   },
   threeCardsRow: {
     flexDirection: 'row',
@@ -2294,15 +2421,18 @@ const styles = StyleSheet.create({
   macroLeftValue: {
     fontSize: 16,
     fontWeight: '500',
+    color: CARD_NUMBER_COLOR,
     letterSpacing: CardFont.letterSpacing,
   },
   macroLeftLabel: {
     fontSize: 10,
+    color: CARD_LABEL_COLOR,
     marginTop: -3,
     letterSpacing: -0.11,
   },
   macroEatenLabel: {
     fontSize: 10,
+    color: CARD_LABEL_COLOR,
     marginTop: -3,
     letterSpacing: -0.11,
   },
@@ -2311,6 +2441,7 @@ const styles = StyleSheet.create({
   },
   macroEatenGoal: {
     fontSize: 10,
+    color: CARD_LABEL_COLOR,
     letterSpacing: -0.11,
   },
   smallCardRing: {
@@ -2693,19 +2824,41 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(198,198,198,0.15)',
   },
-  foodSearchName: {
-    fontSize: 14,
-    color: '#FFFFFF',
+  foodSearchCardLeft: {
+    flex: 1,
   },
   foodSearchBrand: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 2,
+    fontSize: 11,
+    color: Colors.primaryLight,
+    fontWeight: '400',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
-  foodSearchMacros: {
-    fontSize: 12,
-    color: '#C6C6C6',
+  foodSearchBrandTmlsnBasics: {
+    color: Colors.accentChampagne,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  foodSearchName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  foodSearchMacrosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+    gap: 4,
+  },
+  foodSearchMacrosPrefix: {
+    fontSize: 10,
+    color: Colors.primaryLight,
+  },
+  foodSearchMacrosValues: {
+    fontSize: 12,
+    color: Colors.accentChampagne,
+    fontWeight: '500',
   },
   addButton: {
     marginTop: Spacing.md,

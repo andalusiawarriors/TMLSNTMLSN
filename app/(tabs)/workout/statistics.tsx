@@ -2,7 +2,6 @@ import React, { useState, useCallback } from 'react';
 import { StyleSheet, ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Spacing, Colors } from '../../../constants/theme';
-import { useTheme } from '../../../context/ThemeContext';
 import { getWorkoutSessions } from '../../../utils/storage';
 import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
@@ -11,7 +10,6 @@ import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
 export default function StatisticsScreen() {
-  const { colors } = useTheme();
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [animTrigger, setAnimTrigger] = useState(0);
 
@@ -30,7 +28,7 @@ export default function StatisticsScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+    <View style={styles.container}>
       <HomeGradientBackground />
       <ScrollView
         style={styles.scrollLayer}

@@ -2,8 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Typography, Spacing } from '../../constants/theme';
-import { useTheme } from '../../context/ThemeContext';
+import { Colors, Typography, Spacing } from '../../constants/theme';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
@@ -13,7 +12,6 @@ const SEGMENT_CONTROL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
   const [animTrigger, setAnimTrigger] = useState(0);
   const [progressSegment, setProgressSegment] = useState<SegmentValue>('Nutrition');
 
@@ -32,7 +30,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
       <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-        <Text style={[styles.title, { color: colors.primaryLight }]}>progress.</Text>
+        <Text style={styles.title}>progress.</Text>
       </AnimatedFadeInUp>
       <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
         <View style={styles.toggleWrap}>
@@ -44,7 +42,7 @@ export default function ProfileScreen() {
         </View>
       </AnimatedFadeInUp>
       <AnimatedFadeInUp delay={100} duration={380} trigger={animTrigger}>
-        <Text style={[styles.subtitle, { color: colors.primaryLight }]}>your account and settings</Text>
+        <Text style={styles.subtitle}>your account and settings</Text>
       </AnimatedFadeInUp>
       <AnimatedFadeInUp delay={150} duration={380} trigger={animTrigger}>
         <View style={styles.progressSection}>
@@ -84,10 +82,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: Typography.h2,
     fontWeight: '600',
+    color: Colors.primaryLight,
     letterSpacing: -0.11,
   },
   subtitle: {
     fontSize: Typography.label,
+    color: Colors.primaryLight,
     opacity: 0.8,
     marginTop: Spacing.sm,
     letterSpacing: -0.1,
