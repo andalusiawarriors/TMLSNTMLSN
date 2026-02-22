@@ -20,6 +20,13 @@ const PROFANITY_BLOCKLIST = new Set([
   'retard', 'retarded', 'nigger', 'nigga', 'fag', 'faggot',
 ]);
 
+const BRAND_BLOCKLIST = new Set([
+  'bang brothers', 'bang bros', 'brazzers', 'pornhub', 'playboy',
+  'hustler', 'vivid entertainment', 'naughty america',
+  'reality kings', 'digital playground', 'wicked pictures',
+  'bang brothers entertainment',
+]);
+
 /* ------------------------------------------------------------------ */
 /*  Junk pattern regex: URLs, slang, repeated chars                    */
 /* ------------------------------------------------------------------ */
@@ -90,6 +97,19 @@ function buildProfanityRegex(): RegExp {
 
 const PROFANITY_REGEX = buildProfanityRegex();
 
+export function isBrandBlocked(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  for (const term of PROFANITY_BLOCKLIST) {
+    const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) return true;
+  }
+  for (const brand of BRAND_BLOCKLIST) {
+    if (lower.includes(brand)) return true;
+  }
+  return false;
+}
+
 /**
  * Strip emojis, trim, collapse internal whitespace.
  */
@@ -106,6 +126,9 @@ export function sanitizeFoodName(text: string): string {
 export function isAcceptableFood(name: string, brand?: string): boolean {
   const sanitizedName = sanitizeFoodName(name);
   const sanitizedBrand = brand ? sanitizeFoodName(brand) : '';
+
+  // Block entirely if brand is blocked
+  if (sanitizedBrand && isBrandBlocked(sanitizedBrand)) return false;
 
   // Empty or too short
   if (sanitizedName.length < 2) return false;

@@ -39,6 +39,15 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `utils/foodApi.ts` – removed likelyEnglish filter on OFF results; added [fetchUSDA] abort logging (external signal / timeout); synced to obh
+- `utils/foodApi.ts` – ParsedNutrition.source ('usda'|'off'); parseUSDAFood/parseOFFProduct set source; searchFoodsProgressive single USDA call + local basics/branded split; parseUSDA dataType log; synced to obh
+- `app/(tabs)/nutrition.tsx` – hasPreloaded guard for preloadCommonSearches; synced to obh
+- `utils/geminiApi.ts` – extractJSON sets source: 'usda'; synced to obh
+- `app/search-food.tsx` – brandLabel: source-based (TMLSN BASICS for USDA, Unknown Brand for OFF); addFoodResult includes source; removed isObviouslyBranded; synced to obh
+- `app/(tabs)/nutrition.tsx` – Food DB modal brandLabel same logic; handleSelectSavedFood adds source; removed isObviouslyBranded; synced to obh
+- `utils/foodApi.ts` – searchFoodsProgressive (callback-based progressive search, TMLSN Basics first); searchFoods deprecated; synced to obh
+- `app/search-food.tsx` – runSearch uses searchFoodsProgressive + cached merge; synced to obh
+- `app/(tabs)/nutrition.tsx` – handleFoodSearch uses searchFoodsProgressive + cached merge; synced to obh
 - `app/_layout.tsx` – ActiveWorkoutProvider wrap
 - `app/(tabs)/_layout.tsx` – ActiveWorkoutPill above tab bar; theme: container bg, tab PNG tintColor, popup pills
 - `app/(tabs)/workout/index.tsx` – useActiveWorkout(), sync initialActiveWorkout to context

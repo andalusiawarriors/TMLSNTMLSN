@@ -309,11 +309,9 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }
                       style={[styles.monthDateCell, styles.monthDateCellPressable]}
                       onPress={() => handleDatePress(cellDate)}
                     >
-                      {isTodayDate && (
-                        <Text style={styles.todayLabel}>TODAY</Text>
-                      )}
                       {isTodayDate ? (
                         <View style={styles.monthDateCellTodayWrapper}>
+                          <Text style={styles.todayLabel}>TODAY</Text>
                           <LinearGradient
                             colors={CARD_BORDER_GRADIENT_GOLD}
                             start={{ x: 0.5, y: 0 }}
@@ -558,24 +556,19 @@ function MiniMonthCard({
                     style={[
                       styles.miniDateCell,
                       { height: MINI_DATE_ROW_HEIGHT },
+                      isTodayCell && !isSelected && styles.miniDateCellTodayGold,
                     ]}
                   >
-                    {isTodayCell ? (
-                      <>
-                        <View style={[styles.miniDateCellTodayCircle, { top: (MINI_DATE_ROW_HEIGHT - 12) / 2 }]} />
-                        <Text allowFontScaling={false} style={[styles.miniDateTextTodayCircle, styles.miniDateTextTodayOverlay]}>{day}</Text>
-                      </>
-                    ) : (
-                      <Text
-                        allowFontScaling={false}
-                        style={[
-                          styles.miniDateText,
-                          isSelected && styles.miniDateTextSelected,
-                        ]}
-                      >
-                        {day ?? '\u00A0'}
-                      </Text>
-                    )}
+                    <Text
+                      allowFontScaling={false}
+                      style={[
+                        styles.miniDateText,
+                        isSelected && styles.miniDateTextSelected,
+                        isTodayCell && !isSelected && styles.miniDateTextTodayGold,
+                      ]}
+                    >
+                      {day ?? '\u00A0'}
+                    </Text>
                   </View>
                 );
               })}
@@ -722,16 +715,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   monthDateCellTodayWrapper: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
   monthDateCellTodayGradient: {
-    width: '100%',
-    height: '100%',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -741,15 +732,12 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
   },
   todayLabel: {
-    position: 'absolute',
-    top: -2,
-    left: 0,
-    right: 0,
     fontSize: 9,
     fontWeight: '800',
     color: Colors.accentChampagne,
     letterSpacing: 0.8,
     textAlign: 'center',
+    marginBottom: 2,
   },
   yearViewWrap: {
     left: 0,
@@ -844,14 +832,9 @@ const styles = StyleSheet.create({
     color: Colors.primaryDark,
     fontWeight: '700',
   },
-  miniDateCellTodayCircle: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+  miniDateCellTodayGold: {
     backgroundColor: Colors.accentChampagne,
-    left: '50%',
-    marginLeft: -6,
+    borderRadius: 6,
   },
   miniDateTextTodayCircle: {
     fontSize: 9,

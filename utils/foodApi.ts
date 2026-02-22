@@ -1,19 +1,7 @@
 // Dual-source food API: Open Food Facts (global branded) + USDA (US generic)
-import { filterResults, filterSingleFood, isObviouslyBranded, KNOWN_BRAND_KEYWORDS, latinRatio } from './foodFilters';
-import { translateFoodName, translateToEnglish } from './translateQuery';
+import { filterResults, filterSingleFood, isObviouslyBranded, isBrandBlocked, KNOWN_BRAND_KEYWORDS, latinRatio } from './foodFilters';
+import { translateFoodNamesBatch, translateToEnglish } from './translateQuery';
 
-// expo-localization requires a native rebuild (npx expo run:ios). Until then, skip
-// translation to avoid "Cannot find native module 'ExpoLocalization'" in Expo Go.
-async function getDeviceLanguage(): Promise<string> {
-  return 'en';
-  // To enable: run npx expo run:ios, then uncomment:
-  // try {
-  //   const { getLocales } = await import('expo-localization');
-  //   return getLocales()[0]?.languageCode ?? 'en';
-  // } catch {
-  //   return 'en';
-  // }
-}
 // OFF: 4M+ products, 150 countries, Lidl/Aldi/Carrefour/Mars/Twix etc. Free, 10 search/min, 100 product/min.
 // USDA: https://fdc.nal.usda.gov/api-guide — Free, 1000 req/hour.
 // Docs: https://wiki.openfoodfacts.org/API
@@ -23,23 +11,8 @@ const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 
 const USER_AGENT = 'TMLSN - Nutrition Tracker - iOS'; // Required by Open Food Facts
 const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY ?? 'DEMO_KEY'; // USDA FoodData Central — set in .env.local
-const FETCH_TIMEOUT_MS = 90_000; // OFF often 50s+, can spike; USDA ~6s
-
-/** fetch with timeout — prevents long hangs when USDA/OFF are slow */
-async function fetchWithTimeout(
-  url: string,
-  init?: RequestInit,
-  timeoutMs = FETCH_TIMEOUT_MS,
-): Promise<Response> {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
-    return res;
-  } finally {
-    clearTimeout(id);
-  }
-}
+const USDA_FETCH_TIMEOUT_MS = 15_000;
+const OFF_FETCH_TIMEOUT_MS = 15_000;
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -79,6 +52,10 @@ export interface ParsedNutrition {
   carbs: number;
   fat: number;
   servingSize: string;
+  unit: 'g' | 'ml';
+  source: 'usda' | 'off';
+  originalDescription?: string;
+  dataType?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,6 +88,7 @@ interface OFFProduct {
   quantity?: string;
   serving_quantity?: number;
   serving_unit?: string;
+  serving_size?: string;
   nutriments?: OFFNutriments;
 }
 
@@ -158,6 +136,13 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
     }
   }
 
+  const quantity = (p.quantity ?? '').toLowerCase();
+  const servingSizeStr = (p.serving_size ?? '').toLowerCase();
+  const isLiquid =
+    /\d\s*(ml|l|cl|dl|fl\s*oz)\b/.test(quantity) ||
+    /\d\s*(ml|l|cl|dl|fl\s*oz)\b/.test(servingSizeStr) ||
+    /milk|juice|water|soda|beer|wine|oil|vinegar|broth|stock|sauce|syrup|honey|cream|yogurt|kefir/i.test(p.product_name ?? '');
+
   const name = rawName.toLowerCase();
 
   return {
@@ -168,6 +153,8 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
     carbs,
     fat,
     servingSize: '100g',
+    unit: isLiquid ? 'ml' : 'g',
+    source: 'off',
   };
 }
 
@@ -221,15 +208,33 @@ const NUTRIENT_MAP: Record<string, keyof Pick<ParsedNutrition, 'calories' | 'pro
   '1004': 'fat',
 };
 
-function naturalizeUSDAName(name: string): string {
-  const parts = name.split(',').map(p => p.trim()).filter(Boolean);
-  if (parts.length <= 1) return name;
+function naturalizeUSDAName(desc: string): string {
+  const parts = desc.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return desc;
   const base = parts[0];
   const modifiers = parts.slice(1).reverse();
-  return [...modifiers, base].join(' ');
+  const result = [...modifiers, base].join(' ');
+  const words = result.split(/\s+/);
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const w of words) {
+    const lower = w.toLowerCase();
+    if (!seen.has(lower)) {
+      seen.add(lower);
+      deduped.push(w);
+    }
+  }
+  return deduped.join(' ');
 }
 
-function parseUSDAFood(food: USDAFoodItem): ParsedNutrition {
+function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
+  const rawBrandName = (food.brandName || '').trim();
+  const rawBrandOwner = (food.brandOwner || '').trim();
+
+  if (isBrandBlocked(rawBrandName.toLowerCase()) || isBrandBlocked(rawBrandOwner.toLowerCase())) {
+    return null;
+  }
+
   const rawCalories = { value: 0 };
   const rawProtein = { value: 0 };
   const rawCarbs = { value: 0 };
@@ -282,17 +287,14 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition {
     }
   }
 
-  const name = rawName.toLowerCase();
+  const servingUnit = (food.servingSizeUnit ?? '').toLowerCase();
+  const description = (food.description ?? '').toLowerCase();
+  const isLiquid =
+    servingUnit === 'ml' ||
+    servingUnit === 'l' ||
+    /milk|juice|water|soda|beer|wine|oil|vinegar|broth|stock|sauce|syrup|honey|cream|yogurt|kefir|beverage|drink/i.test(description);
 
-  if (__DEV__) {
-    console.log('[parseUSDA]', {
-      description: food.description,
-      brandOwner: food.brandOwner,
-      brandName: food.brandName,
-      parsedBrand: rawBrand,
-      parsedName: rawName,
-    });
-  }
+  const name = rawName.toLowerCase();
 
   return {
     name,
@@ -302,6 +304,10 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition {
     carbs,
     fat,
     servingSize: '100g',
+    unit: isLiquid ? 'ml' : 'g',
+    source: 'usda',
+    originalDescription: (food.description ?? '').toLowerCase(),
+    dataType: food.dataType ?? '',
   };
 }
 
@@ -309,10 +315,22 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition {
 /*  Open Food Facts API                                                */
 /* ------------------------------------------------------------------ */
 
-async function offFetch(url: string): Promise<Response> {
-  return fetchWithTimeout(url, {
-    headers: { 'User-Agent': USER_AGENT },
-  });
+async function offFetch(url: string, externalSignal?: AbortSignal): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), OFF_FETCH_TIMEOUT_MS);
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      ctrl.abort();
+      clearTimeout(id);
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
+  try {
+    return await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: ctrl.signal });
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 async function searchByBarcodeOFF(barcode: string): Promise<ParsedNutrition | null> {
@@ -330,25 +348,42 @@ async function searchByBarcodeOFF(barcode: string): Promise<ParsedNutrition | nu
   }
 }
 
-async function searchFoodsOFF(query: string, pageSize: number): Promise<ParsedNutrition[]> {
+async function searchFoodsOFF(query: string, pageSize: number, page = 1, signal?: AbortSignal): Promise<ParsedNutrition[]> {
   if (!query.trim()) return [];
+  const url = `${OFF_BASE}/cgi/search.pl?${new URLSearchParams({
+    search_terms: query.trim(),
+    search_simple: '1',
+    action: 'process',
+    json: '1',
+    page_size: String(pageSize),
+    page: String(page),
+  })}`;
   try {
-    const params = new URLSearchParams({
-      search_terms: query.trim(),
-      search_simple: '1',
-      action: 'process',
-      json: '1',
-      page_size: String(pageSize),
-    });
-    const res = await offFetch(`${OFF_BASE}/cgi/search.pl?${params}`);
-    if (!res.ok) return [];
-    const data: OFFSearchResponse = await res.json();
+    const res = await offFetch(url, signal);
+    if (__DEV__) {
+      console.log('[OFF]', { query: query.trim(), status: res.status, ok: res.ok });
+    }
+    if (!res.ok) {
+      console.warn('[OFF]', { query: query.trim(), status: res.status, url });
+      return [];
+    }
+    const rawText = await res.text();
+    let data: OFFSearchResponse;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.warn('[OFF] JSON parse failed:', { query: query.trim(), status: res.status, snippet: rawText.slice(0, 200) });
+      return [];
+    }
     const products = data.products ?? [];
-    return products
+    const results = products
       .filter((p) => p.product_name ?? p.product_name_en ?? p.generic_name)
       .map(parseOFFProduct);
+    if (__DEV__) console.log('[OFF]', { query: query.trim(), products: products.length, parsed: results.length });
+    return results;
   } catch (err) {
-    console.warn('Open Food Facts search error:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[OFF]', { query: query.trim(), url, error: msg });
     return [];
   }
 }
@@ -359,10 +394,10 @@ async function searchFoodsOFF(query: string, pageSize: number): Promise<ParsedNu
 
 async function searchByBarcodeUSDA(barcode: string): Promise<ParsedNutrition | null> {
   try {
-    const res = await fetchWithTimeout(`${USDA_BASE}/foods/search?api_key=${API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: barcode, dataType: ['Branded'], pageSize: 5 }),
+    const res = await fetchUSDA(`${USDA_BASE}/foods/search?api_key=${API_KEY}`, {
+      query: barcode,
+      dataType: ['Branded'],
+      pageSize: 5,
     });
     if (!res.ok) return null;
     const data: FoodSearchResult = await res.json();
@@ -377,33 +412,99 @@ async function searchByBarcodeUSDA(barcode: string): Promise<ParsedNutrition | n
   }
 }
 
-async function searchFoodsUSDA(query: string, pageSize: number): Promise<ParsedNutrition[]> {
+async function fetchUSDA(url: string, body: object, externalSignal?: AbortSignal): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => {
+    console.log('[fetchUSDA] timeout abort fired');
+    ctrl.abort();
+  }, USDA_FETCH_TIMEOUT_MS);
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      console.log('[fetchUSDA] external signal already aborted');
+      ctrl.abort();
+      clearTimeout(id);
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    externalSignal.addEventListener('abort', () => {
+      console.log('[fetchUSDA] external signal fired abort');
+      ctrl.abort();
+    }, { once: true });
+  }
   try {
-    const res = await fetchWithTimeout(`${USDA_BASE}/foods/search?api_key=${API_KEY}`, {
+    return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: query.trim(),
-        dataType: ['Branded', 'SR Legacy', 'Foundation', 'Survey (FNDDS)'],
-        pageSize,
-      }),
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
     });
-    const data = await res.json();
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function searchFoodsUSDA(query: string, pageSize: number, page = 1, signal?: AbortSignal): Promise<ParsedNutrition[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  const url = `${USDA_BASE}/foods/search?api_key=${API_KEY}`;
+  const body = { query: q, pageSize, pageNumber: page };
+
+  try {
+    const res = await fetchUSDA(url, body, signal);
     if (!res.ok) {
-      const msg = (data as { error?: { message?: string } })?.error?.message || `API error ${res.status}`;
-      throw new Error(msg);
+      if (__DEV__) console.warn('[USDA] HTTP', res.status, q);
+      return [];
     }
-    const foods = (data as FoodSearchResult)?.foods ?? [];
-    return foods.map(parseUSDAFood);
+    const data = await res.json();
+    if (!data.foods || !Array.isArray(data.foods)) {
+      if (__DEV__) console.log('[USDA] no foods', q);
+      return [];
+    }
+    const parsed = (data.foods as USDAFoodItem[]).map(parseUSDAFood).filter((f): f is ParsedNutrition => f !== null);
+    if (__DEV__) console.log('[USDA]', q, '→', parsed.length, 'results');
+    return parsed;
   } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error('Search failed');
+    if (__DEV__) console.warn('[USDA]', q, err instanceof Error ? err.message : err);
+    return [];
   }
 }
 
 /* ------------------------------------------------------------------ */
 /*  Dedup, scoring, and search internals                               */
 /* ------------------------------------------------------------------ */
+
+function nameMatchesQuery(item: ParsedNutrition, query: string): boolean {
+  const q = query.toLowerCase().trim();
+  const queryWords = q.split(/\s+/).filter(Boolean);
+  const name = item.name.toLowerCase();
+  const desc = (item.originalDescription ?? '').toLowerCase();
+  const combined = `${name} ${desc}`;
+
+  return queryWords.every((w) => {
+    if (combined.includes(w)) return true;
+    if (w.endsWith('s') && combined.includes(w.slice(0, -1))) return true;
+    if (!w.endsWith('s') && combined.includes(w + 's')) return true;
+    if (w.endsWith('y') && w.length > 2 && combined.includes(w.slice(0, -1) + 'ies')) return true;
+    if (combined.includes(w + 'es')) return true;
+    return false;
+  });
+}
+
+function sortBasicsFirst(items: ParsedNutrition[]): ParsedNutrition[] {
+  return [...items].sort((a, b) => {
+    const aIsBasic =
+      a.source === 'usda' &&
+      (!a.brand || a.brand.trim() === '') &&
+      (a.dataType === 'Foundation' || a.dataType === 'SR Legacy' || a.dataType === 'Survey (FNDDS)');
+    const bIsBasic =
+      b.source === 'usda' &&
+      (!b.brand || b.brand.trim() === '') &&
+      (b.dataType === 'Foundation' || b.dataType === 'SR Legacy' || b.dataType === 'Survey (FNDDS)');
+    if (aIsBasic && !bIsBasic) return -1;
+    if (!aIsBasic && bIsBasic) return 1;
+    return 0;
+  });
+}
 
 function scoreResult(item: ParsedNutrition, query: string): number {
   let score = 0;
@@ -449,70 +550,100 @@ export async function searchByBarcode(barcode: string): Promise<ParsedNutrition 
   return filterSingleFood(result);
 }
 
-/** Text search: USDA + Open Food Facts in parallel, merged. Non-English queries show OFF (native names) first. */
-export async function searchFoods(query: string, pageSize = 15): Promise<ParsedNutrition[]> {
-  if (!query.trim()) return [];
+export async function searchFoodsProgressive(
+  query: string,
+  onResults: (results: ParsedNutrition[]) => void,
+  pageSize = 25,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!query.trim()) {
+    onResults([]);
+    return;
+  }
 
   const half = Math.ceil(pageSize / 2);
 
-  // Fire everything in parallel — no waiting
-  const [translateRes, usdaOrigRes, offRes] = await Promise.allSettled([
-    translateToEnglish(query),
-    searchFoodsUSDA(query, half),
-    searchFoodsOFF(query, half),
-  ]);
+  const usdaPromise = searchFoodsUSDA(query, half).catch(() => [] as ParsedNutrition[]);
+  const offPromise = searchFoodsOFF(query, half, 1, signal).catch(() => [] as ParsedNutrition[]);
 
-  const translated = translateRes.status === 'fulfilled' ? translateRes.value : null;
-  const usdaOrig = usdaOrigRes.status === 'fulfilled' ? usdaOrigRes.value : [];
+  // Emit USDA as soon as it arrives (don't wait for OFF)
+  usdaPromise.then((results) => {
+    const matched = results.filter((f) => nameMatchesQuery(f, query));
+    if (matched.length > 0) {
+      onResults(filterResults(sortBasicsFirst(matched)));
+    }
+  });
+
+  // Wait for both to finish
+  const [usdaRes, offRes] = await Promise.allSettled([usdaPromise, offPromise]);
+  const usda = usdaRes.status === 'fulfilled' ? usdaRes.value : [];
   const off = offRes.status === 'fulfilled' ? offRes.value : [];
 
-  // If translation returned something different, fire second USDA search
-  let usdaTranslated: ParsedNutrition[] = [];
-  if (translated && translated !== query.toLowerCase().trim()) {
-    try {
-      usdaTranslated = await searchFoodsUSDA(translated, half);
-    } catch {}
-  }
+  // Filter OFF — must match query words in the name
+  let offFiltered = off.filter((f) => nameMatchesQuery(f, query));
 
-  // Merge: if non-English query detected, OFF first (native language names)
-  // then USDA translated results, then USDA original
-  const isNonEnglish = translated != null;
-  const ordered = isNonEnglish
-    ? [...off, ...usdaTranslated, ...usdaOrig]
-    : [...usdaOrig, ...usdaTranslated, ...off];
-
+  // Merge + dedup
   const seen = new Set<string>();
   const merged: ParsedNutrition[] = [];
-  for (const f of ordered) {
+  for (const f of [...usda, ...offFiltered]) {
     const key = `${f.name}|${f.brand}`.toLowerCase();
-    if (!seen.has(key) && merged.length < pageSize) {
+    if (!seen.has(key)) {
       seen.add(key);
       merged.push(f);
     }
   }
 
-  merged.sort((a, b) => {
-    const aUnbranded = !a.brand || a.brand.trim() === '';
-    const bUnbranded = !b.brand || b.brand.trim() === '';
-    if (aUnbranded && !bUnbranded) return -1;
-    if (!aUnbranded && bUnbranded) return 1;
-    return 0; // preserve existing language-priority order within each group
-  });
+  const matched = merged.filter((f) => nameMatchesQuery(f, query));
+  const final = filterResults(sortBasicsFirst(matched).slice(0, pageSize));
+  if (__DEV__) console.log('[Search]', query, '→', { usda: usda.length, off: off.length, offFiltered: offFiltered.length, final: final.length });
+  onResults(final);
 
-  const filtered = filterResults(merged);
+  // Translation phase — only for non-English queries
+  const translateResult = await translateToEnglish(query).catch(() => null);
+  if (translateResult && translateResult.text !== query.toLowerCase().trim()) {
+    try {
+      const usdaTranslated = await searchFoodsUSDA(translateResult.text, half);
+      const transMatched = usdaTranslated.filter((f) => nameMatchesQuery(f, translateResult.text));
 
-  // Translate USDA English names to user's language
-  const lang = await getDeviceLanguage();
-  if (lang !== 'en') {
-    await Promise.all(
-      filtered.map(async (item) => {
-        const isLikelyEnglish = /^[a-z\s,'-]+$/.test(item.name);
-        if (isLikelyEnglish) {
-          item.name = await translateFoodName(item.name, lang);
+      if (transMatched.length > 0 && translateResult.sourceLang && translateResult.sourceLang !== 'en') {
+        const names = transMatched.map((f) => f.name);
+        const translatedNames = await translateFoodNamesBatch(names, translateResult.sourceLang);
+        transMatched.forEach((f, i) => {
+          f.name = translatedNames[i];
+        });
+      }
+
+      for (const f of transMatched) {
+        const key = `${f.name}|${f.brand}`.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(f);
         }
-      }),
-    );
-  }
+      }
 
-  return filtered;
+      const allMatched = merged.filter(
+        (f) => nameMatchesQuery(f, query) || (translateResult.text && nameMatchesQuery(f, translateResult.text)),
+      );
+      onResults(filterResults(sortBasicsFirst(allMatched).slice(0, pageSize)));
+    } catch {}
+  }
 }
+
+/** Fetch next page of results. Use after searchFoodsProgressive for page 1. USDA only — fast and reliable. */
+export async function searchFoodsNextPage(
+  query: string,
+  page: number,
+  onResults: (results: ParsedNutrition[]) => void,
+  pageSize = 25,
+): Promise<void> {
+  if (!query.trim() || page < 2) return;
+
+  try {
+    const results = await searchFoodsUSDA(query, pageSize, page);
+    const filtered = results.filter((f) => nameMatchesQuery(f, query));
+    onResults(filterResults(filtered));
+  } catch {
+    onResults([]);
+  }
+}
+

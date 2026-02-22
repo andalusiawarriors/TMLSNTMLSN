@@ -74,8 +74,7 @@ import { generateId, getTodayDateString, toDateString } from '../../utils/helper
 import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchByBarcode, searchFoods, ParsedNutrition } from '../../utils/foodApi';
-import { isObviouslyBranded } from '../../utils/foodFilters';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, ParsedNutrition } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
@@ -258,6 +257,9 @@ export default function NutritionScreen({
   const [foodSearchQuery, setFoodSearchQuery] = useState('');
   const [foodSearchResults, setFoodSearchResults] = useState<ParsedNutrition[]>([]);
   const [foodSearchLoading, setFoodSearchLoading] = useState(false);
+  const [foodSearchLoadingMore, setFoodSearchLoadingMore] = useState(false);
+  const [foodSearchPage, setFoodSearchPage] = useState(1);
+  const [foodSearchHasMore, setFoodSearchHasMore] = useState(true);
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -674,28 +676,55 @@ export default function NutritionScreen({
     setFoodSearchQuery(query);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     if (!query.trim()) { setFoodSearchResults([]); return; }
+    setFoodSearchResults([]);
+    setFoodSearchPage(1);
+    setFoodSearchHasMore(true);
+    setFoodSearchLoadingMore(false);
     searchTimeoutRef.current = setTimeout(async () => {
-      // Instantly show cached matches from history
       const cached = await searchFoodHistory(query);
-      if (cached.length > 0) {
-        setFoodSearchResults(cached);
-      }
+      if (cached.length > 0) setFoodSearchResults(cached);
       setFoodSearchLoading(true);
-      try {
-        const list = await searchFoods(query);
-        const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
-        const apiOnly = list.filter((f) => !historyNames.has(f.name.toLowerCase()));
-        setFoodSearchResults([...cached, ...apiOnly]);
-      } catch (err) {
-        if (cached.length === 0) {
-          setFoodSearchResults([]);
-        }
-        // Keep cached results on API failure
-      } finally {
-        setFoodSearchLoading(false);
-      }
-    }, 500);
+      searchFoodsProgressive(
+        query,
+        (results) => {
+          const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
+          const apiOnly = results.filter((f) => !historyNames.has(f.name.toLowerCase()));
+          setFoodSearchResults([...cached, ...apiOnly]);
+          if (results.length > 0) setFoodSearchLoading(false);
+        },
+      )
+        .then(() => setFoodSearchLoading(false))
+        .catch(() => {
+          if (cached.length === 0) setFoodSearchResults([]);
+          setFoodSearchLoading(false);
+        });
+    }, 250);
   }, []);
+
+  const loadMoreFoodSearch = useCallback(() => {
+    if (foodSearchLoadingMore || !foodSearchHasMore || !foodSearchQuery.trim()) return;
+    const nextPage = foodSearchPage + 1;
+    setFoodSearchLoadingMore(true);
+    searchFoodsNextPage(foodSearchQuery, nextPage, (newResults) => {
+      if (newResults.length === 0) {
+        setFoodSearchHasMore(false);
+      } else {
+        const existingKeys = new Set(
+          foodSearchResults.map((r) => `${r.name}|${r.brand}`.toLowerCase()),
+        );
+        const fresh = newResults.filter(
+          (r) => !existingKeys.has(`${r.name}|${r.brand}`.toLowerCase()),
+        );
+        if (fresh.length === 0) {
+          setFoodSearchPage(nextPage);
+        } else {
+          setFoodSearchResults((prev) => [...prev, ...fresh]);
+          setFoodSearchPage(nextPage);
+        }
+      }
+      setFoodSearchLoadingMore(false);
+    }).catch(() => setFoodSearchLoadingMore(false));
+  }, [foodSearchLoadingMore, foodSearchHasMore, foodSearchQuery, foodSearchPage, foodSearchResults]);
 
   const handleSelectFood = (food: ParsedNutrition) => {
     addToFoodHistory(food);
@@ -708,6 +737,8 @@ export default function NutritionScreen({
     fillAndShowForm({
       name: food.name, brand: food.brand || '', calories: food.calories,
       protein: food.protein, carbs: food.carbs, fat: food.fat, servingSize: '',
+      unit: 'g',
+      source: 'usda',
     });
   };
 
@@ -2006,17 +2037,20 @@ export default function NutritionScreen({
             <FlatList
               data={foodSearchResults}
               keyExtractor={(_, i) => String(i)}
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
                   <View style={styles.foodSearchCardLeft}>
                     {(() => {
-                      const brandLabel = (item.brand && item.brand.trim())
-                        ? item.brand
-                        : isObviouslyBranded(item.name)
-                          ? ''
-                          : 'TMLSN BASICS';
+                      const isBasic =
+                        item.source === 'usda' &&
+                        (!item.brand || item.brand.trim() === '') &&
+                        (item.dataType === 'Foundation' || item.dataType === 'SR Legacy');
+                      const brandLabel = isBasic
+                        ? 'TMLSN BASICS'
+                        : (item.brand && item.brand.trim() !== '' ? item.brand : '');
                       if (brandLabel === 'TMLSN BASICS') {
-                        const TMLSN_BASICS_CHECKMARK_SIZE = 14;
+                        const TMLSN_BASICS_BADGE_SIZE = 11;
                         return (
                           <View style={styles.foodSearchTmlsnBasicsRow}>
                             <MaskedView
@@ -2037,7 +2071,15 @@ export default function NutritionScreen({
                               </LinearGradient>
                             </MaskedView>
                             <View style={styles.foodSearchTmlsnBasicsCheckmarkWrap}>
-                              <Ionicons name="checkmark-circle" size={TMLSN_BASICS_CHECKMARK_SIZE} color="#D4B896" />
+                              <Image
+                                source={require('../../assets/gold_checkmark_badge.png')}
+                                style={{
+                                  width: TMLSN_BASICS_BADGE_SIZE,
+                                  height: TMLSN_BASICS_BADGE_SIZE,
+                                  backgroundColor: 'transparent',
+                                }}
+                                resizeMode="contain"
+                              />
                             </View>
                           </View>
                         );
@@ -2055,7 +2097,7 @@ export default function NutritionScreen({
                       {item.name}
                     </Text>
                     <View style={styles.foodSearchMacrosRow}>
-                      <Text style={styles.foodSearchMacrosPrefix}>per 100g</Text>
+                      <Text style={styles.foodSearchMacrosPrefix}>per 100{item.unit ?? 'g'}</Text>
                       <MaskedView
                         maskElement={
                           <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
@@ -2078,6 +2120,25 @@ export default function NutritionScreen({
                 </TouchableOpacity>
               )}
               ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
+              onEndReached={loadMoreFoodSearch}
+              onEndReachedThreshold={0.3}
+              ListFooterComponent={
+                foodSearchResults.length > 0 && !foodSearchLoading ? (
+                  foodSearchLoadingMore ? (
+                    <ActivityIndicator color="#ffffff" style={{ paddingVertical: 24 }} />
+                  ) : foodSearchHasMore ? (
+                    <TouchableOpacity
+                      onPress={loadMoreFoodSearch}
+                      style={{ paddingVertical: 24, alignItems: 'center' }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>
+                        Show more results
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null
+                ) : null
+              }
             />
             <Button title="Close" onPress={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
           </View>
@@ -2834,9 +2895,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 2,
+    gap: 1,
   },
   foodSearchTmlsnBasicsCheckmarkWrap: {
-    marginLeft: 3,
+    marginLeft: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'transparent',
+    marginTop: -3,
   },
   foodSearchName: {
     fontSize: 15,

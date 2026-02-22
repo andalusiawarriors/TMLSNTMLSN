@@ -1,6 +1,25 @@
 const GOOGLE_TRANSLATE_KEY = process.env.EXPO_PUBLIC_GOOGLE_TRANSLATE_KEY ?? '';
 const TRANSLATE_URL = 'https://translation.googleapis.com/language/translate/v2';
 
+export async function translateFoodNamesBatch(
+  names: string[],
+  targetLang: string,
+): Promise<string[]> {
+  if (!GOOGLE_TRANSLATE_KEY || targetLang === 'en' || names.length === 0) return names;
+  try {
+    const res = await fetch(`${TRANSLATE_URL}?key=${GOOGLE_TRANSLATE_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: names, target: targetLang, format: 'text' }),
+    });
+    if (!res.ok) return names;
+    const data = await res.json();
+    return data?.data?.translations?.map((t: { translatedText?: string }) => t.translatedText?.toLowerCase() ?? '') ?? names;
+  } catch {
+    return names;
+  }
+}
+
 export async function translateFoodName(name: string, targetLang: string): Promise<string> {
   if (!GOOGLE_TRANSLATE_KEY || targetLang === 'en') return name;
   try {
@@ -18,10 +37,10 @@ export async function translateFoodName(name: string, targetLang: string): Promi
 }
 
 /**
- * Detect if a query is already English by checking if most characters are basic ASCII.
- * This avoids wasting a translate call on English queries.
+ * Detect if text is likely English (common food words).
+ * Exported for use in food search filtering.
  */
-function likelyEnglish(text: string): boolean {
+export function likelyEnglish(text: string): boolean {
   const words = text.toLowerCase().split(/\s+/);
   const commonEnglish = new Set([
     'chicken', 'rice', 'bread', 'milk', 'egg', 'eggs', 'cheese', 'butter',
@@ -40,9 +59,10 @@ function likelyEnglish(text: string): boolean {
 
 /**
  * Translate a food query to English using Google Translate.
- * Returns null if already English or translation fails.
+ * Returns { text, sourceLang } or null if already English or translation fails.
+ * sourceLang is the detected language of the query (e.g. 'fr' for French).
  */
-export async function translateToEnglish(query: string): Promise<string | null> {
+export async function translateToEnglish(query: string): Promise<{ text: string; sourceLang: string } | null> {
   const q = query.trim();
   if (!q || !GOOGLE_TRANSLATE_KEY) return null;
   if (likelyEnglish(q)) return null;
@@ -51,18 +71,15 @@ export async function translateToEnglish(query: string): Promise<string | null> 
     const res = await fetch(`${TRANSLATE_URL}?key=${GOOGLE_TRANSLATE_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        q: q,
-        target: 'en',
-        format: 'text',
-      }),
+      body: JSON.stringify({ q: q, target: 'en', format: 'text' }),
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const translated = data?.data?.translations?.[0]?.translatedText?.toLowerCase()?.trim();
-    // If translation is identical to input, it was already English
+    const translation = data?.data?.translations?.[0];
+    const translated = translation?.translatedText?.toLowerCase()?.trim();
+    const sourceLang = translation?.detectedSourceLanguage ?? '';
     if (!translated || translated === q.toLowerCase()) return null;
-    return translated;
+    return { text: translated, sourceLang };
   } catch {
     return null;
   }

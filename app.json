@@ -46,8 +46,7 @@
         }
       ],
       "expo-font",
-      "expo-audio",
-      "expo-dev-client"
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
