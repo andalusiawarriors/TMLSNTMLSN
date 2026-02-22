@@ -48,6 +48,8 @@ function extractJSON(text: string): ParsedNutrition | null {
       carbs: Math.round(Number(parsed.carbs) || 0),
       fat: Math.round(Number(parsed.fat) || 0),
       servingSize: String(parsed.servingSize ?? parsed.serving_size ?? ''),
+      unit: (parsed.unit === 'ml' ? 'ml' : 'g') as 'g' | 'ml',
+      source: 'usda',
     };
   } catch {
     console.warn('Failed to parse Gemini JSON:', text);

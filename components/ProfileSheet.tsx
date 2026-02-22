@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
+import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -95,55 +95,22 @@ export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
   if (!visible) return null;
 
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 1 }]} pointerEvents="box-none">
-      <Pressable style={styles.overlay} onPress={onClose} />
-      <View style={[styles.sheet, { paddingTop: insets.top, paddingBottom: Spacing.md }]}>
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-              <Defs>
-                <RadialGradient id="profileBgGrad" cx="0%" cy="0%" r="150%" fx="0%" fy="0%">
-                  <Stop offset="0" stopColor="#2f3031" />
-                  <Stop offset="1" stopColor="#1a1a1a" />
-                </RadialGradient>
-              </Defs>
-              <Rect x="0" y="0" width="100%" height="100%" fill="url(#profileBgGrad)" />
-            </Svg>
+    <View style={[StyleSheet.absoluteFill, { zIndex: 100000, elevation: 100000, overflow: 'visible' }]} pointerEvents="box-none">
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, styles.tintOverlay]} />
+      </Pressable>
+      <View style={[styles.sheet, styles.sheetOverflow]}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16, paddingBottom: scrollBottomPad }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.profileHeader}>
+            <Text style={[styles.profileTitle, { textAlign: 'center' }]}>profile</Text>
           </View>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
-            showsVerticalScrollIndicator={false}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingHorizontal: 16,
-                paddingTop: 16,
-                paddingBottom: 8,
-                position: 'relative',
-              }}
-            >
-              <TouchableOpacity
-                onPress={onClose}
-                style={{
-                  position: 'absolute',
-                  left: 16,
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
-              </TouchableOpacity>
-              <Text style={[styles.profileTitle, { textAlign: 'center' }]}>profile</Text>
-            </View>
 
-            <Pressable style={styles.profileRowCard}>
+          <Pressable style={styles.profileRowCard}>
               <View style={styles.avatarRing}>
                 <LinearGradient colors={ACCENT_GRADIENT} style={[StyleSheet.absoluteFill, { borderRadius: (AVATAR_SIZE + 4) / 2 }]} />
                 <View style={styles.avatar}>
@@ -217,22 +184,63 @@ export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
 
             <View style={{ height: Spacing.xxl }} />
           </ScrollView>
+
+        {/* Exit button overlaid on top, fixed position (same as Firestreak popup) */}
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            paddingTop: insets.top + 8,
+            paddingHorizontal: Spacing.lg,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            zIndex: 100,
+            elevation: 100,
+            pointerEvents: 'box-none',
+          }}
+        >
+          <TouchableOpacity
+            onPress={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: 'rgba(40,40,40,1)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
         </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  tintOverlay: {
+    backgroundColor: 'rgba(47, 48, 49, 0.5)',
   },
   sheet: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
+  sheetOverflow: {
+    overflow: 'visible',
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 8,
+  },
   scroll: {
     flex: 1,
+    overflow: 'visible',
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,

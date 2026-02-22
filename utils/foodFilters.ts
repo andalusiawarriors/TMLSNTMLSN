@@ -20,12 +20,71 @@ const PROFANITY_BLOCKLIST = new Set([
   'retard', 'retarded', 'nigger', 'nigga', 'fag', 'faggot',
 ]);
 
+const BRAND_BLOCKLIST = new Set([
+  'bang brothers', 'bang bros', 'brazzers', 'pornhub', 'playboy',
+  'hustler', 'vivid entertainment', 'naughty america',
+  'reality kings', 'digital playground', 'wicked pictures',
+  'bang brothers entertainment',
+]);
+
 /* ------------------------------------------------------------------ */
 /*  Junk pattern regex: URLs, slang, repeated chars                    */
 /* ------------------------------------------------------------------ */
 
 // URLs, slang; (.)\1{3,} removed — was matching valid names like "pear, raw"
 const JUNK_PATTERN = /\bwww\.|https?:\/\/|\.(com|org|net|io)\b|\b(ey\s*bro|lol|omg|yolo|wtf|bro\s*bruh)\b/i;
+
+/* ------------------------------------------------------------------ */
+/*  Known brand keywords — prevent falsely labelling branded items as TMLSN BASICS */
+/* ------------------------------------------------------------------ */
+
+export const KNOWN_BRAND_KEYWORDS = new Set([
+  'mcflurry', 'big mac', 'whopper', 'mcnugget', 'mcdonald',
+  'starbucks', 'frappuccino', 'subway', 'doritos', 'cheetos',
+  'oreo', 'nutella', 'coca-cola', 'pepsi', 'sprite', 'fanta',
+  'nestle', 'kellogg', 'cheerios', 'pringles', 'snickers',
+  'twix', 'mars', 'kitkat', 'reese', 'hershey', 'cadbury',
+  'gatorade', 'red bull', 'monster energy', 'tropicana',
+  'heinz', 'kraft', 'barilla', 'quaker', 'tyson',
+  'ben & jerry', 'häagen-dazs', 'baskin', 'dunkin',
+  'chick-fil-a', 'wendy', 'burger king', 'taco bell',
+  'pizza hut', 'domino', 'kfc', 'popeye',
+  'lean cuisine', 'hot pocket', 'totino', 'digiorno',
+  'lunchable', 'velveeta', 'oscar mayer', 'jimmy dean',
+  'pillsbury', 'betty crocker', 'duncan hines',
+  'clif bar', 'kind bar', 'rxbar', 'larabar', 'quest',
+  'fairlife', 'chobani', 'fage', 'oikos', 'yoplait',
+  'silk', 'oatly', 'beyond', 'impossible',
+]);
+
+export function isObviouslyBranded(name: string): boolean {
+  const lower = name.toLowerCase();
+  for (const keyword of KNOWN_BRAND_KEYWORDS) {
+    if (lower.includes(keyword)) return true;
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Latin ratio and nutrition validation                                */
+/* ------------------------------------------------------------------ */
+
+export function latinRatio(text: string): number {
+  if (!text) return 0;
+  const latin = text.replace(/[^a-zA-ZÀ-ÿ]/g, '').length;
+  return latin / Math.max(1, text.replace(/\s/g, '').length);
+}
+
+export function hasValidNutrition(food: import('./foodApi').ParsedNutrition): boolean {
+  const { calories, protein, carbs, fat } = food;
+  if (calories === 0 && protein === 0 && carbs === 0 && fat === 0) return true;
+  if (calories === 0 && (protein + carbs + fat) > 5) return false;
+  if (calories > 1000) return false;
+  if (protein > 100 || carbs > 100 || fat > 100) return false;
+  const estimated = protein * 4 + carbs * 4 + fat * 9;
+  if (estimated > 0 && (calories < estimated * 0.3 || calories > estimated * 2.5)) return false;
+  return true;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                             */
@@ -37,6 +96,19 @@ function buildProfanityRegex(): RegExp {
 }
 
 const PROFANITY_REGEX = buildProfanityRegex();
+
+export function isBrandBlocked(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  for (const term of PROFANITY_BLOCKLIST) {
+    const re = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (re.test(lower)) return true;
+  }
+  for (const brand of BRAND_BLOCKLIST) {
+    if (lower.includes(brand)) return true;
+  }
+  return false;
+}
 
 /**
  * Strip emojis, trim, collapse internal whitespace.
@@ -54,6 +126,9 @@ export function sanitizeFoodName(text: string): string {
 export function isAcceptableFood(name: string, brand?: string): boolean {
   const sanitizedName = sanitizeFoodName(name);
   const sanitizedBrand = brand ? sanitizeFoodName(brand) : '';
+
+  // Block entirely if brand is blocked
+  if (sanitizedBrand && isBrandBlocked(sanitizedBrand)) return false;
 
   // Empty or too short
   if (sanitizedName.length < 2) return false;
@@ -88,6 +163,8 @@ export function filterResults(items: ParsedNutrition[]): ParsedNutrition[] {
     const sanitizedName = sanitizeFoodName(item.name);
     const sanitizedBrand = sanitizeFoodName(item.brand || '');
     if (!isAcceptableFood(sanitizedName, sanitizedBrand)) continue;
+    if (!hasValidNutrition(item)) continue;
+    if (latinRatio(sanitizedName) < 0.5) continue;
     result.push({
       ...item,
       name: sanitizedName.toLowerCase(),

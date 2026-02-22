@@ -36,7 +36,7 @@ export default function ProfileScreen() {
         <View style={styles.toggleWrap}>
           <PillSegmentedControl
             value={progressSegment}
-            onValueChange={setProgressSegment}
+            onValueChange={(v) => setProgressSegment(v as 'Nutrition' | 'Fitness')}
             width={SEGMENT_CONTROL_WIDTH}
           />
         </View>

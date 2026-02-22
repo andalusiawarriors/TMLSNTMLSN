@@ -35,8 +35,10 @@ const SPRING_CONFIG = {
 };
 
 interface PillSegmentedControlProps {
-  value: SegmentValue;
-  onValueChange: (value: SegmentValue) => void;
+  value: string;
+  onValueChange: (value: string) => void;
+  /** Optional segments; defaults to ['Nutrition', 'Fitness'] */
+  segments?: readonly [string, string];
   /** Optional width; defaults to full width of parent */
   width?: number;
 }
@@ -47,9 +49,10 @@ const VELOCITY_THRESHOLD = 200;
 export function PillSegmentedControl({
   value,
   onValueChange,
+  segments = SEGMENTS,
   width,
 }: PillSegmentedControlProps) {
-  const selectedIndex = SEGMENTS.indexOf(value);
+  const selectedIndex = segments.indexOf(value);
   const indexValue = useSharedValue(selectedIndex);
   const segmentWidth = useSharedValue(0);
   const dragOffset = useSharedValue(0);
@@ -72,17 +75,17 @@ export function PillSegmentedControl({
       if (index === selectedIndex) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       indexValue.value = withSpring(index, SPRING_CONFIG);
-      onValueChange(SEGMENTS[index]);
+      onValueChange(segments[index]);
     },
-    [selectedIndex, indexValue, onValueChange]
+    [selectedIndex, indexValue, onValueChange, segments]
   );
 
   const commitSelection = useCallback(
     (index: number) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onValueChange(SEGMENTS[index]);
+      onValueChange(segments[index]);
     },
-    [onValueChange]
+    [onValueChange, segments]
   );
 
   const panGesture = useMemo(
@@ -160,7 +163,7 @@ export function PillSegmentedControl({
         </Animated.View>
         {/* Segment labels */}
         <View style={styles.segmentsRow}>
-          {SEGMENTS.map((label, index) => (
+          {segments.map((label, index) => (
             <Pressable
               key={label}
               style={styles.segmentTouch}
