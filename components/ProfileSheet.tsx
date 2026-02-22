@@ -29,6 +29,7 @@ const AVATAR_SIZE = 56;
 export type ProfileSheetProps = {
   visible: boolean;
   onClose: () => void;
+  onPreferencesPress?: () => void;
 };
 
 function Row({
@@ -87,7 +88,7 @@ function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
+export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
@@ -144,7 +145,7 @@ export function ProfileSheet({ visible, onClose }: ProfileSheetProps) {
             <SectionHeader label="Account" />
             <Card>
               <Row icon="card-outline" label="Personal Details" last={false} onPress={() => {}} />
-              <Row icon="settings-outline" label="Preferences" last={false} onPress={() => {}} />
+              <Row icon="settings-outline" label="Preferences" last={false} onPress={onPreferencesPress} />
               <Row icon="language-outline" label="Language" last={false} onPress={() => {}} />
               <Row icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} />
             </Card>

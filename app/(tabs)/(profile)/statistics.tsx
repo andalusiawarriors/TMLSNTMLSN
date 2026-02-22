@@ -1,6 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { StyleSheet, ScrollView, View, BackHandler } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useState, useCallback } from 'react';
+import { StyleSheet, ScrollView, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Spacing, Colors } from '../../../constants/theme';
 import { getWorkoutSessions } from '../../../utils/storage';
@@ -10,20 +9,9 @@ import { MuscleBodyHeatmap } from '../../../components/MuscleBodyHeatmap';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 
-export default function StatisticsScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams<{ returnTo?: string }>();
+export default function ProfileStatisticsScreen() {
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [animTrigger, setAnimTrigger] = useState(0);
-
-  useEffect(() => {
-    if (params?.returnTo !== 'profile') return;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      router.replace('/(tabs)/profile');
-      return true;
-    });
-    return () => sub.remove();
-  }, [params?.returnTo, router]);
 
   useFocusEffect(
     useCallback(() => {

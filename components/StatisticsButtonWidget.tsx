@@ -22,7 +22,7 @@ export function StatisticsButtonWidget() {
     <AnimatedPressable
       onPressIn={playIn}
       onPressOut={playOut}
-      onPress={() => router.push('/workout/statistics')}
+      onPress={() => router.push('/(tabs)/(profile)/statistics')}
       style={styles.wrap}
     >
       <Card gradientFill borderRadius={38} style={styles.card}>

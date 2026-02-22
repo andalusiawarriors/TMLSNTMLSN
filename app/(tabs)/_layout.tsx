@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Tabs, usePathname, useRouter } from 'expo-router';
+import { Tabs, usePathname, useRouter, useSegments } from 'expo-router';
 import { Typography } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -18,10 +18,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState } from '../../utils/fabBridge';
+import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { BarbellIcon, BarcodeIcon, BookmarkSimple, MagnifyingGlass, PlayIcon } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
+import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
 
 // ── Pill constants ──
 const getTabLabelStyle = (labelColor: string) => ({
@@ -68,6 +69,9 @@ const POPUP_PILL_ROW_GAP = 10;
 const POPUP_PILL_BORDER_INSET = 1;
 const POPUP_PILL_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
 const TAB_BAR_HEIGHT = PILL_BOTTOM + PILL_HEIGHT;
+const ACTIVEPILL_HEIGHT = 48;
+const GAP_PILL_TO_TOOLBAR = 8; // gap between pill and toolbar, and between pill and FAB buttons
+const POPUP_EXTRA_WHEN_PILL = 40; // extra padding so 8px gap between pill top and button row
 const POPUP_CARD_STAGGER_MS = 55;
 const POPUP_CARD_FONT = 'DMMono_500Medium';
 
@@ -106,7 +110,7 @@ const getTabMeta = (iconTint: string): Record<string, { label: string; icon: Rea
       />
     ),
   },
-  profile: {
+  '(profile)': {
     label: 'progress.',
     tabIndex: 4,
     icon: (
@@ -187,16 +191,21 @@ const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r))
 
 export default function TabsLayout() {
   const pathname = usePathname();
+  const segments = useSegments();
   const router = useRouter();
   const { colors } = useTheme();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
-  const isProfileSelected = pathname.includes('profile');
+  // (profile) is a route group — it doesn't appear in pathname; use segments instead
+  const isProfileSelected = segments.includes('(profile)');
 
+  const { activeWorkout, minimized } = useActiveWorkout();
   const lastTabIndexRef = useRef(0);
   const openedFromWorkoutRef = useRef(false);
   const fabOpenedFromTabIndexRef = useRef(0);
+  const [showWorkoutBlockOverlay, setShowWorkoutBlockOverlay] = useState(false);
+  const [showMinimizeOverlay, setShowMinimizeOverlay] = useState(false);
   // State (not ref) so tab bar re-renders when we open workout page from another tab — highlight stays on that tab
   const [tabHighlightLock, setTabHighlightLock] = useState<number | null>(null);
   const tabIndexFromPath = isNutritionSelected ? 0 : isWorkoutSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
@@ -207,6 +216,14 @@ export default function TabsLayout() {
   useEffect(() => {
     if (!pathname.startsWith('/workout')) setTabHighlightLock(null);
   }, [pathname]);
+
+  // When expanding workout from pill, keep tab highlight on the tab user was on
+  useEffect(() => {
+    return onWorkoutExpandOrigin((path) => {
+      const idx = path.includes('nutrition') ? 0 : path.includes('(profile)') ? 4 : path.includes('prompts') ? 3 : path.includes('workout') ? 1 : 0;
+      setTabHighlightLock(idx);
+    });
+  }, []);
 
   const clearTabHighlightLock = useCallback(() => {
     setTabHighlightLock(null);
@@ -556,6 +573,11 @@ export default function TabsLayout() {
     });
   }, [popupOverlayAnim, popupContentAnim, playPopupClose, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity]);
 
+  // When pill expand is pressed, close FAB popup
+  useEffect(() => {
+    return onClosePopup(() => closePopup(false));
+  }, [closePopup]);
+
   // ══════════════════════════════════════════
   // FAB press handler
   // ══════════════════════════════════════════
@@ -634,6 +656,10 @@ export default function TabsLayout() {
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router, isNutritionSelected]);
 
   const handleWorkoutCardSelect = useCallback((card: 'tmlsn' | 'your-routines' | 'empty') => {
+    if (activeWorkout) {
+      setShowWorkoutBlockOverlay(true);
+      return;
+    }
     stopPopupAmbient();
     rotateTo(false);
 
@@ -651,11 +677,17 @@ export default function TabsLayout() {
       setShowPopup(false);
       // Always open the workout PAGE (no modals). Keep toolbar highlight on the tab where FAB was opened.
       if (!openedFromWorkoutRef.current) setTabHighlightLock(fabOpenedFromTabIndexRef.current);
+      // Emit origin so ActiveWorkoutContext can navigate back on minimize
+      const originTabRoutes = ['/(tabs)/nutrition', '/(tabs)/workout', '/(tabs)/prompts', '/(tabs)/(profile)'];
+      const originByTab: Record<number, number> = { 0: 0, 1: 1, 3: 2, 4: 3 };
+      const routeIdx = originByTab[fabOpenedFromTabIndexRef.current] ?? 0;
+      const currentOrigin = originTabRoutes[routeIdx] ?? '/(tabs)/nutrition';
+      emitWorkoutOriginRoute(currentOrigin);
       if (card === 'tmlsn') router.push('/workout/tmlsn-routines');
       else if (card === 'your-routines') router.push('/workout/your-routines');
       else router.push({ pathname: '/workout', params: { startEmpty: '1' } });
     });
-  }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);
+  }, [activeWorkout, popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);
 
   // ══════════════════════════════════════════
   // Animated styles for popup
@@ -850,6 +882,10 @@ export default function TabsLayout() {
                 onTabPressOut={() => handleTabPressOut(tabIdx)}
                 onTabLongPress={handleTabLongPress}
                 onPress={() => {
+                  if (activeWorkout && !minimized) {
+                    setShowMinimizeOverlay(true);
+                    return;
+                  }
                   clearTabHighlightLock();
                   const event = navigation.emit({
                     type: 'tabPress',
@@ -874,7 +910,7 @@ export default function TabsLayout() {
     tabScales, handleTabPressIn, handleTabPressOut, handleTabLongPress,
     fabScaleAnim, fabStarRotateInterpolate, fabRotateInterpolate,
     handleFabPressIn, handleFabPress,
-    activeTabIndex, clearTabHighlightLock,
+    activeTabIndex, clearTabHighlightLock, activeWorkout, minimized,
   ]);
 
   return (
@@ -925,9 +961,9 @@ export default function TabsLayout() {
           options={{ title: 'PROMPTS', headerShown: false }}
         />
 
-        {/* ── Tab 5: Profile ── */}
+        {/* ── Tab 5: Profile (progress) ── */}
         <Tabs.Screen
-          name="profile"
+          name="(profile)"
           options={{ title: 'Profile', headerShown: false }}
         />
       </Tabs>
@@ -946,6 +982,31 @@ export default function TabsLayout() {
             router.push('/preferences');
           }}
         />
+      )}
+
+      {/* Minimize overlay — when user tries to switch tabs while workout is active */}
+      {showMinimizeOverlay && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 100000, elevation: 100000 }]} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowMinimizeOverlay(false)}>
+            <BlurView
+              intensity={40}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+              {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+            />
+          </Pressable>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
+            <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
+              Minimize your workout to switch tabs.
+            </Text>
+            <TouchableOpacity
+              onPress={() => setShowMinimizeOverlay(false)}
+              style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
@@ -987,14 +1048,14 @@ export default function TabsLayout() {
             </RNAnimated.View>
           </Pressable>
 
-          {/* Pills container — equal-width columns, anchored above FAB */}
+          {/* Pills container — equal-width columns, anchored above FAB; move up when ActiveWorkoutPill visible */}
           <RNAnimated.View
             pointerEvents="box-none"
             style={{
               ...StyleSheet.absoluteFillObject,
               justifyContent: 'flex-end',
               alignItems: 'center',
-              paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24,
+              paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + (activeWorkout && minimized ? POPUP_EXTRA_WHEN_PILL : 0),
               opacity: contentOpacity,
               transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
             }}
@@ -1086,6 +1147,31 @@ export default function TabsLayout() {
               </View>
             </View>
           </RNAnimated.View>
+
+          {/* Workout block overlay — when user tries to start workout while one is active */}
+          {showWorkoutBlockOverlay && (
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowWorkoutBlockOverlay(false)}>
+                <BlurView
+                  intensity={40}
+                  tint="dark"
+                  style={StyleSheet.absoluteFill}
+                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+                />
+              </Pressable>
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
+                <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
+                  A workout can't be initiated when there's a current workout going on.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowWorkoutBlockOverlay(false)}
+                  style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>

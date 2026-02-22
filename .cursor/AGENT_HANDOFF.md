@@ -29,7 +29,7 @@
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none)*     | —                 | —                         | —               | —       |
 
-*Previously: tab layout — pill labels swapped (workout→explore, explore→TMLSN); synced to obh*
+*Previously: Rest pill edit (wider, pressable, slider modal) from session; empty → "Workout"*
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -39,6 +39,9 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/workout/index.tsx` – Rest pill: wider/higher, bigger font, centered, pressable; rest time edit modal with minutes/seconds sliders
+- `components/ActiveWorkoutPill.tsx` – display workout name (TMLSN split / My Routines / empty → "Workout")
+- `app/start-empty-workout-modal.tsx`, `app/(tabs)/workout/index.tsx` – empty workout name: "Workout"
 - `utils/foodApi.ts` – removed likelyEnglish filter on OFF results; added [fetchUSDA] abort logging (external signal / timeout); synced to obh
 - `utils/foodApi.ts` – ParsedNutrition.source ('usda'|'off'); parseUSDAFood/parseOFFProduct set source; searchFoodsProgressive single USDA call + local basics/branded split; parseUSDA dataType log; synced to obh
 - `app/(tabs)/nutrition.tsx` – hasPreloaded guard for preloadCommonSearches; synced to obh

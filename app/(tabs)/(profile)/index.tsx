@@ -2,11 +2,12 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors, Typography, Spacing } from '../../constants/theme';
-import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
-import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
-import { StatisticsButtonWidget } from '../../components/StatisticsButtonWidget';
+import { Colors, Typography, Spacing } from '../../../constants/theme';
+import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
+import { PillSegmentedControl, type SegmentValue } from '../../../components/PillSegmentedControl';
+import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
+import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
+import { WorkoutProgressWidget } from '../../../components/WorkoutProgressWidget';
 
 const SEGMENT_CONTROL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
@@ -46,7 +47,12 @@ export default function ProfileScreen() {
       </AnimatedFadeInUp>
       <AnimatedFadeInUp delay={150} duration={380} trigger={animTrigger}>
         <View style={styles.progressSection}>
-          <StatisticsButtonWidget />
+          {progressSegment === 'Fitness' && (
+            <>
+              <WorkoutProgressWidget />
+              <StatisticsButtonWidget />
+            </>
+          )}
         </View>
       </AnimatedFadeInUp>
       </ScrollView>

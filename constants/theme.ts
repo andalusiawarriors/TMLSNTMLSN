@@ -13,24 +13,59 @@ export const Font = {
 
 export const HeadingLetterSpacing = -1;
 
-export const Colors = {
-  // Duo-tone Foundation
-  primaryDark: '#2F3031',     // Primary backgrounds, cards, nav bars
-  primaryDarkLighter: '#3D3E3F', // Lighter shade for tab bar pill
-  primaryLight: '#C6C6C6',    // Primary text, disabled states, secondary backgrounds
-  
-  // Accent Colors (use sparingly)
-  accentRed: '#FF0000',       // Critical alerts, error states, urgent triggers
-  accentBlue: '#0000FF',     // Positive feedback, completion, success states
-  accentGold: '#C9A227',     // Profile sheet: section headers, avatar border, refer icon
-  accentGoldDark: '#9A7B1A', // Darker gold for borders/pills
-  accentChampagne: '#D4B896',
-  accentChampagneDark: '#A8895E',
-  
-  // Neutral
-  white: '#FFFFFF',           // Explicit highlights, high-priority headings
-  black: '#000000',           // Pure black for extreme contrast when needed
+// Shared (same in both themes)
+const accentGold = '#D4B896';
+const accentGoldDark = '#A8895E';
+const accentRed = '#FF0000';
+const accentBlue = '#0000FF';
+const white = '#FFFFFF';
+const black = '#000000';
+
+export type ColorPalette = {
+  primaryDark: string;
+  primaryDarkLighter: string;
+  primaryLight: string;
+  accentRed: string;
+  accentBlue: string;
+  accentGold: string;
+  accentGoldDark: string;
+  white: string;
+  black: string;
+  tabBarBorder: [string, string];
+  tabBarFill: [string, string];
+  tabBarSelectedPill: string;
+  fabIconBg: string;
+  backgroundGradient: [string, string];
+  cardBorderGradient: [string, string];
+  cardFillGradient: [string, string];
+  cardIconTint: string;
+  pillBorderGradient: [string, string];
+  pillFillGradient: [string, string];
 };
+
+export const DarkPalette: ColorPalette = {
+  primaryDark: '#2F3031',
+  primaryDarkLighter: '#3D3E3F',
+  primaryLight: '#C6C6C6',
+  accentRed,
+  accentBlue,
+  accentGold,
+  accentGoldDark,
+  white,
+  black,
+  tabBarBorder: ['#4E4F50', '#4A4B4C'],
+  tabBarFill: ['#363738', '#2E2F30'],
+  tabBarSelectedPill: 'rgba(108, 108, 108, 0.6)',
+  fabIconBg: '#2F3031',
+  backgroundGradient: ['#2f3031', '#1a1a1a'],
+  cardBorderGradient: ['#525354', '#48494A'],
+  cardFillGradient: ['#363738', '#2E2F30'],
+  cardIconTint: '#FFFFFF',
+  pillBorderGradient: ['#4E4F50', '#4A4B4C'],
+  pillFillGradient: ['#363738', '#2E2F30'],
+};
+
+export const Colors = DarkPalette;
 
 export const Typography = {
   // Font Sizes

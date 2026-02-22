@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import type { WorkoutSession } from '../types';
+import { onWorkoutOriginRoute } from '../utils/fabBridge';
 
 type ActiveWorkoutContextValue = {
   activeWorkout: WorkoutSession | null;
@@ -13,6 +14,8 @@ type ActiveWorkoutContextValue = {
   minimizeWorkout: () => void;
   expandWorkout: () => void;
   discardWorkout: (onDiscarded: () => void) => void;
+  originRoute: string | null;
+  setOriginRoute: (route: string | null) => void;
 };
 
 const ActiveWorkoutContext = createContext<ActiveWorkoutContextValue | null>(null);
@@ -22,6 +25,11 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const [activeWorkout, setActiveWorkoutRaw] = useState<WorkoutSession | null>(null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [minimized, setMinimized] = useState(false);
+  const [originRoute, setOriginRoute] = useState<string | null>(null);
+
+  useEffect(() => {
+    return onWorkoutOriginRoute((route) => setOriginRoute(route));
+  }, []);
 
   const setActiveWorkout = useCallback((w: WorkoutSession | null) => {
     setActiveWorkoutRaw(w);
@@ -37,7 +45,10 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   const minimizeWorkout = useCallback(() => {
     setMinimized(true);
-  }, []);
+    if (originRoute && originRoute !== '/(tabs)/workout') {
+      router.replace(originRoute as any);
+    }
+  }, [originRoute, router]);
 
   const expandWorkout = useCallback(() => {
     setMinimized(false);
@@ -49,6 +60,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
       setActiveWorkoutRaw(null);
       setCurrentExerciseIndex(0);
       setMinimized(false);
+      setOriginRoute(null);
       onDiscarded();
     },
     []
@@ -65,6 +77,8 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     minimizeWorkout,
     expandWorkout,
     discardWorkout,
+    originRoute,
+    setOriginRoute,
   };
 
   return (

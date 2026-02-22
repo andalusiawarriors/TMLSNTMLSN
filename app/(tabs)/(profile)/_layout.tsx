@@ -3,14 +3,12 @@ import * as Haptics from 'expo-haptics';
 import { Pressable, Text } from 'react-native';
 import { Colors } from '../../../constants/theme';
 
-export default function WorkoutLayout() {
+export default function ProfileLayout() {
   const router = useRouter();
 
   return (
     <Stack
-      screenOptions={({ route }) => {
-        const params = route.params as { returnTo?: string } | undefined;
-        return {
+      screenOptions={{
         headerStyle: { backgroundColor: Colors.primaryDark },
         headerTintColor: Colors.primaryLight,
         headerBackVisible: false,
@@ -21,11 +19,7 @@ export default function WorkoutLayout() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              if (params?.returnTo === 'profile') {
-                router.replace('/(tabs)/profile');
-              } else {
-                router.back();
-              }
+              router.back();
             }}
             style={({ pressed }) => [
               {
@@ -43,42 +37,9 @@ export default function WorkoutLayout() {
             <Text style={{ color: Colors.primaryLight, fontSize: 15 }}>‹ Back</Text>
           </Pressable>
         ),
-      };
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen
-        name="tmlsn-routines"
-        options={{
-          title: 'TMLSN Routines',
-          headerShown: false,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
-        name="your-routines"
-        options={{
-          title: 'Your Routines',
-          headerShown: false,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
-        name="settings"
-        options={{
-          title: 'settings',
-          headerShown: true,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
-        name="streak"
-        options={{
-          title: 'streak',
-          headerShown: true,
-          animation: 'slide_from_right',
-        }}
-      />
       <Stack.Screen
         name="statistics"
         options={{

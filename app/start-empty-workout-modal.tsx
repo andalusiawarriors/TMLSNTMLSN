@@ -15,7 +15,7 @@ export default function StartEmptyWorkoutModal() {
     () => ({
       id: generateId(),
       date: new Date().toISOString(),
-      name: 'Freeform Workout',
+      name: 'Workout',
       exercises: [],
       duration: 0,
       isComplete: false,

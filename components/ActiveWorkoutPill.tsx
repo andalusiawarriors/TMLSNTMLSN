@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Alert,
   Dimensions,
+  Pressable,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -15,18 +16,23 @@ import Animated, {
   withRepeat,
   Easing,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { usePathname, useSegments } from 'expo-router';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
+import { emitWorkoutExpandOrigin, emitWorkoutOriginRoute, emitClosePopup } from '../utils/fabBridge';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing } from '../constants/theme';
 import { AnimatedPressable } from './AnimatedPressable';
 
 const TAB_BAR_HEIGHT = 76; // PILL_BOTTOM(19) + PILL_HEIGHT(57)
-const PILL_MARGIN = 16;
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const PILL_WIDTH = SCREEN_WIDTH - PILL_MARGIN * 2;
-const PILL_HEIGHT = 64;
-const BUTTON_SIZE = 40;
+// Hierarchy: tab bar (57) = primary nav. Pill (48) = contextual, same tier as popup pills.
+const PILL_HEIGHT = 48;
+const PILL_RADIUS = 24; // 48/2 for pill proportion
+const PILL_MAX_WIDTH = Math.min(300, SCREEN_WIDTH * 0.82); // compact, centered — not a second nav bar
+const BORDER_INSET = 1;
+const BUTTON_SIZE = 30;
 
 function formatElapsed(sec: number): string {
   if (sec < 60) return `${sec}s`;
@@ -64,10 +70,11 @@ function GreenPulsingDot() {
 }
 
 export function ActiveWorkoutPill() {
+  const pathname = usePathname();
+  const segments = useSegments();
   const { colors } = useTheme();
   const {
     activeWorkout,
-    currentExerciseName,
     workoutStartTime,
     minimized,
     expandWorkout,
@@ -129,7 +136,19 @@ export function ActiveWorkoutPill() {
   };
 
   const handleExpand = () => {
-    if (minimized) expandWorkout();
+    if (minimized) {
+      emitClosePopup();
+      // (profile) is a route group — pathname doesn't include it; use segments for progress tab
+      const route =
+        segments.includes('(profile)') ? '/(tabs)/(profile)'
+        : pathname.includes('nutrition') ? '/(tabs)/nutrition'
+        : pathname.includes('prompts') ? '/(tabs)/prompts'
+        : pathname.includes('workout') ? '/(tabs)/workout'
+        : '/(tabs)/nutrition';
+      emitWorkoutExpandOrigin(route);
+      emitWorkoutOriginRoute(route);
+      expandWorkout();
+    }
   };
 
   const pillStyle = useAnimatedStyle(() => ({
@@ -138,68 +157,109 @@ export function ActiveWorkoutPill() {
   }));
 
   // Pill only shows after down arrow is pressed (minimized)
-  if (!activeWorkout || !minimized) return null;
+  // Hide when on search/scan screens
+  const hideOnFoodFlow =
+    pathname.includes('search-food') ||
+    pathname.includes('food-action-modal') ||
+    pathname.includes('scan-food-camera');
+  if (!activeWorkout || !minimized || hideOnFoodFlow) return null;
 
   return (
     <Animated.View
       style={[
-        styles.pill,
+        styles.pillOuter,
         {
-          backgroundColor: colors.primaryDarkLighter,
           bottom: TAB_BAR_HEIGHT + 8,
         },
         pillStyle,
       ]}
     >
-      <AnimatedPressable
-        style={[styles.iconButton, { backgroundColor: colors.primaryDark }]}
-        onPress={handleExpand}
-      >
-        <Ionicons name="chevron-up" size={22} color={colors.primaryLight} />
-      </AnimatedPressable>
-
-      <View style={styles.center}>
-        <View style={styles.row}>
-          <GreenPulsingDot />
-          <Text style={[styles.title, { color: colors.primaryLight }]}>Workout</Text>
-          <Text style={[styles.elapsed, { color: colors.primaryLight }]}>
-            {formatElapsed(elapsedSeconds)}
-          </Text>
+      <View style={[styles.pillBorder, { overflow: 'hidden' }]}>
+        <LinearGradient
+          colors={colors.tabBarBorder as [string, string]}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
+        />
+        <LinearGradient
+          colors={colors.tabBarFill as [string, string]}
+          style={[StyleSheet.absoluteFillObject, styles.pillInner]}
+        />
+        <View style={[styles.pill, styles.pillContent]}>
+          <Pressable
+            style={styles.expandArea}
+            onPress={handleExpand}
+            android_ripple={null}
+          >
+            <View style={[styles.iconButton, { backgroundColor: colors.primaryDark }]}>
+              <Ionicons name="chevron-up" size={18} color={colors.primaryLight} />
+            </View>
+            <View style={styles.center}>
+              <View style={styles.row}>
+                <GreenPulsingDot />
+                <Text style={[styles.title, { color: colors.primaryLight }]}>
+                  {activeWorkout?.name ?? 'Workout'}
+                </Text>
+                <Text style={[styles.elapsed, { color: colors.primaryLight }]}>
+                  {formatElapsed(elapsedSeconds)}
+                </Text>
+              </View>
+            </View>
+          </Pressable>
+          <AnimatedPressable
+            style={[styles.iconButton, { backgroundColor: colors.primaryDark }]}
+            onPress={handleConfirmDiscard}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.accentRed} />
+          </AnimatedPressable>
         </View>
-        <Text
-          style={[styles.subtitle, { color: colors.primaryLight + '99' }]}
-          numberOfLines={1}
-        >
-          {currentExerciseName}
-        </Text>
       </View>
-
-      <AnimatedPressable
-        style={[styles.iconButton, { backgroundColor: colors.primaryDark }]}
-        onPress={handleConfirmDiscard}
-      >
-        <Ionicons name="trash-outline" size={20} color={colors.accentRed} />
-      </AnimatedPressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
+  pillOuter: {
     position: 'absolute',
-    left: PILL_MARGIN,
-    right: PILL_MARGIN,
+    left: 0,
+    right: 0,
     height: PILL_HEIGHT,
-    borderRadius: 38,
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.sm,
-    zIndex: 99998,
-    elevation: 99998,
+    zIndex: 999999,
+    elevation: 999999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+  },
+  pillBorder: {
+    width: PILL_MAX_WIDTH,
+    height: PILL_HEIGHT,
+    borderRadius: PILL_RADIUS,
+  },
+  pillInner: {
+    position: 'absolute',
+    top: BORDER_INSET,
+    left: BORDER_INSET,
+    right: BORDER_INSET,
+    bottom: BORDER_INSET,
+    borderRadius: PILL_RADIUS - BORDER_INSET,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  pillContent: {
+    position: 'absolute',
+    top: BORDER_INSET,
+    left: BORDER_INSET,
+    right: BORDER_INSET,
+    bottom: BORDER_INSET,
+    borderRadius: PILL_RADIUS - BORDER_INSET,
+  },
+  expandArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   iconButton: {
     width: BUTTON_SIZE,
@@ -210,36 +270,35 @@ const styles = StyleSheet.create({
   },
   center: {
     flex: 1,
-    marginHorizontal: Spacing.md,
+    marginHorizontal: 6,
     justifyContent: 'center',
+    alignItems: 'center',
     minWidth: 0,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    gap: 6,
   },
   title: {
-    fontSize: Typography.body,
+    fontSize: 13,
+    textAlign: 'center',
   },
   elapsed: {
-    fontSize: Typography.label,
-    marginLeft: 'auto',
-  },
-  subtitle: {
-    fontSize: Typography.label,
-    marginTop: 2,
+    fontSize: 13,
+    textAlign: 'center',
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
   },
 });

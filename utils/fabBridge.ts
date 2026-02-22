@@ -85,3 +85,42 @@ export function onStreakPopupState(fn: BoolCb): VoidCb {
     if (i >= 0) streakStateListeners.splice(i, 1);
   };
 }
+
+// ── Workout origin route (layout → ActiveWorkoutContext, for navigate back on minimize) ──
+const originRouteListeners: ((route: string) => void)[] = [];
+export function emitWorkoutOriginRoute(route: string) {
+  originRouteListeners.forEach(fn => fn(route));
+}
+export function onWorkoutOriginRoute(fn: (route: string) => void): VoidCb {
+  originRouteListeners.push(fn);
+  return () => {
+    const i = originRouteListeners.indexOf(fn);
+    if (i >= 0) originRouteListeners.splice(i, 1);
+  };
+}
+
+// ── Workout expand from pill (ActiveWorkoutPill → layout, keep tab highlight on current tab) ──
+const expandOriginListeners: ((pathname: string) => void)[] = [];
+export function emitWorkoutExpandOrigin(pathname: string) {
+  expandOriginListeners.forEach(fn => fn(pathname));
+}
+export function onWorkoutExpandOrigin(fn: (pathname: string) => void): VoidCb {
+  expandOriginListeners.push(fn);
+  return () => {
+    const i = expandOriginListeners.indexOf(fn);
+    if (i >= 0) expandOriginListeners.splice(i, 1);
+  };
+}
+
+// ── Close FAB popup (ActiveWorkoutPill → layout, when user expands workout from pill) ──
+const closePopupListeners: VoidCb[] = [];
+export function emitClosePopup() {
+  closePopupListeners.forEach(fn => fn());
+}
+export function onClosePopup(fn: VoidCb): VoidCb {
+  closePopupListeners.push(fn);
+  return () => {
+    const i = closePopupListeners.indexOf(fn);
+    if (i >= 0) closePopupListeners.splice(i, 1);
+  };
+}

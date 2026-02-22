@@ -13,6 +13,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -21,7 +22,6 @@ import { Input } from '../../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
 import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
 import {
-  getRecentWorkouts,
   saveWorkoutSession,
   getSavedRoutines,
   getUserSettings,
@@ -46,6 +46,7 @@ import { HomeGradientBackground } from '../../../components/HomeGradientBackgrou
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { SlidersHorizontal } from 'phosphor-react-native';
+import Slider from '@react-native-community/slider';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -96,7 +97,6 @@ export default function WorkoutScreen({
     startRoutineId?: string;
     startEmpty?: string;
   }>();
-  const [recentWorkouts, setRecentWorkouts] = useState<WorkoutSession[]>([]);
 
   // Sync initialActiveWorkout (e.g. from modal) into context
   useEffect(() => {
@@ -112,9 +112,10 @@ export default function WorkoutScreen({
   const [replaceExerciseIndex, setReplaceExerciseIndex] = useState<number | null>(null);
   /** When set, custom exercise menu (replace/delete) is open for this exercise index */
   const [exerciseMenuIndex, setExerciseMenuIndex] = useState<number | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [swipePageIndex, setSwipePageIndex] = useState(0);
-  const [swipeViewWidth, setSwipeViewWidth] = useState(SCREEN_WIDTH);
+  /** When set, rest time edit modal is open for this exercise index */
+  const [restTimeEditExerciseIndex, setRestTimeEditExerciseIndex] = useState<number | null>(null);
+  const [restEditMinutes, setRestEditMinutes] = useState(0);
+  const [restEditSeconds, setRestEditSeconds] = useState(0);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [animTrigger, setAnimTrigger] = useState(0);
 
@@ -133,9 +134,6 @@ export default function WorkoutScreen({
 
   const { playIn, playOut } = useButtonSound();
 
-  useEffect(() => {
-    loadWorkouts();
-  }, []);
 
   // FAB "start empty workout" now always opens start-empty-workout-modal (no emit), so no subscription here.
 
@@ -215,11 +213,6 @@ export default function WorkoutScreen({
     return () => clearInterval(interval);
   }, [restTimerActive, restTimeRemaining]);
 
-  const loadWorkouts = async () => {
-    const workouts = await getRecentWorkouts(10);
-    setRecentWorkouts(workouts);
-  };
-
   const startWorkoutFromSplit = (split: WorkoutSplit) => {
     const exercises: Exercise[] = split.exercises.map((template) => ({
       id: generateId(),
@@ -272,7 +265,7 @@ export default function WorkoutScreen({
     const newWorkout: WorkoutSession = {
       id: generateId(),
       date: new Date().toISOString(),
-      name: 'Freeform Workout',
+      name: 'Workout',
       exercises: [],
       duration: 0,
       isComplete: false,
@@ -407,6 +400,15 @@ export default function WorkoutScreen({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
+  const updateExerciseRestTimer = (exerciseIndex: number, restTimer: number) => {
+    if (!activeWorkout) return;
+    const exercise = activeWorkout.exercises[exerciseIndex];
+    if (!exercise) return;
+    const updatedExercises = [...activeWorkout.exercises];
+    updatedExercises[exerciseIndex] = { ...exercise, restTimer };
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
+  };
+
   const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number) => {
     setRestTimeRemaining(seconds);
     setRestTimerActive(true);
@@ -466,7 +468,6 @@ export default function WorkoutScreen({
 
     await saveWorkoutSession(completedWorkout);
     await logStreakWorkout();
-    await loadWorkouts();
 
     setActiveWorkout(null);
     setShowExerciseEntry(false);
@@ -592,48 +593,7 @@ export default function WorkoutScreen({
         </View>
         </AnimatedFadeInUp>
 
-        {/* Swipeable widget: full screen width for centered snap */}
-        <AnimatedFadeInUp delay={160} duration={380} trigger={animTrigger}>
-        <View
-          style={styles.swipeWidgetWrapper}
-          onLayout={(e) => setSwipeViewWidth(e.nativeEvent.layout.width)}
-        >
-          <ScrollView
-            horizontal
-            snapToInterval={swipeViewWidth || SCREEN_WIDTH}
-            snapToAlignment="center"
-            decelerationRate="fast"
-            pagingEnabled={false}
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
-              const w = swipeViewWidth || SCREEN_WIDTH;
-              const page = Math.round(e.nativeEvent.contentOffset.x / w);
-              setSwipePageIndex(Math.min(page, 1));
-            }}
-            style={[styles.swipeWidget, { width: swipeViewWidth || SCREEN_WIDTH }]}
-            contentContainerStyle={styles.swipeWidgetContent}
-          >
-            {/* Single page: progress card */}
-            <View style={styles.swipePage}>
-              <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => setShowHistory(true)}
-                style={styles.mainMenuButtonWrap}
-              >
-                <Card gradientFill borderRadius={38} style={styles.progressCard}>
-                  <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>progress</Text>
-                </Card>
-              </AnimatedPressable>
-            </View>
-          </ScrollView>
-          <View style={styles.swipeDots}>
-            <View style={[styles.swipeDot, styles.swipeDotActive, { backgroundColor: colors.primaryLight }]} />
-          </View>
-        </View>
-        </AnimatedFadeInUp>
-
-        {/* Achievements only – streak moved to header widget */}
+        {/* Achievements – progress widget moved to profile (progress tab, Fitness toggle) */}
         <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
         <View style={styles.achievementsStack}>
           <AnimatedPressable style={styles.achievementCardWrap}>
@@ -646,109 +606,6 @@ export default function WorkoutScreen({
 
       </ScrollView>
 
-      {/* ─── HEVY-STYLE PROGRESS / HISTORY MODAL ─── */}
-      <Modal
-        visible={showHistory}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowHistory(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPressIn={playIn}
-          onPressOut={playOut}
-          onPress={() => setShowHistory(false)}
-        >
-          <View style={[styles.modalContent, { backgroundColor: colors.primaryDark }]} onStartShouldSetResponder={() => true}>
-            {/* Modal header */}
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.primaryLight }]}>Progress</Text>
-              <Pressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => setShowHistory(false)}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={[styles.modalCloseButton, { backgroundColor: colors.primaryLight + '15' }]}
-              >
-                <Text style={[styles.modalCloseText, { color: colors.primaryLight + '80' }]}>✕</Text>
-              </Pressable>
-            </View>
-
-            {/* Stats summary */}
-            <View style={styles.historyStatsRow}>
-              <View style={[styles.historyStatPill, { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' }]}>
-                <Text style={[styles.historyStatValue, { color: colors.primaryLight }]}>{recentWorkouts.length}</Text>
-                <Text style={[styles.historyStatLabel, { color: colors.primaryLight + '50' }]}>Sessions</Text>
-              </View>
-              <View style={[styles.historyStatPill, { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' }]}>
-                <Text style={[styles.historyStatValue, { color: colors.primaryLight }]}>
-                  {recentWorkouts.reduce((acc, w) => acc + w.exercises.reduce((a, e) => a + e.sets.length, 0), 0)}
-                </Text>
-                <Text style={[styles.historyStatLabel, { color: colors.primaryLight + '50' }]}>Total Sets</Text>
-              </View>
-            </View>
-
-            {/* Session list */}
-            <ScrollView style={styles.historyList} showsVerticalScrollIndicator={false}>
-              {recentWorkouts.length === 0 ? (
-                <View style={styles.historyEmpty}>
-                  <Text style={[styles.historyEmptyIcon, { color: colors.primaryLight + '30' }]}>◇</Text>
-                  <Text style={[styles.historyEmptyText, { color: colors.primaryLight + '60' }]}>No workouts yet</Text>
-                  <Text style={[styles.historyEmptySubtext, { color: colors.primaryLight + '40' }]}>Start one to see your progress</Text>
-                </View>
-              ) : (
-                recentWorkouts.map((w) => {
-                  const wSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
-                  const wVolume = w.exercises.reduce(
-                    (a, e) => a + e.sets.reduce((s, set) => s + set.weight * set.reps, 0), 0
-                  );
-                  return (
-                    <View key={w.id} style={[styles.historySessionCard, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '12' }]}>
-                      {/* Session header */}
-                      <View style={styles.historySessionHeader}>
-                        <View style={[styles.historySessionIcon, { backgroundColor: colors.primaryLight + '15' }]}>
-                          <Text style={[styles.historySessionIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
-                        </View>
-                        <View style={styles.historySessionTitleCol}>
-                          <Text style={[styles.historySessionName, { color: colors.primaryLight }]}>{w.name}</Text>
-                          <Text style={[styles.historySessionDate, { color: colors.primaryLight + '50' }]}>
-                            {new Date(w.date).toLocaleDateString('en-US', {
-                              weekday: 'short',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </Text>
-                        </View>
-                      </View>
-                      {/* Session stats */}
-                      <View style={styles.historySessionStats}>
-                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
-                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◎</Text>
-                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.exercises.length} exercises</Text>
-                        </View>
-                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
-                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◉</Text>
-                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wSets} sets</Text>
-                        </View>
-                        <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
-                          <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⏱</Text>
-                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.duration} min</Text>
-                        </View>
-                        {wVolume > 0 && (
-                          <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
-                            <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⚖</Text>
-                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wVolume.toLocaleString()} {weightUnit}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
       </>
       )}
 
@@ -777,7 +634,17 @@ export default function WorkoutScreen({
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.logBackArrowWrap}
               >
-                <Text style={[styles.logBackArrow, { color: colors.primaryLight }]}>▼</Text>
+                <View style={styles.minimizeIconButton}>
+                  <LinearGradient
+                    colors={colors.tabBarBorder as [string, string]}
+                    style={[StyleSheet.absoluteFillObject, { borderRadius: 15 }]}
+                  />
+                  <LinearGradient
+                    colors={colors.tabBarFill as [string, string]}
+                    style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 14 }}
+                  />
+                  <Ionicons name="chevron-down" size={18} color={colors.primaryLight} />
+                </View>
               </AnimatedPressable>
               <View style={styles.logTopCenter}>
                 <Text style={[styles.logTitle, { color: colors.primaryLight }]}>{activeWorkout.name || 'Workout'}</Text>
@@ -897,13 +764,22 @@ export default function WorkoutScreen({
                   </TouchableOpacity>
                 </View>
 
-                {/* Rest timer badge */}
+                {/* Rest timer badge – pressable to edit (only when rest timer is set) */}
                 {exercise.restTimer ? (
-                  <View style={[styles.restTimerBadge, { backgroundColor: colors.primaryLight + '10' }]}>
-                    <Text style={[styles.restTimerBadgeText, { color: colors.primaryLight + '80' }]}>
+                  <Pressable
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={() => {
+                      setRestEditMinutes(Math.floor(exercise.restTimer! / 60));
+                      setRestEditSeconds(exercise.restTimer! % 60);
+                      setRestTimeEditExerciseIndex(exerciseIndex);
+                    }}
+                    style={[styles.restTimerBadge, { backgroundColor: colors.primaryLight + '10' }]}
+                  >
+                    <Text style={[styles.restTimerBadgeText, { color: colors.primaryLight }]}>
                       Rest: {formatDuration(exercise.restTimer)}
                     </Text>
-                  </View>
+                  </Pressable>
                 ) : null}
 
                 {/* Notes */}
@@ -1056,6 +932,71 @@ export default function WorkoutScreen({
         </AnimatedReanimated.View>
       )}
 
+      {activeWorkout && restTimeEditExerciseIndex !== null && (
+        <Modal visible animationType="fade" transparent>
+          <Pressable style={styles.exerciseMenuOverlay} onPress={() => setRestTimeEditExerciseIndex(null)}>
+            <Pressable
+              style={[styles.restTimeEditCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text style={[styles.restTimeEditTitle, { color: colors.primaryLight }]}>Edit rest time</Text>
+              <Text style={[styles.restTimeEditDisplay, { color: colors.primaryLight }]}>
+                {formatDuration(restEditMinutes * 60 + restEditSeconds)}
+              </Text>
+              <View style={styles.restTimeEditSliders}>
+                <Text style={[styles.restTimeEditLabel, { color: colors.primaryLight + '80' }]}>Minutes</Text>
+                <Slider
+                  style={styles.restTimeSlider}
+                  minimumValue={0}
+                  maximumValue={10}
+                  step={1}
+                  value={restEditMinutes}
+                  onValueChange={(v) => setRestEditMinutes(Math.round(v))}
+                  minimumTrackTintColor={colors.primaryLight}
+                  maximumTrackTintColor={colors.primaryLight + '40'}
+                  thumbTintColor={colors.primaryLight}
+                />
+                <Text style={[styles.restTimeEditValue, { color: colors.primaryLight }]}>{restEditMinutes} min</Text>
+              </View>
+              <View style={styles.restTimeEditSliders}>
+                <Text style={[styles.restTimeEditLabel, { color: colors.primaryLight + '80' }]}>Seconds</Text>
+                <Slider
+                  style={styles.restTimeSlider}
+                  minimumValue={0}
+                  maximumValue={59}
+                  step={1}
+                  value={restEditSeconds}
+                  onValueChange={(v) => setRestEditSeconds(Math.round(v))}
+                  minimumTrackTintColor={colors.primaryLight}
+                  maximumTrackTintColor={colors.primaryLight + '40'}
+                  thumbTintColor={colors.primaryLight}
+                />
+                <Text style={[styles.restTimeEditValue, { color: colors.primaryLight }]}>{restEditSeconds} s</Text>
+              </View>
+              <View style={styles.restTimeEditButtons}>
+                <TouchableOpacity
+                  style={[styles.restTimeEditButton, { backgroundColor: colors.primaryLight + '20' }]}
+                  onPress={() => setRestTimeEditExerciseIndex(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.restTimeEditButtonText, { color: colors.primaryLight }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.restTimeEditButton, styles.restTimeEditButtonPrimary, { backgroundColor: colors.primaryLight }]}
+                  onPress={() => {
+                    updateExerciseRestTimer(restTimeEditExerciseIndex, restEditMinutes * 60 + restEditSeconds);
+                    setRestTimeEditExerciseIndex(null);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.restTimeEditButtonText, styles.restTimeEditButtonTextPrimary, { color: colors.primaryDark }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
       {activeWorkout && exerciseMenuIndex !== null && (
         <Modal visible animationType="fade" transparent>
           <Pressable style={styles.exerciseMenuOverlay} onPress={closeExerciseMenu}>
@@ -1194,30 +1135,6 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     textAlign: 'center',
   },
-  swipeWidgetWrapper: {
-    width: SCREEN_WIDTH,
-    alignSelf: 'center',
-    marginHorizontal: -Spacing.md,
-    marginBottom: Spacing.sm,
-    overflow: 'visible',
-  },
-  swipeWidget: {
-    flexGrow: 0,
-  },
-  swipeWidgetContent: {
-    alignItems: 'center',
-  },
-  swipePage: {
-    width: SCREEN_WIDTH,
-    height: SWIPE_PAGE_HEIGHT + SWIPE_WIDGET_PADDING_TOP + SWIPE_WIDGET_EXTRA_HEIGHT,
-    paddingTop: SWIPE_WIDGET_PADDING_TOP,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-  },
-  mainMenuButtonWrap: {
-    alignSelf: 'center',
-    marginBottom: MAIN_MENU_BUTTON_GAP,
-  },
   mainMenuButton: {
     width: BUTTON_WIDTH,
     height: MAIN_MENU_BUTTON_HEIGHT,
@@ -1233,30 +1150,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
     color: '#C6C6C6',
     textAlign: 'center',
-  },
-  progressCard: {
-    width: PROGRESS_CARD_WIDTH,
-    height: PROGRESS_CARD_HEIGHT,
-    alignSelf: 'center',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 0,
-    marginVertical: 0,
-  },
-  swipeDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  swipeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primaryLight + '40',
-  },
-  swipeDotActive: {
-    backgroundColor: Colors.primaryLight,
   },
   achievementsStack: {
     flexDirection: 'column',
@@ -1289,167 +1182,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  // (old exercise/set/timer styles removed – replaced by Hevy-style components above)
-  // ─── HEVY-STYLE MODAL ──────────────────────────────────────────────────────
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.primaryDark,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: Spacing.lg,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  modalTitle: {
-    fontSize: Typography.h2,
-    fontWeight: '600',
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
-  },
-  modalCloseButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.primaryLight + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCloseText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.primaryLight + '80',
-    letterSpacing: -0.11,
-  },
-  historyStatsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: Spacing.md,
-  },
-  historyStatPill: {
-    flex: 1,
-    backgroundColor: Colors.primaryLight + '0A',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  historyStatValue: {
-    fontSize: 22,
-    fontWeight: '800' as const,
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
-  },
-  historyStatLabel: {
-    fontSize: Typography.label,
-    fontWeight: '500',
-    color: Colors.primaryLight + '50',
-    letterSpacing: -0.11,
-    textTransform: 'uppercase' as const,
-    marginTop: 2,
-  },
-  historyList: {
-    maxHeight: 500,
-  },
-  historyEmpty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  historyEmptyIcon: {
-    fontSize: 28,
-    color: Colors.primaryLight + '30',
-    marginBottom: 10,
-  },
-  historyEmptyText: {
-    fontSize: Typography.body,
-    fontWeight: '500',
-    color: Colors.primaryLight + '60',
-    letterSpacing: -0.11,
-    marginBottom: 4,
-  },
-  historyEmptySubtext: {
-    fontSize: Typography.label,
-    fontWeight: '500',
-    color: Colors.primaryLight + '40',
-    letterSpacing: -0.11,
-  },
-  historySessionCard: {
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '12',
-    padding: 14,
-    marginBottom: 10,
-  },
-  historySessionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  historySessionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.primaryLight + '15',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  historySessionIconText: {
-    fontSize: 14,
-    color: Colors.primaryLight + '80',
-  },
-  historySessionTitleCol: {
-    flex: 1,
-  },
-  historySessionName: {
-    fontSize: Typography.body,
-    fontWeight: '500',
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
-  },
-  historySessionDate: {
-    fontSize: Typography.label,
-    fontWeight: '500',
-    color: Colors.primaryLight + '50',
-    letterSpacing: -0.11,
-    marginTop: 1,
-  },
-  historySessionStats: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  historySessionStatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.primaryLight + '0A',
-    borderRadius: 10,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  historySessionStatIcon: {
-    fontSize: 11,
-    color: Colors.primaryLight + '50',
-  },
-  historySessionStatText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.primaryLight + '70',
-    letterSpacing: -0.11,
-  },
-  // (old split selection styles removed)
+  // (history modal styles moved to WorkoutProgressWidget)
   // ─── HEVY-STYLE LOG WORKOUT LAYOUT ──────────────────────────────────────────
   logTopBar: {
     flexDirection: 'row',
@@ -1469,11 +1202,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logBackArrow: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
+  minimizeIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   logTimer: {
     fontSize: 13,
@@ -1673,6 +1408,58 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     ...Shadows.card,
   },
+  restTimeEditCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    ...Shadows.card,
+  },
+  restTimeEditTitle: {
+    fontSize: Typography.h2,
+    fontWeight: '600',
+    marginBottom: Spacing.md,
+  },
+  restTimeEditDisplay: {
+    fontSize: 28,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  restTimeEditSliders: {
+    marginBottom: Spacing.md,
+  },
+  restTimeEditLabel: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  restTimeSlider: {
+    width: '100%',
+    height: 40,
+  },
+  restTimeEditValue: {
+    fontSize: Typography.body,
+    marginTop: 2,
+  },
+  restTimeEditButtons: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  restTimeEditButton: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+  },
+  restTimeEditButtonPrimary: {},
+  restTimeEditButtonText: {
+    fontSize: Typography.body,
+    fontWeight: '600',
+  },
+  restTimeEditButtonTextPrimary: {},
   exerciseMenuTitle: {
     fontFamily: Font.semiBold,
     fontSize: Typography.h2,
@@ -1704,17 +1491,20 @@ const styles = StyleSheet.create({
   },
   restTimerBadge: {
     alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.primaryLight + '10',
     borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     marginBottom: 8,
   },
   restTimerBadgeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: Colors.primaryLight + '80',
     letterSpacing: -0.11,
+    textAlign: 'center',
   },
   notesPlaceholder: {
     fontSize: 12,

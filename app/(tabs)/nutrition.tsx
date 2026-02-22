@@ -1081,7 +1081,7 @@ export default function NutritionScreen({
         {/* Background: picture + bottom gradient to black only */}
         <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
           <ImageBackground
-            source={require('../../assets/home-bg.png')}
+            source={require('../../assets/home-background.png')}
             style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, position: 'absolute', top: 0, left: 0 }}
             resizeMode="cover"
           >
