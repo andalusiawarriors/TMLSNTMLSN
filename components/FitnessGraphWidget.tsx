@@ -55,6 +55,7 @@ const CHART_HEIGHT = 210;
 const BAR_GAP = 4;
 const WEEK_GAP = 8;
 const MIN_BAR_WIDTH = 8;
+const MIN_BAR_HEIGHT = 6; // minimum visible height when value > 0
 const MAX_BAR_WIDTH_ALL_TIME = 32;
 const VALUE_SECTION_HEIGHT = 48;
 const BUBBLES_ROW_HEIGHT = 52;
@@ -681,7 +682,8 @@ export function FitnessGraphWidget() {
                   yearlyData.map((yearData, i) => {
                     const value = getValueYear(yearData);
                     const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    const barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
                     const marginRight = i < yearlyData.length - 1 ? BAR_GAP : 0;
                     return (
                       <Pressable
@@ -711,7 +713,8 @@ export function FitnessGraphWidget() {
                   monthlyData.map((monthData, i) => {
                     const value = getValueMonth(monthData);
                     const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    const barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
                     const marginRight = i < 11 ? BAR_GAP : 0;
                     return (
                       <Pressable
@@ -741,7 +744,8 @@ export function FitnessGraphWidget() {
                   dayDataInRange.map(({ date, data }, i) => {
                     const value = getValue(data);
                     const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    const barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
                     const isSelected = selectedDay && data && isSameDay(data.date, selectedDay.date);
                     const marginRight = i < dayDataInRange.length - 1
                       ? BAR_GAP + ((i + 1) % 7 === 0 ? WEEK_GAP : 0)
