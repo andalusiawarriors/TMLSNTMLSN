@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,11 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../constants/theme';
+import { AuthModal } from './AuthModal';
 
 const ACCENT_GOLD = '#D4B896';
 const ACCENT_GOLD_DARK = '#A8895E';
@@ -73,23 +73,18 @@ function Row({
 }
 
 function SectionHeader({ label }: { label: string }) {
-  return (
-    <MaskedView
-      maskElement={<Text style={[styles.sectionHeader, { backgroundColor: 'transparent' }]}>{label}</Text>}
-    >
-      <LinearGradient colors={ACCENT_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-        <Text style={[styles.sectionHeader, { opacity: 0 }]}>{label}</Text>
-      </LinearGradient>
-    </MaskedView>
-  );
+  return <Text style={[styles.sectionHeader, { color: ACCENT_GOLD }]}>{label}</Text>;
 }
 
 function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
+const noOpAuth = async (_email: string, _password: string) => ({ error: null as Error | null });
+
 export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
+  const [showAuthModal, setShowAuthModal] = useState(false);
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 
@@ -107,11 +102,15 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
           contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16, paddingBottom: scrollBottomPad }]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.profileHeader}>
-            <Text style={[styles.profileTitle, { textAlign: 'center' }]}>profile</Text>
+          <View style={styles.closeRow}>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name="close" size={18} color={ICON_COLOR} />
+            </TouchableOpacity>
           </View>
-
-          <Pressable style={styles.profileRowCard}>
+          <Pressable
+            style={styles.profileRowCard}
+            onPress={() => setShowAuthModal(true)}
+          >
               <View style={styles.avatarRing}>
                 <LinearGradient colors={ACCENT_GRADIENT} style={[StyleSheet.absoluteFill, { borderRadius: (AVATAR_SIZE + 4) / 2 }]} />
                 <View style={styles.avatar}>
@@ -119,21 +118,25 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
                 </View>
               </View>
               <View style={styles.profileRowText}>
-                <Text style={styles.profileRowMain}>Tap to set name</Text>
-                <Text style={styles.profileRowSub}>and username</Text>
+                <Text style={styles.profileRowMain}>Log in / Create account</Text>
+                <Text style={styles.profileRowSub}>Sign in to sync your data across devices</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
             </Pressable>
 
+            <AuthModal
+              visible={showAuthModal}
+              onClose={() => setShowAuthModal(false)}
+              onSignUp={noOpAuth}
+              onSignIn={noOpAuth}
+            />
+
             <SectionHeader label="Invite Friends" />
             <Pressable style={styles.inviteCard}>
               <View style={[styles.row, styles.referRow]}>
-                <MaskedView
-                  style={styles.referIconWrap}
-                  maskElement={<Ionicons name="person-add-outline" size={ICON_SIZE} color="black" />}
-                >
-                  <LinearGradient colors={ACCENT_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-                </MaskedView>
+                <View style={styles.referIconWrap}>
+                  <Ionicons name="person-add-outline" size={ICON_SIZE} color={ACCENT_GOLD} />
+                </View>
                 <View style={[styles.rowTextWrap, styles.referRowText]}>
                   <Text style={styles.rowLabel}>Refer a friend and earn $10</Text>
                   <Text style={styles.rowSubtitle}>Earn $10 per friend that signs up with your promo code.</Text>
@@ -179,44 +182,11 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
 
             <SectionHeader label="Account Actions" />
             <Card>
-              <Row icon="log-out-outline" label="Logout" last={false} onPress={() => {}} />
               <Row icon="person-remove-outline" label="Delete Account" last onPress={() => {}} />
             </Card>
 
             <View style={{ height: Spacing.xxl }} />
           </ScrollView>
-
-        {/* Exit button overlaid on top, fixed position (same as Firestreak popup) */}
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            paddingTop: insets.top + 8,
-            paddingHorizontal: Spacing.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            zIndex: 100,
-            elevation: 100,
-            pointerEvents: 'box-none',
-          }}
-        >
-          <TouchableOpacity
-            onPress={onClose}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 16,
-              backgroundColor: 'rgba(40,40,40,1)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-        </View>
       </View>
     </View>
   );
@@ -246,6 +216,19 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.xxl,
+  },
+  closeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(40,40,40,1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileTitle: {
     fontSize: Typography.h2,

@@ -29,7 +29,7 @@
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none)*     | —                 | —                         | —               | —       |
 
-*Previously: Rest pill edit (wider, pressable, slider modal) from session; empty → "Workout"*
+*Previously: Profile Fitness – fixed layout shift when tapping pillar (VALUE_SECTION_HEIGHT, BUBBLES_ROW_HEIGHT)*
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -39,6 +39,10 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- Supabase auth: `lib/supabase.ts`, `context/AuthContext.tsx`, `components/AuthModal.tsx`, `components/ProfileSheet.tsx`, `utils/storage.ts`, `utils/supabaseStorage.ts`, `constants/storageDefaults.ts`, `supabase/migrations/001_user_data.sql`, `app/_layout.tsx`, `.env.local.example` – login/create account in profile, per-account cloud storage
+- `components/FitnessGraphWidget.tsx` – fixed layout shift: valueSection minHeight 48px, bubblesRow minHeight 52px so chart stays fixed when tapping pillar or switching metric
+- `app/(tabs)/(profile)/index.tsx` – Fitness: hide title/subtitle when Fitness selected; reduced top padding; FitnessGraphWidget first, then progress + statistics cards
+- `components/FitnessGraphWidget.tsx` – Month/Year/All time buttons with down arrow; Month = daily bars for selected month (dropdown: Jan–Dec); Year = 12 months for selected year (dropdown: years that have started only); All time; animated dropdowns (FadeInDown/FadeOutUp)
 - `app/(tabs)/workout/index.tsx` – Rest pill: wider/higher, bigger font, centered, pressable; rest time edit modal with minutes/seconds sliders
 - `components/ActiveWorkoutPill.tsx` – display workout name (TMLSN split / My Routines / empty → "Workout")
 - `app/start-empty-workout-modal.tsx`, `app/(tabs)/workout/index.tsx` – empty workout name: "Workout"

@@ -1,0 +1,23 @@
+---
+description: Do not change the fitness graph Y/X axis corner layout
+globs: components/FitnessGraphWidget.tsx
+alwaysApply: false
+---
+
+# Fitness graph — Y/X axis corner (fixed)
+
+The fitness chart Y-axis and X-axis are laid out so they meet in a **perfect corner**. Do not change this structure unless the user explicitly asks.
+
+## Layout that must stay
+
+1. **Left column** (`chartLeftColumn`): Y-axis area height = `BAR_AREA_HEIGHT` (209px), then a 1px spacer (`xAxisSpacer`) below it.
+2. **Right column** (`chartRightColumn`): Bar area height = `BAR_AREA_HEIGHT`, then a dedicated 1px row for the X-axis line (`xAxisLineRow`), then the month labels (`xAxisRow`).
+3. **Corner**: The Y-axis ends at the top of the spacer row; the X-axis line sits in that same row on the right. No overlap, no gap.
+
+## Do not change
+
+- Do not put the X-axis line back inside `barsBlockWrap` or `barsContainer`.
+- Do not make the Y-axis extend into the X-axis row (no `bottom: 0` on the Y-axis line that would stretch past the bar area).
+- Do not remove `chartLeftColumn` / `chartRightColumn` or the `xAxisSpacer` / `xAxisLineRow` structure.
+
+Only adjust this layout if the user explicitly requests a change to the axis or corner.

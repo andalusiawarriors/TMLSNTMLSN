@@ -2,12 +2,13 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors, Typography, Spacing } from '../../../constants/theme';
+import { Spacing } from '../../../constants/theme';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { PillSegmentedControl, type SegmentValue } from '../../../components/PillSegmentedControl';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
 import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
 import { WorkoutProgressWidget } from '../../../components/WorkoutProgressWidget';
+import { FitnessGraphWidget } from '../../../components/FitnessGraphWidget';
 
 const SEGMENT_CONTROL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
@@ -27,13 +28,10 @@ export default function ProfileScreen() {
       <HomeGradientBackground />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 52 }]}
+        contentContainerStyle={[styles.container, { paddingTop: insets.top + Spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
       <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-        <Text style={styles.title}>progress.</Text>
-      </AnimatedFadeInUp>
-      <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
         <View style={styles.toggleWrap}>
           <PillSegmentedControl
             value={progressSegment}
@@ -42,13 +40,11 @@ export default function ProfileScreen() {
           />
         </View>
       </AnimatedFadeInUp>
-      <AnimatedFadeInUp delay={100} duration={380} trigger={animTrigger}>
-        <Text style={styles.subtitle}>your account and settings</Text>
-      </AnimatedFadeInUp>
-      <AnimatedFadeInUp delay={150} duration={380} trigger={animTrigger}>
+      <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
         <View style={styles.progressSection}>
           {progressSegment === 'Fitness' && (
             <>
+              <FitnessGraphWidget />
               <WorkoutProgressWidget />
               <StatisticsButtonWidget />
             </>
@@ -84,18 +80,5 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xl,
     alignSelf: 'stretch',
     alignItems: 'center',
-  },
-  title: {
-    fontSize: Typography.h2,
-    fontWeight: '600',
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
-  },
-  subtitle: {
-    fontSize: Typography.label,
-    color: Colors.primaryLight,
-    opacity: 0.8,
-    marginTop: Spacing.sm,
-    letterSpacing: -0.1,
   },
 });

@@ -142,6 +142,7 @@ export default function NutritionScreen({
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
+  const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
   // Reset page when switching segment
   useEffect(() => {
@@ -309,6 +310,9 @@ export default function NutritionScreen({
     const setRecords = workoutsToSetRecords(allSessions, weekStart);
     const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
     setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
+    // Calendar: which days have at least one workout (local date YYYY-MM-DD)
+    const dateKeys = [...new Set(allSessions.map((s) => toDateString(new Date(s.date))))];
+    setWorkoutDateKeys(dateKeys);
   }, [viewingDate]);
 
   const loadDataRef = useRef(loadData);
@@ -1286,7 +1290,19 @@ export default function NutritionScreen({
             <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
           </Pressable>
         </View>
-        <AnimatedFadeInUp delay={40} duration={200} trigger={animTrigger}>
+        <AnimatedFadeInUp
+          delay={40}
+          duration={200}
+          trigger={animTrigger}
+          style={{
+            marginTop: Spacing.lg,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 6,
+            ...(Platform.OS === 'android' && { elevation: 2 }),
+          }}
+        >
         {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
         {homeSegment === 'Fitness' ? (
           <Animated.View
@@ -1909,6 +1925,7 @@ export default function NutritionScreen({
           handleSelectDate(toDateString(date));
           setShowCalendar(false);
         }}
+        workoutDateKeys={workoutDateKeys}
       />
       </>
       )}

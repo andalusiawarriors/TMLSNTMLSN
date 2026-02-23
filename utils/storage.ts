@@ -1,7 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine, SavedFood } from '../types';
+import { isSupabaseConfigured } from '../lib/supabase';
+import * as supabaseStorage from './supabaseStorage';
+import { DEFAULT_GOALS, DEFAULT_SETTINGS } from '../constants/storageDefaults';
 
-// Storage Keys
+// Current user ID for Supabase-backed storage (set by AuthContext on login/logout)
+let _storageUserId: string | null = null;
+
+export function setStorageUserId(userId: string | null): void {
+  _storageUserId = userId;
+}
+
+export function getStorageUserId(): string | null {
+  return _storageUserId;
+}
+
+// Storage Keys (used when not logged in)
 const KEYS = {
   NUTRITION_LOGS: '@tmlsn/nutrition_logs',
   WORKOUT_SESSIONS: '@tmlsn/workout_sessions',
@@ -12,27 +26,20 @@ const KEYS = {
   SAVED_FOODS: '@tmlsn/saved_foods',
 };
 
-// Default Values
-export const DEFAULT_GOALS: DailyGoals = {
-  calories: 2500,
-  protein: 150,
-  carbs: 250,
-  fat: 80,
-  water: 128, // oz
-};
-
-export const DEFAULT_SETTINGS: UserSettings = {
-  dailyGoals: DEFAULT_GOALS,
-  weightUnit: 'lb',
-  volumeUnit: 'oz',
-  notificationsEnabled: true,
-  restTimerSound: true,
-  defaultRestTimer: 120,
-  defaultRestTimerEnabled: true,
-};
+export { DEFAULT_GOALS, DEFAULT_SETTINGS };
 
 // Nutrition Storage Functions
 export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveNutritionLog(uid, log);
+      return;
+    } catch (error) {
+      console.error('Error saving nutrition log:', error);
+      throw error;
+    }
+  }
   try {
     const existingLogs = await getNutritionLogs();
     const updatedLogs = existingLogs.filter(l => l.date !== log.date);
@@ -45,6 +52,10 @@ export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
 };
 
 export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetNutritionLogs(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.NUTRITION_LOGS);
     return data ? JSON.parse(data) : [];
@@ -77,6 +88,16 @@ export const getNutritionLogByDate = async (dateString: string): Promise<Nutriti
 
 // Workout Storage Functions
 export const saveWorkoutSession = async (session: WorkoutSession): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
+      return;
+    } catch (error) {
+      console.error('Error saving workout session:', error);
+      throw error;
+    }
+  }
   try {
     const existingSessions = await getWorkoutSessions();
     const updatedSessions = [...existingSessions, session];
@@ -88,6 +109,10 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
 };
 
 export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetWorkoutSessions(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.WORKOUT_SESSIONS);
     return data ? JSON.parse(data) : [];
@@ -111,6 +136,10 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
 
 // Saved Routines (templates for My Routines)
 export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetSavedRoutines(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.SAVED_ROUTINES);
     return data ? JSON.parse(data) : [];
@@ -121,6 +150,16 @@ export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
 };
 
 export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveSavedRoutine(uid, routine);
+      return;
+    } catch (error) {
+      console.error('Error saving routine:', error);
+      throw error;
+    }
+  }
   try {
     const routines = await getSavedRoutines();
     const updated = routines.filter((r) => r.id !== routine.id);
@@ -134,6 +173,10 @@ export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => 
 
 // Saved Foods Storage Functions
 export const getSavedFoods = async (): Promise<SavedFood[]> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetSavedFoods(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.SAVED_FOODS);
     const foods: SavedFood[] = data ? JSON.parse(data) : [];
@@ -145,6 +188,16 @@ export const getSavedFoods = async (): Promise<SavedFood[]> => {
 };
 
 export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'useCount'>): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveSavedFood(uid, food);
+      return;
+    } catch (error) {
+      console.error('Error saving food:', error);
+    }
+    return;
+  }
   try {
     const foods = await getSavedFoods();
     const normalised = food.name.trim().toLowerCase();
@@ -173,6 +226,16 @@ export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'u
 
 // Prompt Storage Functions
 export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSavePrompts(uid, prompts);
+      return;
+    } catch (error) {
+      console.error('Error saving prompts:', error);
+      throw error;
+    }
+  }
   try {
     await AsyncStorage.setItem(KEYS.PROMPTS, JSON.stringify(prompts));
   } catch (error) {
@@ -182,6 +245,10 @@ export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
 };
 
 export const getPrompts = async (): Promise<Prompt[]> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetPrompts(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.PROMPTS);
     return data ? JSON.parse(data) : [];
@@ -193,6 +260,16 @@ export const getPrompts = async (): Promise<Prompt[]> => {
 
 // Settings Storage Functions
 export const saveUserSettings = async (settings: UserSettings): Promise<void> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveUserSettings(uid, settings);
+      return;
+    } catch (error) {
+      console.error('Error saving user settings:', error);
+      throw error;
+    }
+  }
   try {
     await AsyncStorage.setItem(KEYS.USER_SETTINGS, JSON.stringify(settings));
   } catch (error) {
@@ -202,6 +279,10 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
 };
 
 export const getUserSettings = async (): Promise<UserSettings> => {
+  const uid = getStorageUserId();
+  if (uid && isSupabaseConfigured()) {
+    return supabaseStorage.supabaseGetUserSettings(uid);
+  }
   try {
     const data = await AsyncStorage.getItem(KEYS.USER_SETTINGS);
     return data ? JSON.parse(data) : DEFAULT_SETTINGS;

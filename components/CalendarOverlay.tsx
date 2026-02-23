@@ -72,6 +72,8 @@ export type CalendarOverlayProps = {
   onClose: () => void;
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
+  /** Date strings YYYY-MM-DD (local) for days that have at least one workout */
+  workoutDateKeys?: string[];
 };
 
 // Week starts Monday (0 = Monday, 6 = Sunday)
@@ -108,13 +110,14 @@ type YearItem = { type: 'year'; year: number; index: number };
 const TOGGLE_HEIGHT = 30;
 const MONTH_GAP = 12;
 
-export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }: CalendarOverlayProps) {
+export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate, workoutDateKeys }: CalendarOverlayProps) {
   const [calendarMode, setCalendarMode] = useState<'Month' | 'Year'>('Month');
   const monthListRef = useRef<FlatList<MonthItem>>(null);
   const yearListRef = useRef<FlatList<YearItem>>(null);
 
   const today = useMemo(() => new Date(), []);
   const selectedDateStr = toDateString(selectedDate);
+  const workoutSet = useMemo(() => new Set(workoutDateKeys ?? []), [workoutDateKeys]);
 
   const headerTop = 54; // Match home screen profile pic distance from top
   const HEADER_ROW_HEIGHT = 40;
@@ -300,8 +303,10 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }
                 {row.map((day, di) => {
                   if (day === null) return <View key={di} style={styles.monthDateCell} />;
                   const cellDate = setDate(date, day);
-                  const isSelected = toDateString(cellDate) === selectedDateStr;
+                  const cellDateStr = toDateString(cellDate);
+                  const isSelected = cellDateStr === selectedDateStr;
                   const isTodayDate = isToday(cellDate);
+                  const hasWorkout = workoutSet.has(cellDateStr);
 
                   return (
                     <Pressable
@@ -320,6 +325,7 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }
                           >
                             <Text style={styles.monthDateCellTextTodayGold}>{day}</Text>
                           </LinearGradient>
+                          {hasWorkout && <View style={styles.workoutDot} />}
                         </View>
                       ) : (
                         <View
@@ -336,6 +342,7 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }
                           >
                             {day}
                           </Text>
+                          {hasWorkout && <View style={styles.workoutDot} />}
                         </View>
                       )}
                     </Pressable>
@@ -348,7 +355,7 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate }
         </View>
       );
     },
-    [selectedDateStr, handleDatePress, today, MONTH_CARD_HEIGHT]
+    [selectedDateStr, handleDatePress, today, MONTH_CARD_HEIGHT, workoutSet]
   );
 
   const renderYearCard: ListRenderItem<YearItem> = useCallback(
@@ -696,6 +703,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   monthDateCellInner: {
+    position: 'relative',
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -715,6 +723,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   monthDateCellTodayWrapper: {
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -730,6 +739,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: Colors.primaryDark,
+  },
+  workoutDot: {
+    position: 'absolute',
+    bottom: 2,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#c6c6c6',
   },
   todayLabel: {
     fontSize: 9,
