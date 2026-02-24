@@ -14,6 +14,19 @@ const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY ?? 'DEMO_KEY'; // USDA Food
 const USDA_FETCH_TIMEOUT_MS = 15_000;
 const OFF_FETCH_TIMEOUT_MS = 15_000;
 
+/** Common queries to preload Foundation (TMLSN Basics) foods for instant display. */
+const PRELOAD_QUERIES = [
+  'chicken', 'rice', 'egg', 'bread', 'milk', 'banana', 'oats',
+  'potato', 'beef', 'salmon', 'yogurt', 'cheese', 'pasta', 'apple',
+  'butter', 'avocado', 'broccoli', 'turkey', 'tuna', 'spinach',
+];
+const preloadCache = new Map<string, ParsedNutrition[]>();
+
+function getPreloadedResults(query: string): ParsedNutrition[] {
+  const key = query.trim().toLowerCase();
+  return preloadCache.get(key) ?? [];
+}
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -442,12 +455,23 @@ async function fetchUSDA(url: string, body: object, externalSignal?: AbortSignal
   }
 }
 
-async function searchFoodsUSDA(query: string, pageSize: number, page = 1, signal?: AbortSignal): Promise<ParsedNutrition[]> {
+async function searchFoodsUSDA(
+  query: string,
+  pageSize: number,
+  page = 1,
+  signal?: AbortSignal,
+  dataType?: string[],
+): Promise<ParsedNutrition[]> {
   const q = query.trim();
   if (!q) return [];
 
   const url = `${USDA_BASE}/foods/search?api_key=${API_KEY}`;
-  const body = { query: q, pageSize, pageNumber: page };
+  const body: { query: string; pageSize: number; pageNumber: number; dataType?: string[] } = {
+    query: q,
+    pageSize,
+    pageNumber: page,
+  };
+  if (dataType && dataType.length > 0) body.dataType = dataType;
 
   try {
     const res = await fetchUSDA(url, body, signal);
@@ -490,16 +514,17 @@ function nameMatchesQuery(item: ParsedNutrition, query: string): boolean {
   });
 }
 
+/** TMLSN Basics = USDA, no brand, Foundation only. Sort those to top. */
 function sortBasicsFirst(items: ParsedNutrition[]): ParsedNutrition[] {
   return [...items].sort((a, b) => {
     const aIsBasic =
       a.source === 'usda' &&
       (!a.brand || a.brand.trim() === '') &&
-      (a.dataType === 'Foundation' || a.dataType === 'SR Legacy' || a.dataType === 'Survey (FNDDS)');
+      a.dataType === 'Foundation';
     const bIsBasic =
       b.source === 'usda' &&
       (!b.brand || b.brand.trim() === '') &&
-      (b.dataType === 'Foundation' || b.dataType === 'SR Legacy' || b.dataType === 'Survey (FNDDS)');
+      b.dataType === 'Foundation';
     if (aIsBasic && !bIsBasic) return -1;
     if (!aIsBasic && bIsBasic) return 1;
     return 0;
@@ -561,31 +586,45 @@ export async function searchFoodsProgressive(
     return;
   }
 
+  const trimmed = query.trim();
   const half = Math.ceil(pageSize / 2);
 
-  const usdaPromise = searchFoodsUSDA(query, half).catch(() => [] as ParsedNutrition[]);
-  const offPromise = searchFoodsOFF(query, half, 1, signal).catch(() => [] as ParsedNutrition[]);
+  // Show preloaded Foundation (TMLSN Basics) immediately if we have them
+  const preloaded = getPreloadedResults(trimmed);
+  if (preloaded.length > 0) {
+    onResults(filterResults(sortBasicsFirst(preloaded)));
+  }
 
-  // Emit USDA as soon as it arrives (don't wait for OFF)
-  usdaPromise.then((results) => {
-    const matched = results.filter((f) => nameMatchesQuery(f, query));
-    if (matched.length > 0) {
-      onResults(filterResults(sortBasicsFirst(matched)));
-    }
-  });
+  // Fetch Foundation first, then general USDA; merge with Foundation on top
+  const usdaFoundationPromise = searchFoodsUSDA(trimmed, half, 1, signal, ['Foundation']).catch(() => [] as ParsedNutrition[]);
+  const usdaAllPromise = searchFoodsUSDA(trimmed, half, 1, signal).catch(() => [] as ParsedNutrition[]);
+  const offPromise = searchFoodsOFF(trimmed, half, 1, signal).catch(() => [] as ParsedNutrition[]);
 
-  // Wait for both to finish
-  const [usdaRes, offRes] = await Promise.allSettled([usdaPromise, offPromise]);
-  const usda = usdaRes.status === 'fulfilled' ? usdaRes.value : [];
+  const [foundationRes, usdaAllRes, offRes] = await Promise.allSettled([
+    usdaFoundationPromise,
+    usdaAllPromise,
+    offPromise,
+  ]);
+  const usdaFoundation = foundationRes.status === 'fulfilled' ? foundationRes.value : [];
+  const usdaAll = usdaAllRes.status === 'fulfilled' ? usdaAllRes.value : [];
   const off = offRes.status === 'fulfilled' ? offRes.value : [];
 
-  // Filter OFF — must match query words in the name
-  let offFiltered = off.filter((f) => nameMatchesQuery(f, query));
+  const foundationMatched = usdaFoundation.filter((f) => nameMatchesQuery(f, trimmed));
+  const usdaRest = usdaAll.filter(
+    (f) => nameMatchesQuery(f, trimmed) && !foundationMatched.some((b) => `${b.name}|${b.brand}`.toLowerCase() === `${f.name}|${f.brand}`.toLowerCase()),
+  );
+  const usda = [...foundationMatched, ...usdaRest];
 
-  // Merge + dedup
+  // Emit USDA (Foundation first) as soon as we have it
+  if (usda.length > 0) {
+    onResults(filterResults(sortBasicsFirst(usda)));
+  }
+
+  const offFiltered = off.filter((f) => nameMatchesQuery(f, trimmed));
+
   const seen = new Set<string>();
   const merged: ParsedNutrition[] = [];
-  for (const f of [...usda, ...offFiltered]) {
+  for (const f of [...preloaded, ...usda, ...offFiltered]) {
     const key = `${f.name}|${f.brand}`.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
@@ -593,17 +632,26 @@ export async function searchFoodsProgressive(
     }
   }
 
-  const matched = merged.filter((f) => nameMatchesQuery(f, query));
+  const matched = merged.filter((f) => nameMatchesQuery(f, trimmed));
   const final = filterResults(sortBasicsFirst(matched).slice(0, pageSize));
-  if (__DEV__) console.log('[Search]', query, '→', { usda: usda.length, off: off.length, offFiltered: offFiltered.length, final: final.length });
+  if (__DEV__) console.log('[Search]', trimmed, '→', { preloaded: preloaded.length, foundation: foundationMatched.length, usdaAll: usdaAll.length, off: off.length, final: final.length });
   onResults(final);
 
   // Translation phase — only for non-English queries
   const translateResult = await translateToEnglish(query).catch(() => null);
   if (translateResult && translateResult.text !== query.toLowerCase().trim()) {
     try {
-      const usdaTranslated = await searchFoodsUSDA(translateResult.text, half);
-      const transMatched = usdaTranslated.filter((f) => nameMatchesQuery(f, translateResult.text));
+      const [foundationTrans, usdaTranslated] = await Promise.all([
+        searchFoodsUSDA(translateResult.text, half, 1, undefined, ['Foundation']),
+        searchFoodsUSDA(translateResult.text, half),
+      ]);
+      const foundationTransMatched = foundationTrans.filter((f) => nameMatchesQuery(f, translateResult.text));
+      const restTrans = usdaTranslated.filter(
+        (f) =>
+          nameMatchesQuery(f, translateResult.text) &&
+          !foundationTransMatched.some((b) => `${b.name}|${b.brand}`.toLowerCase() === `${f.name}|${f.brand}`.toLowerCase()),
+      );
+      const transMatched = [...foundationTransMatched, ...restTrans];
 
       if (transMatched.length > 0 && translateResult.sourceLang && translateResult.sourceLang !== 'en') {
         const names = transMatched.map((f) => f.name);
@@ -641,9 +689,29 @@ export async function searchFoodsNextPage(
   try {
     const results = await searchFoodsUSDA(query, pageSize, page);
     const filtered = results.filter((f) => nameMatchesQuery(f, query));
-    onResults(filterResults(filtered));
+    onResults(filterResults(sortBasicsFirst(filtered)));
   } catch {
     onResults([]);
   }
+}
+
+/** Preload Foundation (TMLSN Basics) results for common queries so they show instantly when user searches. Call once on app/screen load. */
+export function preloadCommonSearches(): void {
+  PRELOAD_QUERIES.forEach((q, i) => {
+    const key = q.trim().toLowerCase();
+    if (preloadCache.has(key)) return;
+    setTimeout(() => {
+      searchFoodsUSDA(q, 10, 1, undefined, ['Foundation'])
+        .then((results) => {
+          const matched = results.filter((f) => nameMatchesQuery(f, q));
+          if (matched.length > 0) {
+            const filtered = filterResults(matched);
+            preloadCache.set(key, filtered);
+            if (__DEV__) console.log('[Preload]', q, '→', filtered.length, 'Foundation');
+          }
+        })
+        .catch(() => {});
+    }, 2000 + i * 400);
+  });
 }
 

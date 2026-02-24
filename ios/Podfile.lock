@@ -2786,7 +2786,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 90837747b018e7061eca67d45bc7e5dab93c4a06
   React-microtasksnativemodule: f86ccf2ec5f619f6df1dd06ae770c326e3eca0b8
   react-native-color-matrix-image-filters: 9f8d6360a5335e64def60aa9d0f7e2bf169197cb
-  react-native-safe-area-context: 37e680fc4cace3c0030ee46e8987d24f5d3bdab2
+  react-native-safe-area-context: 86018d5e41b7754ee7fee4057e89fa9c751586e6
   react-native-skia: 05327e7acee05e7c27b68a5da0bc80d65f5d790c
   react-native-slider: 8b9a218d1a3e526146a170cb6133be9cda23e70e
   react-native-worklets-core: 3a098cd17188379c1a0ecbdea1f7d28f70dbb2a0

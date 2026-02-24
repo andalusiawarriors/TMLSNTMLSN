@@ -74,7 +74,7 @@ import { generateId, getTodayDateString, toDateString } from '../../utils/helper
 import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, ParsedNutrition } from '../../utils/foodApi';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, preloadCommonSearches, ParsedNutrition } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
@@ -152,7 +152,23 @@ export default function NutritionScreen({
     setFitnessCardPage(0);
   }, [homeSegment]);
 
+  // Preload TMLSN Basics (Foundation) for common queries so they show and sort to top when user searches
+  const hasPreloadedRef = useRef(false);
+  useEffect(() => {
+    if (hasPreloadedRef.current) return;
+    hasPreloadedRef.current = true;
+    preloadCommonSearches();
+  }, []);
+
   const viewingDateAsDate = useMemo(() => new Date(viewingDate + 'T12:00:00'), [viewingDate]);
+
+  const viewingDateLog = useMemo(
+    () =>
+      todayLog && todayLog.date === viewingDate
+        ? todayLog
+        : { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [] as Meal[] },
+    [todayLog, viewingDate]
+  );
 
   const cardScale = useSharedValue(1);
   const cardScaleStyle = useAnimatedStyle(() => ({
@@ -333,6 +349,7 @@ export default function NutritionScreen({
   useEffect(() => {
     if (prevViewingDateRef.current !== viewingDate) {
       prevViewingDateRef.current = viewingDate;
+      setTodayLog(null);
       loadData();
     }
   }, [viewingDate, loadData]);
@@ -1391,7 +1408,7 @@ export default function NutritionScreen({
         {(
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
-            const log = todayLog ?? { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [] as Meal[] };
+            const log = viewingDateLog;
             return (
           <View style={{ width: CAROUSEL_WIDTH }}>
             <ScrollView
@@ -1406,8 +1423,8 @@ export default function NutritionScreen({
               nestedScrollEnabled
               directionalLockEnabled
             >
-              {/* Nutrition page 0: NutritionHero (calories arc + macro bars) */}
-              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
+              {/* Nutrition page 0: NutritionHero (calories arc + macro bars) — padding so arc glow is not clipped */}
+              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center', paddingVertical: 14, overflow: 'visible' }}>
                 <NutritionHero
                   data={{
                     calories: { current: log.calories, goal: goals.calories },
@@ -1467,7 +1484,7 @@ export default function NutritionScreen({
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
                     <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', position: 'relative', ...styles.healthScoreCard }]}>
                       <Text style={styles.healthScoreTitle}>health score</Text>
-                      {(!log.meals?.length) && (
+                      {(!viewingDateLog.meals?.length) && (
                         <View style={styles.healthScoreNaWrap} pointerEvents="none">
                           <Text style={styles.healthScoreNa} numberOfLines={1}>N/A</Text>
                         </View>
@@ -1513,11 +1530,11 @@ export default function NutritionScreen({
                   },
                 ]}
               >
-                {!todayLog?.meals?.length ? (
+                {!viewingDateLog.meals?.length ? (
                   <Text style={styles.recentlyUploadedPlaceholder}>tap + to add your first meal of the day.</Text>
                 ) : (
                   <View style={styles.recentlyUploadedList}>
-                    {todayLog.meals.map((meal) => (
+                    {viewingDateLog.meals.map((meal: Meal) => (
                       <View key={meal.id} style={styles.recentlyUploadedMealRow}>
                         <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
                         <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
@@ -1962,15 +1979,16 @@ export default function NutritionScreen({
                       const isBasic =
                         item.source === 'usda' &&
                         (!item.brand || item.brand.trim() === '') &&
-                        (item.dataType === 'Foundation' || item.dataType === 'SR Legacy');
+                        item.dataType === 'Foundation';
                       const brandLabel = isBasic
                         ? 'TMLSN BASICS'
                         : (item.brand && item.brand.trim() !== '' ? item.brand : '');
                       if (brandLabel === 'TMLSN BASICS') {
-                        const TMLSN_BASICS_BADGE_SIZE = 11;
+                        const TMLSN_BASICS_BADGE_SIZE = 14;
                         return (
                           <View style={styles.foodSearchTmlsnBasicsRow}>
                             <MaskedView
+                              style={styles.foodSearchTmlsnBasicsMaskWrap}
                               maskElement={
                                 <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
                                   tmlsn basics
@@ -1987,13 +2005,12 @@ export default function NutritionScreen({
                                 </Text>
                               </LinearGradient>
                             </MaskedView>
-                            <View style={styles.foodSearchTmlsnBasicsCheckmarkWrap}>
+                            <View style={[styles.foodSearchTmlsnBasicsCheckmarkWrap, { width: TMLSN_BASICS_BADGE_SIZE, height: TMLSN_BASICS_BADGE_SIZE }]}>
                               <Image
                                 source={require('../../assets/gold_checkmark_badge.png')}
                                 style={{
                                   width: TMLSN_BASICS_BADGE_SIZE,
                                   height: TMLSN_BASICS_BADGE_SIZE,
-                                  backgroundColor: 'transparent',
                                 }}
                                 resizeMode="contain"
                               />
@@ -2812,15 +2829,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 2,
-    gap: 1,
+    gap: 4,
+  },
+  foodSearchTmlsnBasicsMaskWrap: {
+    alignSelf: 'flex-start',
   },
   foodSearchTmlsnBasicsCheckmarkWrap: {
     marginLeft: 1,
+    marginTop: -3,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
     backgroundColor: 'transparent',
-    marginTop: -3,
+  },
+  foodSearchTmlsnBasicsCheckmark: {
+    color: '#D4B896',
+    fontWeight: '700',
+    lineHeight: 14,
   },
   foodSearchName: {
     fontSize: 15,
