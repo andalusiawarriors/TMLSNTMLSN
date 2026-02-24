@@ -29,7 +29,7 @@ import {
   getSavedRoutines,
   getUserSettings,
 } from '../../../utils/storage';
-import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay } from '../../../utils/units';
+import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay, parseNumericInput } from '../../../utils/units';
 import { logStreakWorkout } from '../../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
 import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
@@ -112,6 +112,9 @@ const SET_ROW_HEIGHT = 56;
 const SET_INPUT_PILL_HEIGHT = 40;
 const SET_INPUT_MAX_WIDTH = 68;
 const SET_INPUT_MIN_WIDTH = 52;
+const SET_INPUT_BORDER_WIDTH = 1;
+const SET_INPUT_BORDER_RADIUS = 10;
+const SET_INPUT_PADDING_H = 6;
 const SET_CHECK_BUTTON_SIZE = 36;
 if (__DEV__) {
   console.log('[Workout Set Table] column flex:', SET_TABLE_FLEX, 'input maxWidth=', SET_INPUT_MAX_WIDTH);
@@ -223,6 +226,9 @@ export default function WorkoutScreen({
   const workoutScrollRef = useRef<ScrollView>(null);
   const setTableBlockYRef = useRef<Map<number, number>>(new Map());
   const setTableRowYRef = useRef<Map<string, number>>(new Map());
+  const focusedInputWrapperRef = useRef<View | null>(null);
+  /** Guard to prevent duplicate commit from blur + outside tap in same tick. */
+  const commitInProgressRef = useRef(false);
   const scrollToSetRow = useCallback((exerciseIndex: number, setIndex: number) => {
     const blockY = setTableBlockYRef.current.get(exerciseIndex);
     const rowY = setTableRowYRef.current.get(`${exerciseIndex}-${setIndex}`);
@@ -233,24 +239,11 @@ export default function WorkoutScreen({
     if (__DEV__) console.log('[Workout Keyboard] input focused row/set', exerciseIndex, setIndex);
   }, []);
 
+  /** Keyboard Done and overlay both call this; actual commit is in commitActiveFieldIfNeeded (defined after updateSet). */
+  const confirmEditingCellRef = useRef<(source: 'done' | 'outside' | 'blur') => void>(() => {});
   const confirmEditingCell = useCallback(() => {
-    if (!editingCell) return;
-    const { exerciseIndex, setIndex, field } = editingCell;
-    if (field === 'weight') {
-      const n = parseFloat(editingCellValue);
-      if (Number.isFinite(n) && n >= 0) {
-        updateSet(exerciseIndex, setIndex, { weight: fromDisplayWeight(n, weightUnit) });
-      }
-    } else {
-      const n = parseInt(editingCellValue, 10);
-      if (Number.isFinite(n) && n >= 0) {
-        updateSet(exerciseIndex, setIndex, { reps: n });
-      }
-    }
-    setEditingCell(null);
-    setEditingCellValue('');
-    Keyboard.dismiss();
-  }, [editingCell, editingCellValue, weightUnit, updateSet]);
+    confirmEditingCellRef.current('done');
+  }, []);
   useEffect(() => {
     activeWorkoutRef.current = activeWorkout;
   }, [activeWorkout]);
@@ -471,6 +464,7 @@ export default function WorkoutScreen({
     const exercise = activeWorkout.exercises[exerciseIndex];
     if (!exercise || !exercise.sets[setIndex]) return;
 
+    // Weight: updates.weight is always DISPLAY value; convert once to raw lb here.
     let weightUpdate: number | undefined;
     if (updates.weight !== undefined) {
       weightUpdate = fromDisplayWeight(updates.weight, weightUnit);
@@ -489,6 +483,43 @@ export default function WorkoutScreen({
 
     setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
   };
+
+  /** Field commit only: save typed value into set. Does NOT set completed or update top stats. */
+  const commitActiveFieldIfNeeded = useCallback((source: 'done' | 'outside' | 'blur') => {
+    if (!editingCell) return;
+    if (commitInProgressRef.current) return;
+    commitInProgressRef.current = true;
+
+    const { exerciseIndex, setIndex, field } = editingCell;
+    const exercise = activeWorkout?.exercises[exerciseIndex];
+    const set = exercise?.sets[setIndex];
+
+    if (field === 'weight') {
+      const n = parseNumericInput(editingCellValue, 'float');
+      if (n !== null) {
+        updateSet(exerciseIndex, setIndex, { weight: n });
+        if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'weight', parsed: n, source });
+      }
+    } else {
+      const n = parseNumericInput(editingCellValue, 'int');
+      if (n !== null) {
+        updateSet(exerciseIndex, setIndex, { reps: n });
+        if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'reps', parsed: n, source });
+      }
+    }
+
+    if (__DEV__) console.log('[Workout Input] end edit', { setId: set?.id, field });
+    setEditingCell(null);
+    setEditingCellValue('');
+    Keyboard.dismiss();
+    setTimeout(() => {
+      commitInProgressRef.current = false;
+    }, 0);
+  }, [editingCell, editingCellValue, weightUnit, activeWorkout, updateSet]);
+
+  useEffect(() => {
+    confirmEditingCellRef.current = commitActiveFieldIfNeeded;
+  }, [commitActiveFieldIfNeeded]);
 
   const removeSet = (exerciseIndex: number, setIndex: number) => {
     if (!activeWorkout) return;
@@ -609,12 +640,33 @@ export default function WorkoutScreen({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const totalSets = activeWorkout?.exercises.reduce((acc, ex) => acc + ex.sets.length, 0) ?? 0;
+  /** Stats from COMPLETED sets only (row checkmark). Field commit does not affect these. */
+  const completedSetsCount = activeWorkout?.exercises.reduce(
+    (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
+    0
+  ) ?? 0;
   const totalVolumeRawLb = activeWorkout?.exercises.reduce(
-    (acc, ex) => acc + ex.sets.reduce((s, set) => s + set.weight * set.reps, 0),
+    (acc, ex) =>
+      acc +
+      ex.sets.filter((s) => s.completed).reduce((s, set) => s + set.weight * set.reps, 0),
     0
   ) ?? 0;
   const totalVolumeDisplay = toDisplayVolume(totalVolumeRawLb, weightUnit);
+
+  useEffect(() => {
+    if (!activeWorkout || !__DEV__) return;
+    const completed = activeWorkout.exercises.reduce(
+      (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
+      0
+    );
+    const vol = activeWorkout.exercises.reduce(
+      (acc, ex) =>
+        acc +
+        ex.sets.filter((s) => s.completed).reduce((s, set) => s + set.weight * set.reps, 0),
+      0
+    );
+    console.log('[Workout Stats]', { completedSets: completed, totalVolumeRawLb: vol });
+  }, [activeWorkout]);
 
   const goBackToMainMenu = () => {
     setActiveWorkout(null);
@@ -739,6 +791,7 @@ export default function WorkoutScreen({
               },
             ]}
           >
+            <Pressable style={{ flex: 1 }} onPress={() => commitActiveFieldIfNeeded('outside')}>
             {/* ─── HEVY-STYLE TOP BAR ─── */}
             <AnimatedFadeInUp delay={0} duration={280} trigger={overlayTrigger} instant>
             <View style={[styles.logTopBar, { paddingVertical: 8, paddingLeft: 4, paddingRight: insets.right + 4 }]}>
@@ -788,7 +841,7 @@ export default function WorkoutScreen({
             </View>
             </AnimatedFadeInUp>
 
-            {/* ─── HEVY-STYLE SUMMARY STATS ROW ─── */}
+            {/* ─── HEVY-STYLE SUMMARY STATS ROW (committed state only; draft never affects volume/sets) ─── */}
             <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
             <View style={styles.summaryRow}>
               <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
@@ -798,7 +851,7 @@ export default function WorkoutScreen({
               </View>
               <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
                 <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
-                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{totalSets}</Text>
+                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
                 <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
               </View>
               <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
@@ -930,10 +983,7 @@ export default function WorkoutScreen({
                   const isCompleted = set.completed;
                   const rowKey = `${exerciseIndex}-${setIndex}`;
                   return (
-                    <View
-                      key={set.id}
-                      onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
-                    >
+                    <View key={set.id}>
                     <Swipeable
                       renderRightActions={() => (
                         <Pressable
@@ -949,10 +999,11 @@ export default function WorkoutScreen({
                       rightThreshold={40}
                     >
                       <View
+                        onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
                         style={[
                           styles.setRow,
                           { width: '100%', minHeight: SET_ROW_HEIGHT },
-                          isCompleted && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', marginTop: 6 },
+                          isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', marginTop: 6 },
                           pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
                         ]}
                       >
@@ -978,113 +1029,163 @@ export default function WorkoutScreen({
                           </View>
                         </View>
 
-                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight }]}>
+                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
                           <View style={styles.setCellContentCenter}>
-                          {(set.weight > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight')) ? (
-                            <Input
-                              value={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight'
-                                ? editingCellValue
-                                : formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit)}
-                              onChangeText={(text) => {
-                                if (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight') {
+                          {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
+                            <View
+                              ref={(r) => { focusedInputWrapperRef.current = r; }}
+                              onLayout={(e) => {
+                                if (!__DEV__) return;
+                                const { width, height } = e.nativeEvent.layout;
+                                console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width, height });
+                              }}
+                              style={[
+                                styles.setInputCellBase,
+                                { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                styles.setInputCellActiveVisual,
+                                { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                { overflow: 'hidden' as const },
+                              ]}
+                              collapsable={false}
+                            >
+                              <Input
+                                value={editingCellValue}
+                                onChangeText={(text) => {
                                   setEditingCellValue(text);
-                                }
-                              }}
-                              onFocus={() => {
-                                const display = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                setEditingCellValue(display);
-                                scrollToSetRow(exerciseIndex, setIndex);
-                                if (__DEV__) console.log('[Workout Set Input] focused field=weight value=', display, 'rowCompleted', isCompleted);
-                              }}
-                              onBlur={() => {
-                                const n = parseFloat(editingCellValue);
-                                if (Number.isFinite(n) && n >= 0) {
-                                  updateSet(exerciseIndex, setIndex, { weight: fromDisplayWeight(n, weightUnit) });
-                                }
-                                setEditingCell(null);
-                                setEditingCellValue('');
-                              }}
-                              onEndEditing={() => setEditingCell(null)}
-                              autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight'}
-                              keyboardType="decimal-pad"
-                              placeholder="—"
-                              multiline={false}
-                              maxLength={5}
-                              containerStyle={styles.setInputContainer}
-                              style={[styles.setInputTextVisible, { color: colors.primaryLight }]}
-                              placeholderTextColor={colors.primaryLight + '50'}
-                              selectionColor={colors.primaryLight + '60'}
-                              includeFontPadding={false}
-                              textAlignVertical="center"
-                            />
+                                  if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
+                                }}
+                                onFocus={() => {
+                                  const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
+                                  setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
+                                  setEditingCellValue(displayValue);
+                                  scrollToSetRow(exerciseIndex, setIndex);
+                                  if (__DEV__) {
+                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
+                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'weight', isActive: true });
+                                    setTimeout(() => {
+                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
+                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width: w, height: h });
+                                      });
+                                    }, 0);
+                                  }
+                                }}
+                                onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                onEndEditing={() => {}}
+                                autoFocus
+                                keyboardType="decimal-pad"
+                                placeholder="—"
+                                multiline={false}
+                                maxLength={5}
+                                containerStyle={styles.setInputCellInner}
+                                style={[
+                                  styles.setInputTextVisible,
+                                  styles.setInputFixedDimensions,
+                                  { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
+                                ]}
+                                placeholderTextColor={colors.primaryLight + '50'}
+                                selectionColor={colors.primaryLight + '60'}
+                                includeFontPadding={false}
+                                textAlignVertical="center"
+                                underlineColorAndroid="transparent"
+                              />
+                            </View>
                           ) : (
                             <Pressable
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => {
+                                const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
                                 setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                setEditingCellValue(set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '');
+                                setEditingCellValue(displayValue);
+                                if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
                               }}
                               style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={[styles.setInputPlaceholderText, { color: colors.primaryLight + '40' }]}>—</Text>
+                              <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
+                              </Text>
                             </Pressable>
                           )}
                           </View>
                         </View>
 
-                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps }]}>
+                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
                           <View style={styles.setCellContentCenter}>
-                          {(set.reps > 0 || (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps')) ? (
-                            <Input
-                              value={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps'
-                                ? editingCellValue
-                                : String(set.reps)}
-                              onChangeText={(text) => {
-                                if (editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps') {
+                          {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
+                            <View
+                              ref={(r) => { focusedInputWrapperRef.current = r; }}
+                              onLayout={(e) => {
+                                if (!__DEV__) return;
+                                const { width, height } = e.nativeEvent.layout;
+                                console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width, height });
+                              }}
+                              style={[
+                                styles.setInputCellBase,
+                                { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                styles.setInputCellActiveVisual,
+                                { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                { overflow: 'hidden' as const },
+                              ]}
+                              collapsable={false}
+                            >
+                              <Input
+                                value={editingCellValue}
+                                onChangeText={(text) => {
                                   setEditingCellValue(text);
-                                }
-                              }}
-                              onFocus={() => {
-                                const display = set.reps > 0 ? String(set.reps) : '';
-                                setEditingCellValue(display);
-                                scrollToSetRow(exerciseIndex, setIndex);
-                                if (__DEV__) console.log('[Workout Set Input] focused field=reps value=', display, 'rowCompleted', isCompleted);
-                              }}
-                              onBlur={() => {
-                                const n = parseInt(editingCellValue, 10);
-                                if (Number.isFinite(n) && n >= 0) {
-                                  updateSet(exerciseIndex, setIndex, { reps: n });
-                                }
-                                setEditingCell(null);
-                                setEditingCellValue('');
-                              }}
-                              onEndEditing={() => setEditingCell(null)}
-                              autoFocus={editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps'}
-                              keyboardType="number-pad"
-                              placeholder="—"
-                              multiline={false}
-                              maxLength={4}
-                              containerStyle={styles.setInputContainer}
-                              style={[styles.setInputTextVisible, { color: colors.primaryLight }]}
-                              placeholderTextColor={colors.primaryLight + '50'}
-                              selectionColor={colors.primaryLight + '60'}
-                              includeFontPadding={false}
-                              textAlignVertical="center"
-                            />
+                                  if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
+                                }}
+                                onFocus={() => {
+                                  const displayValue = set.reps > 0 ? String(set.reps) : '';
+                                  setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
+                                  setEditingCellValue(displayValue);
+                                  scrollToSetRow(exerciseIndex, setIndex);
+                                  if (__DEV__) {
+                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
+                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'reps', isActive: true });
+                                    setTimeout(() => {
+                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
+                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width: w, height: h });
+                                      });
+                                    }, 0);
+                                  }
+                                }}
+                                onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                onEndEditing={() => {}}
+                                autoFocus
+                                keyboardType="number-pad"
+                                placeholder="—"
+                                multiline={false}
+                                maxLength={4}
+                                containerStyle={styles.setInputCellInner}
+                                style={[
+                                  styles.setInputTextVisible,
+                                  styles.setInputFixedDimensions,
+                                  { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
+                                ]}
+                                placeholderTextColor={colors.primaryLight + '50'}
+                                selectionColor={colors.primaryLight + '60'}
+                                includeFontPadding={false}
+                                textAlignVertical="center"
+                                underlineColorAndroid="transparent"
+                              />
+                            </View>
                           ) : (
                             <Pressable
                               onPressIn={playIn}
                               onPressOut={playOut}
                               onPress={() => {
+                                const displayValue = set.reps > 0 ? String(set.reps) : '';
                                 setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                setEditingCellValue(set.reps > 0 ? String(set.reps) : '');
+                                setEditingCellValue(displayValue);
+                                if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
                               }}
                               style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Text style={[styles.setInputPlaceholderText, { color: colors.primaryLight + '40' }]}>—</Text>
+                              <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                {set.reps > 0 ? String(set.reps) : '—'}
+                              </Text>
                             </Pressable>
                           )}
                           </View>
@@ -1103,7 +1204,48 @@ export default function WorkoutScreen({
                             setPressedCheckRowKey(null);
                           }}
                           onPress={() => {
-                            updateSet(exerciseIndex, setIndex, { completed: !set.completed });
+                            const nextCompleted = !set.completed;
+                            const isEditingThisSet =
+                              editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
+                            if (isEditingThisSet && editingCell) {
+                              const { field } = editingCell;
+                              if (field === 'weight') {
+                                const n = parseNumericInput(editingCellValue, 'float');
+                                if (n !== null) {
+                                  updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
+                                  if (__DEV__) {
+                                    console.log('[Workout Field Commit]', { setId: set.id, field: 'weight', parsed: n, source: 'check' });
+                                    console.log('[Workout Set Commit]', {
+                                      setId: set.id,
+                                      completed: nextCompleted,
+                                      weightRawLb: fromDisplayWeight(n, weightUnit),
+                                      reps: set.reps,
+                                    });
+                                  }
+                                } else {
+                                  updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                  if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                }
+                              } else {
+                                const n = parseNumericInput(editingCellValue, 'int');
+                                if (n !== null) {
+                                  updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
+                                  if (__DEV__) {
+                                    console.log('[Workout Field Commit]', { setId: set.id, field: 'reps', parsed: n, source: 'check' });
+                                    console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: n });
+                                  }
+                                } else {
+                                  updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                  if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                }
+                              }
+                              setEditingCell(null);
+                              setEditingCellValue('');
+                              Keyboard.dismiss();
+                            } else {
+                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                            }
                             if (!set.completed && exercise.restTimer) {
                               startRestTimer(exercise.restTimer, setIndex, exerciseIndex);
                             }
@@ -1144,6 +1286,7 @@ export default function WorkoutScreen({
               </AnimatedPressable>
               </AnimatedFadeInUp>
             ) : null}
+            </Pressable>
           </ScrollView>
           </KeyboardAvoidingView>
           {/* Confirm pill above keyboard — same bubble UI as profile sheet / tab bar pills */}
@@ -1885,16 +2028,49 @@ const styles = StyleSheet.create({
   setCellDimCompleted: {
     color: Colors.primaryLight + '70',
   },
-  setInputContainer: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
+  /** All sizing/layout for set row input cell – shared by wrapper and inner. No colors. */
+  setInputCellBase: {
     marginBottom: 0,
     minHeight: SET_INPUT_PILL_HEIGHT,
     height: SET_INPUT_PILL_HEIGHT,
+    maxHeight: SET_INPUT_PILL_HEIGHT,
     width: '84%',
     maxWidth: SET_INPUT_MAX_WIDTH,
     minWidth: SET_INPUT_MIN_WIDTH,
-    alignSelf: 'center',
+    alignSelf: 'center' as const,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
+    borderWidth: SET_INPUT_BORDER_WIDTH,
+  },
+  /** Active state: visual only (no size change). Use with theme borderColor/backgroundColor. */
+  setInputCellActiveVisual: {
+    shadowColor: Colors.primaryLight,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 0,
+  },
+  /** Input container: same size as base, no border/background so only wrapper draws focus. */
+  setInputCellInner: {
+    marginBottom: 0,
+    minHeight: SET_INPUT_PILL_HEIGHT,
+    height: SET_INPUT_PILL_HEIGHT,
+    maxHeight: SET_INPUT_PILL_HEIGHT,
+    width: '84%',
+    maxWidth: SET_INPUT_MAX_WIDTH,
+    minWidth: SET_INPUT_MIN_WIDTH,
+    alignSelf: 'center' as const,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+  },
+  setInputFixedDimensions: {
+    height: SET_INPUT_PILL_HEIGHT,
+    minHeight: SET_INPUT_PILL_HEIGHT,
+    maxHeight: SET_INPUT_PILL_HEIGHT,
+    paddingVertical: 0,
+    paddingHorizontal: SET_INPUT_PADDING_H,
+    borderWidth: 0,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
   },
   setInputText: {
     fontSize: 15,
@@ -1915,8 +2091,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.primaryLight + '0A',
-    borderRadius: 10,
-    paddingHorizontal: 6,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
+    paddingHorizontal: SET_INPUT_PADDING_H,
   },
   setInputPlaceholderText: {
     fontSize: 15,

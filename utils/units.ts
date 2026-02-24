@@ -46,6 +46,24 @@ export function fromDisplayFluid(displayFluid: number, unit: VolumeUnit): number
   return displayFluid * FL_OZ_PER_ML;
 }
 
+/**
+ * Safe parse for numeric input (weight or reps). Handles empty string, commas, invalid.
+ * Returns null if invalid or empty.
+ */
+export function parseNumericInput(
+  raw: string,
+  mode: 'float' | 'int'
+): number | null {
+  const trimmed = raw.replace(/,/g, '').trim();
+  if (trimmed === '') return null;
+  if (mode === 'float') {
+    const n = parseFloat(trimmed);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  const n = parseInt(trimmed, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /** Format weight for display: 0 or 1 decimal as appropriate. */
 export function formatWeightDisplay(value: number, unit: WeightUnit): string {
   const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
