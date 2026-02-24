@@ -23,13 +23,6 @@ export function WorkoutProgressWidget() {
       getRecentWorkouts(),
       getUserSettings(),
     ]);
-    const totalExercises = workouts.reduce((acc, s) => acc + (s.exercises ?? []).length, 0);
-    const totalSets = workouts.reduce((acc, s) => acc + (s.exercises ?? []).reduce((a, ex) => a + (ex.sets ?? []).length, 0), 0);
-    if (__DEV__) {
-      console.log('[WorkoutProgress] sessions:', workouts.length, 'exercises:', totalExercises, 'sets:', totalSets);
-      const sample = workouts[0];
-      if (sample) console.log('[WorkoutProgress] sample:', { id: sample.id, date: sample.date, duration: sample.duration });
-    }
     setRecentWorkouts(workouts);
     setWeightUnit(settings?.weightUnit ?? 'kg');
   };

@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -84,7 +85,18 @@ function Card({ children }: { children: React.ReactNode }) {
 export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const { signUp, signIn, debugCreateTestUser } = useAuth();
+  const { user, signUp, signIn, signOut, debugCreateTestUser } = useAuth();
+
+  const handleLogOutPress = () => {
+    Alert.alert(
+      'Log out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log out', style: 'destructive', onPress: () => signOut() },
+      ]
+    );
+  };
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 
@@ -109,19 +121,25 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
           </View>
           <Pressable
             style={styles.profileRowCard}
-            onPress={() => setShowAuthModal(true)}
+            onPress={user ? undefined : () => setShowAuthModal(true)}
           >
               <View style={styles.avatarRing}>
                 <LinearGradient colors={ACCENT_GRADIENT} style={[StyleSheet.absoluteFill, { borderRadius: (AVATAR_SIZE + 4) / 2 }]} />
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarPlaceholder}>?</Text>
+                  <Text style={styles.avatarPlaceholder}>{user ? (user.email?.[0] ?? '?').toUpperCase() : '?'}</Text>
                 </View>
               </View>
               <View style={styles.profileRowText}>
-                <Text style={styles.profileRowMain}>Log in / Create account</Text>
-                <Text style={styles.profileRowSub}>Sign in to sync your data across devices</Text>
+                <Text style={styles.profileRowMain}>{user ? (user.email ?? 'Logged in') : 'Log in / Create account'}</Text>
+                <Text style={styles.profileRowSub}>{user ? 'Signed in to sync your data' : 'Sign in to sync your data across devices'}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
+              {user ? (
+                <Pressable onPress={handleLogOutPress} style={({ pressed }) => [styles.logOutButton, pressed && styles.rowPressed]}>
+                  <Text style={styles.logOutButtonText}>Log out</Text>
+                </Pressable>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
+              )}
             </Pressable>
 
             <AuthModal
@@ -356,5 +374,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: ICON_COLOR,
     marginLeft: Spacing.sm,
+  },
+  logOutButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,80,80,0.2)',
+  },
+  logOutButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff6b6b',
   },
 });

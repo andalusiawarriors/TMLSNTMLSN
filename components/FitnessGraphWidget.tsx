@@ -3,7 +3,7 @@
 // Bar chart; top-left shows selected day date + value; bubbles: Duration, Volume, Reps
 // ============================================================
 
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -182,14 +182,6 @@ function aggregateByDay(
     return true;
   });
 
-  if (__DEV__) {
-    console.log('[FitnessGraph aggregateByDay] filtered input:', {
-      original: sessions.length,
-      afterFilter: filtered.length,
-      metricType,
-    });
-  }
-
   const byDay = new Map<string, { durationMinutes: number; volumeRaw: number; reps: number }>();
   for (const s of filtered) {
     const d = getSessionDateKey(s)!;
@@ -206,10 +198,6 @@ function aggregateByDay(
       }
     }
     byDay.set(d, existing);
-  }
-  if (__DEV__) {
-    const first = Array.from(byDay.entries())[0];
-    if (first) console.log('[FitnessGraph aggregateByDay] sample bin:', first[0], first[1]);
   }
   return Array.from(byDay.entries()).map(([dateKey, v]) => {
     const volumeKg = weightUnit === 'lb' ? v.volumeRaw * LB_TO_KG : v.volumeRaw;
@@ -271,13 +259,6 @@ export function FitnessGraphWidget() {
 
   const loadSessions = useCallback(async () => {
     const [s, settings] = await Promise.all([getWorkoutSessions(), getUserSettings()]);
-    const totalExercises = s.reduce((acc, sess) => acc + (sess.exercises ?? []).length, 0);
-    const totalSets = s.reduce((acc, sess) => acc + (sess.exercises ?? []).reduce((a, ex) => a + (ex.sets ?? []).length, 0), 0);
-    if (__DEV__) {
-      console.log('[FitnessGraph] sessions:', s.length, 'exercises:', totalExercises, 'sets:', totalSets);
-      const sample = s[0];
-      if (sample) console.log('[FitnessGraph] sample:', { id: sample.id, date: sample.date, duration: sample.duration });
-    }
     setSessions(s);
     setWeightUnit(settings?.weightUnit ?? 'kg');
   }, []);
@@ -344,16 +325,6 @@ export function FitnessGraphWidget() {
         data,
       };
     });
-
-    if (__DEV__ && timeRange === 'month') {
-      console.log('[FitnessGraph chartData]', {
-        metricType: metric,
-        points: chartData.length,
-        nonZeroPoints: chartData.filter((p) => (p.data ?? 0) > 0).length,
-        sampleNonZero: chartData.find((p) => (p.data ?? 0) > 0) ?? null,
-        sampleDataType: typeof (chartData.find((p) => (p.data ?? 0) > 0)?.data),
-      });
-    }
 
     let yMax = 0;
     if (metric === 'duration') {
@@ -575,25 +546,6 @@ export function FitnessGraphWidget() {
     if (metric === 'volume') return formatVolume(y.volumeKg, weightUnit);
     return `${y.reps} reps`;
   };
-
-  useEffect(() => {
-    if (__DEV__) {
-      const period =
-        timeRange === 'month'
-          ? `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`
-          : timeRange === 'year'
-            ? String(selectedYear)
-            : 'all';
-      const points = isAllTimeView ? yearlyData.length : isYearView ? monthlyData.length : dayDataInRange.length;
-      const firstPoint =
-        isAllTimeView
-          ? yearlyData[0]
-          : isYearView
-            ? monthlyData[0]
-            : dayDataInRange[0];
-      console.log('[FitnessGraph render] metric=', metric, 'period=', period, 'points=', points, 'firstPoint=', firstPoint);
-    }
-  }, [metric, timeRange, selectedYear, selectedMonth, dayDataInRange, monthlyData, yearlyData, isAllTimeView, isYearView]);
 
   return (
     <View style={[styles.wrap, { marginBottom: Spacing.lg }]}>

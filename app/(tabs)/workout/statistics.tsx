@@ -31,16 +31,8 @@ export default function StatisticsScreen() {
       setAnimTrigger((t) => t + 1);
       const load = async () => {
         const allSessions = await getWorkoutSessions();
-        const totalExercises = allSessions.reduce((acc, s) => acc + (s.exercises ?? []).length, 0);
-        const totalSets = allSessions.reduce((acc, s) => acc + (s.exercises ?? []).reduce((a, ex) => a + (ex.sets ?? []).length, 0), 0);
-        if (__DEV__) {
-          console.log('[WorkoutStatistics heatmap] sessions:', allSessions.length, 'exercises:', totalExercises, 'sets:', totalSets);
-          const sample = allSessions[0];
-          if (sample) console.log('[WorkoutStatistics heatmap] sample:', { id: sample.id, date: sample.date, duration: sample.duration });
-        }
         const weekStart = getWeekStart();
         const setRecords = workoutsToSetRecords(allSessions, weekStart);
-        if (__DEV__) console.log('[Heatmap] setRecords count:', setRecords.length);
         setHasSetRecords(setRecords.length > 0);
         const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
         setWeeklyHeatmap(calculateHeatmap(weeklyVolume));

@@ -133,8 +133,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (supabase) await supabase.auth.signOut();
-    setStorageUserId(null);
+    if (__DEV__) console.log('[Auth] signOut pressed');
+    if (!supabase) {
+      setStorageUserId(null);
+      if (__DEV__) console.log('[Auth] signOut success');
+      Alert.alert('Logged out', 'You have been logged out');
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('[Auth] signOut error:', error);
+        Alert.alert('Log out failed', error.message);
+        return;
+      }
+      setStorageUserId(null);
+      if (__DEV__) console.log('[Auth] signOut success');
+      Alert.alert('Logged out', 'You have been logged out');
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      console.error('[Auth] signOut error:', err);
+      Alert.alert('Log out failed', err.message);
+    }
   }, []);
 
   // TEMP DEBUG: quick test signup

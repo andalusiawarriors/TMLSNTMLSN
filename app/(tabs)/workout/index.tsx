@@ -28,7 +28,7 @@ import {
 } from '../../../utils/storage';
 import { logStreakWorkout } from '../../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
-import { generateId, formatDuration } from '../../../utils/helpers';
+import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
 import { scheduleRestTimerNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
@@ -200,14 +200,16 @@ export default function WorkoutScreen({
   }, [startSplitId]);
   useEffect(() => {
     if (startRoutineId && startRoutineId !== lastProcessedRoutineId.current) {
-      getSavedRoutines().then((routines) => {
+      (async () => {
+        const [routines, settings] = await Promise.all([getSavedRoutines(), getUserSettings()]);
         const routine = routines.find((r) => r.id === startRoutineId);
         if (routine) {
           lastProcessedRoutineId.current = startRoutineId;
-          startWorkoutFromSavedRoutine(routine);
+          const defaultRestTimer = settings?.defaultRestTimer ?? 120;
+          startWorkoutFromSavedRoutine(routine, defaultRestTimer);
           router.setParams({});
         }
-      });
+      })();
     }
   }, [startRoutineId]);
 
@@ -267,14 +269,19 @@ export default function WorkoutScreen({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const startWorkoutFromSavedRoutine = (routine: SavedRoutine) => {
-    const exercises: Exercise[] = routine.exercises.map((ex) => ({
-      id: generateId(),
-      name: ex.name,
-      sets: [],
-      restTimer: ex.restTimer,
-      exerciseDbId: ex.exerciseDbId,
-    }));
+  const startWorkoutFromSavedRoutine = (routine: SavedRoutine, defaultRestTimer: number = 120) => {
+    const exercises: Exercise[] = routine.exercises.map((ex) =>
+      buildExerciseFromRoutineTemplate(ex, defaultRestTimer)
+    );
+
+    if (__DEV__) {
+      const totalTemplateSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0);
+      console.log('[Workout UI] applied routine:', {
+        routineName: routine.name,
+        exercisesCount: exercises.length,
+        totalTemplateSets,
+      });
+    }
 
     const newWorkout: WorkoutSession = {
       id: generateId(),

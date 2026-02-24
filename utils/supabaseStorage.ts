@@ -399,10 +399,7 @@ export async function supabaseGetWorkoutSessions(userId: string): Promise<Workou
     return [];
   }
   const sessionRows = sessionsData ?? [];
-  if (sessionRows.length === 0) {
-    if (__DEV__) console.log('[Supabase get] sessions fetched: 0');
-    return [];
-  }
+  if (sessionRows.length === 0) return [];
 
   const sessionIds = sessionRows.map((r) => r.id as string);
 
@@ -431,19 +428,9 @@ export async function supabaseGetWorkoutSessions(userId: string): Promise<Workou
   const exercisesBySession = groupBy(exerciseRows, 'session_id');
   const setsByExercise = groupBy(setRows, 'exercise_id');
 
-  const sessions = sessionRows.map((r) =>
+  return sessionRows.map((r) =>
     assembleWorkoutSession(r, exercisesBySession[String(r.id)] ?? [], setsByExercise)
   );
-
-  if (__DEV__) {
-    console.log('[Supabase get] sessions:', sessionRows.length, 'exercises:', exerciseRows.length, 'sets:', setRows.length);
-    const sample = sessions[0];
-    if (sample) {
-      console.log('[Supabase get] sample session:', { id: sample.id, date: sample.date, duration: sample.duration, isComplete: sample.isComplete, exercisesCount: sample.exercises.length });
-    }
-  }
-
-  return sessions;
 }
 
 export async function supabaseGetRecentWorkouts(
@@ -461,17 +448,6 @@ export async function supabaseSaveWorkoutSession(
   if (!supabase) {
     console.error('Supabase client not configured');
     throw new Error('Supabase client not configured');
-  }
-
-  if (__DEV__) {
-    console.log('[Supabase save] session summary:', {
-      id: session.id,
-      date: session.date,
-      duration: session.duration ?? 0,
-      isComplete: session.isComplete ?? false,
-      exercisesCount: session.exercises?.length ?? 0,
-    });
-    console.log('[Supabase save] exercises snapshot:', session.exercises?.map((e) => ({ id: e.id, name: e.name, exerciseDbId: e.exerciseDbId })));
   }
 
   const sessionRow = {
@@ -520,9 +496,6 @@ export async function supabaseSaveWorkoutSession(
       notes: ex.notes ?? null,
       exercise_db_id: ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? null,
     }));
-    if (__DEV__) {
-      console.log('[Supabase save] exercise row sample:', exerciseRows[0]);
-    }
     const { error: insertExError } = await supabase.from('workout_exercises').insert(exerciseRows);
     if (insertExError) {
       console.error('Supabase save workout session (insert exercises):', JSON.stringify(insertExError, null, 2));
@@ -545,9 +518,6 @@ export async function supabaseSaveWorkoutSession(
           completed: Boolean(s.completed ?? false),
         });
       }
-    }
-    if (__DEV__ && setRows.length > 0) {
-      console.log('[Supabase save] workout_sets row sample:', setRows[0]);
     }
     if (setRows.length > 0) {
       const { error: insertSetsError } = await supabase.from('workout_sets').insert(setRows);
@@ -625,11 +595,23 @@ export async function supabaseGetPrompts(userId: string): Promise<Prompt[]> {
     .select('*')
     .eq('user_id', userId);
   if (error) {
-    console.error('Supabase get prompts:', error);
+    console.error('Supabase get prompts:', JSON.stringify(error, null, 2));
     return [];
   }
-  const prompts = (data ?? []).map(mapPromptRowToPrompt);
+  const rawRows = data ?? [];
+  let prompts: Prompt[];
+  const first = rawRows[0] as Record<string, unknown> | undefined;
+  if (rawRows.length > 0 && first?.data != null && first?.full_text === undefined) {
+    prompts = parsePromptsFromJsonb(rawRows);
+  } else {
+    prompts = rawRows.map(mapPromptRowToPrompt);
+  }
   prompts.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+  if (__DEV__) {
+    console.log('[Supabase get prompts] count:', prompts.length);
+    if (rawRows[0]) console.log('[Supabase get prompts] sample row:', rawRows[0]);
+    if (prompts[0]) console.log('[Supabase get prompts] sample mapped:', { id: prompts[0].id, title: prompts[0].title });
+  }
   return prompts;
 }
 
@@ -652,9 +634,35 @@ export async function supabaseSavePrompts(userId: string, prompts: Prompt[]): Pr
   }));
   const { error } = await supabase.from('prompts').upsert(rows, { onConflict: 'user_id,id' });
   if (error) {
-    console.error('Supabase save prompts:', error);
+    console.error('Supabase save prompts:', JSON.stringify(error, null, 2));
     throw error;
   }
+  if (__DEV__) {
+    console.log('[Supabase save prompts] rows:', rows.length);
+    if (rows[0]) console.log('[Supabase save prompts] sample row:', rows[0]);
+  }
+}
+
+function parsePromptsFromJsonb(rows: Record<string, unknown>[]): Prompt[] {
+  const out: Prompt[] = [];
+  for (const row of rows) {
+    const data = row.data;
+    if (!Array.isArray(data)) continue;
+    for (const elem of data) {
+      const o = elem as Record<string, unknown>;
+      out.push({
+        id: String(o.id ?? ''),
+        title: String(o.title ?? ''),
+        summary: String(o.summary ?? ''),
+        fullText: String(o.fullText ?? o.full_text ?? ''),
+        source: String(o.source ?? ''),
+        sourceUrl: String(o.sourceUrl ?? o.source_url ?? ''),
+        dateAdded: String(o.dateAdded ?? o.date_added ?? ''),
+        category: o.category != null ? String(o.category) : undefined,
+      });
+    }
+  }
+  return out;
 }
 
 function mapPromptRowToPrompt(row: Record<string, unknown>): Prompt {
@@ -711,17 +719,48 @@ export async function supabaseSaveSavedRoutine(
   }
 }
 
+export async function supabaseDeleteSavedRoutine(
+  userId: string,
+  routineId: string
+): Promise<void> {
+  if (!supabase) {
+    console.error('Supabase client not configured');
+    throw new Error('Supabase client not configured');
+  }
+  const { error } = await supabase
+    .from('saved_routines')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', routineId);
+  if (error) {
+    console.error('Supabase delete saved routine:', error);
+    throw error;
+  }
+}
+
 function mapSavedRoutineRowToRoutine(row: Record<string, unknown>): SavedRoutine {
   const ex = row.exercises_json;
   const exercises = Array.isArray(ex)
-    ? (ex as { id?: string; name?: string; restTimer?: number; exerciseDbId?: string }[]).map(
-        (e) => ({
-          id: String(e?.id ?? ''),
-          name: String(e?.name ?? ''),
-          restTimer: Number(e?.restTimer ?? 0),
-          exerciseDbId: e?.exerciseDbId,
-        })
-      )
+    ? (
+        ex as {
+          id?: string;
+          name?: string;
+          restTimer?: number;
+          exerciseDbId?: string;
+          targetSets?: number;
+          targetReps?: number;
+          suggestedWeight?: number;
+        }[]
+      ).map((e) => ({
+        id: String(e?.id ?? ''),
+        name: String(e?.name ?? ''),
+        restTimer: Number(e?.restTimer ?? 0),
+        exerciseDbId: e?.exerciseDbId,
+        targetSets: Number(e?.targetSets ?? 3),
+        targetReps: Number(e?.targetReps ?? 8),
+        suggestedWeight:
+          e?.suggestedWeight != null && e.suggestedWeight >= 0 ? Number(e.suggestedWeight) : undefined,
+      }))
     : [];
   return {
     id: String(row.id ?? ''),

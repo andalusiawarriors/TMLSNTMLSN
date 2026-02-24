@@ -76,10 +76,20 @@ export interface WorkoutExerciseTemplate {
 }
 
 // User-created routine template (saved to My Routines)
+export interface SavedRoutineExercise {
+  id: string;
+  name: string;
+  restTimer: number;
+  exerciseDbId?: string;
+  targetSets: number;
+  targetReps: number;
+  suggestedWeight?: number;
+}
+
 export interface SavedRoutine {
   id: string;
   name: string;
-  exercises: { id: string; name: string; restTimer: number; exerciseDbId?: string }[];
+  exercises: SavedRoutineExercise[];
 }
 
 // Prompt Vault Types
