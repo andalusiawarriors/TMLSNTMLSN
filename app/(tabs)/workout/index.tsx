@@ -58,6 +58,32 @@ const formatRoutineTitle = (name: string) => {
   }
   return words.join(' ');
 };
+
+/** Build a fresh WorkoutSession payload for save (from latest state). */
+function buildCompletedWorkoutSession(w: WorkoutSession): WorkoutSession {
+  const duration = Math.round(
+    (new Date().getTime() - new Date(w.date).getTime()) / 60000
+  );
+  return {
+    id: w.id,
+    date: w.date,
+    name: w.name,
+    exercises: (w.exercises ?? []).map((ex) => ({
+      id: ex.id,
+      name: ex.name,
+      exerciseDbId: ex.exerciseDbId,
+      restTimer: ex.restTimer,
+      sets: (ex.sets ?? []).map((s) => ({
+        id: s.id,
+        weight: s.weight,
+        reps: s.reps,
+        completed: s.completed,
+      })),
+    })),
+    duration,
+    isComplete: true,
+  };
+}
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
 const PROGRESS_CARD_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
@@ -158,6 +184,10 @@ export default function WorkoutScreen({
   const lastProcessedStartEmpty = useRef(false);
   const lastProcessedSplitId = useRef<string | null>(null);
   const lastProcessedRoutineId = useRef<string | null>(null);
+  const activeWorkoutRef = useRef<WorkoutSession | null>(null);
+  useEffect(() => {
+    activeWorkoutRef.current = activeWorkout;
+  }, [activeWorkout]);
   useEffect(() => {
     if (startSplitId && startSplitId !== lastProcessedSplitId.current) {
       const split = TMLSN_SPLITS.find((s) => s.id === startSplitId);
@@ -290,6 +320,9 @@ export default function WorkoutScreen({
       restTimer: exercise.restTimer,
       exerciseDbId: exercise.exerciseDbId,
     };
+    if (__DEV__) {
+      console.log('[Workout UI] added exercise:', newExercise);
+    }
 
     setActiveWorkout({
       ...activeWorkout,
@@ -437,7 +470,8 @@ export default function WorkoutScreen({
 
   const nextExercise = () => {
     if (!activeWorkout) return;
-    
+    if (isSavingWorkout) return;
+
     if (currentExerciseIndex < activeWorkout.exercises.length - 1) {
       setCurrentExerciseIndex(currentExerciseIndex + 1);
     } else {
@@ -454,29 +488,69 @@ export default function WorkoutScreen({
   };
 
   const finishWorkout = async () => {
+    if (isSavingWorkout) return;
     if (!activeWorkout) return;
 
-    const duration = Math.round(
-      (new Date().getTime() - new Date(activeWorkout.date).getTime()) / 60000
-    );
+    setIsSavingWorkout(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const completedWorkout: WorkoutSession = {
-      ...activeWorkout,
-      duration,
-      isComplete: true,
-    };
+      const latest = activeWorkoutRef.current;
+      if (!latest) {
+        setIsSavingWorkout(false);
+        return;
+      }
 
-    await saveWorkoutSession(completedWorkout);
-    await logStreakWorkout();
+      const payload = buildCompletedWorkoutSession(latest);
+      const totalExercises = payload.exercises?.length ?? 0;
+      const totalSets = (payload.exercises ?? []).reduce((acc, ex) => acc + (ex.sets ?? []).length, 0);
+      const completedSets = (payload.exercises ?? []).reduce(
+        (acc, ex) => acc + (ex.sets ?? []).filter((s) => s.completed).length,
+        0
+      );
 
-    setActiveWorkout(null);
-    setShowExerciseEntry(false);
-    setCurrentExerciseIndex(0);
+      if (totalExercises === 0 || completedSets === 0) {
+        if (__DEV__) {
+          console.log('[Workout UI] blocked empty save:', {
+            sessionId: payload.id,
+            totalExercises,
+            totalSets,
+            completedSets,
+            duration: payload.duration,
+          });
+        }
+        Alert.alert('No workout data', 'Add at least one completed set before saving.');
+        return;
+      }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Success!', 'Workout saved successfully', [
-      { text: 'OK', onPress: () => onCloseModal?.() },
-    ]);
+      if (__DEV__) {
+        console.log('[Workout UI] save pressed');
+        console.log('[Workout UI] payload summary:', {
+          sessionId: payload.id,
+          exercisesCount: totalExercises,
+          totalSets,
+          duration: payload.duration,
+          isSavingWorkout,
+        });
+      }
+
+      await saveWorkoutSession(payload);
+      await logStreakWorkout();
+
+      setActiveWorkout(null);
+      setShowExerciseEntry(false);
+      setCurrentExerciseIndex(0);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Success!', 'Workout saved successfully', [
+        { text: 'OK', onPress: () => onCloseModal?.() },
+      ]);
+    } catch (e) {
+      if (__DEV__) console.warn('[Workout UI] save failed:', e);
+      Alert.alert('Save failed', 'Could not save workout. Try again.', [{ text: 'OK' }]);
+    } finally {
+      setIsSavingWorkout(false);
+    }
   };
 
   const formatElapsed = (sec: number) => {
@@ -513,6 +587,7 @@ export default function WorkoutScreen({
   const overlayEntranceY = useSharedValue(24);
   const overlayEntranceOpacity = useSharedValue(0);
   const [overlayTrigger, setOverlayTrigger] = useState(0);
+  const [isSavingWorkout, setIsSavingWorkout] = useState(false);
 
   useEffect(() => {
     if (activeWorkout && !minimized) {
@@ -655,15 +730,18 @@ export default function WorkoutScreen({
                 onPressIn={playIn}
                 onPressOut={playOut}
                 onPress={() =>
-                  Alert.alert(
-                    'Finish Workout',
-                    'Save this workout?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Save', onPress: finishWorkout },
-                    ]
-                  )
+                  isSavingWorkout
+                    ? undefined
+                    : Alert.alert(
+                        'Finish Workout',
+                        'Save this workout?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Save', onPress: finishWorkout },
+                        ]
+                      )
                 }
+                disabled={isSavingWorkout}
               >
                 <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
               </AnimatedPressable>
@@ -1048,6 +1126,9 @@ export default function WorkoutScreen({
                 restTimer: exercise.restTimer,
                 exerciseDbId: exercise.exerciseDbId,
               };
+              if (__DEV__) {
+                console.log('[Workout UI] added exercise (replace):', newEx);
+              }
               const updated = [...activeWorkout.exercises];
               updated[replaceExerciseIndex] = newEx;
               setActiveWorkout({ ...activeWorkout, exercises: updated });

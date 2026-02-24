@@ -59,6 +59,11 @@ function matchExerciseToDbId(name: string, exerciseDbId?: string): string | null
   return null;
 }
 
+/** Resolve exercise name to DB id for heatmap/muscle mapping when exerciseDbId is missing. */
+export function resolveExerciseDbIdFromName(name: string): string | null {
+  return matchExerciseToDbId(name);
+}
+
 /**
  * Convert completed workout sessions to SetRecords for the current week.
  * Only includes completed sets from exercises that match the DB.
@@ -70,20 +75,43 @@ export function workoutsToSetRecords(
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
   const records: SetRecord[] = [];
+  let skippedNotComplete = 0;
+  let skippedInvalidDate = 0;
+  let skippedOutOfRange = 0;
+  let skippedNoDbId = 0;
+  let skippedNoCompletedSets = 0;
 
   for (const session of sessions) {
-    if (!session.isComplete) continue;
+    if (!session.isComplete) {
+      skippedNotComplete++;
+      continue;
+    }
     const sessionDate = new Date(session.date);
-    if (sessionDate < weekStart || sessionDate >= weekEnd) continue;
+    if (Number.isNaN(sessionDate.getTime())) {
+      skippedInvalidDate++;
+      continue;
+    }
+    if (sessionDate < weekStart || sessionDate >= weekEnd) {
+      skippedOutOfRange++;
+      continue;
+    }
 
     const dayOfWeek = getDayOfWeek(sessionDate);
 
-    for (const exercise of session.exercises) {
+    for (const exercise of session.exercises ?? []) {
       const dbId = matchExerciseToDbId(exercise.name, exercise.exerciseDbId);
-      if (!dbId) continue;
+      if (!dbId) {
+        skippedNoDbId++;
+        continue;
+      }
 
-      for (const set of exercise.sets) {
-        if (!set.completed) continue;
+      const completedSets = (exercise.sets ?? []).filter((set) => set.completed);
+      if (completedSets.length === 0) {
+        skippedNoCompletedSets++;
+        continue;
+      }
+
+      for (const set of completedSets) {
         records.push({
           exerciseId: dbId,
           reps: set.reps,
@@ -93,6 +121,12 @@ export function workoutsToSetRecords(
         });
       }
     }
+  }
+
+  if (__DEV__) {
+    console.log('[workoutsToSetRecords] input:', sessions.length, 'output:', records.length);
+    console.log('[workoutsToSetRecords] skips: notComplete:', skippedNotComplete, 'invalidDate:', skippedInvalidDate, 'outOfRange:', skippedOutOfRange, 'noDbId:', skippedNoDbId, 'noCompletedSets:', skippedNoCompletedSets);
+    if (records[0]) console.log('[workoutsToSetRecords] sample:', records[0]);
   }
 
   return records;

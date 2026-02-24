@@ -34,3 +34,14 @@ export const supabase = isValid
   : null;
 
 export const isSupabaseConfigured = (): boolean => !!supabase;
+
+// Debug log on import (non-sensitive). Project ID helps confirm correct project.
+if (__DEV__) {
+  const url = supabaseUrl || '(empty)';
+  const match = url.match(/https:\/\/([a-z0-9]+)\.supabase\.co/);
+  const projectId = match ? `${match[1].slice(0, 4)}...${match[1].slice(-4)}` : '(none)';
+  const masked = match ? `https://${match[1].slice(0, 4)}....supabase.co` : url;
+  console.log(
+    `[Supabase] init: url= ${masked} projectId= ${projectId} anonKeyExists= ${!!supabaseAnonKey}`,
+  );
+}

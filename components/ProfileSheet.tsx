@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { AuthModal } from './AuthModal';
+import { useAuth } from '../context/AuthContext';
 
 const ACCENT_GOLD = '#D4B896';
 const ACCENT_GOLD_DARK = '#A8895E';
@@ -80,11 +81,10 @@ function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-const noOpAuth = async (_email: string, _password: string) => ({ error: null as Error | null });
-
 export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const { signUp, signIn, debugCreateTestUser } = useAuth();
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 
@@ -127,8 +127,9 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
             <AuthModal
               visible={showAuthModal}
               onClose={() => setShowAuthModal(false)}
-              onSignUp={noOpAuth}
-              onSignIn={noOpAuth}
+              onSignUp={signUp}
+              onSignIn={signIn}
+              onDebugTestSignup={debugCreateTestUser}
             />
 
             <SectionHeader label="Invite Friends" />

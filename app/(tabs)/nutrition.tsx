@@ -140,6 +140,7 @@ export default function NutritionScreen({
   const [fitnessCardPage, setFitnessCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
+  const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
@@ -306,12 +307,30 @@ export default function NutritionScreen({
     }
     // Weekly muscle heatmap for home carousel (last 7 days)
     const allSessions = await getWorkoutSessions();
+    const totalExercises = allSessions.reduce((acc, s) => acc + (s.exercises ?? []).length, 0);
+    const totalSets = allSessions.reduce((acc, s) => acc + (s.exercises ?? []).reduce((a, ex) => a + (ex.sets ?? []).length, 0), 0);
+    if (__DEV__) {
+      console.log('[Nutrition heatmap] sessions:', allSessions.length, 'exercises:', totalExercises, 'sets:', totalSets);
+      const sample = allSessions[0];
+      if (sample) console.log('[Nutrition heatmap] sample:', { id: sample.id, date: sample.date, duration: sample.duration });
+    }
     const weekStart = getWeekStart();
     const setRecords = workoutsToSetRecords(allSessions, weekStart);
+    if (__DEV__) console.log('[Heatmap] setRecords count:', setRecords.length);
+    setHasHeatmapSetRecords(setRecords.length > 0);
     const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
     setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
     // Calendar: which days have at least one workout (local date YYYY-MM-DD)
-    const dateKeys = [...new Set(allSessions.map((s) => toDateString(new Date(s.date))))];
+    const dateKeys = [
+      ...new Set(
+        allSessions
+          .map((s) => {
+            const d = new Date(s.date);
+            return Number.isNaN(d.getTime()) ? null : toDateString(d);
+          })
+          .filter((k): k is string => k != null)
+      ),
+    ];
     setWorkoutDateKeys(dateKeys);
   }, [viewingDate]);
 
@@ -1325,7 +1344,13 @@ export default function NutritionScreen({
             >
               {/* Fitness page 0: heatmap — isolated (no card wrapper) */}
               <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
-                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
+                {hasHeatmapSetRecords ? (
+                  <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
+                ) : (
+                  <View style={styles.heatmapEmptyState}>
+                    <Text style={styles.heatmapEmptyText}>No workout data for this week</Text>
+                  </View>
+                )}
               </View>
               {/* Fitness page 1: steps card only */}
               <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
@@ -1362,11 +1387,11 @@ export default function NutritionScreen({
                 { width: CALORIES_CARD_WIDTH, minHeight: CARD_UNIFIED_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' },
               ]}
             >
-              {!todayLog?.meals?.length ? (
+              {!todayLog?.meals?.filter((m) => !/juice/i.test(m.name)).length ? (
                 <Text style={styles.recentlyUploadedPlaceholder}>tap + to add a workout</Text>
               ) : (
                 <View style={styles.recentlyUploadedList}>
-                  {todayLog.meals.map((meal) => (
+                  {todayLog.meals.filter((m) => !/juice/i.test(m.name)).map((meal) => (
                     <View key={meal.id} style={styles.recentlyUploadedMealRow}>
                       <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
                       <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
@@ -1613,11 +1638,11 @@ export default function NutritionScreen({
                   },
                 ]}
               >
-                {!todayLog?.meals?.length ? (
+                {!todayLog?.meals?.filter((m) => !/juice/i.test(m.name)).length ? (
                   <Text style={styles.recentlyUploadedPlaceholder}>tap + to add your first meal of the day.</Text>
                 ) : (
                   <View style={styles.recentlyUploadedList}>
-                    {todayLog.meals.map((meal) => (
+                    {todayLog.meals.filter((m) => !/juice/i.test(m.name)).map((meal) => (
                       <View key={meal.id} style={styles.recentlyUploadedMealRow}>
                         <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
                         <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
@@ -2588,6 +2613,14 @@ const styles = StyleSheet.create({
     letterSpacing: CardFont.letterSpacing,
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
+  },
+  heatmapEmptyState: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  heatmapEmptyText: {
+    fontSize: Typography.body,
+    color: Colors.primaryLight + '80',
   },
   recentlyUploadedCard: {
     marginBottom: Spacing.sm,

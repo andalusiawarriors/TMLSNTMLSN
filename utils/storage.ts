@@ -29,17 +29,8 @@ const KEYS = {
 export { DEFAULT_GOALS, DEFAULT_SETTINGS };
 
 // Nutrition Storage Functions
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
-  const uid = getStorageUserId();
-  if (uid && isSupabaseConfigured()) {
-    try {
-      await supabaseStorage.supabaseSaveNutritionLog(uid, log);
-      return;
-    } catch (error) {
-      console.error('Error saving nutrition log:', error);
-      throw error;
-    }
-  }
   try {
     const existingLogs = await getNutritionLogs();
     const updatedLogs = existingLogs.filter(l => l.date !== log.date);
@@ -51,11 +42,8 @@ export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
-  const uid = getStorageUserId();
-  if (uid && isSupabaseConfigured()) {
-    return supabaseStorage.supabaseGetNutritionLogs(uid);
-  }
   try {
     const data = await AsyncStorage.getItem(KEYS.NUTRITION_LOGS);
     return data ? JSON.parse(data) : [];
@@ -65,6 +53,7 @@ export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getTodayNutritionLog = async (): Promise<NutritionLog | null> => {
   try {
     const logs = await getNutritionLogs();
@@ -76,6 +65,7 @@ export const getTodayNutritionLog = async (): Promise<NutritionLog | null> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getNutritionLogByDate = async (dateString: string): Promise<NutritionLog | null> => {
   try {
     const logs = await getNutritionLogs();

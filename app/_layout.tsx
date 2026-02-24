@@ -24,6 +24,7 @@ import { RobotoMono_400Regular } from '@expo-google-fonts/roboto-mono';
 import { registerForPushNotifications } from '../utils/notifications';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { ActiveWorkoutProvider } from '../context/ActiveWorkoutContext';
+import { AuthProvider } from '../context/AuthContext';
 import { ActiveWorkoutPill } from '../components/ActiveWorkoutPill';
 
 function RootLayoutInner() {
@@ -145,9 +146,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider>
-        <ActiveWorkoutProvider>
-          <RootLayoutInner />
-        </ActiveWorkoutProvider>
+        <AuthProvider>
+          <ActiveWorkoutProvider>
+            <RootLayoutInner />
+          </ActiveWorkoutProvider>
+        </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
