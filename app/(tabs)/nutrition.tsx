@@ -82,6 +82,8 @@ import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
 import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
+import NutritionHero from '../../components/NutritionHero';
+import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -1386,7 +1388,11 @@ export default function NutritionScreen({
           <Animated.View style={cardSlideStyle}>
           <View style={{ position: 'relative' }}>
             <View>
-        {settings && todayLog && (
+        {(
+          (() => {
+            const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
+            const log = todayLog ?? { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [] as Meal[] };
+            return (
           <View style={{ width: CAROUSEL_WIDTH }}>
             <ScrollView
               ref={nutritionScrollRef}
@@ -1400,124 +1406,16 @@ export default function NutritionScreen({
               nestedScrollEnabled
               directionalLockEnabled
             >
-              {/* Nutrition page 0: macros (calories + protein/carbs/fat) */}
-              <View style={{ width: CAROUSEL_WIDTH }}>
-                <View>
-                <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                  <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: 22, marginBottom: Spacing.sm }]}>
-                    <View style={styles.caloriesLeftContent}>
-                      <View style={styles.caloriesLeftTextWrap}>
-                        <BlurRollNumber
-                          leftValue={String(Math.max(0, settings.dailyGoals.calories - todayLog.calories))}
-                          eatenValue={String(todayLog.calories)}
-                          eatenSuffix={`/${settings.dailyGoals.calories}`}
-                          isEaten={isEaten}
-                          trigger={rollTrigger}
-                          textStyle={styles.caloriesLeftValue}
-                          suffixStyle={styles.caloriesEatenGoal}
-                          height={40}
-                        />
-                        <View>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.caloriesLeftLabel}>calories left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.caloriesEatenLabel}>calories eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Image
-                          source={require('../../assets/calorie-ring-flame.png')}
-                          style={{ width: MAIN_CARD_RING_SIZE * 0.45, height: MAIN_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    </View>
-                  </Animated.View>
-                </Pressable>
-                </View>
-                <View>
-                  <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber
-                          leftValue={`${Math.max(0, settings.dailyGoals.protein - todayLog.protein)}g`}
-                          eatenValue={String(todayLog.protein)}
-                          eatenSuffix={`/${settings.dailyGoals.protein}g`}
-                          isEaten={isEaten}
-                          trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue}
-                          suffixStyle={styles.macroEatenGoal}
-                          height={20}
-                        />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>protein left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>protein eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Image
-                          source={require('../../assets/protein-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF', transform: [{ rotate: '325deg' }] }}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    </View>
-                  </Pressable>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber
-                          leftValue={`${Math.max(0, settings.dailyGoals.carbs - todayLog.carbs)}g`}
-                          eatenValue={String(todayLog.carbs)}
-                          eatenSuffix={`/${settings.dailyGoals.carbs}g`}
-                          isEaten={isEaten}
-                          trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue}
-                          suffixStyle={styles.macroEatenGoal}
-                          height={20}
-                        />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>carbs left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>carbs eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Image
-                          source={require('../../assets/carbs-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.45, height: SMALL_CARD_RING_SIZE * 0.45, tintColor: '#FFFFFF', transform: [{ rotate: '-45deg' }] }}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    </View>
-                  </Pressable>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber
-                          leftValue={`${Math.max(0, settings.dailyGoals.fat - todayLog.fat)}g`}
-                          eatenValue={String(todayLog.fat)}
-                          eatenSuffix={`/${settings.dailyGoals.fat}g`}
-                          isEaten={isEaten}
-                          trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue}
-                          suffixStyle={styles.macroEatenGoal}
-                          height={20}
-                        />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>fat left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>fat eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Image
-                          source={require('../../assets/fat-ring-icon.png')}
-                          style={{ width: SMALL_CARD_RING_SIZE * 0.495, height: SMALL_CARD_RING_SIZE * 0.495, tintColor: '#FFFFFF' }}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    </View>
-                  </Pressable>
-                  </Animated.View>
-                </View>
+              {/* Nutrition page 0: NutritionHero (calories arc + macro bars) */}
+              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
+                <NutritionHero
+                  data={{
+                    calories: { current: log.calories, goal: goals.calories },
+                    protein: { current: log.protein, goal: goals.protein },
+                    carbs: { current: log.carbs, goal: goals.carbs },
+                    fat: { current: log.fat, goal: goals.fat },
+                  }}
+                />
               </View>
               {/* Nutrition page 1: electrolytes + health score (bare, no card) */}
               <View style={{ width: CAROUSEL_WIDTH }}>
@@ -1569,7 +1467,7 @@ export default function NutritionScreen({
                   <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
                     <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', position: 'relative', ...styles.healthScoreCard }]}>
                       <Text style={styles.healthScoreTitle}>health score</Text>
-                      {(!todayLog?.meals?.length) && (
+                      {(!log.meals?.length) && (
                         <View style={styles.healthScoreNaWrap} pointerEvents="none">
                           <Text style={styles.healthScoreNa} numberOfLines={1}>N/A</Text>
                         </View>
@@ -1583,6 +1481,8 @@ export default function NutritionScreen({
               </View>
             </ScrollView>
           </View>
+            );
+          })()
         )}
 
             {/* Nutrition carousel dots — macros | electrolytes+health score */}
