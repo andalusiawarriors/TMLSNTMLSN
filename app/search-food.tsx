@@ -1,10 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
-  ScrollView,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
@@ -135,6 +134,115 @@ export default function SearchFoodScreen() {
     { key: 'saved', label: 'Saved' },
   ];
 
+  const hasQuery = query.trim().length > 0;
+  const listData = hasQuery ? results : [];
+
+  const listHeader = (
+    <>
+      {/* Search bar — full width, magnifying glass, placeholder, clear X */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search" size={20} color={Colors.primaryLight} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search Food"
+            placeholderTextColor="#888"
+            value={query}
+            onChangeText={handleChangeText}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {query.length > 0 && (
+            <TouchableOpacity
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => { setQuery(''); setResults([]); setSearchError(null); setPage(1); setHasMore(true); }}
+              style={styles.clearButton}
+            >
+              <Ionicons name="close-circle" size={20} color={Colors.primaryLight} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* History tabs */}
+      <View style={styles.tabsRow}>
+        {TABS.map(({ key, label }) => (
+          <Pressable
+            key={key}
+            onPress={() => setHistoryTab(key)}
+            style={({ pressed }) => [styles.tab, pressed && { opacity: 0.8 }]}
+          >
+            <Text style={[styles.tabText, historyTab === key && styles.tabTextActive]}>
+              {label}
+            </Text>
+            {historyTab === key && <View style={styles.tabUnderline} />}
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Action cards — Barcode scan, Meal scan, Scan label */}
+      <View style={styles.actionRow}>
+        <Pressable
+          onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'barcode' } })}
+          style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="barcode-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.actionCardText}>barcode scan</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'ai' } })}
+          style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="restaurant-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.actionCardText}>meal scan</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'label' } })}
+          style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.actionCardText}>label scan</Text>
+        </Pressable>
+      </View>
+
+      {/* History section — placeholder cards when no query, loading/empty when searching */}
+      <View style={styles.historySection}>
+        <View style={styles.historyHeader}>
+          <Text style={styles.historyTitle}>History</Text>
+          <TouchableOpacity style={styles.mostFrequentButton}>
+            <Text style={styles.mostFrequentText}>Most Frequent</Text>
+            <Ionicons name="filter" size={16} color={Colors.primaryLight} />
+          </TouchableOpacity>
+        </View>
+        {loading && listData.length === 0 && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={Colors.primaryLight} />
+          </View>
+        )}
+        {!loading && searchError && (
+          <Text style={styles.emptyText}>{searchError}</Text>
+        )}
+        {!hasQuery && (
+          <View style={styles.historyCards}>
+            {[0, 1, 2].map((i) => (
+              <View key={i} style={styles.historyCard}>
+                <View style={styles.historyCardLeft} />
+                <TouchableOpacity
+                  style={styles.historyCardAddButton}
+                  onPress={() => {}}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </>
+  );
+
   return (
     <View style={styles.container}>
       <BackButton />
@@ -143,121 +251,14 @@ export default function SearchFoodScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-      {query.trim().length > 0 ? (
       <FlatList
-        data={results}
+        data={listData}
         keyExtractor={(_, i) => String(i)}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        ListHeaderComponent={
-          <>
-        {/* Search bar — full width, magnifying glass, placeholder, clear X */}
-        <View style={styles.searchRow}>
-          <View style={styles.searchInputWrap}>
-            <Ionicons name="search" size={20} color={Colors.primaryLight} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search Food"
-              placeholderTextColor="#888"
-              value={query}
-              onChangeText={handleChangeText}
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {query.length > 0 && (
-              <TouchableOpacity
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => { setQuery(''); setResults([]); setSearchError(null); setPage(1); setHasMore(true); }}
-                style={styles.clearButton}
-              >
-                <Ionicons name="close-circle" size={20} color={Colors.primaryLight} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* History tabs */}
-        <View style={styles.tabsRow}>
-          {TABS.map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setHistoryTab(key)}
-              style={({ pressed }) => [styles.tab, pressed && { opacity: 0.8 }]}
-            >
-              <Text style={[styles.tabText, historyTab === key && styles.tabTextActive]}>
-                {label}
-              </Text>
-              {historyTab === key && <View style={styles.tabUnderline} />}
-            </Pressable>
-          ))}
-        </View>
-
-        {/* Action cards — Barcode scan, Meal scan, Scan label — open camera with correct mode */}
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'barcode' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="barcode-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>barcode scan</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'ai' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="restaurant-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>meal scan</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'label' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>label scan</Text>
-          </Pressable>
-        </View>
-
-        {/* History section — cards only (no ingredient names) */}
-        <View style={styles.historySection}>
-          <View style={styles.historyHeader}>
-            <Text style={styles.historyTitle}>History</Text>
-            <TouchableOpacity style={styles.mostFrequentButton}>
-              <Text style={styles.mostFrequentText}>Most Frequent</Text>
-              <Ionicons name="filter" size={16} color={Colors.primaryLight} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Cards area: preloaded placeholders OR loading when no results yet */}
-          {loading && results.length === 0 && (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={Colors.primaryLight} />
-            </View>
-          )}
-          {!loading && searchError && (
-            <Text style={styles.emptyText}>{searchError}</Text>
-          )}
-          {query.trim().length === 0 && (
-            <View style={styles.historyCards}>
-              {[0, 1, 2].map((i) => (
-                <View key={i} style={styles.historyCard}>
-                  <View style={styles.historyCardLeft} />
-                  <TouchableOpacity
-                    style={styles.historyCardAddButton}
-                    onPress={() => {}}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="add" size={20} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-          </>
-        }
+        ListHeaderComponent={listHeader}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.historyCard}
@@ -351,12 +352,12 @@ export default function SearchFoodScreen() {
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          query.trim().length > 0 && !loading && !searchError ? (
+          hasQuery && !loading && !searchError ? (
             <Text style={styles.emptyText}>No results found</Text>
           ) : null
         }
         ListFooterComponent={
-          query.trim().length > 0 && results.length > 0 && !loading ? (
+          hasQuery && results.length > 0 && !loading ? (
             loadingMore ? (
               <ActivityIndicator color="#ffffff" style={{ paddingVertical: 24 }} />
             ) : hasMore ? (
@@ -374,94 +375,6 @@ export default function SearchFoodScreen() {
         }
         ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
       />
-      ) : (
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Search bar */}
-        <View style={styles.searchRow}>
-          <View style={styles.searchInputWrap}>
-            <Ionicons name="search" size={20} color={Colors.primaryLight} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search Food"
-              placeholderTextColor="#888"
-              value={query}
-              onChangeText={handleChangeText}
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        </View>
-        {/* History tabs */}
-        <View style={styles.tabsRow}>
-          {TABS.map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setHistoryTab(key)}
-              style={({ pressed }) => [styles.tab, pressed && { opacity: 0.8 }]}
-            >
-              <Text style={[styles.tabText, historyTab === key && styles.tabTextActive]}>
-                {label}
-              </Text>
-              {historyTab === key && <View style={styles.tabUnderline} />}
-            </Pressable>
-          ))}
-        </View>
-        {/* Action cards */}
-        <View style={styles.actionRow}>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'barcode' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="barcode-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>barcode scan</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'ai' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="restaurant-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>meal scan</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push({ pathname: '/scan-food-camera', params: { mode: 'label' } })}
-            style={({ pressed }) => [styles.actionCard, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.actionCardText}>label scan</Text>
-          </Pressable>
-        </View>
-        {/* History section — placeholder cards */}
-        <View style={styles.historySection}>
-          <View style={styles.historyHeader}>
-            <Text style={styles.historyTitle}>History</Text>
-            <TouchableOpacity style={styles.mostFrequentButton}>
-              <Text style={styles.mostFrequentText}>Most Frequent</Text>
-              <Ionicons name="filter" size={16} color={Colors.primaryLight} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.historyCards}>
-            {[0, 1, 2].map((i) => (
-              <View key={i} style={styles.historyCard}>
-                <View style={styles.historyCardLeft} />
-                <TouchableOpacity
-                  style={styles.historyCardAddButton}
-                  onPress={() => {}}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="add" size={20} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        </View>
-      </ScrollView>
-      )}
       </KeyboardAvoidingView>
     </View>
   );

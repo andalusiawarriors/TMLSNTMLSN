@@ -1,0 +1,31 @@
+---
+description: Use View shadow for glow in React Native — not stacked SVG layers
+alwaysApply: true
+---
+
+# Glow effect in React Native
+
+When the user asks for glow, use a **View wrapper with shadow props**, not stacked SVG layers.
+
+- **Stacked AnimatedPath/Path layers** create visible separate lines and do not produce a clean bloom.
+- **View shadow** casts a natural glow around the content. This is the correct React Native approach.
+
+## Pattern
+
+Wrap the content (e.g. Svg) in a View with:
+
+```jsx
+<View
+  style={{
+    shadowColor: '#D4B896',  // or other glow color
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 20,           // for Android
+  }}
+>
+  {/* Your Svg or content */}
+</View>
+```
+
+Use a single stroke/line element inside; the View shadow provides the glow.
