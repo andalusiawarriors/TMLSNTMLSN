@@ -84,6 +84,7 @@ import { PillSegmentedControl, type SegmentValue } from '../../components/PillSe
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
+import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -142,6 +143,7 @@ export default function NutritionScreen({
   const [fitnessCardPage, setFitnessCardPage] = useState(0);
   const [animTrigger, setAnimTrigger] = useState(0);
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
+  const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
@@ -326,10 +328,20 @@ export default function NutritionScreen({
     const allSessions = await getWorkoutSessions();
     const weekStart = getWeekStart();
     const setRecords = workoutsToSetRecords(allSessions, weekStart);
+    setHasHeatmapSetRecords(setRecords.length > 0);
     const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
     setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
     // Calendar: which days have at least one workout (local date YYYY-MM-DD)
-    const dateKeys = [...new Set(allSessions.map((s) => toDateString(new Date(s.date))))];
+    const dateKeys = [
+      ...new Set(
+        allSessions
+          .map((s) => {
+            const d = new Date(s.date);
+            return Number.isNaN(d.getTime()) ? null : toDateString(d);
+          })
+          .filter((k): k is string => k != null)
+      ),
+    ];
     setWorkoutDateKeys(dateKeys);
   }, [viewingDate]);
 
@@ -767,17 +779,21 @@ export default function NutritionScreen({
 
   const openEditGoals = () => {
     if (settings) {
+      const volUnit = settings.volumeUnit ?? 'oz';
       setEditCalories(String(settings.dailyGoals.calories));
       setEditProtein(String(settings.dailyGoals.protein));
       setEditCarbs(String(settings.dailyGoals.carbs));
       setEditFat(String(settings.dailyGoals.fat));
-      setEditWater(String(settings.dailyGoals.water));
+      setEditWater(formatFluidDisplay(toDisplayFluid(settings.dailyGoals.water, volUnit), volUnit));
     }
     setShowEditGoals(true);
   };
 
   const handleSaveGoals = async () => {
     if (!settings) return;
+    const volUnit = settings.volumeUnit ?? 'oz';
+    const displayWater = parseInt(editWater, 10) || toDisplayFluid(settings.dailyGoals.water, volUnit);
+    const storedWater = fromDisplayFluid(displayWater, volUnit);
     const updated: UserSettings = {
       ...settings,
       dailyGoals: {
@@ -785,7 +801,7 @@ export default function NutritionScreen({
         protein: parseInt(editProtein, 10) || settings.dailyGoals.protein,
         carbs: parseInt(editCarbs, 10) || settings.dailyGoals.carbs,
         fat: parseInt(editFat, 10) || settings.dailyGoals.fat,
-        water: parseInt(editWater, 10) || settings.dailyGoals.water,
+        water: Math.round(storedWater * 100) / 100,
       },
     };
     await saveUserSettings(updated);
@@ -812,11 +828,14 @@ export default function NutritionScreen({
     { breakfast: [], lunch: [], dinner: [], snack: [] }
   );
 
-  const handleAddWater = async (amount: number) => {
-    if (todayLog) {
+  const handleAddWater = async (amountInDisplayUnit: number) => {
+    if (todayLog && settings) {
+      const volUnit = settings.volumeUnit ?? 'oz';
+      const toAddOz = fromDisplayFluid(amountInDisplayUnit, volUnit);
+      const newStoredOz = todayLog.water + toAddOz;
       const updatedLog: NutritionLog = {
         ...todayLog,
-        water: todayLog.water + amount,
+        water: Math.round(newStoredOz * 100) / 100,
       };
       await saveNutritionLog(updatedLog);
       setTodayLog(updatedLog);
@@ -1344,7 +1363,13 @@ export default function NutritionScreen({
             >
               {/* Fitness page 0: heatmap — isolated (no card wrapper) */}
               <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
-                <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
+                {hasHeatmapSetRecords ? (
+                  <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
+                ) : (
+                  <View style={styles.heatmapEmptyState}>
+                    <Text style={styles.heatmapEmptyText}>No workout data for this week</Text>
+                  </View>
+                )}
               </View>
               {/* Fitness page 1: steps card only */}
               <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
@@ -1381,11 +1406,11 @@ export default function NutritionScreen({
                 { width: CALORIES_CARD_WIDTH, minHeight: CARD_UNIFIED_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' },
               ]}
             >
-              {!todayLog?.meals?.length ? (
+              {!todayLog?.meals?.filter((m) => !/juice/i.test(m.name)).length ? (
                 <Text style={styles.recentlyUploadedPlaceholder}>tap + to add a workout</Text>
               ) : (
                 <View style={styles.recentlyUploadedList}>
-                  {todayLog.meals.map((meal) => (
+                  {todayLog.meals.filter((m) => !/juice/i.test(m.name)).map((meal) => (
                     <View key={meal.id} style={styles.recentlyUploadedMealRow}>
                       <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
                       <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
@@ -2239,11 +2264,11 @@ export default function NutritionScreen({
               fontFamily={Font.regular}
             />
             <Input
-              label="Water (oz)"
+              label={settings ? `Water (${settings.volumeUnit ?? 'oz'})` : 'Water (oz)'}
               value={editWater}
               onChangeText={setEditWater}
               keyboardType="numeric"
-              placeholder="128"
+              placeholder={settings?.volumeUnit === 'ml' ? '3785' : '128'}
               fontFamily={Font.regular}
             />
             <View style={styles.modalButtons}>
@@ -2505,6 +2530,14 @@ const styles = StyleSheet.create({
     letterSpacing: CardFont.letterSpacing,
     marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
+  },
+  heatmapEmptyState: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  heatmapEmptyText: {
+    fontSize: Typography.body,
+    color: Colors.primaryLight + '80',
   },
   recentlyUploadedCard: {
     marginBottom: Spacing.sm,

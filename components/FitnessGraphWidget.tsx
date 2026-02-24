@@ -3,7 +3,7 @@
 // Bar chart; top-left shows selected day date + value; bubbles: Duration, Volume, Reps
 // ============================================================
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -12,6 +12,7 @@ import {
   Pressable,
   Dimensions,
   ScrollView,
+  Modal,
 } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -23,6 +24,7 @@ import Animated, {
 import { useTheme } from '../context/ThemeContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { toDisplayVolume, KG_PER_LB } from '../utils/units';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import type { WorkoutSession } from '../types';
 import { format, startOfDay, getYear, getMonth, startOfMonth, endOfMonth } from 'date-fns';
@@ -30,9 +32,14 @@ import { format, startOfDay, getYear, getMonth, startOfMonth, endOfMonth } from 
 function parseDate(dateKey: string): Date {
   return new Date(dateKey + 'T12:00:00');
 }
+function isValidDate(d: Date): boolean {
+  return !Number.isNaN(d.getTime());
+}
 /** Session date in local YYYY-MM-DD (so workouts show on the day they were done, not UTC). */
-function getSessionDateKey(s: WorkoutSession): string {
-  return format(new Date(s.date), 'yyyy-MM-dd');
+function getSessionDateKey(s: WorkoutSession): string | null {
+  const d = new Date(s.date);
+  if (!isValidDate(d)) return null;
+  return format(d, 'yyyy-MM-dd');
 }
 function eachDay(start: Date, end: Date): Date[] {
   const out: Date[] = [];
@@ -50,7 +57,7 @@ function isWithinInterval(date: Date, interval: { start: Date; end: Date }): boo
   return date >= interval.start && date <= interval.end;
 }
 
-const LB_TO_KG = 0.453592;
+// Use KG_PER_LB from utils/units for consistency
 const CHART_HEIGHT = 210;
 const BAR_GAP = 4;
 const WEEK_GAP = 8;
@@ -110,6 +117,45 @@ interface DayData {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
+function DropdownModal({
+  children,
+  onClose,
+  style,
+  triggerLayout,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  style: object;
+  triggerLayout: { x: number; y: number; width: number; height: number } | null;
+}) {
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={onClose} />
+      {triggerLayout && (
+        <View
+          style={[
+            dropdownModalStyles.anchor,
+            {
+              top: triggerLayout.y + triggerLayout.height + 4,
+              left: triggerLayout.x,
+              minWidth: triggerLayout.width,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          <View style={[style, dropdownModalStyles.dropdownCard]}>
+            {children}
+          </View>
+        </View>
+      )}
+    </Modal>
+  );
+}
+const dropdownModalStyles = StyleSheet.create({
+  anchor: { position: 'absolute' },
+  dropdownCard: { alignSelf: 'stretch' },
+});
+
 interface MonthData {
   month: number;
   monthName: string;
@@ -125,30 +171,47 @@ interface YearData {
   reps: number;
 }
 
-function aggregateByDay(sessions: WorkoutSession[], weightUnit: 'kg' | 'lb'): DayData[] {
+function aggregateByDay(
+  sessions: WorkoutSession[],
+  weightUnit: 'kg' | 'lb',
+  metricType: Metric
+): DayData[] {
+  const filtered = sessions.filter((s) => {
+    const key = getSessionDateKey(s);
+    if (key == null) return false;
+    if (s.isComplete !== true) return false;
+    return true;
+  });
+
   const byDay = new Map<string, { durationMinutes: number; volumeRaw: number; reps: number }>();
-  for (const s of sessions) {
-    const d = getSessionDateKey(s);
+  for (const s of filtered) {
+    const d = getSessionDateKey(s)!;
+    const durationMin = Number(s.duration ?? 0);
     const existing = byDay.get(d) ?? { durationMinutes: 0, volumeRaw: 0, reps: 0 };
-    existing.durationMinutes += s.duration ?? 0;
+    if (durationMin > 0) existing.durationMinutes += durationMin;
     for (const ex of s.exercises ?? []) {
-      for (const set of ex.sets ?? []) {
-        existing.volumeRaw += set.weight * set.reps;
-        existing.reps += set.reps;
+      const sets = ex.sets ?? [];
+      if (sets.length === 0) continue;
+      for (const set of sets) {
+        if (!set.completed) continue;
+        existing.volumeRaw += (set.weight ?? 0) * (set.reps ?? 0);
+        existing.reps += set.reps ?? 0;
       }
     }
     byDay.set(d, existing);
   }
-  return Array.from(byDay.entries()).map(([dateKey, v]) => {
-    const volumeKg = weightUnit === 'lb' ? v.volumeRaw * LB_TO_KG : v.volumeRaw;
+  const result = Array.from(byDay.entries()).map(([dateKey, v]) => {
+    const volumeKg = v.volumeRaw * KG_PER_LB;
     return {
       date: parseDate(dateKey),
       dateKey,
       durationMinutes: v.durationMinutes,
       volumeKg,
       reps: v.reps,
+      volumeRawLb: v.volumeRaw,
     };
   });
+  return result.map(({ volumeRawLb: _v, ...r }) => r);
 }
 
 function formatDurationMinutes(min: number): string {
@@ -159,10 +222,10 @@ function formatDurationMinutes(min: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatVolume(kg: number, weightUnit: 'kg' | 'lb'): string {
-  const value = weightUnit === 'lb' ? kg / LB_TO_KG : kg;
+function formatVolume(volumeKg: number, weightUnit: 'kg' | 'lb'): string {
+  const displayValue = weightUnit === 'lb' ? volumeKg / KG_PER_LB : volumeKg;
   const unit = weightUnit === 'lb' ? 'lb' : 'kg';
-  return `${Math.round(value).toLocaleString()} ${unit}`;
+  return `${Math.round(displayValue).toLocaleString()} ${unit}`;
 }
 
 function formatYAxisValue(value: number): string {
@@ -188,6 +251,9 @@ export function FitnessGraphWidget() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [dropdownOpen, setDropdownOpen] = useState<DropdownOpen>(null);
+  const [dropdownTriggerLayout, setDropdownTriggerLayout] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const monthButtonRef = useRef<View | null>(null);
+  const yearButtonRef = useRef<View | null>(null);
   const [metric, setMetric] = useState<Metric>('duration');
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const [selectedMonthData, setSelectedMonthData] = useState<MonthData | null>(null);
@@ -219,11 +285,9 @@ export function FitnessGraphWidget() {
       const yearEnd = new Date(selectedYear, 11, 31);
       end = today < yearEnd ? today : startOfDay(yearEnd);
     } else {
-      const firstKey = sessions.length
-        ? sessions.reduce((min, s) => {
-            const k = getSessionDateKey(s);
-            return k < min ? k : min;
-          }, getSessionDateKey(sessions[0]))
+      const validKeys = sessions.map((s) => getSessionDateKey(s)).filter((k): k is string => k != null);
+      const firstKey = validKeys.length
+        ? validKeys.reduce((min, k) => (k < min ? k : min), validKeys[0])
         : format(now, 'yyyy-MM-dd');
       start = startOfDay(parseDate(firstKey));
       end = today;
@@ -234,48 +298,73 @@ export function FitnessGraphWidget() {
     const rangeEndKey = format(rangeEnd, 'yyyy-MM-dd');
     const filtered = sessions.filter((s) => {
       const key = getSessionDateKey(s);
-      return key >= rangeStartKey && key <= rangeEndKey;
+      return key != null && key >= rangeStartKey && key <= rangeEndKey;
     });
-    const dayData = aggregateByDay(filtered, weightUnit);
+    const dayData = aggregateByDay(filtered, weightUnit, metric);
     const daysInRange = eachDay(rangeStart, rangeEnd);
     const byDateKey = new Map(dayData.map((d) => [d.dateKey, d]));
-    const dayDataInRange = daysInRange.map((date) => {
+
+    const chartData = daysInRange.map((date) => {
       const key = format(date, 'yyyy-MM-dd');
-      const data = byDateKey.get(key);
-      return { date, dateKey: key, data };
+      const bin = byDateKey.get(key);
+      const durationMinutes = Number(bin?.durationMinutes ?? 0);
+      const volumeKg = Number(bin?.volumeKg ?? 0);
+      const reps = Number(bin?.reps ?? 0);
+      const dataValue =
+        metric === 'duration'
+          ? durationMinutes / 60
+          : metric === 'reps'
+            ? reps
+            : weightUnit === 'lb'
+              ? volumeKg / KG_PER_LB
+              : volumeKg;
+      const data = Number(dataValue);
+      return {
+        date: bin?.date ?? new Date(date.getTime()),
+        dateKey: key,
+        durationMinutes,
+        reps,
+        volumeKg,
+        data,
+      };
     });
 
     let yMax = 0;
     if (metric === 'duration') {
-      const maxMin = Math.max(...dayDataInRange.map((d) => d.data?.durationMinutes ?? 0), 0);
+      const maxMin = Math.max(...chartData.map((d) => d.durationMinutes ?? 0), 0);
       const maxHours = maxMin / 60;
       yMax = Math.max(DEFAULT_DURATION_MAX_HOURS, Math.ceil(maxHours * 2) / 2) || DEFAULT_DURATION_MAX_HOURS;
     } else if (metric === 'volume') {
-      const maxKg = Math.max(...dayDataInRange.map((d) => d.data?.volumeKg ?? 0), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxKg = Math.max(...chartData.map((d) => d.volumeKg ?? 0), 0);
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       yMax = Math.ceil(maxDisplay / 100) * 100 || 100;
     } else {
-      const maxReps = Math.max(...dayDataInRange.map((d) => d.data?.reps ?? 0), 0);
+      const maxReps = Math.max(...chartData.map((d) => d.reps ?? 0), 0);
       yMax = Math.ceil(maxReps / 10) * 10 || 10;
     }
 
-    return { rangeStart, rangeEnd, dayDataInRange, yMax };
+    return { rangeStart, rangeEnd, dayDataInRange: chartData, yMax };
   }, [sessions, timeRange, weightUnit, metric, selectedMonth, selectedYear]);
 
   const targetYearForMonths = useMemo(() => {
     if (timeRange === 'year') return selectedYear;
     if (timeRange === 'all' && sessions.length > 0) {
-      const years = sessions.map((s) => getYear(parseDate(getSessionDateKey(s))));
-      return Math.max(...years);
+      const years = sessions
+        .map((s) => getSessionDateKey(s))
+        .filter((k): k is string => k != null)
+        .map((k) => getYear(parseDate(k)));
+      return years.length > 0 ? Math.max(...years) : getYear(now);
     }
     return getYear(new Date());
   }, [timeRange, sessions, selectedYear]);
 
   const availableYears = useMemo(() => {
     const endYear = currentYear;
-    const startYear = sessions.length
-      ? Math.min(...sessions.map((s) => getYear(parseDate(getSessionDateKey(s)))))
-      : currentYear;
+    const validYears = sessions
+      .map((s) => getSessionDateKey(s))
+      .filter((k): k is string => k != null)
+      .map((k) => getYear(parseDate(k)));
+    const startYear = validYears.length > 0 ? Math.min(...validYears) : currentYear;
     const years: number[] = [];
     for (let y = endYear; y >= Math.max(startYear, currentYear - 20); y--) {
       years.push(y);
@@ -287,14 +376,13 @@ export function FitnessGraphWidget() {
     if (timeRange !== 'year' && timeRange !== 'all') return [];
     const byMonth = new Map<number, { durationMinutes: number; volumeKg: number; reps: number }>();
     for (let m = 0; m < 12; m++) byMonth.set(m, { durationMinutes: 0, volumeKg: 0, reps: 0 });
-    dayDataInRange.forEach(({ data }) => {
-      if (!data) return;
-      if (data.date.getFullYear() !== targetYearForMonths) return;
-      const m = data.date.getMonth();
+    dayDataInRange.forEach((point) => {
+      if (point.date.getFullYear() !== targetYearForMonths) return;
+      const m = point.date.getMonth();
       const existing = byMonth.get(m)!;
-      existing.durationMinutes += data.durationMinutes;
-      existing.volumeKg += data.volumeKg;
-      existing.reps += data.reps;
+      existing.durationMinutes += point.durationMinutes;
+      existing.volumeKg += point.volumeKg;
+      existing.reps += point.reps;
       byMonth.set(m, existing);
     });
     return MONTH_NAMES.map((monthName, i) => {
@@ -307,9 +395,11 @@ export function FitnessGraphWidget() {
     if (timeRange !== 'all' || sessions.length === 0) return [];
     const byYear = new Map<number, { durationMinutes: number; volumeRaw: number; reps: number }>();
     for (const s of sessions) {
-      const year = getYear(parseDate(getSessionDateKey(s)));
+      const key = getSessionDateKey(s);
+      if (key == null) continue;
+      const year = getYear(parseDate(key));
       const existing = byYear.get(year) ?? { durationMinutes: 0, volumeRaw: 0, reps: 0 };
-      existing.durationMinutes += s.duration ?? 0;
+      existing.durationMinutes += Number(s.duration ?? 0);
       for (const ex of s.exercises ?? []) {
         for (const set of ex.sets ?? []) {
           existing.volumeRaw += set.weight * set.reps;
@@ -321,10 +411,10 @@ export function FitnessGraphWidget() {
     const years = Array.from(byYear.keys()).sort((a, b) => a - b);
     return years.map((year) => {
       const v = byYear.get(year)!;
-      const volumeKg = weightUnit === 'lb' ? v.volumeRaw * LB_TO_KG : v.volumeRaw;
+      const volumeKg = v.volumeRaw * KG_PER_LB;
       return { year, durationMinutes: v.durationMinutes, volumeKg, reps: v.reps };
     });
-  }, [sessions, timeRange, weightUnit]);
+  }, [sessions, timeRange]);
 
   const isYearView = timeRange === 'year';
   const isAllTimeView = timeRange === 'all';
@@ -338,7 +428,7 @@ export function FitnessGraphWidget() {
     }
     if (metric === 'volume') {
       const maxKg = Math.max(...monthlyData.map((m) => m.volumeKg), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       return Math.ceil(maxDisplay / 100) * 100 || 100;
     }
     const maxReps = Math.max(...monthlyData.map((m) => m.reps), 0);
@@ -353,7 +443,7 @@ export function FitnessGraphWidget() {
     }
     if (metric === 'volume') {
       const maxKg = Math.max(...yearlyData.map((y) => y.volumeKg), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       return Math.ceil(maxDisplay / 100) * 100 || 100;
     }
     const maxReps = Math.max(...yearlyData.map((y) => y.reps), 0);
@@ -426,7 +516,7 @@ export function FitnessGraphWidget() {
   const getValue = (d: DayData | undefined) => {
     if (!d) return 0;
     if (metric === 'duration') return d.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? d.volumeKg / LB_TO_KG : d.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? d.volumeKg / KG_PER_LB : d.volumeKg;
     return d.reps;
   };
 
@@ -438,7 +528,7 @@ export function FitnessGraphWidget() {
 
   const getValueMonth = (m: MonthData) => {
     if (metric === 'duration') return m.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? m.volumeKg / LB_TO_KG : m.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? m.volumeKg / KG_PER_LB : m.volumeKg;
     return m.reps;
   };
 
@@ -450,7 +540,7 @@ export function FitnessGraphWidget() {
 
   const getValueYear = (y: YearData) => {
     if (metric === 'duration') return y.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? y.volumeKg / LB_TO_KG : y.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? y.volumeKg / KG_PER_LB : y.volumeKg;
     return y.reps;
   };
 
@@ -467,7 +557,7 @@ export function FitnessGraphWidget() {
       <View style={styles.rangeRow}>
         <View style={styles.rangeRowInner}>
           {/* Month */}
-          <View style={styles.timeRangeButtonWrap}>
+          <View style={styles.timeRangeButtonWrap} ref={monthButtonRef} collapsable={false}>
             <Pressable
               onPress={() => {
                 if (timeRange !== 'month') {
@@ -478,7 +568,10 @@ export function FitnessGraphWidget() {
                   setSelectedMonthData(null);
                   setSelectedYearData(null);
                 } else {
-                  setDropdownOpen((prev) => (prev === 'month' ? null : 'month'));
+                  monthButtonRef.current?.measureInWindow((x, y, width, height) => {
+                    setDropdownTriggerLayout({ x, y, width, height });
+                    setDropdownOpen('month');
+                  });
                 }
               }}
               style={[
@@ -502,12 +595,12 @@ export function FitnessGraphWidget() {
               </View>
             </Pressable>
             {dropdownOpen === 'month' && (
-              <Animated.View
-                entering={FadeInDown.duration(200)}
-                exiting={FadeOutUp.duration(150)}
+              <DropdownModal
+                onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
                 style={styles.dropdown}
+                triggerLayout={dropdownTriggerLayout}
               >
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
                   {MONTH_NAMES.map((name, i) => (
                     <Pressable
                       key={name}
@@ -523,11 +616,11 @@ export function FitnessGraphWidget() {
                     </Pressable>
                   ))}
                 </ScrollView>
-              </Animated.View>
+              </DropdownModal>
             )}
           </View>
           {/* Year */}
-          <View style={styles.timeRangeButtonWrap}>
+          <View style={styles.timeRangeButtonWrap} ref={yearButtonRef} collapsable={false}>
             <Pressable
               onPress={() => {
                 if (timeRange !== 'year') {
@@ -537,7 +630,10 @@ export function FitnessGraphWidget() {
                   setSelectedDay(null);
                   setSelectedYearData(null);
                 } else {
-                  setDropdownOpen((prev) => (prev === 'year' ? null : 'year'));
+                  yearButtonRef.current?.measureInWindow((x, y, width, height) => {
+                    setDropdownTriggerLayout({ x, y, width, height });
+                    setDropdownOpen('year');
+                  });
                 }
               }}
               style={[
@@ -561,12 +657,12 @@ export function FitnessGraphWidget() {
               </View>
             </Pressable>
             {dropdownOpen === 'year' && (
-              <Animated.View
-                entering={FadeInDown.duration(200)}
-                exiting={FadeOutUp.duration(150)}
+              <DropdownModal
+                onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
                 style={styles.dropdown}
+                triggerLayout={dropdownTriggerLayout}
               >
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
                   {availableYears.map((y) => (
                     <Pressable
                       key={y}
@@ -582,7 +678,7 @@ export function FitnessGraphWidget() {
                     </Pressable>
                   ))}
                 </ScrollView>
-              </Animated.View>
+              </DropdownModal>
             )}
           </View>
           {/* All time — no dropdown */}
@@ -741,19 +837,19 @@ export function FitnessGraphWidget() {
                     );
                   })
                 ) : (
-                  dayDataInRange.map(({ date, data }, i) => {
-                    const value = getValue(data);
+                  dayDataInRange.map((point, i) => {
+                    const value = point.data;
                     const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
                     let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
                     if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
-                    const isSelected = selectedDay && data && isSameDay(data.date, selectedDay.date);
+                    const isSelected = selectedDay && isSameDay(point.date, selectedDay.date);
                     const marginRight = i < dayDataInRange.length - 1
                       ? BAR_GAP + ((i + 1) % 7 === 0 ? WEEK_GAP : 0)
                       : 0;
                     return (
                       <Pressable
-                        key={`${date.getTime()}-${metric}`}
-                        onPress={() => setSelectedDay(data ?? null)}
+                        key={`${point.date.getTime()}-${metric}`}
+                        onPress={() => setSelectedDay(point)}
                         style={[styles.barSlot, { width: effectiveBarWidth, marginRight }]}
                       >
                         <Animated.View
@@ -888,10 +984,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   dropdown: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    marginTop: 4,
     minWidth: 100,
     maxHeight: 220,
     backgroundColor: '#2F3031',
@@ -899,7 +991,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PILL_BORDER,
     overflow: 'hidden',
-    zIndex: 10,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   dropdownScroll: {
     maxHeight: 212,

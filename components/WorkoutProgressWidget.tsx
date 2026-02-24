@@ -5,6 +5,7 @@ import { useButtonSound } from '../hooks/useButtonSound';
 import { Card } from './Card';
 import { AnimatedPressable } from './AnimatedPressable';
 import { getRecentWorkouts, getUserSettings } from '../utils/storage';
+import { toDisplayVolume } from '../utils/units';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import type { WorkoutSession } from '../types';
 
@@ -81,7 +82,7 @@ export function WorkoutProgressWidget() {
               </View>
               <View style={[styles.historyStatPill, { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '15' }]}>
                 <Text style={[styles.historyStatValue, { color: colors.primaryLight }]}>
-                  {recentWorkouts.reduce((acc, w) => acc + w.exercises.reduce((a, e) => a + e.sets.length, 0), 0)}
+                  {recentWorkouts.reduce((acc, w) => acc + (w.exercises ?? []).reduce((a, e) => a + (e.sets ?? []).length, 0), 0)}
                 </Text>
                 <Text style={[styles.historyStatLabel, { color: colors.primaryLight + '50' }]}>Total Sets</Text>
               </View>
@@ -96,10 +97,13 @@ export function WorkoutProgressWidget() {
                 </View>
               ) : (
                 recentWorkouts.map((w) => {
-                  const wSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
-                  const wVolume = w.exercises.reduce(
-                    (a, e) => a + e.sets.reduce((s, set) => s + set.weight * set.reps, 0), 0
+                  const exs = w.exercises ?? [];
+                  const wSets = exs.reduce((a, e) => a + (e.sets ?? []).length, 0);
+                  const wVolumeRawLb = exs.reduce(
+                    (a, e) => a + (e.sets ?? []).reduce((s, set) => s + (set.weight ?? 0) * (set.reps ?? 0), 0),
+                    0
                   );
+                  const wVolumeDisplay = toDisplayVolume(wVolumeRawLb, weightUnit);
                   return (
                     <View key={w.id} style={[styles.historySessionCard, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '12' }]}>
                       <View style={styles.historySessionHeader}>
@@ -109,18 +113,17 @@ export function WorkoutProgressWidget() {
                         <View style={styles.historySessionTitleCol}>
                           <Text style={[styles.historySessionName, { color: colors.primaryLight }]}>{w.name}</Text>
                           <Text style={[styles.historySessionDate, { color: colors.primaryLight + '50' }]}>
-                            {new Date(w.date).toLocaleDateString('en-US', {
-                              weekday: 'short',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
+                            {(() => {
+                              const d = new Date(w.date);
+                              return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                            })()}
                           </Text>
                         </View>
                       </View>
                       <View style={styles.historySessionStats}>
                         <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
                           <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◎</Text>
-                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.exercises.length} exercises</Text>
+                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{exs.length} exercises</Text>
                         </View>
                         <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
                           <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>◉</Text>
@@ -128,12 +131,12 @@ export function WorkoutProgressWidget() {
                         </View>
                         <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
                           <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⏱</Text>
-                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{w.duration} min</Text>
+                          <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{Number(w.duration ?? 0)} min</Text>
                         </View>
-                        {wVolume > 0 && (
+                        {wVolumeRawLb > 0 && (
                           <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
                             <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⚖</Text>
-                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wVolume.toLocaleString()} {weightUnit}</Text>
+                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{Math.round(wVolumeDisplay).toLocaleString()} {weightUnit}</Text>
                           </View>
                         )}
                       </View>

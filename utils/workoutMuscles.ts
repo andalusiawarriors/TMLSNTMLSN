@@ -59,6 +59,11 @@ function matchExerciseToDbId(name: string, exerciseDbId?: string): string | null
   return null;
 }
 
+/** Resolve exercise name to DB id for heatmap/muscle mapping when exerciseDbId is missing. */
+export function resolveExerciseDbIdFromName(name: string): string | null {
+  return matchExerciseToDbId(name);
+}
+
 /**
  * Convert completed workout sessions to SetRecords for the current week.
  * Only includes completed sets from exercises that match the DB.
@@ -70,20 +75,22 @@ export function workoutsToSetRecords(
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
   const records: SetRecord[] = [];
-
   for (const session of sessions) {
     if (!session.isComplete) continue;
     const sessionDate = new Date(session.date);
+    if (Number.isNaN(sessionDate.getTime())) continue;
     if (sessionDate < weekStart || sessionDate >= weekEnd) continue;
 
     const dayOfWeek = getDayOfWeek(sessionDate);
 
-    for (const exercise of session.exercises) {
+    for (const exercise of session.exercises ?? []) {
       const dbId = matchExerciseToDbId(exercise.name, exercise.exerciseDbId);
       if (!dbId) continue;
 
-      for (const set of exercise.sets) {
-        if (!set.completed) continue;
+      const completedSets = (exercise.sets ?? []).filter((set) => set.completed);
+      if (completedSets.length === 0) continue;
+
+      for (const set of completedSets) {
         records.push({
           exerciseId: dbId,
           reps: set.reps,

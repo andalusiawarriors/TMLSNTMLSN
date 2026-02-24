@@ -20,7 +20,7 @@ import { Button } from '../../components/Button';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { getPrompts, savePrompts } from '../../utils/storage';
+import { getPrompts, savePrompts, migrateLocalPromptsToSupabase } from '../../utils/storage';
 import { SAMPLE_PROMPTS } from '../../constants/samplePrompts';
 import { Prompt } from '../../types';
 
@@ -110,6 +110,7 @@ export default function PromptsScreen() {
   }, []);
 
   const loadPrompts = async () => {
+    await migrateLocalPromptsToSupabase();
     let storedPrompts = await getPrompts();
     
     // If no prompts in storage, use sample prompts

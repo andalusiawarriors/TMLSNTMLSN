@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, ScrollView, View } from 'react-native';
+import { StyleSheet, ScrollView, View, Text } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Spacing, Colors } from '../../../constants/theme';
+import { Spacing, Colors, Typography } from '../../../constants/theme';
 import { getWorkoutSessions } from '../../../utils/storage';
 import { workoutsToSetRecords } from '../../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../../utils/weeklyMuscleTracker';
@@ -11,6 +11,7 @@ import { HomeGradientBackground } from '../../../components/HomeGradientBackgrou
 
 export default function ProfileStatisticsScreen() {
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
+  const [hasSetRecords, setHasSetRecords] = useState(false);
   const [animTrigger, setAnimTrigger] = useState(0);
 
   useFocusEffect(
@@ -20,6 +21,7 @@ export default function ProfileStatisticsScreen() {
         const allSessions = await getWorkoutSessions();
         const weekStart = getWeekStart();
         const setRecords = workoutsToSetRecords(allSessions, weekStart);
+        setHasSetRecords(setRecords.length > 0);
         const weeklyVolume = calculateWeeklyMuscleVolume(setRecords);
         setWeeklyHeatmap(calculateHeatmap(weeklyVolume));
       };
@@ -36,7 +38,13 @@ export default function ProfileStatisticsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-          <MuscleBodyHeatmap heatmapData={weeklyHeatmap} />
+          {hasSetRecords ? (
+            <MuscleBodyHeatmap heatmapData={weeklyHeatmap} />
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No workout data for this week</Text>
+            </View>
+          )}
         </AnimatedFadeInUp>
       </ScrollView>
     </View>
@@ -54,5 +62,13 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.md,
     paddingBottom: 48,
+  },
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: Typography.body,
+    color: Colors.primaryLight + '80',
   },
 });

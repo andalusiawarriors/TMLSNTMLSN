@@ -29,7 +29,7 @@
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none)*     | —                 | —                         | —               | —       |
 
-*Previously: Profile Fitness – fixed layout shift when tapping pillar (VALUE_SECTION_HEIGHT, BUBBLES_ROW_HEIGHT)*
+*Previously: Workout UI – Save Routine refactored to match workout design* – fixed layout shift when tapping pillar (VALUE_SECTION_HEIGHT, BUBBLES_ROW_HEIGHT)*
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -39,6 +39,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/workout/your-routines.tsx` – Save Routine: template targets, delete, UI polish
 - `app/search-food.tsx` – fixed keyboard dip on first character: use single FlatList always (no ScrollView/FlatList swap), TextInput stays mounted; synced to obh
 - Supabase auth: `lib/supabase.ts`, `context/AuthContext.tsx`, `components/AuthModal.tsx`, `components/ProfileSheet.tsx`, `utils/storage.ts`, `utils/supabaseStorage.ts`, `constants/storageDefaults.ts`, `supabase/migrations/001_user_data.sql`, `app/_layout.tsx`, `.env.local.example` – login/create account in profile, per-account cloud storage
 - `components/FitnessGraphWidget.tsx` – fixed layout shift: valueSection minHeight 48px, bubblesRow minHeight 52px so chart stays fixed when tapping pillar or switching metric

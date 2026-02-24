@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,17 +14,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { AuthModal } from './AuthModal';
+import { useAuth } from '../context/AuthContext';
+import {
+  SettingsSectionHeader,
+  SettingsCard,
+  SettingsRow,
+  SETTINGS_ICON_COLOR,
+  SETTINGS_ROW_HEIGHT,
+  SETTINGS_ICON_SIZE,
+  SETTINGS_ACCENT_GOLD,
+} from './SettingsShared';
 
-const ACCENT_GOLD = '#D4B896';
 const ACCENT_GOLD_DARK = '#A8895E';
-const ACCENT_GRADIENT: [string, string] = [ACCENT_GOLD, ACCENT_GOLD_DARK];
+const ACCENT_GRADIENT: [string, string] = [SETTINGS_ACCENT_GOLD, ACCENT_GOLD_DARK];
 
 const TAB_BAR_HEIGHT = 76; // PILL_BOTTOM(19) + PILL_HEIGHT(57) from _layout
-const CARD_BG = 'rgba(40,40,40,0.6)';
-const CARD_BORDER = 'rgba(255,255,255,0.06)';
-const ROW_HEIGHT = 56;
-const ICON_SIZE = 22;
-const ICON_COLOR = 'rgba(255,255,255,0.7)';
 const AVATAR_SIZE = 56;
 
 export type ProfileSheetProps = {
@@ -32,59 +37,21 @@ export type ProfileSheetProps = {
   onPreferencesPress?: () => void;
 };
 
-function Row({
-  icon,
-  label,
-  subtitle,
-  rightText,
-  onPress,
-  last,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  subtitle?: string;
-  rightText?: string;
-  onPress?: () => void;
-  last?: boolean;
-}) {
-  const rowStyle = [styles.row, !last && styles.rowBorder];
-  const children = (
-    <>
-      <Ionicons name={icon} size={ICON_SIZE} color={ICON_COLOR} style={styles.rowIcon} />
-      <View style={styles.rowTextWrap}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
-      </View>
-      {rightText ? (
-        <Text style={styles.rowRight}>{rightText}</Text>
-      ) : (
-        <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
-      )}
-    </>
-  );
-  if (onPress) {
-    return (
-      <Pressable onPress={onPress} style={({ pressed }) => [...rowStyle, pressed && styles.rowPressed]}>
-        {children}
-      </Pressable>
-    );
-  }
-  return <View style={rowStyle}>{children}</View>;
-}
-
-function SectionHeader({ label }: { label: string }) {
-  return <Text style={[styles.sectionHeader, { color: ACCENT_GOLD }]}>{label}</Text>;
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
-}
-
-const noOpAuth = async (_email: string, _password: string) => ({ error: null as Error | null });
-
 export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSheetProps) {
   const insets = useSafeAreaInsets();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const { user, signUp, signIn, signOut, debugCreateTestUser } = useAuth();
+
+  const handleLogOutPress = () => {
+    Alert.alert(
+      'Log out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log out', style: 'destructive', onPress: () => signOut() },
+      ]
+    );
+  };
   // Padding so last items can scroll above the tab bar (which sits on top)
   const scrollBottomPad = TAB_BAR_HEIGHT + insets.bottom;
 
@@ -104,86 +71,93 @@ export function ProfileSheet({ visible, onClose, onPreferencesPress }: ProfileSh
         >
           <View style={styles.closeRow}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={18} color={ICON_COLOR} />
+              <Ionicons name="close" size={18} color={SETTINGS_ICON_COLOR} />
             </TouchableOpacity>
           </View>
           <Pressable
             style={styles.profileRowCard}
-            onPress={() => setShowAuthModal(true)}
+            onPress={user ? undefined : () => setShowAuthModal(true)}
           >
               <View style={styles.avatarRing}>
                 <LinearGradient colors={ACCENT_GRADIENT} style={[StyleSheet.absoluteFill, { borderRadius: (AVATAR_SIZE + 4) / 2 }]} />
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarPlaceholder}>?</Text>
+                  <Text style={styles.avatarPlaceholder}>{user ? (user.email?.[0] ?? '?').toUpperCase() : '?'}</Text>
                 </View>
               </View>
               <View style={styles.profileRowText}>
-                <Text style={styles.profileRowMain}>Log in / Create account</Text>
-                <Text style={styles.profileRowSub}>Sign in to sync your data across devices</Text>
+                <Text style={styles.profileRowMain}>{user ? (user.email ?? 'Logged in') : 'Log in / Create account'}</Text>
+                <Text style={styles.profileRowSub}>{user ? 'Signed in to sync your data' : 'Sign in to sync your data across devices'}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
+              {user ? (
+                <Pressable onPress={handleLogOutPress} style={({ pressed }) => [styles.logOutButton, pressed && { opacity: 0.8 }]}>
+                  <Text style={styles.logOutButtonText}>Log out</Text>
+                </Pressable>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={SETTINGS_ICON_COLOR} />
+              )}
             </Pressable>
 
             <AuthModal
               visible={showAuthModal}
               onClose={() => setShowAuthModal(false)}
-              onSignUp={noOpAuth}
-              onSignIn={noOpAuth}
+              onSignUp={signUp}
+              onSignIn={signIn}
+              onDebugTestSignup={debugCreateTestUser}
             />
 
-            <SectionHeader label="Invite Friends" />
+            <SettingsSectionHeader label="Invite Friends" />
             <Pressable style={styles.inviteCard}>
-              <View style={[styles.row, styles.referRow]}>
+              <View style={[styles.referRow, styles.referRowInner]}>
                 <View style={styles.referIconWrap}>
-                  <Ionicons name="person-add-outline" size={ICON_SIZE} color={ACCENT_GOLD} />
+                  <Ionicons name="person-add-outline" size={SETTINGS_ICON_SIZE} color={SETTINGS_ACCENT_GOLD} />
                 </View>
                 <View style={[styles.rowTextWrap, styles.referRowText]}>
                   <Text style={styles.rowLabel}>Refer a friend and earn $10</Text>
                   <Text style={styles.rowSubtitle}>Earn $10 per friend that signs up with your promo code.</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={ICON_COLOR} />
+                <Ionicons name="chevron-forward" size={18} color={SETTINGS_ICON_COLOR} />
               </View>
             </Pressable>
 
-            <SectionHeader label="Account" />
-            <Card>
-              <Row icon="card-outline" label="Personal Details" last={false} onPress={() => {}} />
-              <Row icon="settings-outline" label="Preferences" last={false} onPress={onPreferencesPress} />
-              <Row icon="language-outline" label="Language" last={false} onPress={() => {}} />
-              <Row icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} />
-            </Card>
+            <SettingsSectionHeader label="Account" />
+            <SettingsCard>
+              <SettingsRow icon="card-outline" label="Personal Details" last={false} onPress={() => {}} />
+              <SettingsRow icon="settings-outline" label="Settings" last={false} onPress={onPreferencesPress} />
+              <SettingsRow icon="language-outline" label="Language" last={false} onPress={() => {}} />
+              <SettingsRow icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} />
+            </SettingsCard>
 
-            <SectionHeader label="Goals & Tracking" />
-            <Card>
-              <Row icon="heart-outline" label="Apple Health" rightText="✓ Connected" last={false} onPress={() => {}} />
-              <Row icon="locate-outline" label="Edit Nutrition Goals" last={false} onPress={() => {}} />
-              <Row icon="chatbox-outline" label="Goals & current weight" last={false} onPress={() => {}} />
-              <Row icon="notifications-outline" label="Tracking Reminders" last={false} onPress={() => {}} />
-              <Row icon="time-outline" label="Weight History" last={false} onPress={() => {}} />
-              <Row icon="radio-button-on-outline" label="Ring Colors Explained" last onPress={() => {}} />
-            </Card>
+            <SettingsSectionHeader label="Goals & Tracking" />
+            <SettingsCard>
+              <SettingsRow icon="heart-outline" label="Apple Health" rightText="✓ Connected" last={false} onPress={() => {}} />
+              <SettingsRow icon="locate-outline" label="Edit Nutrition Goals" last={false} onPress={() => {}} />
+              <SettingsRow icon="chatbox-outline" label="Goals & current weight" last={false} onPress={() => {}} />
+              <SettingsRow icon="notifications-outline" label="Tracking Reminders" last={false} onPress={() => {}} />
+              <SettingsRow icon="time-outline" label="Weight History" last={false} onPress={() => {}} />
+              <SettingsRow icon="radio-button-on-outline" label="Ring Colors Explained" last onPress={() => {}} />
+            </SettingsCard>
 
-            <SectionHeader label="Support & Legal" />
-            <Card>
-              <Row icon="megaphone-outline" label="Request a Feature" last={false} onPress={() => {}} />
-              <Row icon="mail-outline" label="Support Email" last={false} onPress={() => {}} />
-              <Row icon="share-outline" label="Export PDF Summary Report" last={false} onPress={() => {}} />
-              <Row icon="sync-outline" label="Sync Data" rightText="Last Synced: 2:41 PM" last={false} onPress={() => {}} />
-              <Row icon="document-text-outline" label="Terms and Conditions" last={false} onPress={() => {}} />
-              <Row icon="shield-checkmark-outline" label="Privacy Policy" last onPress={() => {}} />
-            </Card>
+            <SettingsSectionHeader label="Support & Legal" />
+            <SettingsCard>
+              <SettingsRow icon="megaphone-outline" label="Request a Feature" last={false} onPress={() => {}} />
+              <SettingsRow icon="mail-outline" label="Support Email" last={false} onPress={() => {}} />
+              <SettingsRow icon="share-outline" label="Export PDF Summary Report" last={false} onPress={() => {}} />
+              <SettingsRow icon="sync-outline" label="Sync Data" rightText="Last Synced: 2:41 PM" last={false} onPress={() => {}} />
+              <SettingsRow icon="document-text-outline" label="Terms and Conditions" last={false} onPress={() => {}} />
+              <SettingsRow icon="shield-checkmark-outline" label="Privacy Policy" last onPress={() => {}} />
+            </SettingsCard>
 
-            <SectionHeader label="Follow Us" />
-            <Card>
-              <Row icon="logo-instagram" label="Instagram" last={false} onPress={() => {}} />
-              <Row icon="logo-tiktok" label="TikTok" last={false} onPress={() => {}} />
-              <Row icon="close" label="X" last onPress={() => {}} />
-            </Card>
+            <SettingsSectionHeader label="Follow Us" />
+            <SettingsCard>
+              <SettingsRow icon="logo-instagram" label="Instagram" last={false} onPress={() => {}} />
+              <SettingsRow icon="logo-tiktok" label="TikTok" last={false} onPress={() => {}} />
+              <SettingsRow icon="close" label="X" last onPress={() => {}} />
+            </SettingsCard>
 
-            <SectionHeader label="Account Actions" />
-            <Card>
-              <Row icon="person-remove-outline" label="Delete Account" last onPress={() => {}} />
-            </Card>
+            <SettingsSectionHeader label="Account Actions" />
+            <SettingsCard>
+              <SettingsRow icon="person-remove-outline" label="Delete Account" last onPress={() => {}} />
+            </SettingsCard>
 
             <View style={{ height: Spacing.xxl }} />
           </ScrollView>
@@ -240,9 +214,9 @@ const styles = StyleSheet.create({
   profileRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: CARD_BG,
+    backgroundColor: 'rgba(40,40,40,0.6)',
     borderWidth: 1,
-    borderColor: CARD_BORDER,
+    borderColor: 'rgba(255,255,255,0.06)',
     borderRadius: 18,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
@@ -280,28 +254,13 @@ const styles = StyleSheet.create({
   },
   profileRowSub: {
     fontSize: 13,
-    color: ICON_COLOR,
+    color: SETTINGS_ICON_COLOR,
     marginTop: 2,
   },
-  sectionHeader: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 24,
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  card: {
-    backgroundColor: CARD_BG,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    borderRadius: 18,
-    overflow: 'hidden',
-    marginBottom: Spacing.lg,
-  },
   inviteCard: {
-    backgroundColor: CARD_BG,
+    backgroundColor: 'rgba(40,40,40,0.6)',
     borderWidth: 1,
-    borderColor: CARD_BORDER,
+    borderColor: 'rgba(255,255,255,0.06)',
     borderRadius: 18,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
@@ -309,26 +268,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
   },
   referRow: {
-    height: undefined,
-    minHeight: ROW_HEIGHT,
-    paddingHorizontal: 0,
-    borderBottomWidth: 0,
-  },
-  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: ROW_HEIGHT,
-    paddingHorizontal: Spacing.md,
+    minHeight: SETTINGS_ROW_HEIGHT,
+    paddingHorizontal: 0,
   },
-  rowBorder: {
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-  },
-  rowPressed: {
-    opacity: 0.8,
-  },
-  rowIcon: {
-    marginRight: Spacing.md,
+  referRowInner: {
+    borderBottomWidth: 0,
   },
   rowTextWrap: {
     flex: 1,
@@ -337,23 +283,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   referIconWrap: {
-    width: ICON_SIZE + 4,
-    height: ICON_SIZE + 4,
+    width: SETTINGS_ICON_SIZE + 4,
+    height: SETTINGS_ICON_SIZE + 4,
     marginRight: Spacing.md,
   },
   rowLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: Colors.white,
+    color: '#FFFFFF',
   },
   rowSubtitle: {
     fontSize: 13,
-    color: ICON_COLOR,
+    color: SETTINGS_ICON_COLOR,
     marginTop: 2,
   },
-  rowRight: {
-    fontSize: 13,
-    color: ICON_COLOR,
-    marginLeft: Spacing.sm,
+  logOutButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,80,80,0.2)',
+  },
+  logOutButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff6b6b',
   },
 });

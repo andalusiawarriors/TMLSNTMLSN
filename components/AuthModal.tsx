@@ -28,6 +28,7 @@ export type AuthModalProps = {
   onClose: () => void;
   onSignUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   onSignIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  onDebugTestSignup?: () => Promise<void>;
 };
 
 function SectionHeader({ label }: { label: string }) {
@@ -57,7 +58,7 @@ function AuthRow({
   );
 }
 
-export function AuthModal({ visible, onClose, onSignUp, onSignIn }: AuthModalProps) {
+export function AuthModal({ visible, onClose, onSignUp, onSignIn, onDebugTestSignup }: AuthModalProps) {
   const [step, setStep] = useState<AuthModalStep>('choice');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -127,8 +128,11 @@ export function AuthModal({ visible, onClose, onSignUp, onSignIn }: AuthModalPro
           icon="log-in-outline"
           label="Log in"
           onPress={() => { setStep('login'); setError(null); }}
-          last
+          last={!__DEV__ || !onDebugTestSignup}
         />
+        {__DEV__ && onDebugTestSignup ? (
+          <AuthRow icon="bug-outline" label="[TEMP DEBUG] Test signup" onPress={onDebugTestSignup} last />
+        ) : null}
       </View>
     </View>
   );

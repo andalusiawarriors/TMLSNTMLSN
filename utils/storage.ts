@@ -29,16 +29,11 @@ const KEYS = {
 export { DEFAULT_GOALS, DEFAULT_SETTINGS };
 
 // Nutrition Storage Functions
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
-  const uid = getStorageUserId();
-  if (uid && isSupabaseConfigured()) {
-    try {
-      await supabaseStorage.supabaseSaveNutritionLog(uid, log);
-      return;
-    } catch (error) {
-      console.error('Error saving nutrition log:', error);
-      throw error;
-    }
+  if (isSupabaseConfigured() && !getStorageUserId()) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
   }
   try {
     const existingLogs = await getNutritionLogs();
@@ -51,10 +46,11 @@ export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
-  const uid = getStorageUserId();
-  if (uid && isSupabaseConfigured()) {
-    return supabaseStorage.supabaseGetNutritionLogs(uid);
+  if (isSupabaseConfigured() && !getStorageUserId()) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getNutritionLogs');
+    return [];
   }
   try {
     const data = await AsyncStorage.getItem(KEYS.NUTRITION_LOGS);
@@ -65,6 +61,7 @@ export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getTodayNutritionLog = async (): Promise<NutritionLog | null> => {
   try {
     const logs = await getNutritionLogs();
@@ -76,6 +73,7 @@ export const getTodayNutritionLog = async (): Promise<NutritionLog | null> => {
   }
 };
 
+// TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getNutritionLogByDate = async (dateString: string): Promise<NutritionLog | null> => {
   try {
     const logs = await getNutritionLogs();
@@ -89,6 +87,10 @@ export const getNutritionLogByDate = async (dateString: string): Promise<Nutriti
 // Workout Storage Functions
 export const saveWorkoutSession = async (session: WorkoutSession): Promise<void> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
@@ -110,6 +112,10 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
 
 export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getWorkoutSessions');
+    return [];
+  }
   if (uid && isSupabaseConfigured()) {
     return supabaseStorage.supabaseGetWorkoutSessions(uid);
   }
@@ -137,6 +143,10 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
 // Saved Routines (templates for My Routines)
 export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getSavedRoutines');
+    return [];
+  }
   if (uid && isSupabaseConfigured()) {
     return supabaseStorage.supabaseGetSavedRoutines(uid);
   }
@@ -151,6 +161,10 @@ export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
 
 export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveSavedRoutine(uid, routine);
@@ -171,9 +185,38 @@ export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => 
   }
 };
 
+export const deleteSavedRoutine = async (routineId: string): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseDeleteSavedRoutine(uid, routineId);
+      return;
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      throw error;
+    }
+  }
+  try {
+    const routines = await getSavedRoutines();
+    const updated = routines.filter((r) => r.id !== routineId);
+    await AsyncStorage.setItem(KEYS.SAVED_ROUTINES, JSON.stringify(updated));
+  } catch (error) {
+    console.error('Error deleting routine:', error);
+    throw error;
+  }
+};
+
 // Saved Foods Storage Functions
 export const getSavedFoods = async (): Promise<SavedFood[]> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getSavedFoods');
+    return [];
+  }
   if (uid && isSupabaseConfigured()) {
     return supabaseStorage.supabaseGetSavedFoods(uid);
   }
@@ -189,6 +232,10 @@ export const getSavedFoods = async (): Promise<SavedFood[]> => {
 
 export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'useCount'>): Promise<void> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveSavedFood(uid, food);
@@ -227,6 +274,10 @@ export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'u
 // Prompt Storage Functions
 export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSavePrompts(uid, prompts);
@@ -246,6 +297,10 @@ export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
 
 export const getPrompts = async (): Promise<Prompt[]> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getPrompts');
+    return [];
+  }
   if (uid && isSupabaseConfigured()) {
     return supabaseStorage.supabaseGetPrompts(uid);
   }
@@ -261,6 +316,10 @@ export const getPrompts = async (): Promise<Prompt[]> => {
 // Settings Storage Functions
 export const saveUserSettings = async (settings: UserSettings): Promise<void> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveUserSettings(uid, settings);
@@ -280,6 +339,10 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
 
 export const getUserSettings = async (): Promise<UserSettings> => {
   const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getUserSettings');
+    return DEFAULT_SETTINGS;
+  }
   if (uid && isSupabaseConfigured()) {
     return supabaseStorage.supabaseGetUserSettings(uid);
   }
@@ -289,6 +352,27 @@ export const getUserSettings = async (): Promise<UserSettings> => {
   } catch (error) {
     console.error('Error getting user settings:', error);
     return DEFAULT_SETTINGS;
+  }
+};
+
+let _promptsMigrationAttempted = false;
+
+/** One-time migration: copy local prompts to Supabase. Does not delete local data. */
+export const migrateLocalPromptsToSupabase = async (): Promise<number> => {
+  if (_promptsMigrationAttempted) return 0;
+  _promptsMigrationAttempted = true;
+  const uid = getStorageUserId();
+  if (!uid || !isSupabaseConfigured()) return 0;
+  try {
+    const data = await AsyncStorage.getItem(KEYS.PROMPTS);
+    const local = data ? JSON.parse(data) : [];
+    if (!Array.isArray(local) || local.length === 0) return 0;
+    await supabaseStorage.supabaseSavePrompts(uid, local);
+    if (__DEV__) console.log('[migrateLocalPromptsToSupabase] migrated:', local.length);
+    return local.length;
+  } catch (e) {
+    if (__DEV__) console.warn('[migrateLocalPromptsToSupabase] failed:', e);
+    return 0;
   }
 };
 

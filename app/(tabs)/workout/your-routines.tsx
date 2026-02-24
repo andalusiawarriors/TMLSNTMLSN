@@ -7,15 +7,24 @@ import {
   Pressable,
   Alert,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  TextInput,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
-import { getSavedRoutines, saveSavedRoutine } from '../../../utils/storage';
+import { Input } from '../../../components/Input';
+import { Swipeable } from 'react-native-gesture-handler';
+import { getSavedRoutines, saveSavedRoutine, deleteSavedRoutine } from '../../../utils/storage';
 import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../../constants/theme';
-import { SavedRoutine } from '../../../types';
+import { SavedRoutine, SavedRoutineExercise } from '../../../types';
 import { generateId, formatDuration } from '../../../utils/helpers';
 import { useButtonSound } from '../../../hooks/useButtonSound';
+import { useTheme } from '../../../context/ThemeContext';
 import { Card } from '../../../components/Card';
 import { BackButton } from '../../../components/BackButton';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
@@ -29,13 +38,16 @@ type YourRoutinesScreenProps = {
 
 export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp }: YourRoutinesScreenProps = {}) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const { playIn, playOut } = useButtonSound();
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>([]);
+  const [isSavingRoutine, setIsSavingRoutine] = useState(false);
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [editingRoutine, setEditingRoutine] = useState<{
     name: string;
-    exercises: { id: string; name: string; restTimer: number; exerciseDbId?: string }[];
+    exercises: SavedRoutineExercise[];
   }>({ name: 'New Routine', exercises: [] });
 
   const loadRoutines = useCallback(async () => {
@@ -62,7 +74,28 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
   }) => {
     setEditingRoutine((prev) => ({
       ...prev,
-      exercises: [...prev.exercises, { ...exercise, id: generateId() }],
+      exercises: [
+        ...prev.exercises,
+        {
+          id: generateId(),
+          name: exercise.name,
+          restTimer: exercise.restTimer,
+          exerciseDbId: exercise.exerciseDbId,
+          targetSets: 3,
+          targetReps: 8,
+          suggestedWeight: undefined,
+        },
+      ],
+    }));
+  };
+
+  const updateExerciseInRoutine = (
+    id: string,
+    updates: Partial<Pick<SavedRoutineExercise, 'targetSets' | 'targetReps' | 'suggestedWeight' | 'restTimer'>>
+  ) => {
+    setEditingRoutine((prev) => ({
+      ...prev,
+      exercises: prev.exercises.map((e) => (e.id === id ? { ...e, ...updates } : e)),
     }));
   };
 
@@ -74,43 +107,82 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
   };
 
   const saveRoutine = async () => {
+    if (isSavingRoutine) return;
     if (editingRoutine.exercises.length === 0) {
       Alert.alert('No exercises', 'Add at least one exercise to save the routine.');
       return;
     }
-    let name = editingRoutine.name.trim();
+    const name = editingRoutine.name.trim();
     if (!name || name === 'New Routine') {
-      Alert.prompt(
-        'Routine name',
-        'Enter a name for this routine',
-        (text) => {
-          if (text?.trim()) {
-            saveRoutineWithName(text.trim());
-          }
-        }
-      );
+      Alert.alert('Routine name', 'Enter a name for this routine.');
       return;
+    }
+    for (const ex of editingRoutine.exercises) {
+      if (ex.targetSets < 1) {
+        Alert.alert('Invalid sets', `"${ex.name}": Sets must be at least 1.`);
+        return;
+      }
+      if (ex.restTimer < 0) {
+        Alert.alert('Invalid rest', `"${ex.name}": Rest timer must be 0 or more.`);
+        return;
+      }
     }
     saveRoutineWithName(name);
   };
 
   const saveRoutineWithName = async (name: string) => {
-    const routine: SavedRoutine = {
-      id: generateId(),
-      name,
-      exercises: editingRoutine.exercises.map((e) => ({
-        id: e.id,
-        name: e.name,
-        restTimer: e.restTimer,
-        exerciseDbId: e.exerciseDbId,
-      })),
-    };
-    await saveSavedRoutine(routine);
-    await loadRoutines();
-    setShowRoutineBuilder(false);
-    setEditingRoutine({ name: 'New Routine', exercises: [] });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('Saved', `"${name}" saved to My Routines.`);
+    if (isSavingRoutine) return;
+    setIsSavingRoutine(true);
+    try {
+      const routine: SavedRoutine = {
+        id: generateId(),
+        name,
+        exercises: editingRoutine.exercises.map((e) => ({
+          id: e.id,
+          name: e.name,
+          restTimer: e.restTimer,
+          exerciseDbId: e.exerciseDbId,
+          targetSets: e.targetSets,
+          targetReps: e.targetReps,
+          suggestedWeight: e.suggestedWeight != null && e.suggestedWeight >= 0 ? e.suggestedWeight : undefined,
+        })),
+      };
+      await saveSavedRoutine(routine);
+      await loadRoutines();
+      setShowRoutineBuilder(false);
+      setEditingRoutine({ name: 'New Routine', exercises: [] });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('Saved', `"${name}" saved to My Routines.`);
+    } catch (e) {
+      if (__DEV__) console.warn('[YourRoutines] save routine failed:', e);
+      Alert.alert('Save failed', 'Could not save routine. Try again.', [{ text: 'OK' }]);
+    } finally {
+      setIsSavingRoutine(false);
+    }
+  };
+
+  const handleDeleteRoutine = (routine: SavedRoutine) => {
+    Alert.alert(
+      'Delete routine',
+      `Delete "${routine.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSavedRoutine(routine.id);
+              await loadRoutines();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              if (__DEV__) console.warn('[YourRoutines] delete routine failed:', e);
+              Alert.alert('Delete failed', 'Could not delete routine. Try again.', [{ text: 'OK' }]);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleStartRoutine = (routine: SavedRoutine) => {
@@ -158,13 +230,27 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
         ) : (
           <View style={styles.routineList}>
             {savedRoutines.map((routine) => (
-              <Pressable
+              <Swipeable
                 key={routine.id}
-                style={({ pressed }) => [styles.routineCardWrap, pressed && { opacity: 0.9 }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => handleStartRoutine(routine)}
+                renderRightActions={() => (
+                  <Pressable
+                    style={({ pressed }) => [styles.routineDeleteAction, pressed && { opacity: 0.8 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={() => handleDeleteRoutine(routine)}
+                  >
+                    <Text style={styles.routineDeleteText}>Delete</Text>
+                  </Pressable>
+                )}
+                friction={2}
+                rightThreshold={40}
               >
+                <Pressable
+                  style={({ pressed }) => [styles.routineCardWrap, pressed && { opacity: 0.9 }]}
+                  onPressIn={playIn}
+                  onPressOut={playOut}
+                  onPress={() => handleStartRoutine(routine)}
+                >
                 <Card gradientFill borderRadius={18} style={styles.routineCard}>
                 <View style={styles.routineCardLeft}>
                   <View style={styles.routineCardIcon}>
@@ -183,114 +269,167 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                 <Text style={styles.routineCardChevron}>›</Text>
                 </Card>
               </Pressable>
+              </Swipeable>
             ))}
           </View>
         )}
         </ScrollView>
       </View>
 
-      {/* ─── ROUTINE BUILDER OVERLAY (Hevy-style) ─── */}
+      {/* ─── ROUTINE BUILDER OVERLAY (matches workout log design) ─── */}
       {showRoutineBuilder && (
-        <View style={[styles.overlay, { height: windowHeight }]}>
-          <ScrollView
-            style={styles.overlayScroll}
-            contentContainerStyle={styles.overlayContent}
+        <View style={[styles.overlay, { height: windowHeight, backgroundColor: colors.primaryDark }]}>
+          <KeyboardAvoidingView
+            style={styles.overlayKeyboardWrap}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
           >
-            {/* Top bar */}
-            <View style={styles.builderTopBar}>
-              <Pressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() => {
-                  setShowRoutineBuilder(false);
-                  setEditingRoutine({ name: 'New Routine', exercises: [] });
-                }}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={styles.builderBackWrap}
-              >
-                <Text style={styles.builderBackArrow}>▼</Text>
-              </Pressable>
-              <Pressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() =>
-                  Alert.prompt(
-                    'Routine name',
-                    'Enter a name for this routine',
-                    (text) => {
-                      if (text?.trim()) {
-                        setEditingRoutine((prev) => ({ ...prev, name: text.trim() }));
-                      }
-                    },
-                    'plain-text',
-                    editingRoutine.name === 'New Routine' ? '' : editingRoutine.name
-                  )
-                }
-                style={styles.builderTitleWrap}
-              >
-                <Text style={styles.builderTitle}>{editingRoutine.name}</Text>
-                <Text style={styles.builderTitleHint}>tap to rename</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.builderSaveButton, pressed && { opacity: 0.85 }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={saveRoutine}
-              >
-                <Text style={styles.builderSaveButtonText}>Save</Text>
-              </Pressable>
-            </View>
-
-            {/* Exercise count */}
-            <View style={styles.builderSummary}>
-              <Text style={styles.builderSummaryText}>
-                {editingRoutine.exercises.length} exercise{editingRoutine.exercises.length !== 1 ? 's' : ''}
-              </Text>
-            </View>
-
-            {/* Exercise blocks */}
-            {editingRoutine.exercises.map((ex, i) => (
-              <View key={ex.id} style={styles.builderExerciseBlock}>
-                <View style={styles.builderExerciseRow}>
-                  <View style={styles.builderExerciseDot}>
-                    <Text style={styles.builderExerciseDotText}>{i + 1}</Text>
-                  </View>
-                  <View style={styles.builderExerciseContent}>
-                    <Text style={styles.builderExerciseName}>{ex.name}</Text>
-                    <Text style={styles.builderExerciseDetail}>
-                      Rest: {formatDuration(ex.restTimer)}
-                    </Text>
-                  </View>
-                  <Pressable
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={() => removeExerciseFromRoutine(ex.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    style={styles.builderRemoveButton}
-                  >
-                    <Text style={styles.builderRemoveButtonText}>✕</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-
-            {/* Add exercise button */}
-            <Pressable
-              style={({ pressed }) => [styles.builderAddButton, pressed && { opacity: 0.85 }]}
-              onPressIn={playIn}
-              onPressOut={playOut}
-              onPress={() => setShowExercisePicker(true)}
+            <ScrollView
+              style={styles.overlayScroll}
+              contentContainerStyle={[
+                styles.overlayContent,
+                { paddingTop: TITLE_ROW_TOP, paddingBottom: Math.max(Spacing.xl * 2, insets.bottom + 80) },
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.builderAddButtonText}>+ Add Exercise</Text>
-            </Pressable>
+              {/* Top bar (matches workout log logTopBar) */}
+              <View style={styles.builderTopBar}>
+                <Pressable
+                  onPressIn={playIn}
+                  onPressOut={playOut}
+                  onPress={() => {
+                    setShowRoutineBuilder(false);
+                    setEditingRoutine({ name: 'New Routine', exercises: [] });
+                  }}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={styles.builderBackWrap}
+                >
+                  <View style={styles.minimizeIconButton}>
+                    <LinearGradient
+                      colors={colors.tabBarBorder as [string, string]}
+                      style={[StyleSheet.absoluteFillObject, { borderRadius: 15 }]}
+                    />
+                    <LinearGradient
+                      colors={colors.tabBarFill as [string, string]}
+                      style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 14 }}
+                    />
+                    <Ionicons name="chevron-down" size={18} color={colors.primaryLight} />
+                  </View>
+                </Pressable>
+                <View style={styles.builderTitleCenter}>
+                  <Text style={[styles.builderTitle, { color: colors.primaryLight }]}>New Routine</Text>
+                </View>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.builderSaveButton,
+                    { backgroundColor: colors.primaryLight },
+                    pressed && { opacity: 0.85 },
+                    isSavingRoutine && { opacity: 0.6 },
+                  ]}
+                  onPressIn={playIn}
+                  onPressOut={playOut}
+                  onPress={saveRoutine}
+                  disabled={isSavingRoutine}
+                >
+                  <Text style={[styles.builderSaveButtonText, { color: colors.primaryDark }]}>Save</Text>
+                </Pressable>
+              </View>
 
-            <ExercisePickerModal
-              visible={showExercisePicker}
-              onClose={() => setShowExercisePicker(false)}
-              onSelect={addExerciseToRoutine}
-              defaultRestTimer={120}
-            />
-          </ScrollView>
+              {/* Routine name input (matches Input component styling) */}
+              <Input
+                label="Routine name"
+                placeholder="e.g. Push Day, Leg Day"
+                value={editingRoutine.name === 'New Routine' ? '' : editingRoutine.name}
+                onChangeText={(text) =>
+                  setEditingRoutine((prev) => ({ ...prev, name: text.trim() || 'New Routine' }))
+                }
+                containerStyle={styles.builderInputWrap}
+              />
+
+              {/* Exercise list card (matches tmlsn-routines Card + exerciseRow) */}
+              <Card gradientFill borderRadius={20} style={styles.builderCard}>
+                <View style={styles.builderSummary}>
+                  <Text style={[styles.builderSummaryText, { color: colors.primaryLight + '80' }]}>
+                    {editingRoutine.exercises.length} exercise{editingRoutine.exercises.length !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.builderHelperText, { color: colors.primaryLight + '60' }]}>
+                  These values will pre-fill your workout when you load this routine.
+                </Text>
+                {editingRoutine.exercises.map((ex, i) => (
+                  <View key={ex.id} style={styles.builderExerciseBlock}>
+                    <View style={styles.builderExerciseRow}>
+                      <View style={[styles.builderExerciseDot, { borderColor: colors.primaryLight + '25' }]}>
+                        <Text style={[styles.builderExerciseDotText, { color: colors.primaryLight + '60' }]}>{i + 1}</Text>
+                      </View>
+                      <View style={styles.builderExerciseContent}>
+                        <Text style={[styles.builderExerciseName, { color: colors.primaryLight }]}>{ex.name}</Text>
+                      </View>
+                      <Pressable
+                        onPressIn={playIn}
+                        onPressOut={playOut}
+                        onPress={() => removeExerciseFromRoutine(ex.id)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={[styles.builderRemoveButton, { backgroundColor: Colors.accentRed + '15' }]}
+                      >
+                        <Text style={[styles.builderRemoveButtonText, { color: Colors.accentRed + 'CC' }]}>✕</Text>
+                      </Pressable>
+                    </View>
+                    <View style={styles.builderInputsRow}>
+                      <View style={styles.builderNumericInputWrap}>
+                        <Text style={[styles.builderInputLabel, { color: colors.primaryLight + '80' }]}>Sets</Text>
+                        <TextInput
+                          style={[styles.builderNumericInput, { color: colors.primaryLight, borderColor: colors.primaryLight + '40' }]}
+                          value={String(ex.targetSets)}
+                          onChangeText={(t) => {
+                            const v = parseInt(t.replace(/\D/g, ''), 10);
+                            updateExerciseInRoutine(ex.id, { targetSets: isNaN(v) ? 0 : Math.min(99, v) });
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="3"
+                          placeholderTextColor={colors.primaryLight + '50'}
+                        />
+                      </View>
+                      <View style={styles.builderNumericInputWrap}>
+                        <Text style={[styles.builderInputLabel, { color: colors.primaryLight + '80' }]}>Rest (sec)</Text>
+                        <TextInput
+                          style={[styles.builderNumericInput, { color: colors.primaryLight, borderColor: colors.primaryLight + '40' }]}
+                          value={String(ex.restTimer)}
+                          onChangeText={(t) => {
+                            const v = parseInt(t.replace(/\D/g, ''), 10);
+                            updateExerciseInRoutine(ex.id, { restTimer: isNaN(v) ? 0 : Math.max(0, Math.min(9999, v)) });
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="120"
+                          placeholderTextColor={colors.primaryLight + '50'}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ))}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.builderAddButton,
+                    { backgroundColor: colors.primaryLight + '15' },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPressIn={playIn}
+                  onPressOut={playOut}
+                  onPress={() => setShowExercisePicker(true)}
+                >
+                  <Text style={[styles.builderAddButtonText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
+                </Pressable>
+              </Card>
+            </ScrollView>
+          </KeyboardAvoidingView>
+
+          <ExercisePickerModal
+            visible={showExercisePicker}
+            onClose={() => setShowExercisePicker(false)}
+            onSelect={addExerciseToRoutine}
+            defaultRestTimer={120}
+          />
         </View>
       )}
     </>
@@ -438,25 +577,39 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '40',
     paddingLeft: 8,
   },
+  routineDeleteAction: {
+    backgroundColor: Colors.accentRed,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    borderRadius: 12,
+  },
+  routineDeleteText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.white,
+    letterSpacing: -0.11,
+  },
 
-  // ─── OVERLAY ──────────────────────────────────────────────────────────────
+  // ─── OVERLAY (matches workout log) ─────────────────────────────────────────
   overlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.primaryDark,
     zIndex: 100,
+  },
+  overlayKeyboardWrap: {
+    flex: 1,
   },
   overlayScroll: {
     flex: 1,
   },
   overlayContent: {
-    padding: Spacing.md,
-    paddingBottom: Spacing.xl * 3,
+    paddingHorizontal: Spacing.md,
   },
 
-  // ─── BUILDER TOP BAR ──────────────────────────────────────────────────────
+  // ─── BUILDER TOP BAR (matches logTopBar) ───────────────────────────────────
   builderTopBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -465,134 +618,149 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   builderBackWrap: {
+    padding: Spacing.xs,
     width: 44,
-    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  builderBackArrow: {
-    fontFamily: Font.monoMedium,
-    fontSize: 18,
-    color: Colors.primaryLight,
+  minimizeIconButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  builderTitleWrap: {
+  builderTitleCenter: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   builderTitle: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.5,
-  },
-  builderTitleHint: {
-    fontFamily: Font.mono,
-    fontSize: Typography.label,
-    color: Colors.primaryLight + '40',
-    letterSpacing: 0.3,
-    marginTop: 2,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    textAlign: 'center',
   },
   builderSaveButton: {
-    backgroundColor: Colors.accentBlue,
     paddingVertical: 10,
     paddingHorizontal: 22,
     borderRadius: 20,
   },
   builderSaveButtonText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.white,
     fontWeight: '700' as const,
-    letterSpacing: 0.5,
+    letterSpacing: -0.11,
   },
 
-  // ─── BUILDER SUMMARY ──────────────────────────────────────────────────────
+  // ─── BUILDER INPUT ────────────────────────────────────────────────────────
+  builderInputWrap: {
+    marginBottom: Spacing.md,
+  },
+
+  // ─── BUILDER CARD (matches tmlsn-routines Card) ────────────────────────────
+  builderCard: {
+    padding: Spacing.md,
+    marginVertical: 0,
+  },
   builderSummary: {
-    marginBottom: 16,
+    marginBottom: 12,
     paddingHorizontal: 4,
   },
   builderSummaryText: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '50',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase' as const,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+  },
+  builderHelperText: {
+    fontSize: Typography.label,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    marginBottom: 12,
+    lineHeight: 18,
   },
 
   // ─── BUILDER EXERCISE BLOCKS ──────────────────────────────────────────────
   builderExerciseBlock: {
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
-    padding: 12,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   builderExerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
   },
   builderExerciseDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
-    borderColor: Colors.primaryLight + '25',
     alignItems: 'center',
     justifyContent: 'center',
   },
   builderExerciseDotText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
     fontWeight: '700' as const,
-    color: Colors.primaryLight + '60',
+    letterSpacing: -0.11,
   },
   builderExerciseContent: {
     flex: 1,
   },
   builderExerciseName: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-    letterSpacing: -0.3,
-  },
-  builderExerciseDetail: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '50',
-    letterSpacing: 0.2,
-    marginTop: 2,
+    fontWeight: '500',
+    letterSpacing: -0.11,
+  },
+  builderInputsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    paddingLeft: 34,
+  },
+  builderNumericInputWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  builderInputLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginBottom: 4,
+    letterSpacing: -0.11,
+  },
+  builderNumericInput: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    minHeight: 36,
   },
   builderRemoveButton: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.accentRed + '15',
+    borderRadius: BorderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   builderRemoveButtonText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.accentRed + 'CC',
     fontWeight: '700' as const,
   },
 
-  // ─── BUILDER ADD BUTTON ───────────────────────────────────────────────────
+  // ─── BUILDER ADD BUTTON (matches addSetButtonBlock) ────────────────────────
   builderAddButton: {
-    backgroundColor: Colors.primaryLight + '15',
-    borderRadius: 14,
-    paddingVertical: 12,
+    alignSelf: 'stretch',
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 8,
   },
   builderAddButtonText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
     fontWeight: '600' as const,
-    color: Colors.primaryLight + '80',
-    letterSpacing: 0.3,
+    letterSpacing: -0.11,
   },
 });
