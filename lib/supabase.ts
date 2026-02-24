@@ -2,9 +2,10 @@ import 'react-native-url-polyfill/auto';
 
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SUPABASE_URL as CONFIG_URL, SUPABASE_ANON_KEY as CONFIG_KEY } from './supabaseConfig';
 
-const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? '').trim();
-const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '').trim();
+const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? CONFIG_URL).trim();
+const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? CONFIG_KEY).trim();
 
 const isValid =
   supabaseUrl.length > 0 &&
@@ -12,13 +13,9 @@ const isValid =
   supabaseUrl.includes('supabase.co');
 
 if (__DEV__ && !isValid) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn(
-      '[Supabase] EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY is missing. Add them to .env.local and restart with: npx expo start --clear'
-    );
-  } else if (!supabaseUrl.includes('supabase.co')) {
-    console.warn('[Supabase] EXPO_PUBLIC_SUPABASE_URL does not look like a Supabase URL (should contain supabase.co). Check .env.local');
-  }
+  console.warn(
+    '[Supabase] Set your project in lib/supabaseConfig.ts (SUPABASE_URL, SUPABASE_ANON_KEY) or in .env.local. Restart with: npx expo start --clear'
+  );
 }
 
 export const supabase = isValid

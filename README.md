@@ -98,7 +98,8 @@ tmlsn-app/
    cp .env.local.example .env.local
    ```
    
-   Edit `.env.local` and add your API keys:
+   Edit `.env.local` and add your values:
+   - **Supabase (required for login/sync):** `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` — see [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
    - `FOOD_RECOGNITION_API_KEY`: For photo-based meal logging
    - `CONTENT_API_KEY`: For newsletter/YouTube content notifications
    - `ANALYTICS_KEY`: (Optional) For analytics
