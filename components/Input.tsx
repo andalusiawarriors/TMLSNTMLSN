@@ -1,11 +1,12 @@
 import React from 'react';
-import { TextInput, Text, View, StyleSheet, TextInputProps, ViewStyle } from 'react-native';
+import { TextInput, Text, View, StyleSheet, TextInputProps, StyleProp, ViewStyle } from 'react-native';
 import { Colors, Typography, BorderRadius, Spacing } from '../constants/theme';
 
 interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
-  containerStyle?: ViewStyle;
+  containerStyle?: StyleProp<ViewStyle>;
+  fontFamily?: string;
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -13,21 +14,22 @@ export const Input: React.FC<InputProps> = ({
   error,
   containerStyle,
   style,
+  fontFamily,
   ...props
 }) => {
+  const labelStyle = fontFamily ? [styles.label, { fontFamily }] : styles.label;
+  const inputStyle = fontFamily
+    ? [styles.input, { fontFamily }, error && styles.inputError, style]
+    : [styles.input, error && styles.inputError, style];
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text style={labelStyle}>{label}</Text>}
       <TextInput
-        style={[
-          styles.input,
-          error && styles.inputError,
-          style,
-        ]}
+        style={inputStyle}
         placeholderTextColor={Colors.primaryLight}
         {...props}
       />
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <Text style={[styles.error, fontFamily && { fontFamily }]}>{error}</Text>}
     </View>
   );
 };

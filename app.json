@@ -8,7 +8,7 @@
     "scheme": "tmlsn",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#2F3031"
     },
@@ -41,10 +41,12 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/icon.png",
           "color": "#2F3031"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

@@ -18,6 +18,14 @@ export const getTodayDateString = (): string => {
   return new Date().toISOString().split('T')[0];
 };
 
+/** YYYY-MM-DD from a Date (local date, noon UTC to avoid timezone shift) */
+export const toDateString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // Number Formatting
 export const formatNumber = (num: number, decimals: number = 0): string => {
   return num.toFixed(decimals);
@@ -54,3 +62,73 @@ export const sanitizeNumberInput = (value: string): string => {
   // Remove any non-numeric characters except decimal point
   return value.replace(/[^0-9.]/g, '');
 };
+
+// Routine template → workout mapping
+const DEFAULT_TARGET_SETS = 3;
+const DEFAULT_TARGET_REPS = 8;
+const DEFAULT_REST_TIMER = 120;
+
+/**
+ * Build pre-filled set rows from routine template values.
+ * Uses robust number coercion; invalid values fall back to defaults.
+ */
+export function buildTemplateSets(
+  targetSets: number | undefined | null,
+  targetReps: number | undefined | null,
+  suggestedWeight: number | undefined | null
+): { id: string; weight: number; reps: number; completed: boolean }[] {
+  const sets = Math.max(1, Math.min(99, Math.floor(Number(targetSets)) || DEFAULT_TARGET_SETS));
+  const reps = Math.max(1, Math.min(999, Math.floor(Number(targetReps)) || DEFAULT_TARGET_REPS));
+  const weight = (() => {
+    const v = Number(suggestedWeight);
+    return Number.isFinite(v) && v >= 0 ? v : 0;
+  })();
+  return Array.from({ length: sets }, () => ({
+    id: generateId(),
+    weight,
+    reps,
+    completed: false,
+  }));
+}
+
+/**
+ * Build an Exercise from a SavedRoutine template item.
+ * Uses generateId() for exercise and set IDs (no reuse of routine ids).
+ * @param routineExercise - template from SavedRoutine.exercises (supports old shape without targetSets/targetReps)
+ * @param defaultRestTimer - fallback when restTimer is missing/invalid (e.g. from getUserSettings)
+ */
+export function buildExerciseFromRoutineTemplate(
+  routineExercise: {
+    id?: string;
+    name?: string;
+    restTimer?: number;
+    exerciseDbId?: string;
+    targetSets?: number;
+    targetReps?: number;
+    suggestedWeight?: number;
+  },
+  defaultRestTimer: number = DEFAULT_REST_TIMER
+): {
+  id: string;
+  name: string;
+  sets: { id: string; weight: number; reps: number; completed: boolean }[];
+  restTimer: number;
+  exerciseDbId?: string;
+} {
+  const restTimer = (() => {
+    const v = Number(routineExercise.restTimer);
+    return Number.isFinite(v) && v >= 0 ? Math.floor(v) : defaultRestTimer;
+  })();
+  const sets = buildTemplateSets(
+    routineExercise.targetSets,
+    routineExercise.targetReps,
+    routineExercise.suggestedWeight
+  );
+  return {
+    id: generateId(),
+    name: String(routineExercise.name ?? ''),
+    sets,
+    restTimer,
+    exerciseDbId: routineExercise.exerciseDbId,
+  };
+}

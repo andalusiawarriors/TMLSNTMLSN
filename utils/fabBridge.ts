@@ -1,0 +1,126 @@
+/**
+ * fabBridge – lightweight pub/sub so the FAB button (rendered in _layout.tsx)
+ * can talk to the popup logic (in nutrition.tsx) without React Context.
+ */
+
+type VoidCb = () => void;
+type BoolCb = (open: boolean) => void;
+type CardCb = (card: 'saved' | 'search' | 'scan') => void;
+
+// ── FAB pressed (layout → nutrition) ──
+const pressListeners: VoidCb[] = [];
+export function emitFabPress() {
+  pressListeners.forEach(fn => fn());
+}
+export function onFabPress(fn: VoidCb): VoidCb {
+  pressListeners.push(fn);
+  return () => {
+    const i = pressListeners.indexOf(fn);
+    if (i >= 0) pressListeners.splice(i, 1);
+  };
+}
+
+// ── Popup state (nutrition → layout, so layout can rotate the FAB icon) ──
+const stateListeners: BoolCb[] = [];
+export function emitPopupState(open: boolean) {
+  stateListeners.forEach(fn => fn(open));
+}
+export function onPopupState(fn: BoolCb): VoidCb {
+  stateListeners.push(fn);
+  return () => {
+    const i = stateListeners.indexOf(fn);
+    if (i >= 0) stateListeners.splice(i, 1);
+  };
+}
+
+// ── Card selected in popup (layout → nutrition) ──
+const cardListeners: CardCb[] = [];
+export function emitCardSelect(card: 'saved' | 'search' | 'scan') {
+  cardListeners.forEach(fn => fn(card));
+}
+export function onCardSelect(fn: CardCb): VoidCb {
+  cardListeners.push(fn);
+  return () => {
+    const i = cardListeners.indexOf(fn);
+    if (i >= 0) cardListeners.splice(i, 1);
+  };
+}
+
+// ── Workout FAB card select (layout → workout screen) ──
+type WorkoutCard = 'tmlsn' | 'your-routines' | 'empty';
+const workoutCardListeners: ((card: WorkoutCard) => void)[] = [];
+export function emitWorkoutCardSelect(card: WorkoutCard) {
+  workoutCardListeners.forEach(fn => fn(card));
+}
+export function onWorkoutCardSelect(fn: (card: WorkoutCard) => void): VoidCb {
+  workoutCardListeners.push(fn);
+  return () => {
+    const i = workoutCardListeners.indexOf(fn);
+    if (i >= 0) workoutCardListeners.splice(i, 1);
+  };
+}
+
+// ── Profile sheet (nutrition → layout, so sheet can render with tab bar on top) ──
+const profileStateListeners: BoolCb[] = [];
+export function emitProfileSheetState(open: boolean) {
+  profileStateListeners.forEach(fn => fn(open));
+}
+export function onProfileSheetState(fn: BoolCb): VoidCb {
+  profileStateListeners.push(fn);
+  return () => {
+    const i = profileStateListeners.indexOf(fn);
+    if (i >= 0) profileStateListeners.splice(i, 1);
+  };
+}
+
+// ── Streak popup open/close (nutrition → layout, so tab bar shifts with content) ──
+const streakStateListeners: BoolCb[] = [];
+export function emitStreakPopupState(open: boolean) {
+  streakStateListeners.forEach(fn => fn(open));
+}
+export function onStreakPopupState(fn: BoolCb): VoidCb {
+  streakStateListeners.push(fn);
+  return () => {
+    const i = streakStateListeners.indexOf(fn);
+    if (i >= 0) streakStateListeners.splice(i, 1);
+  };
+}
+
+// ── Workout origin route (layout → ActiveWorkoutContext, for navigate back on minimize) ──
+const originRouteListeners: ((route: string) => void)[] = [];
+export function emitWorkoutOriginRoute(route: string) {
+  originRouteListeners.forEach(fn => fn(route));
+}
+export function onWorkoutOriginRoute(fn: (route: string) => void): VoidCb {
+  originRouteListeners.push(fn);
+  return () => {
+    const i = originRouteListeners.indexOf(fn);
+    if (i >= 0) originRouteListeners.splice(i, 1);
+  };
+}
+
+// ── Workout expand from pill (ActiveWorkoutPill → layout, keep tab highlight on current tab) ──
+const expandOriginListeners: ((pathname: string) => void)[] = [];
+export function emitWorkoutExpandOrigin(pathname: string) {
+  expandOriginListeners.forEach(fn => fn(pathname));
+}
+export function onWorkoutExpandOrigin(fn: (pathname: string) => void): VoidCb {
+  expandOriginListeners.push(fn);
+  return () => {
+    const i = expandOriginListeners.indexOf(fn);
+    if (i >= 0) expandOriginListeners.splice(i, 1);
+  };
+}
+
+// ── Close FAB popup (ActiveWorkoutPill → layout, when user expands workout from pill) ──
+const closePopupListeners: VoidCb[] = [];
+export function emitClosePopup() {
+  closePopupListeners.forEach(fn => fn());
+}
+export function onClosePopup(fn: VoidCb): VoidCb {
+  closePopupListeners.push(fn);
+  return () => {
+    const i = closePopupListeners.indexOf(fn);
+    if (i >= 0) closePopupListeners.splice(i, 1);
+  };
+}

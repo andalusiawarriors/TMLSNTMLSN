@@ -1,0 +1,14 @@
+---
+description: Never change card sizing or spacing after a merge without explicit user approval
+alwaysApply: true
+---
+
+# Card sizing / spacing — freeze after merge
+
+After any git merge that touches `app/(tabs)/nutrition.tsx`:
+
+1. **Do NOT change** card widths, card heights, padding, margins, gaps, or any layout constant (`CALORIES_CARD_WIDTH`, `MACRO_CARD_WIDTH`, `CONTENT_PADDING`, `CAROUSEL_WIDTH`, `calorieCardLeft`, `threeCardsRow` gap, `contentContainer` padding, health score bar insets, etc.).
+2. **Stop everything** and warn the user: _"The merge touched nutrition layout. Card sizing and spacing have not been changed. Do you want me to adjust anything?"_
+3. Only proceed with layout changes if the user explicitly confirms what to change and how.
+
+This applies to merge conflict resolution too — when resolving conflicts in nutrition.tsx, preserve the user's (HEAD) card sizing and spacing values, not the incoming branch's, unless the user says otherwise.

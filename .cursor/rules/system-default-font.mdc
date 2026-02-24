@@ -1,0 +1,24 @@
+---
+description: Use system default font (no fontFamily) for UI across the app.
+alwaysApply: true
+---
+
+# System default font — use everywhere
+
+**Use the system default font** for UI text across the app. That means:
+- **Do NOT set `fontFamily`** — use `fontWeight` instead for weight (e.g. `fontWeight: '600'`).
+- Platform default: San Francisco (iOS), Roboto (Android).
+- Applies to: modals, pills, buttons, data displays, labels, rest time edit, exercise blocks, and similar UI.
+
+**Examples:**
+```tsx
+// ✅ Good
+<Text style={{ fontSize: 16, fontWeight: '600' }}>Edit rest time</Text>
+<Text style={{ fontSize: 28, fontWeight: '600' }}>2:00</Text>
+
+// ❌ Avoid
+<Text style={{ fontFamily: Font.semiBold }}>Edit rest time</Text>
+<Text style={{ fontFamily: Font.mono }}>2:00</Text>
+```
+
+**Exceptions:** Keep existing `fontFamily` usage only where the design explicitly requires it (e.g. EB Garamond headings in specific screens, DMMono for very technical/mono contexts). When adding new UI, prefer no fontFamily.

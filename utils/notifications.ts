@@ -1,11 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -32,7 +34,15 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
       return null;
     }
 
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) {
+      if (__DEV__) {
+        console.log('No projectId – skipping push token (local notifications still work)');
+      }
+      return null;
+    }
+
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     console.log('Push token:', token);
 
     if (Platform.OS === 'android') {
@@ -66,6 +76,7 @@ export const scheduleRestTimerNotification = async (
         priority: Notifications.AndroidNotificationPriority.HIGH,
       },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds,
       },
     });
@@ -73,6 +84,32 @@ export const scheduleRestTimerNotification = async (
   } catch (error) {
     console.error('Error scheduling rest timer notification:', error);
     throw error;
+  }
+};
+
+// Schedule streak "6 hours left" notification (immediate or in N seconds)
+export const scheduleStreak6HourNotification = async (
+  secondsFromNow?: number
+): Promise<string | null> => {
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Streak reminder 🔥',
+        body: '6 hours left to keep your workout streak!',
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: secondsFromNow != null && secondsFromNow > 0
+        ? {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: secondsFromNow,
+          }
+        : null, // immediate if 0 or undefined
+    });
+    return id;
+  } catch (error) {
+    console.error('Error scheduling streak notification:', error);
+    return null;
   }
 };
 
