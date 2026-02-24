@@ -84,6 +84,7 @@ import { PillSegmentedControl, type SegmentValue } from '../../components/PillSe
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
+import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -761,17 +762,21 @@ export default function NutritionScreen({
 
   const openEditGoals = () => {
     if (settings) {
+      const volUnit = settings.volumeUnit ?? 'oz';
       setEditCalories(String(settings.dailyGoals.calories));
       setEditProtein(String(settings.dailyGoals.protein));
       setEditCarbs(String(settings.dailyGoals.carbs));
       setEditFat(String(settings.dailyGoals.fat));
-      setEditWater(String(settings.dailyGoals.water));
+      setEditWater(formatFluidDisplay(toDisplayFluid(settings.dailyGoals.water, volUnit), volUnit));
     }
     setShowEditGoals(true);
   };
 
   const handleSaveGoals = async () => {
     if (!settings) return;
+    const volUnit = settings.volumeUnit ?? 'oz';
+    const displayWater = parseInt(editWater, 10) || toDisplayFluid(settings.dailyGoals.water, volUnit);
+    const storedWater = fromDisplayFluid(displayWater, volUnit);
     const updated: UserSettings = {
       ...settings,
       dailyGoals: {
@@ -779,7 +784,7 @@ export default function NutritionScreen({
         protein: parseInt(editProtein, 10) || settings.dailyGoals.protein,
         carbs: parseInt(editCarbs, 10) || settings.dailyGoals.carbs,
         fat: parseInt(editFat, 10) || settings.dailyGoals.fat,
-        water: parseInt(editWater, 10) || settings.dailyGoals.water,
+        water: Math.round(storedWater * 100) / 100,
       },
     };
     await saveUserSettings(updated);
@@ -806,11 +811,14 @@ export default function NutritionScreen({
     { breakfast: [], lunch: [], dinner: [], snack: [] }
   );
 
-  const handleAddWater = async (amount: number) => {
-    if (todayLog) {
+  const handleAddWater = async (amountInDisplayUnit: number) => {
+    if (todayLog && settings) {
+      const volUnit = settings.volumeUnit ?? 'oz';
+      const toAddOz = fromDisplayFluid(amountInDisplayUnit, volUnit);
+      const newStoredOz = todayLog.water + toAddOz;
       const updatedLog: NutritionLog = {
         ...todayLog,
-        water: todayLog.water + amount,
+        water: Math.round(newStoredOz * 100) / 100,
       };
       await saveNutritionLog(updatedLog);
       setTodayLog(updatedLog);
@@ -2239,11 +2247,11 @@ export default function NutritionScreen({
               fontFamily={Font.regular}
             />
             <Input
-              label="Water (oz)"
+              label={settings ? `Water (${settings.volumeUnit ?? 'oz'})` : 'Water (oz)'}
               value={editWater}
               onChangeText={setEditWater}
               keyboardType="numeric"
-              placeholder="128"
+              placeholder={settings?.volumeUnit === 'ml' ? '3785' : '128'}
               fontFamily={Font.regular}
             />
             <View style={styles.modalButtons}>

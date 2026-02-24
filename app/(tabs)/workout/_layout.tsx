@@ -64,14 +64,6 @@ export default function WorkoutLayout() {
         }}
       />
       <Stack.Screen
-        name="settings"
-        options={{
-          title: 'settings',
-          headerShown: true,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
         name="streak"
         options={{
           title: 'streak',

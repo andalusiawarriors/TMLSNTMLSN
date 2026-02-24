@@ -104,7 +104,7 @@ function RootLayoutInner() {
         <Stack.Screen
           name="preferences"
           options={{
-            title: 'Preferences',
+            title: 'settings',
             animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
             headerStyle: { backgroundColor: colors.primaryDark },

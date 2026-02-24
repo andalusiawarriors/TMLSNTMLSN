@@ -5,6 +5,7 @@ import { useButtonSound } from '../hooks/useButtonSound';
 import { Card } from './Card';
 import { AnimatedPressable } from './AnimatedPressable';
 import { getRecentWorkouts, getUserSettings } from '../utils/storage';
+import { toDisplayVolume } from '../utils/units';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import type { WorkoutSession } from '../types';
 
@@ -98,10 +99,11 @@ export function WorkoutProgressWidget() {
                 recentWorkouts.map((w) => {
                   const exs = w.exercises ?? [];
                   const wSets = exs.reduce((a, e) => a + (e.sets ?? []).length, 0);
-                  const wVolume = exs.reduce(
+                  const wVolumeRawLb = exs.reduce(
                     (a, e) => a + (e.sets ?? []).reduce((s, set) => s + (set.weight ?? 0) * (set.reps ?? 0), 0),
                     0
                   );
+                  const wVolumeDisplay = toDisplayVolume(wVolumeRawLb, weightUnit);
                   return (
                     <View key={w.id} style={[styles.historySessionCard, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '12' }]}>
                       <View style={styles.historySessionHeader}>
@@ -131,10 +133,10 @@ export function WorkoutProgressWidget() {
                           <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⏱</Text>
                           <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{Number(w.duration ?? 0)} min</Text>
                         </View>
-                        {wVolume > 0 && (
+                        {wVolumeRawLb > 0 && (
                           <View style={[styles.historySessionStatItem, { backgroundColor: colors.primaryLight + '0A' }]}>
                             <Text style={[styles.historySessionStatIcon, { color: colors.primaryLight + '50' }]}>⚖</Text>
-                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{wVolume.toLocaleString()} {weightUnit}</Text>
+                            <Text style={[styles.historySessionStatText, { color: colors.primaryLight + '70' }]}>{Math.round(wVolumeDisplay).toLocaleString()} {weightUnit}</Text>
                           </View>
                         )}
                       </View>

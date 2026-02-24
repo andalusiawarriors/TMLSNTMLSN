@@ -24,6 +24,7 @@ import Animated, {
 import { useTheme } from '../context/ThemeContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { toDisplayVolume, KG_PER_LB } from '../utils/units';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import type { WorkoutSession } from '../types';
 import { format, startOfDay, getYear, getMonth, startOfMonth, endOfMonth } from 'date-fns';
@@ -56,7 +57,7 @@ function isWithinInterval(date: Date, interval: { start: Date; end: Date }): boo
   return date >= interval.start && date <= interval.end;
 }
 
-const LB_TO_KG = 0.453592;
+// Use KG_PER_LB from utils/units for consistency
 const CHART_HEIGHT = 210;
 const BAR_GAP = 4;
 const WEEK_GAP = 8;
@@ -199,16 +200,18 @@ function aggregateByDay(
     }
     byDay.set(d, existing);
   }
-  return Array.from(byDay.entries()).map(([dateKey, v]) => {
-    const volumeKg = weightUnit === 'lb' ? v.volumeRaw * LB_TO_KG : v.volumeRaw;
+  const result = Array.from(byDay.entries()).map(([dateKey, v]) => {
+    const volumeKg = v.volumeRaw * KG_PER_LB;
     return {
       date: parseDate(dateKey),
       dateKey,
       durationMinutes: v.durationMinutes,
       volumeKg,
       reps: v.reps,
+      volumeRawLb: v.volumeRaw,
     };
   });
+  return result.map(({ volumeRawLb: _v, ...r }) => r);
 }
 
 function formatDurationMinutes(min: number): string {
@@ -219,10 +222,10 @@ function formatDurationMinutes(min: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatVolume(kg: number, weightUnit: 'kg' | 'lb'): string {
-  const value = weightUnit === 'lb' ? kg / LB_TO_KG : kg;
+function formatVolume(volumeKg: number, weightUnit: 'kg' | 'lb'): string {
+  const displayValue = weightUnit === 'lb' ? volumeKg / KG_PER_LB : volumeKg;
   const unit = weightUnit === 'lb' ? 'lb' : 'kg';
-  return `${Math.round(value).toLocaleString()} ${unit}`;
+  return `${Math.round(displayValue).toLocaleString()} ${unit}`;
 }
 
 function formatYAxisValue(value: number): string {
@@ -313,7 +316,7 @@ export function FitnessGraphWidget() {
           : metric === 'reps'
             ? reps
             : weightUnit === 'lb'
-              ? volumeKg / LB_TO_KG
+              ? volumeKg / KG_PER_LB
               : volumeKg;
       const data = Number(dataValue);
       return {
@@ -333,7 +336,7 @@ export function FitnessGraphWidget() {
       yMax = Math.max(DEFAULT_DURATION_MAX_HOURS, Math.ceil(maxHours * 2) / 2) || DEFAULT_DURATION_MAX_HOURS;
     } else if (metric === 'volume') {
       const maxKg = Math.max(...chartData.map((d) => d.volumeKg ?? 0), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       yMax = Math.ceil(maxDisplay / 100) * 100 || 100;
     } else {
       const maxReps = Math.max(...chartData.map((d) => d.reps ?? 0), 0);
@@ -408,10 +411,10 @@ export function FitnessGraphWidget() {
     const years = Array.from(byYear.keys()).sort((a, b) => a - b);
     return years.map((year) => {
       const v = byYear.get(year)!;
-      const volumeKg = weightUnit === 'lb' ? v.volumeRaw * LB_TO_KG : v.volumeRaw;
+      const volumeKg = v.volumeRaw * KG_PER_LB;
       return { year, durationMinutes: v.durationMinutes, volumeKg, reps: v.reps };
     });
-  }, [sessions, timeRange, weightUnit]);
+  }, [sessions, timeRange]);
 
   const isYearView = timeRange === 'year';
   const isAllTimeView = timeRange === 'all';
@@ -425,7 +428,7 @@ export function FitnessGraphWidget() {
     }
     if (metric === 'volume') {
       const maxKg = Math.max(...monthlyData.map((m) => m.volumeKg), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       return Math.ceil(maxDisplay / 100) * 100 || 100;
     }
     const maxReps = Math.max(...monthlyData.map((m) => m.reps), 0);
@@ -440,7 +443,7 @@ export function FitnessGraphWidget() {
     }
     if (metric === 'volume') {
       const maxKg = Math.max(...yearlyData.map((y) => y.volumeKg), 0);
-      const maxDisplay = weightUnit === 'lb' ? maxKg / LB_TO_KG : maxKg;
+      const maxDisplay = weightUnit === 'lb' ? maxKg / KG_PER_LB : maxKg;
       return Math.ceil(maxDisplay / 100) * 100 || 100;
     }
     const maxReps = Math.max(...yearlyData.map((y) => y.reps), 0);
@@ -513,7 +516,7 @@ export function FitnessGraphWidget() {
   const getValue = (d: DayData | undefined) => {
     if (!d) return 0;
     if (metric === 'duration') return d.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? d.volumeKg / LB_TO_KG : d.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? d.volumeKg / KG_PER_LB : d.volumeKg;
     return d.reps;
   };
 
@@ -525,7 +528,7 @@ export function FitnessGraphWidget() {
 
   const getValueMonth = (m: MonthData) => {
     if (metric === 'duration') return m.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? m.volumeKg / LB_TO_KG : m.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? m.volumeKg / KG_PER_LB : m.volumeKg;
     return m.reps;
   };
 
@@ -537,7 +540,7 @@ export function FitnessGraphWidget() {
 
   const getValueYear = (y: YearData) => {
     if (metric === 'duration') return y.durationMinutes / 60;
-    if (metric === 'volume') return weightUnit === 'lb' ? y.volumeKg / LB_TO_KG : y.volumeKg;
+    if (metric === 'volume') return weightUnit === 'lb' ? y.volumeKg / KG_PER_LB : y.volumeKg;
     return y.reps;
   };
 

@@ -607,11 +607,6 @@ export async function supabaseGetPrompts(userId: string): Promise<Prompt[]> {
     prompts = rawRows.map(mapPromptRowToPrompt);
   }
   prompts.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
-  if (__DEV__) {
-    console.log('[Supabase get prompts] count:', prompts.length);
-    if (rawRows[0]) console.log('[Supabase get prompts] sample row:', rawRows[0]);
-    if (prompts[0]) console.log('[Supabase get prompts] sample mapped:', { id: prompts[0].id, title: prompts[0].title });
-  }
   return prompts;
 }
 
@@ -636,10 +631,6 @@ export async function supabaseSavePrompts(userId: string, prompts: Prompt[]): Pr
   if (error) {
     console.error('Supabase save prompts:', JSON.stringify(error, null, 2));
     throw error;
-  }
-  if (__DEV__) {
-    console.log('[Supabase save prompts] rows:', rows.length);
-    if (rows[0]) console.log('[Supabase save prompts] sample row:', rows[0]);
   }
 }
 
