@@ -1,5 +1,6 @@
 // ============================================================
 // TMLSN — Pick exercise from database for custom routines
+// Redesigned to match workout tracker card + pill aesthetic
 // ============================================================
 
 import React, { useState, useMemo } from 'react';
@@ -8,15 +9,32 @@ import {
   Text,
   StyleSheet,
   Modal,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   TextInput,
   FlatList,
+  Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../constants/theme';
+import * as Theme from '../constants/theme';
 
+const { Colors, Typography, Spacing, BorderRadius } = Theme;
+
+// ── Design tokens (match workout tracker pill system) ───────────────────────
+// Card gradient: same as Card.tsx gradientFill
+const SHEET_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
+const SHEET_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
+
+const PILL_H = 36;            // category filter chip height
+const PILL_RADIUS = 18;       // fully-rounded pill
+const ROW_RADIUS = 12;        // exercise list rows
+const CLOSE_BTN_SIZE = 32;    // header close icon circle
+
+// ── Category labels ─────────────────────────────────────────────────────────
 const CATEGORY_LABELS: Record<string, string> = {
   chest: 'Chest',
   back: 'Back',
@@ -34,6 +52,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   olympic: 'Olympic',
 };
 
+// ── Component interface (unchanged) ─────────────────────────────────────────
 interface ExercisePickerModalProps {
   visible: boolean;
   onClose: () => void;
@@ -47,6 +66,7 @@ export function ExercisePickerModal({
   onSelect,
   defaultRestTimer = 120,
 }: ExercisePickerModalProps) {
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -79,178 +99,318 @@ export function ExercisePickerModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <View style={styles.header}>
-            <Text style={styles.title}>add exercise</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={styles.closeBtn}>✕</Text>
-            </TouchableOpacity>
-          </View>
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
+      {/* ── Scrim ─────────────────────────────────────────────────────── */}
+      <Pressable style={styles.scrim} onPress={onClose} />
 
+      {/* ── Bottom sheet ──────────────────────────────────────────────── */}
+      <View style={[styles.sheetOuter, { paddingBottom: Math.max(insets.bottom, Spacing.lg) }]}>
+        {/* gradient border ring (1px) */}
+        <LinearGradient
+          colors={SHEET_BORDER_GRADIENT}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+        {/* gradient fill (inset 1px) */}
+        <LinearGradient
+          colors={SHEET_FILL_GRADIENT}
+          style={styles.sheetFill}
+        />
+
+        {/* ── Drag handle ─────────────────────────────────────────────── */}
+        <View style={styles.handle} />
+
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <Text style={styles.title}>add exercise</Text>
+          <Pressable
+            onPress={onClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
+          >
+            <Ionicons name="close" size={18} color={Colors.primaryLight} />
+          </Pressable>
+        </View>
+
+        {/* ── Search input ────────────────────────────────────────────── */}
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={16} color={Colors.primaryLight + '60'} style={styles.searchIcon} />
           <TextInput
             style={styles.search}
             placeholder="search exercises..."
-            placeholderTextColor={Colors.primaryLight + '80'}
+            placeholderTextColor={Colors.primaryLight + '50'}
             value={search}
             onChangeText={setSearch}
-          />
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-            contentContainerStyle={styles.categoryRow}
-          >
-            <TouchableOpacity
-              style={[styles.chip, !selectedCategory && styles.chipActive]}
-              onPress={() => setSelectedCategory(null)}
-            >
-              <Text style={[styles.chipText, !selectedCategory && styles.chipTextActive]}>all</Text>
-            </TouchableOpacity>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-                onPress={() => setSelectedCategory(cat)}
-              >
-                <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
-                  {CATEGORY_LABELS[cat] ?? cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <FlatList
-            data={filteredExercises}
-            keyExtractor={(item) => item.id}
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.row}
-                onPress={() => handleSelect(item)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.rowName}>{item.name}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.equipment.join(', ')} · {item.movementType}
-                </Text>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.empty}>No exercises match your search.</Text>
-            }
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            autoCorrect={false}
+            autoCapitalize="none"
           />
         </View>
+
+        {/* ── Category filter chips ────────────────────────────────────── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipScrollView}
+          contentContainerStyle={styles.chipRow}
+        >
+          {/* "All" chip */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.chip,
+              !selectedCategory && styles.chipActive,
+              pressed && styles.chipPressed,
+            ]}
+            onPress={() => setSelectedCategory(null)}
+          >
+            <Text style={[styles.chipText, !selectedCategory && styles.chipTextActive]}>all</Text>
+          </Pressable>
+
+          {categories.map((cat) => (
+            <Pressable
+              key={cat}
+              style={({ pressed }) => [
+                styles.chip,
+                selectedCategory === cat && styles.chipActive,
+                pressed && styles.chipPressed,
+              ]}
+              onPress={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+            >
+              <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
+                {CATEGORY_LABELS[cat] ?? cat}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* ── Exercise list ────────────────────────────────────────────── */}
+        <FlatList
+          data={filteredExercises}
+          keyExtractor={(item) => item.id}
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+              onPress={() => handleSelect(item)}
+            >
+              {/* Left: name + meta */}
+              <View style={styles.rowText}>
+                <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.rowMeta} numberOfLines={1}>
+                  {item.equipment.join(', ')} · {item.movementType}
+                </Text>
+              </View>
+              {/* Right: add chevron */}
+              <Ionicons name="add-circle-outline" size={20} color={Colors.primaryLight + '50'} />
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>No exercises match your search.</Text>
+            </View>
+          }
+        />
       </View>
     </Modal>
   );
 }
 
+// ── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+  // Scrim (absorbs taps outside the sheet)
+  scrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  modal: {
-    backgroundColor: Colors.primaryDark,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    maxHeight: '85%',
-    paddingBottom: Spacing.xl,
+
+  // Sheet outer shell — provides gradient border ring
+  sheetOuter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: '88%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
+
+  // Inner gradient fill sits inset 1px from the border gradient
+  sheetFill: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 0, // no bottom border needed (touches screen edge)
+    borderTopLeftRadius: 23,
+    borderTopRightRadius: 23,
+  },
+
+  // Drag handle
+  handle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.primaryLight + '30',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+
+  // Header row
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
   title: {
-    fontFamily: Font.semiBold,
     fontSize: Typography.h2,
+    fontWeight: '600',
+    letterSpacing: -0.11,
     color: Colors.primaryLight,
-    textTransform: 'lowercase',
   },
   closeBtn: {
-    fontFamily: Font.monoMedium,
-    fontSize: 18,
-    color: Colors.primaryLight,
+    width: CLOSE_BTN_SIZE,
+    height: CLOSE_BTN_SIZE,
+    borderRadius: CLOSE_BTN_SIZE / 2,
+    backgroundColor: Colors.primaryLight + '12',
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtnPressed: {
+    opacity: 0.7,
+    backgroundColor: Colors.primaryLight + '20',
+  },
+
+  // Search
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '18',
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   search: {
-    fontFamily: Font.mono,
+    flex: 1,
     fontSize: Typography.body,
+    fontWeight: '500',
+    letterSpacing: -0.11,
     color: Colors.primaryLight,
-    backgroundColor: Colors.primaryDarkLighter,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    marginHorizontal: Spacing.lg,
+    paddingVertical: 0, // rely on parent height
+    // Remove default focus outline on web/Expo Go
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
+  },
+
+  // Category chips
+  chipScrollView: {
+    maxHeight: PILL_H + 8,
     marginBottom: Spacing.sm,
   },
-  categoryScroll: {
-    maxHeight: 44,
-    marginBottom: Spacing.sm,
-  },
-  categoryRow: {
+  chipRow: {
     paddingHorizontal: Spacing.lg,
-    gap: Spacing.sm,
-    paddingBottom: Spacing.xs,
+    gap: 8,
+    paddingBottom: 4,
+    alignItems: 'center',
   },
   chip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primaryDarkLighter,
-    ...Shadows.card,
+    height: PILL_H,
+    borderRadius: PILL_RADIUS,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryLight + '0A',
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '20',
   },
   chipActive: {
     backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primaryLight,
+  },
+  chipPressed: {
+    opacity: 0.75,
   },
   chipText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.label,
-    color: Colors.primaryLight,
-    letterSpacing: -0.5,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    color: Colors.primaryLight + 'BB',
   },
   chipTextActive: {
     color: Colors.primaryDark,
   },
+
+  // Exercise list
   list: {
-    maxHeight: 320,
+    flexShrink: 1,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.xl,
+    paddingBottom: Spacing.md,
+    gap: 6,
   },
+
+  // Exercise rows — pill card style
   row: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    marginBottom: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.primaryDarkLighter,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: Spacing.md,
+    borderRadius: ROW_RADIUS,
+    backgroundColor: Colors.primaryLight + '08',
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '12',
+  },
+  rowPressed: {
+    backgroundColor: Colors.primaryLight + '14',
+    borderColor: Colors.primaryLight + '22',
+  },
+  rowText: {
+    flex: 1,
+    marginRight: Spacing.sm,
   },
   rowName: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.body,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.11,
     color: Colors.primaryLight,
-    letterSpacing: -0.5,
   },
   rowMeta: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
-    color: Colors.primaryLight + '99',
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    color: Colors.primaryLight + '60',
     marginTop: 2,
   },
-  empty: {
-    fontFamily: Font.mono,
+
+  // Empty state
+  emptyWrap: {
+    paddingTop: Spacing.xl,
+    alignItems: 'center',
+  },
+  emptyText: {
     fontSize: Typography.body,
-    color: Colors.primaryLight + '80',
+    fontWeight: '500',
+    letterSpacing: -0.11,
+    color: Colors.primaryLight + '60',
     fontStyle: 'italic',
     textAlign: 'center',
-    marginTop: Spacing.xl,
   },
 });

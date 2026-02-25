@@ -33,7 +33,7 @@ import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDispla
 import { logStreakWorkout } from '../../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
 import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
-import { scheduleRestTimerNotification } from '../../../utils/notifications';
+import { scheduleRestTimerNotification, cancelNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import AnimatedReanimated, {
@@ -173,6 +173,8 @@ export default function WorkoutScreen({
   const [restTimerActive, setRestTimerActive] = useState(false);
   const [restTimeRemaining, setRestTimeRemaining] = useState(0);
   const [restTimerNotificationId, setRestTimerNotificationId] = useState<string | null>(null);
+  /** Context for rescheduling notification when user adjusts +/-15s (exercise name + set number for notification body). */
+  const [restTimerContext, setRestTimerContext] = useState<{ exerciseName: string; setNumberDisplay: number } | null>(null);
 
   // ── Rest Timer panel enter/exit animation ──────────────────────────────────
   // `restTimerVisible` keeps the node mounted during the exit animation.
@@ -596,29 +598,81 @@ export default function WorkoutScreen({
     setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
   };
 
-  const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number) => {
+  const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number, setId?: string) => {
+    if (restTimerNotificationId) {
+      await cancelNotification(restTimerNotificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled (replacing)', { setId, notificationId: restTimerNotificationId });
+      setRestTimerNotificationId(null);
+    }
     setRestTimeRemaining(seconds);
     setRestTimerActive(true);
     const idx = exerciseIdx ?? currentExerciseIndex;
+    const exerciseName = activeWorkout?.exercises[idx]?.name || 'Exercise';
+    const setNumberDisplay = setNumber + 1;
+    setRestTimerContext({ exerciseName, setNumberDisplay });
     try {
-      const exerciseName = activeWorkout?.exercises[idx]?.name || 'Exercise';
       const notificationId = await scheduleRestTimerNotification(
         exerciseName,
-        setNumber + 1,
+        setNumberDisplay,
         seconds
       );
       setRestTimerNotificationId(notificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] scheduled', { setId, seconds, notificationId });
     } catch (error) {
       console.error('Failed to schedule rest timer notification:', error);
     }
   };
 
-  const skipRestTimer = () => {
+  const skipRestTimer = (setId?: string) => {
+    if (restTimerNotificationId) {
+      cancelNotification(restTimerNotificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled', { setId, notificationId: restTimerNotificationId });
+      setRestTimerNotificationId(null);
+    }
+    setRestTimerContext(null);
     setRestTimerActive(false);
     setRestTimeRemaining(0);
+  };
+
+  /** Adjust rest timer by delta seconds and reschedule notification to match new remaining time. */
+  const adjustRestTimer = async (delta: number) => {
+    const before = restTimeRemaining;
+    const after = Math.max(0, before + delta);
+    const notificationIdOld = restTimerNotificationId;
+
+    if (after === 0) {
+      if (restTimerNotificationId) {
+        await cancelNotification(restTimerNotificationId);
+        setRestTimerNotificationId(null);
+      }
+      setRestTimerContext(null);
+      setRestTimerActive(false);
+      setRestTimeRemaining(0);
+      if (__DEV__) console.log('[Workout RestTimer] adjust -> cancelled at zero', { before, after });
+      return;
+    }
+
+    setRestTimeRemaining(after);
     if (restTimerNotificationId) {
-      // Cancel the notification (would need to implement cancelNotification)
+      await cancelNotification(restTimerNotificationId);
       setRestTimerNotificationId(null);
+    }
+
+    const ctx = restTimerContext;
+    if (!ctx) return;
+    try {
+      const notificationIdNew = await scheduleRestTimerNotification(
+        ctx.exerciseName,
+        ctx.setNumberDisplay,
+        after
+      );
+      setRestTimerNotificationId(notificationIdNew);
+      if (__DEV__) {
+        const label = delta > 0 ? 'adjust +15' : 'adjust -15';
+        console.log(`[Workout RestTimer] ${label}`, { before, after, notificationIdOld, notificationIdNew });
+      }
+    } catch (error) {
+      console.error('Failed to reschedule rest timer notification:', error);
     }
   };
 
@@ -939,7 +993,7 @@ export default function WorkoutScreen({
                           style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                           onPressIn={playIn}
                           onPressOut={playOut}
-                          onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
+                          onPress={() => adjustRestTimer(-15)}
                         >
                           <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>−15s</Text>
                         </AnimatedPressable>
@@ -955,7 +1009,7 @@ export default function WorkoutScreen({
                           style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                           onPressIn={playIn}
                           onPressOut={playOut}
-                          onPress={() => setRestTimeRemaining((prev) => prev + 15)}
+                          onPress={() => adjustRestTimer(15)}
                         >
                           <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>+15s</Text>
                         </AnimatedPressable>
@@ -1294,12 +1348,14 @@ export default function WorkoutScreen({
                                           updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
                                           if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
                                         }
-                                        if (nextCompleted === false) {
-                                          skipRestTimer();
-                                          if (__DEV__) console.log('[Workout Set Commit] uncheck clears rest timer', { setId: set.id, previousRestTimer: restTimeRemaining, nextCompleted });
-                                        }
-                                        if (!set.completed && exercise.restTimer) {
-                                          startRestTimer(exercise.restTimer, setIndex, exerciseIndex);
+                                        if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted });
+                                        if (nextCompleted === true) {
+                                          if (exercise.restTimer) {
+                                            startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
+                                          }
+                                        } else {
+                                          skipRestTimer(set.id);
+                                          if (__DEV__) console.log('[Workout RestTimer] skipped schedule on uncommit', { setId: set.id });
                                         }
                                       }}
                                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1437,34 +1493,39 @@ export default function WorkoutScreen({
 
       {activeWorkout && exerciseMenuIndex !== null && (
         <Modal visible animationType="fade" transparent>
-          <Pressable style={styles.exerciseMenuOverlay} onPress={closeExerciseMenu}>
-            <Pressable style={[styles.exerciseMenuCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]} onPress={(e) => e.stopPropagation()}>
-              <Text style={[styles.exerciseMenuTitle, { color: colors.primaryLight }]} numberOfLines={1}>
-                {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
-              </Text>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
-                onPress={handleReplaceFromMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Replace exercise</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
-                onPress={handleDeleteFromMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, styles.exerciseMenuOptionDestructive, { color: colors.accentRed }]}>
-                  Delete exercise
+          <Pressable style={[styles.exerciseMenuOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]} onPress={closeExerciseMenu}>
+            <Pressable style={styles.exerciseMenuCardWrap} onPress={(e) => e.stopPropagation()}>
+              <Card gradientFill borderRadius={20} style={styles.exerciseMenuCard}>
+                <Text style={[styles.exerciseMenuTitle, { color: colors.primaryLight }]} numberOfLines={1}>
+                  {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, styles.exerciseMenuOptionCancel]}
-                onPress={closeExerciseMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Cancel</Text>
-              </TouchableOpacity>
+                <View style={styles.exerciseMenuButtons}>
+                  <AnimatedPressable
+                    style={[styles.exerciseMenuButtonReplace, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={handleReplaceFromMenu}
+                  >
+                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight }]}>Replace exercise</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={styles.exerciseMenuButtonDelete}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={handleDeleteFromMenu}
+                  >
+                    <Text style={styles.exerciseMenuButtonDeleteText}>Delete exercise</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.exerciseMenuButtonCancel, { borderColor: colors.primaryLight + '15' }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={closeExerciseMenu}
+                  >
+                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight + '70' }]}>Cancel</Text>
+                  </AnimatedPressable>
+                </View>
+              </Card>
             </Pressable>
           </Pressable>
         </Modal>
@@ -1830,7 +1891,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  // ─── Exercise menu popup (replace/delete) – TMLSN design ───────────────────
+  // ─── Exercise menu popup (replace/delete) – workout tracker card + buttons ─
   exerciseMenuOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1838,15 +1899,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
   },
-  exerciseMenuCard: {
+  exerciseMenuCardWrap: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
+  },
+  exerciseMenuCard: {
     padding: Spacing.lg,
-    ...Shadows.card,
+    overflow: 'hidden',
+  },
+  exerciseMenuTitle: {
+    fontSize: Typography.h2,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.primaryLight + '25',
+  },
+  exerciseMenuButtons: {
+    gap: 10,
+    marginTop: Spacing.sm,
+  },
+  exerciseMenuButtonReplace: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderWidth: 1,
+  },
+  exerciseMenuButtonText: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+  },
+  exerciseMenuButtonDelete: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    backgroundColor: '#C6C6C6',
+  },
+  exerciseMenuButtonDeleteText: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    color: '#2F3032',
+  },
+  exerciseMenuButtonCancel: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   restTimeEditCard: {
     width: '100%',
@@ -1900,35 +2009,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   restTimeEditButtonTextPrimary: {},
-  exerciseMenuTitle: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.md,
-    paddingBottom: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '25',
-  },
-  exerciseMenuOption: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.xs,
-    backgroundColor: Colors.primaryDarkLighter,
-  },
-  exerciseMenuOptionText: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-  },
-  exerciseMenuOptionDestructive: {
-    color: Colors.accentRed,
-  },
-  exerciseMenuOptionCancel: {
-    marginTop: Spacing.sm,
-    marginBottom: 0,
-    backgroundColor: 'transparent',
-  },
   restTimerBadge: {
     alignSelf: 'flex-start',
     alignItems: 'center',
