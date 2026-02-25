@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 46,
+    height: 48,
     borderRadius: R,
     backgroundColor: Colors.primaryLight + '09',
     borderWidth: 1,
@@ -305,31 +305,39 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     marginRight: 10,
+    alignSelf: 'center',
     opacity: 0.5,
   },
   search: {
     flex: 1,
+    height: 48,               // must match container so RN centres text correctly
     fontSize: Typography.body,
     fontWeight: '500',
     letterSpacing: -0.11,
     color: Colors.primaryLight,
-    paddingVertical: 0,
+    paddingVertical: 0,       // let explicit height handle vertical space
+    textAlignVertical: 'center',
+    lineHeight: 19,           // body(17) + 2 — prevents cap/descender clipping
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
 
   // ── Category chips: R pill, no border on inactive, subtle fill active ───
   chipScrollView: {
-    maxHeight: 44,
-    marginBottom: Spacing.sm,
+    // overflow:'visible' (default for ScrollView's inner content axis) keeps chips
+    // from being clipped. height is generous enough for h=38 chips + breathing room.
+    height: 52,
+    marginBottom: Spacing.xs,
   },
   chipRow: {
     paddingHorizontal: Spacing.lg,
-    gap: 8,
-    paddingBottom: 4,
+    gap: 10,
+    // paddingVertical gives scroll room so chips aren't clipped by the scroll
+    // container bounds, without using a hard maxHeight that is too tight.
+    paddingVertical: 6,
     alignItems: 'center',
   },
   chip: {
-    height: 36,
+    height: 38,
     borderRadius: R,
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -345,9 +353,11 @@ const styles = StyleSheet.create({
     opacity: 0.72,
   },
   chipText: {
-    fontSize: Typography.label,
+    fontSize: Typography.label,   // 13
+    lineHeight: 15,               // 13 + 2 — prevents cap/descender clip
     fontWeight: '600',
     letterSpacing: -0.11,
+    textAlignVertical: 'center',
     color: Colors.primaryLight + 'A0',
   },
   chipTextActive: {
