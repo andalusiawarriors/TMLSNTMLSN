@@ -512,9 +512,9 @@ export default function WorkoutScreen({
     setEditingCell(null);
     setEditingCellValue('');
     Keyboard.dismiss();
-    setTimeout(() => {
-      commitInProgressRef.current = false;
-    }, 0);
+    // Reset synchronously — a setTimeout reset can leave the lock stranded if a
+    // re-render fires between the dismiss and the timeout callback.
+    commitInProgressRef.current = false;
   }, [editingCell, editingCellValue, weightUnit, activeWorkout, updateSet]);
 
   useEffect(() => {
@@ -1044,7 +1044,8 @@ export default function WorkoutScreen({
                                 { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
                                 styles.setInputCellActiveVisual,
                                 { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                { overflow: 'hidden' as const },
+                                // overflow:hidden removed — it clips the glow shadow and can disturb the native
+                                // TextInput hit-test, causing spurious blurs on rapid re-taps.
                               ]}
                               collapsable={false}
                             >
@@ -1055,19 +1056,14 @@ export default function WorkoutScreen({
                                   if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
                                 }}
                                 onFocus={() => {
-                                  const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                  setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                  setEditingCellValue(displayValue);
+                                  // DO NOT call setEditingCell / setEditingCellValue here.
+                                  // Both are already set by the Pressable onPress handler that
+                                  // switched this branch to the active Input. Re-setting them
+                                  // triggers an extra render which can fire onBlur on some RN
+                                  // versions → commitActiveFieldIfNeeded runs with an empty draft
+                                  // and strands commitInProgressRef in the locked state.
                                   scrollToSetRow(exerciseIndex, setIndex);
-                                  if (__DEV__) {
-                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
-                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'weight', isActive: true });
-                                    setTimeout(() => {
-                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
-                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width: w, height: h });
-                                      });
-                                    }, 0);
-                                  }
+                                  if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'weight', currentDraft: editingCellValue });
                                 }}
                                 onBlur={() => commitActiveFieldIfNeeded('blur')}
                                 onEndEditing={() => {}}
@@ -1125,7 +1121,7 @@ export default function WorkoutScreen({
                                 { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
                                 styles.setInputCellActiveVisual,
                                 { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                { overflow: 'hidden' as const },
+                                // overflow:hidden removed — same reason as weight cell above.
                               ]}
                               collapsable={false}
                             >
@@ -1136,19 +1132,10 @@ export default function WorkoutScreen({
                                   if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
                                 }}
                                 onFocus={() => {
-                                  const displayValue = set.reps > 0 ? String(set.reps) : '';
-                                  setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                  setEditingCellValue(displayValue);
+                                  // DO NOT call setEditingCell / setEditingCellValue here.
+                                  // See weight onFocus comment above for the full explanation.
                                   scrollToSetRow(exerciseIndex, setIndex);
-                                  if (__DEV__) {
-                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
-                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'reps', isActive: true });
-                                    setTimeout(() => {
-                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
-                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width: w, height: h });
-                                      });
-                                    }, 0);
-                                  }
+                                  if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'reps', currentDraft: editingCellValue });
                                 }}
                                 onBlur={() => commitActiveFieldIfNeeded('blur')}
                                 onEndEditing={() => {}}

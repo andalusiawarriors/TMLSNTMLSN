@@ -39,6 +39,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `.env.local.example` – added with EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY so the other person can copy to .env.local and fix “Supabase not configured”; README setup step updated to mention Supabase
 - `app/(tabs)/workout/your-routines.tsx` – Save Routine: template targets, delete, UI polish
 - `app/search-food.tsx` – fixed keyboard dip on first character: use single FlatList always (no ScrollView/FlatList swap), TextInput stays mounted; synced to obh
 - Supabase auth: `lib/supabase.ts`, `context/AuthContext.tsx`, `components/AuthModal.tsx`, `components/ProfileSheet.tsx`, `utils/storage.ts`, `utils/supabaseStorage.ts`, `constants/storageDefaults.ts`, `supabase/migrations/001_user_data.sql`, `app/_layout.tsx`, `.env.local.example` – login/create account in profile, per-account cloud storage
