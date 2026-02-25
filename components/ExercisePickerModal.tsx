@@ -1,9 +1,9 @@
 // ============================================================
 // TMLSN — ExercisePickerModal
-// Fixed-height sheet, drag-to-close on chrome, R=38 pill system
+// Fixed-height sheet, drag-to-close on header, R=38 pill system
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,6 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -25,6 +24,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
@@ -33,21 +34,16 @@ import * as Theme from '../constants/theme';
 const { Colors, Typography, Spacing } = Theme;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-// R = dominant border-radius for every pill/card surface in this modal.
 const R = 38;
-const { height: SCREEN_H } = Dimensions.get('window');
+const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
 const SHEET_H = Math.round(SCREEN_H * 0.78);
 const SHEET_TOP = Math.round(SCREEN_H * 0.10);
-
-// Gradient border ring + fill (same as Card.tsx gradientFill)
-const SHEET_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
-const SHEET_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
 
 // Dismiss thresholds
 const DISMISS_Y = 80;   // px downward before we let go
 const DISMISS_VELOCITY = 900;  // px/s downward flick
 
-// Spring config for snap-back (matches PillSegmentedControl)
+// Spring config for snap-back
 const SPRING_CFG = { damping: 28, stiffness: 460, mass: 0.4 };
 
 // ── Category labels ───────────────────────────────────────────────────────────
@@ -59,7 +55,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   cardio: 'Cardio', olympic: 'Olympic',
 };
 
-// ── Props ─────────────────────────────────────────────────────────────────────
 interface ExercisePickerModalProps {
   visible: boolean;
   onClose: () => void;
@@ -67,7 +62,6 @@ interface ExercisePickerModalProps {
   defaultRestTimer?: number;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export function ExercisePickerModal({
   visible,
   onClose,
@@ -78,19 +72,23 @@ export function ExercisePickerModal({
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // ── Drag-to-close (attached to chrome only — list scroll is untouched) ──────
-  const translateY = useSharedValue(0);
+  // ── Drag-to-close (attached to header only) ──────
+  const translateY = useSharedValue(SCREEN_H); // start off-screen
+  const backdropOpacity = useSharedValue(0);
+
+  const closeWithAnimation = () => {
+    translateY.value = withSpring(SCREEN_H, { ...SPRING_CFG, damping: 20 });
+    backdropOpacity.value = withTiming(0, { duration: 200 });
+    setTimeout(onClose, 200); // Wait for animation before unmounting
+  };
 
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
-      // Only allow downward drag
       translateY.value = Math.max(0, e.translationY);
     })
     .onEnd((e) => {
       if (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY) {
-        // Animate off-screen then close
-        translateY.value = withSpring(SHEET_H, { ...SPRING_CFG, damping: 20 });
-        runOnJS(onClose)();
+        runOnJS(closeWithAnimation)();
       } else {
         // Snap back
         translateY.value = withSpring(0, SPRING_CFG);
@@ -101,12 +99,20 @@ export function ExercisePickerModal({
     transform: [{ translateY: translateY.value }],
   }));
 
-  // Reset translate when modal opens/closes
-  React.useEffect(() => {
-    if (visible) translateY.value = 0;
-  }, [visible]);
+  const backdropAnimStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
 
-  // ── Data ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (visible) {
+      translateY.value = withSpring(0, SPRING_CFG);
+      backdropOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.ease) });
+    } else {
+      translateY.value = Math.max(SCREEN_H, translateY.value);
+      backdropOpacity.value = 0;
+    }
+  }, [visible, translateY, backdropOpacity]);
+
   const categories = useMemo(
     () => Object.keys(EXERCISES_BY_CATEGORY).sort(),
     []
@@ -129,205 +135,162 @@ export function ExercisePickerModal({
   const handleSelect = (ex: DbExercise) => {
     onSelect({ id: ex.id, name: ex.name, exerciseDbId: ex.id, restTimer: defaultRestTimer });
     setSearch('');
-    onClose();
+    closeWithAnimation();
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation}>
+      <Animated.View style={[styles.backdrop, backdropAnimStyle]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
+      </Animated.View>
 
-      {/* ── Scrim: tapping closes modal ───────────────────────────────── */}
-      <Pressable style={styles.scrim} onPress={onClose} />
+      <Animated.View style={[styles.sheet, sheetAnimStyle]} pointerEvents="box-none">
+        <View style={[styles.sheetInner, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
 
-      {/* ── Sheet: fixed position + height, animated translateY ──────── */}
-      <Animated.View
-        style={[
-          styles.sheet,
-          { paddingBottom: Math.max(insets.bottom, Spacing.md) },
-          sheetAnimStyle,
-        ]}
-      >
-        {/* Gradient border ring (1px) */}
-        <LinearGradient
-          colors={SHEET_BORDER_GRADIENT}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-        {/* Gradient fill (inset 1px) */}
-        <LinearGradient colors={SHEET_FILL_GRADIENT} style={styles.sheetFill} />
-
-        {/* ── TOP CHROME: pan gesture attached here only ─────────────── */}
-        <GestureDetector gesture={panGesture}>
-          <View style={styles.chrome}>
-            {/* Grabber bar */}
-            <View style={styles.handle} />
-
-            {/* Header row — X is a plain Pressable, not inside GestureDetector */}
-            <View style={styles.header}>
-              <Text style={styles.title}>add exercise</Text>
-              <Pressable
-                onPress={onClose}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-              >
-                <Ionicons name="close" size={18} color={Colors.primaryLight} />
-              </Pressable>
-            </View>
-
-            {/* Search bar */}
-            <View style={styles.searchWrap}>
-              <Ionicons
-                name="search"
-                size={16}
-                color={Colors.primaryLight}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={styles.search}
-                placeholder="search exercises..."
-                placeholderTextColor={Colors.primaryLight + '45'}
-                value={search}
-                onChangeText={setSearch}
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-                autoCorrect={false}
-                autoCapitalize="none"
-                textAlignVertical="center"
-                {...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {})}
-              />
-            </View>
-
-            {/* Category filter chips */}
-            <View style={styles.chipOuter}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chipRow}
-              >
+          {/* HEADER (this is the ONLY drag handle zone) */}
+          <GestureDetector gesture={panGesture}>
+            <Animated.View style={styles.headerDragZone}>
+              <View style={styles.grabber} />
+              <View style={styles.headerRow}>
+                <Text style={styles.title}>add exercise</Text>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.chip,
-                    !selectedCategory && styles.chipActive,
-                    pressed && styles.chipPressed,
-                  ]}
-                  onPress={() => setSelectedCategory(null)}
+                  style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
+                  onPress={closeWithAnimation}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Text style={[styles.chipText, !selectedCategory && styles.chipTextActive]}>
-                    all
-                  </Text>
+                  <Ionicons name="close" size={18} color={Colors.primaryLight} />
                 </Pressable>
+              </View>
 
-                {categories.map((cat) => (
+              {/* SEARCH */}
+              <View style={styles.searchWrap}>
+                <Ionicons name="search" size={18} color={Colors.primaryLight + '60'} style={styles.searchIcon} />
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="search exercises..."
+                  placeholderTextColor={Colors.primaryLight + '40'}
+                  style={styles.searchInput}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  textAlignVertical="center"
+                  {...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {})}
+                />
+              </View>
+
+              {/* CHIPS */}
+              <View style={styles.chipsWrap}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipsContent}
+                >
                   <Pressable
-                    key={cat}
                     style={({ pressed }) => [
                       styles.chip,
-                      selectedCategory === cat && styles.chipActive,
+                      !selectedCategory && styles.chipActive,
                       pressed && styles.chipPressed,
                     ]}
-                    onPress={() =>
-                      setSelectedCategory(selectedCategory === cat ? null : cat)
-                    }
+                    onPress={() => setSelectedCategory(null)}
                   >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        selectedCategory === cat && styles.chipTextActive,
-                      ]}
-                    >
-                      {CATEGORY_LABELS[cat] ?? cat}
-                    </Text>
+                    <Text style={[styles.chipText, !selectedCategory && styles.chipTextActive]}>all</Text>
                   </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </GestureDetector>
 
-        {/* ── SCROLL AREA: FlatList only, gesture NOT attached here ─── */}
-        <FlatList
-          data={filteredExercises}
-          keyExtractor={(item) => item.id}
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <Pressable
-              style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-              onPress={() => handleSelect(item)}
-            >
-              <View style={styles.rowText}>
-                <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.rowMeta} numberOfLines={1}>
-                  {item.equipment.join(', ')} · {item.movementType}
-                </Text>
+                  {categories.map((cat) => (
+                    <Pressable
+                      key={cat}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        selectedCategory === cat && styles.chipActive,
+                        pressed && styles.chipPressed,
+                      ]}
+                      onPress={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
+                    >
+                      <Text style={[styles.chipText, selectedCategory === cat && styles.chipTextActive]}>
+                        {CATEGORY_LABELS[cat] ?? cat}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               </View>
-              <View style={styles.addBtn}>
-                <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
-              </View>
-            </Pressable>
-          )}
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No exercises match your search.</Text>
-            </View>
-          }
-        />
+            </Animated.View>
+          </GestureDetector>
+
+          {/* LIST (only this scrolls) */}
+          <View style={styles.listWrap}>
+            <FlatList
+              data={filteredExercises}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                  onPress={() => handleSelect(item)}
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.rowMeta} numberOfLines={1}>
+                      {item.equipment.join(', ')} · {item.movementType}
+                    </Text>
+                  </View>
+                  <View style={styles.addBtn}>
+                    <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
+                  </View>
+                </Pressable>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyText}>No exercises match your search.</Text>
+                </View>
+              }
+            />
+          </View>
+
+        </View>
       </Animated.View>
     </Modal>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-
-  // Scrim absorbs taps; positioned here so it does not interfere with sheet gestures
-  scrim: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    height: SHEET_TOP + 20,   // covers only the area above the sheet
-    backgroundColor: 'rgba(0,0,0,0.52)',
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    zIndex: 1,
   },
-
-  // Fixed-size sheet: position absolute, constant height = 78% of screen
   sheet: {
     position: 'absolute',
     top: SHEET_TOP,
     left: Spacing.md,
     right: Spacing.md,
     height: SHEET_H,
-    borderRadius: R,
-    overflow: 'hidden',   // required so gradient corners clip correctly
+    borderRadius: 38,
+    overflow: 'hidden',
+    zIndex: 10,
   },
-
-  // Gradient fill sits 1px inset from the border gradient layer
-  sheetFill: {
-    position: 'absolute',
-    top: 1, left: 1, right: 1, bottom: 0,
-    borderRadius: R - 1,
+  sheetInner: {
+    flex: 1,
+    backgroundColor: Colors.primaryDark,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 38,
   },
-
-  // Top chrome wrapper (pan gesture attached here)
-  chrome: {
-    // No overflow:hidden — chips must not be clipped
-    overflow: 'visible',
+  headerDragZone: {
+    paddingTop: 10,
+    backgroundColor: 'transparent',
   },
-
-  // ── Grabber ──────────────────────────────────────────────────────────────
-  handle: {
+  grabber: {
     alignSelf: 'center',
     width: 44,
     height: 5,
     borderRadius: 3,
     backgroundColor: Colors.primaryLight + '40',
-    marginTop: 10,
     marginBottom: 10,
   },
-
-  // ── Header row ───────────────────────────────────────────────────────────
-  header: {
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -352,56 +315,48 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight + '1C',
     opacity: 0.85,
   },
-
-  // ── Search bar ───────────────────────────────────────────────────────────
   searchWrap: {
+    height: 48,
+    borderRadius: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 48,
-    borderRadius: R,
-    backgroundColor: Colors.primaryLight + '09',
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
+    borderColor: 'rgba(255,255,255,0.08)',
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
-    paddingHorizontal: 0, // padded per-child below
   },
   searchIcon: {
-    marginLeft: 14,
     marginRight: 10,
     alignSelf: 'center',
-    opacity: 0.5,
   },
-  search: {
+  searchInput: {
     flex: 1,
     height: 48,
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: -0.11,
-    color: Colors.primaryLight,
     paddingVertical: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    fontSize: 15,
     lineHeight: 17,
-    textAlignVertical: 'center',
-    paddingRight: 14,
+    color: Colors.primaryLight,
+    ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } : {}),
   },
-
-  // ── Chip row ─────────────────────────────────────────────────────────────
-  // Outer view: explicit height, overflow visible so chips are never clipped
-  chipOuter: {
+  chipsWrap: {
     height: 46,
-    overflow: 'visible',
-    alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
     marginBottom: Spacing.sm,
   },
-  chipRow: {
+  chipsContent: {
     paddingHorizontal: Spacing.md,
     gap: 10,
     alignItems: 'center',
+    paddingBottom: 2,
   },
   chip: {
     height: 40,
-    borderRadius: R,
+    borderRadius: 38,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -424,10 +379,8 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: Colors.primaryLight,
   },
-
-  // ── List ─────────────────────────────────────────────────────────────────
-  list: {
-    flex: 1,   // takes all remaining sheet height; sheet height is fixed
+  listWrap: {
+    flex: 1,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
@@ -435,8 +388,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     gap: 7,
   },
-
-  // Exercise row: R pill, fill only
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -465,8 +416,6 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '70',
     marginTop: 2,
   },
-
-  // Add icon pill
   addBtn: {
     width: 28,
     height: 28,
@@ -475,8 +424,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Empty state
   emptyWrap: {
     paddingTop: Spacing.xl,
     alignItems: 'center',
@@ -490,42 +437,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
-/*
- * ── Notes ───────────────────────────────────────────────────────────────────
- * A) Sheet is fixed: top=SHEET_TOP(10%), height=SHEET_H(78%),
- *    left/right=Spacing.md, borderRadius=R=38. Height never changes regardless
- *    of chip count or list length.
- *
- * B) Drag gesture is attached to <GestureDetector> wrapping only the top
- *    chrome (grabber + header + search + chip row). The FlatList is outside
- *    the GestureDetector and receives native scroll events untouched.
- *
- * C) Dismiss: translateY > 80px OR velocityY > 900px/s → runOnJS(onClose).
- *    Otherwise → withSpring(0, SPRING_CFG) snap back.
- *
- * D) Scrim covers only the ~10% ribbon above the sheet (matches SHEET_TOP),
- *    so tapping that area closes. The sheet itself is not a Pressable.
- *
- * E) X button is a plain Pressable inside the chrome View but NOT wrapped in
- *    a GestureDetector — Pressable events are not swallowed by the pan gesture
- *    on tap (only on sustained drag).
- *
- * ── Verification checklist ──────────────────────────────────────────────────
- * Visual:
- *   [ ] Sheet is floating (margins left/right), all 4 corners rounded at R=38
- *   [ ] Sheet position + height constant — does not grow/shrink with content
- *   [ ] Grabber bar centered, 44×5, subtle opacity
- *   [ ] Chips fully visible, same height, no vertical clipping
- *   [ ] Search input text vertically centered, placeholder correct
- *
- * Interaction:
- *   [ ] Dragging grabber/header downwards > 80px → modal closes
- *   [ ] Flicking downward fast → modal closes
- *   [ ] Partial drag < 80px → sheet springs back
- *   [ ] X button closes instantly without triggering pan
- *   [ ] Tapping scrim ribbon above sheet closes
- *   [ ] FlatList scrolls normally (pan gesture NOT on list)
- *   [ ] Search still filters; chips still filter; row tap selects
- * ────────────────────────────────────────────────────────────────────────────
- */
