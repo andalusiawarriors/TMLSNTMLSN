@@ -36,12 +36,13 @@ const { Colors, Typography, Spacing } = Theme;
 // ── Layout constants ──────────────────────────────────────────────────────────
 const R = 38;
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get('window');
-const SHEET_H = Math.round(SCREEN_H * 0.78);
-const SHEET_TOP = Math.round(SCREEN_H * 0.10);
+const SHEET_H = Math.round(SCREEN_H * 0.82);
+const CLOSED_Y = SHEET_H + 40;   // off-screen
+const OPEN_Y = 0;               // visible
 
 // Dismiss thresholds
-const DISMISS_Y = 80;   // px downward before we let go
-const DISMISS_VELOCITY = 900;  // px/s downward flick
+const DISMISS_Y = 90;
+const DISMISS_VELOCITY = 900;
 
 // Spring config for snap-back
 const SPRING_CFG = { damping: 28, stiffness: 460, mass: 0.4 };
@@ -73,13 +74,14 @@ export function ExercisePickerModal({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // ── Drag-to-close (attached to header only) ──────
-  const translateY = useSharedValue(SCREEN_H); // start off-screen
+  const translateY = useSharedValue(CLOSED_Y);
   const backdropOpacity = useSharedValue(0);
 
   const closeWithAnimation = () => {
-    translateY.value = withSpring(SCREEN_H, { ...SPRING_CFG, damping: 20 });
-    backdropOpacity.value = withTiming(0, { duration: 200 });
-    setTimeout(onClose, 200); // Wait for animation before unmounting
+    backdropOpacity.value = withTiming(0, { duration: 180 });
+    translateY.value = withTiming(CLOSED_Y, { duration: 180, easing: Easing.in(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(onClose)();
+    });
   };
 
   const panGesture = Gesture.Pan()
@@ -105,10 +107,10 @@ export function ExercisePickerModal({
 
   useEffect(() => {
     if (visible) {
-      translateY.value = withSpring(0, SPRING_CFG);
-      backdropOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.ease) });
+      translateY.value = withTiming(OPEN_Y, { duration: 220, easing: Easing.out(Easing.cubic) });
+      backdropOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.ease) });
     } else {
-      translateY.value = Math.max(SCREEN_H, translateY.value);
+      translateY.value = CLOSED_Y;
       backdropOpacity.value = 0;
     }
   }, [visible, translateY, backdropOpacity]);
@@ -263,20 +265,19 @@ const styles = StyleSheet.create({
   },
   sheet: {
     position: 'absolute',
-    top: SHEET_TOP,
-    left: Spacing.md,
-    right: Spacing.md,
+    left: 0,
+    right: 0,
+    bottom: 0,
     height: SHEET_H,
-    borderRadius: 38,
-    overflow: 'hidden',
-    zIndex: 10,
-  },
-  sheetInner: {
-    flex: 1,
+    borderTopLeftRadius: 38,
+    borderTopRightRadius: 38,
     backgroundColor: Colors.primaryDark,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 38,
+    overflow: 'hidden',
+  },
+  sheetInner: {
+    flex: 1,
   },
   headerDragZone: {
     paddingTop: 10,
