@@ -1001,7 +1001,7 @@ export default function WorkoutScreen({
                           style={[styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }]}
                           onPressIn={playIn}
                           onPressOut={playOut}
-                          onPress={skipRestTimer}
+                          onPress={() => skipRestTimer()}
                         >
                           <Text style={[styles.restTimerSkipButtonText, { color: colors.primaryDark }]}>Skip</Text>
                         </AnimatedPressable>

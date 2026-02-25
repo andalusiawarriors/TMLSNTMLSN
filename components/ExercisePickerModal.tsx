@@ -24,15 +24,11 @@ import * as Theme from '../constants/theme';
 
 const { Colors, Typography, Spacing, BorderRadius } = Theme;
 
-// ── Design tokens (match workout tracker pill system) ───────────────────────
-// Card gradient: same as Card.tsx gradientFill
+// ── Design tokens ─────────────────────────────────────────────────────────
+// R = dominant border-radius for every pill/card in this modal.
+const R = 38;
 const SHEET_BORDER_GRADIENT: [string, string] = ['#525354', '#48494A'];
 const SHEET_FILL_GRADIENT: [string, string] = ['#363738', '#2E2F30'];
-
-const PILL_H = 36;            // category filter chip height
-const PILL_RADIUS = 18;       // fully-rounded pill
-const ROW_RADIUS = 12;        // exercise list rows
-const CLOSE_BTN_SIZE = 32;    // header close icon circle
 
 // ── Category labels ─────────────────────────────────────────────────────────
 const CATEGORY_LABELS: Record<string, string> = {
@@ -206,7 +202,10 @@ export function ExercisePickerModal({
                 </Text>
               </View>
               {/* Right: add chevron */}
-              <Ionicons name="add-circle-outline" size={20} color={Colors.primaryLight + '50'} />
+              {/* Subtle pill add button */}
+              <View style={styles.addBtn}>
+                <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
+              </View>
             </Pressable>
           )}
           ListEmptyComponent={
@@ -221,54 +220,54 @@ export function ExercisePickerModal({
 }
 
 // ── Styles ──────────────────────────────────────────────────────────────────
+// Single radius constant R=38 used for every pill/card surface.
 const styles = StyleSheet.create({
-  // Scrim (absorbs taps outside the sheet)
+
+  // ── Scrim ──────────────────────────────────────────────────────────────
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.52)',
   },
 
-  // Sheet outer shell — provides gradient border ring
+  // ── Sheet: outer gradient-border shell + inner fill ────────────────────
   sheetOuter: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     maxHeight: '88%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: R,
+    borderTopRightRadius: R,
     overflow: 'hidden',
   },
-
-  // Inner gradient fill sits inset 1px from the border gradient
   sheetFill: {
     position: 'absolute',
     top: 1,
     left: 1,
     right: 1,
-    bottom: 0, // no bottom border needed (touches screen edge)
-    borderTopLeftRadius: 23,
-    borderTopRightRadius: 23,
+    bottom: 0,
+    borderTopLeftRadius: R - 1,
+    borderTopRightRadius: R - 1,
   },
 
-  // Drag handle
+  // ── Drag handle ────────────────────────────────────────────────────────
   handle: {
     alignSelf: 'center',
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.primaryLight + '30',
-    marginTop: 10,
-    marginBottom: 4,
+    backgroundColor: Colors.primaryLight + '28',
+    marginTop: 12,
+    marginBottom: 2,
   },
 
-  // Header row
+  // ── Header ─────────────────────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
   },
   title: {
@@ -277,36 +276,36 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
     color: Colors.primaryLight,
   },
+  // Close button: R pill, no border — fill only, same surface as chips
   closeBtn: {
-    width: CLOSE_BTN_SIZE,
-    height: CLOSE_BTN_SIZE,
-    borderRadius: CLOSE_BTN_SIZE / 2,
-    backgroundColor: Colors.primaryLight + '12',
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
+    width: 36,
+    height: 36,
+    borderRadius: R,
+    backgroundColor: Colors.primaryLight + '0E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeBtnPressed: {
-    opacity: 0.7,
-    backgroundColor: Colors.primaryLight + '20',
+    backgroundColor: Colors.primaryLight + '1C',
+    opacity: 0.85,
   },
 
-  // Search
+  // ── Search input: R pill, single subtle border, no icon border ──────────
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: BorderRadius.md,
+    height: 46,
+    borderRadius: R,
+    backgroundColor: Colors.primaryLight + '09',
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '18',
+    borderColor: Colors.primaryLight + '15',
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    height: 44,
+    paddingHorizontal: 16,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
+    opacity: 0.5,
   },
   search: {
     flex: 1,
@@ -314,14 +313,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: -0.11,
     color: Colors.primaryLight,
-    paddingVertical: 0, // rely on parent height
-    // Remove default focus outline on web/Expo Go
+    paddingVertical: 0,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
 
-  // Category chips
+  // ── Category chips: R pill, no border on inactive, subtle fill active ───
   chipScrollView: {
-    maxHeight: PILL_H + 8,
+    maxHeight: 44,
     marginBottom: Spacing.sm,
   },
   chipRow: {
@@ -331,56 +329,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chip: {
-    height: PILL_H,
-    borderRadius: PILL_RADIUS,
-    paddingHorizontal: 14,
+    height: 36,
+    borderRadius: R,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primaryLight + '0A',
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
+    // Inactive: no border, muted fill — calm and flat
+    backgroundColor: Colors.primaryLight + '0C',
   },
   chipActive: {
-    backgroundColor: Colors.primaryLight,
-    borderColor: Colors.primaryLight,
+    // Active: slightly brighter fill, still no harsh border
+    backgroundColor: Colors.primaryLight + '18',
   },
   chipPressed: {
-    opacity: 0.75,
+    opacity: 0.72,
   },
   chipText: {
     fontSize: Typography.label,
     fontWeight: '600',
     letterSpacing: -0.11,
-    color: Colors.primaryLight + 'BB',
+    color: Colors.primaryLight + 'A0',
   },
   chipTextActive: {
-    color: Colors.primaryDark,
+    color: Colors.primaryLight,
   },
 
-  // Exercise list
+  // ── Exercise list ───────────────────────────────────────────────────────
   list: {
     flexShrink: 1,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
-    gap: 6,
+    gap: 7,
   },
 
-  // Exercise rows — pill card style
+  // Row: R pill, no border — fill only. Separation comes from the gap.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 11,
+    paddingVertical: 14,
     paddingHorizontal: Spacing.md,
-    borderRadius: ROW_RADIUS,
-    backgroundColor: Colors.primaryLight + '08',
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '12',
+    borderRadius: R,
+    backgroundColor: Colors.primaryLight + '09',
   },
   rowPressed: {
-    backgroundColor: Colors.primaryLight + '14',
-    borderColor: Colors.primaryLight + '22',
+    backgroundColor: Colors.primaryLight + '15',
   },
   rowText: {
     flex: 1,
@@ -396,11 +390,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.label,
     fontWeight: '500',
     letterSpacing: -0.11,
-    color: Colors.primaryLight + '60',
+    color: Colors.primaryLight + '70',
     marginTop: 2,
   },
 
-  // Empty state
+  // Add button: R pill, same surface as chip inactive, no border
+  addBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: R,
+    backgroundColor: Colors.primaryLight + '0E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // ── Empty state ─────────────────────────────────────────────────────────
   emptyWrap: {
     paddingTop: Spacing.xl,
     alignItems: 'center',
@@ -409,8 +413,38 @@ const styles = StyleSheet.create({
     fontSize: Typography.body,
     fontWeight: '500',
     letterSpacing: -0.11,
-    color: Colors.primaryLight + '60',
+    color: Colors.primaryLight + '55',
     fontStyle: 'italic',
     textAlign: 'center',
   },
 });
+
+/*
+ * ── Verification checklist ───────────────────────────────────────────────────
+ * Visual:
+ *   [ ] Sheet top corners are clearly rounded (R=38) — not squared off
+ *   [ ] Drag handle is centered, subtle (not prominent)
+ *   [ ] Header: title left, close pill right, both vertically centred
+ *   [ ] Close button: small pill, no outline, fill-only surface
+ *   [ ] Search bar: pill shape (R=38), single thin border, icon + placeholder
+ *   [ ] Chips: same height, no border, muted fill; active chip is visibly
+ *       brighter (not white/inverted) — calm difference, not jarring
+ *   [ ] Rows: pill shape (R=38), no border, uniform vertical padding,
+ *       clear name / dimmer meta hierarchy, small add-pill icon right-aligned
+ *   [ ] No element has more than one border weight — everything uses fill-only
+ *       surfaces except the search input
+ *
+ * Interaction:
+ *   [ ] Typing in search narrows list immediately
+ *   [ ] Tapping a chip filters; tapping same chip again shows all
+ *   [ ] Tapping a row calls onSelect and closes modal
+ *   [ ] Tapping scrim (above sheet) closes modal
+ *   [ ] Close pill also dismisses correctly
+ *   [ ] Empty state appears when search has no results
+ *
+ * Small-screen:
+ *   [ ] No clipped chips or buttons at 375pt screen width
+ *   [ ] List scrolls independently, sheet is max 88% height
+ *   [ ] Safe area bottom padding respected (notch / home indicator)
+ * ────────────────────────────────────────────────────────────────────────────
+ */
