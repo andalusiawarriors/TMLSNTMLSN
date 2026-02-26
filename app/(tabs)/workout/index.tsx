@@ -33,13 +33,14 @@ import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDispla
 import { logStreakWorkout } from '../../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
 import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
-import { scheduleRestTimerNotification } from '../../../utils/notifications';
+import { scheduleRestTimerNotification, cancelNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
 import AnimatedReanimated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withDelay,
   Easing,
 } from 'react-native-reanimated';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
@@ -172,6 +173,60 @@ export default function WorkoutScreen({
   const [restTimerActive, setRestTimerActive] = useState(false);
   const [restTimeRemaining, setRestTimeRemaining] = useState(0);
   const [restTimerNotificationId, setRestTimerNotificationId] = useState<string | null>(null);
+  /** Context for rescheduling notification when user adjusts +/-15s (exercise name + set number for notification body). */
+  const [restTimerContext, setRestTimerContext] = useState<{ exerciseName: string; setNumberDisplay: number } | null>(null);
+
+  // ── Rest Timer panel enter/exit animation ──────────────────────────────────
+  // `restTimerVisible` keeps the node mounted during the exit animation.
+  // Shared values drive the outer wrapper and four staggered content rows.
+  const [restTimerVisible, setRestTimerVisible] = useState(false);
+  const restTimerOpacity = useSharedValue(0);
+  const restTimerTranslateY = useSharedValue(-10);
+  // Per-row stagger opacities (label row, countdown, progress bar, buttons row)
+  const rtRow0Opacity = useSharedValue(0);
+  const rtRow1Opacity = useSharedValue(0);
+  const rtRow2Opacity = useSharedValue(0);
+  const rtRow3Opacity = useSharedValue(0);
+
+  const TIMER_ENTER_MS = 200;
+  const TIMER_EXIT_MS = 160;
+  const TIMER_STAGGER = 55; // ms between each inner row
+
+  useEffect(() => {
+    const shouldShow = restTimerActive && restTimeRemaining > 0;
+    if (__DEV__) console.log('[Workout UI] rest timer visible:', shouldShow);
+    if (shouldShow) {
+      // Mount immediately, then animate in
+      setRestTimerVisible(true);
+      restTimerOpacity.value = withTiming(1, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) });
+      restTimerTranslateY.value = withTiming(0, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) });
+      // Stagger inner rows
+      rtRow0Opacity.value = withDelay(0, withTiming(1, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) }));
+      rtRow1Opacity.value = withDelay(TIMER_STAGGER, withTiming(1, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) }));
+      rtRow2Opacity.value = withDelay(TIMER_STAGGER * 2, withTiming(1, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) }));
+      rtRow3Opacity.value = withDelay(TIMER_STAGGER * 3, withTiming(1, { duration: TIMER_ENTER_MS, easing: Easing.out(Easing.cubic) }));
+    } else {
+      // Animate out, then unmount
+      restTimerOpacity.value = withTiming(0, { duration: TIMER_EXIT_MS, easing: Easing.in(Easing.cubic) });
+      restTimerTranslateY.value = withTiming(-8, { duration: TIMER_EXIT_MS, easing: Easing.in(Easing.cubic) });
+      rtRow0Opacity.value = withTiming(0, { duration: TIMER_EXIT_MS });
+      rtRow1Opacity.value = withTiming(0, { duration: TIMER_EXIT_MS });
+      rtRow2Opacity.value = withTiming(0, { duration: TIMER_EXIT_MS });
+      rtRow3Opacity.value = withTiming(0, { duration: TIMER_EXIT_MS });
+      const t = setTimeout(() => setRestTimerVisible(false), TIMER_EXIT_MS + 20);
+      return () => clearTimeout(t);
+    }
+  }, [restTimerActive, restTimeRemaining > 0]);
+
+  const restTimerPanelStyle = useAnimatedStyle(() => ({
+    opacity: restTimerOpacity.value,
+    transform: [{ translateY: restTimerTranslateY.value }],
+  }));
+  const rtRow0Style = useAnimatedStyle(() => ({ opacity: rtRow0Opacity.value }));
+  const rtRow1Style = useAnimatedStyle(() => ({ opacity: rtRow1Opacity.value }));
+  const rtRow2Style = useAnimatedStyle(() => ({ opacity: rtRow2Opacity.value }));
+  const rtRow3Style = useAnimatedStyle(() => ({ opacity: rtRow3Opacity.value }));
+  // ───────────────────────────────────────────────────────────────────────────
 
   // Exercise Entry State
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -240,7 +295,7 @@ export default function WorkoutScreen({
   }, []);
 
   /** Keyboard Done and overlay both call this; actual commit is in commitActiveFieldIfNeeded (defined after updateSet). */
-  const confirmEditingCellRef = useRef<(source: 'done' | 'outside' | 'blur') => void>(() => {});
+  const confirmEditingCellRef = useRef<(source: 'done' | 'outside' | 'blur') => void>(() => { });
   const confirmEditingCell = useCallback(() => {
     confirmEditingCellRef.current('done');
   }, []);
@@ -512,9 +567,9 @@ export default function WorkoutScreen({
     setEditingCell(null);
     setEditingCellValue('');
     Keyboard.dismiss();
-    setTimeout(() => {
-      commitInProgressRef.current = false;
-    }, 0);
+    // Reset synchronously — a setTimeout reset can leave the lock stranded if a
+    // re-render fires between the dismiss and the timeout callback.
+    commitInProgressRef.current = false;
   }, [editingCell, editingCellValue, weightUnit, activeWorkout, updateSet]);
 
   useEffect(() => {
@@ -543,29 +598,81 @@ export default function WorkoutScreen({
     setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
   };
 
-  const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number) => {
+  const startRestTimer = async (seconds: number, setNumber: number, exerciseIdx?: number, setId?: string) => {
+    if (restTimerNotificationId) {
+      await cancelNotification(restTimerNotificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled (replacing)', { setId, notificationId: restTimerNotificationId });
+      setRestTimerNotificationId(null);
+    }
     setRestTimeRemaining(seconds);
     setRestTimerActive(true);
     const idx = exerciseIdx ?? currentExerciseIndex;
+    const exerciseName = activeWorkout?.exercises[idx]?.name || 'Exercise';
+    const setNumberDisplay = setNumber + 1;
+    setRestTimerContext({ exerciseName, setNumberDisplay });
     try {
-      const exerciseName = activeWorkout?.exercises[idx]?.name || 'Exercise';
       const notificationId = await scheduleRestTimerNotification(
         exerciseName,
-        setNumber + 1,
+        setNumberDisplay,
         seconds
       );
       setRestTimerNotificationId(notificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] scheduled', { setId, seconds, notificationId });
     } catch (error) {
       console.error('Failed to schedule rest timer notification:', error);
     }
   };
 
-  const skipRestTimer = () => {
+  const skipRestTimer = (setId?: string) => {
+    if (restTimerNotificationId) {
+      cancelNotification(restTimerNotificationId);
+      if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled', { setId, notificationId: restTimerNotificationId });
+      setRestTimerNotificationId(null);
+    }
+    setRestTimerContext(null);
     setRestTimerActive(false);
     setRestTimeRemaining(0);
+  };
+
+  /** Adjust rest timer by delta seconds and reschedule notification to match new remaining time. */
+  const adjustRestTimer = async (delta: number) => {
+    const before = restTimeRemaining;
+    const after = Math.max(0, before + delta);
+    const notificationIdOld = restTimerNotificationId;
+
+    if (after === 0) {
+      if (restTimerNotificationId) {
+        await cancelNotification(restTimerNotificationId);
+        setRestTimerNotificationId(null);
+      }
+      setRestTimerContext(null);
+      setRestTimerActive(false);
+      setRestTimeRemaining(0);
+      if (__DEV__) console.log('[Workout RestTimer] adjust -> cancelled at zero', { before, after });
+      return;
+    }
+
+    setRestTimeRemaining(after);
     if (restTimerNotificationId) {
-      // Cancel the notification (would need to implement cancelNotification)
+      await cancelNotification(restTimerNotificationId);
       setRestTimerNotificationId(null);
+    }
+
+    const ctx = restTimerContext;
+    if (!ctx) return;
+    try {
+      const notificationIdNew = await scheduleRestTimerNotification(
+        ctx.exerciseName,
+        ctx.setNumberDisplay,
+        after
+      );
+      setRestTimerNotificationId(notificationIdNew);
+      if (__DEV__) {
+        const label = delta > 0 ? 'adjust +15' : 'adjust -15';
+        console.log(`[Workout RestTimer] ${label}`, { before, after, notificationIdOld, notificationIdNew });
+      }
+    } catch (error) {
+      console.error('Failed to reschedule rest timer notification:', error);
     }
   };
 
@@ -726,42 +833,42 @@ export default function WorkoutScreen({
       <HomeGradientBackground />
       {/* Main menu – hidden when asModal (FAB opened from another tab); only overlay is shown */}
       {!asModal && (
-      <>
-      <ScrollView
-        style={styles.scrollViewLayer}
-        contentContainerStyle={[
-          styles.contentContainer,
-          {
-            paddingTop: TOP_LEFT_PILL_TOP,
-            paddingBottom: Math.max(Spacing.md, insets.bottom + 100),
-          },
-        ]}
-      >
-        {/* Header: profile + tmlsn tracker */}
-        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-        <View style={styles.pageHeaderRow}>
-          <View style={styles.pageHeaderLeft} />
-          <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
-            <Text style={[styles.pageHeading, { color: colors.primaryLight }]}>tmlsn tracker.</Text>
-          </View>
-          <View style={styles.pageHeaderRight} />
-        </View>
-        </AnimatedFadeInUp>
+        <>
+          <ScrollView
+            style={styles.scrollViewLayer}
+            contentContainerStyle={[
+              styles.contentContainer,
+              {
+                paddingTop: TOP_LEFT_PILL_TOP,
+                paddingBottom: Math.max(Spacing.md, insets.bottom + 100),
+              },
+            ]}
+          >
+            {/* Header: profile + tmlsn tracker */}
+            <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+              <View style={styles.pageHeaderRow}>
+                <View style={styles.pageHeaderLeft} />
+                <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
+                  <Text style={[styles.pageHeading, { color: colors.primaryLight }]}>tmlsn tracker.</Text>
+                </View>
+                <View style={styles.pageHeaderRight} />
+              </View>
+            </AnimatedFadeInUp>
 
-        {/* Achievements – progress widget moved to profile (progress tab, Fitness toggle) */}
-        <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
-        <View style={styles.achievementsStack}>
-          <AnimatedPressable style={styles.achievementCardWrap}>
-            <Card gradientFill borderRadius={38} style={styles.achievementCard}>
-              <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>achievements</Text>
-            </Card>
-          </AnimatedPressable>
-        </View>
-        </AnimatedFadeInUp>
+            {/* Achievements – progress widget moved to profile (progress tab, Fitness toggle) */}
+            <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
+              <View style={styles.achievementsStack}>
+                <AnimatedPressable style={styles.achievementCardWrap}>
+                  <Card gradientFill borderRadius={38} style={styles.achievementCard}>
+                    <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>achievements</Text>
+                  </Card>
+                </AnimatedPressable>
+              </View>
+            </AnimatedFadeInUp>
 
-      </ScrollView>
+          </ScrollView>
 
-      </>
+        </>
       )}
 
       {/* Workout log overlay – entrance animation + minimize on down arrow */}
@@ -778,516 +885,517 @@ export default function WorkoutScreen({
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
           >
-          <ScrollView
-            ref={workoutScrollRef}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[
-              styles.contentContainer,
-              {
-                paddingTop: insets.top + 12,
-                paddingBottom: Math.max(160, insets.bottom + 120),
-                paddingLeft: Math.max(8, insets.left),
-                paddingRight: Math.max(8, insets.right),
-              },
-            ]}
-          >
-            <Pressable style={{ flex: 1 }} onPress={() => commitActiveFieldIfNeeded('outside')}>
-            {/* ─── HEVY-STYLE TOP BAR ─── */}
-            <AnimatedFadeInUp delay={0} duration={280} trigger={overlayTrigger} instant>
-            <View style={[styles.logTopBar, { paddingVertical: 8, paddingLeft: 4, paddingRight: insets.right + 4 }]}>
-              <AnimatedPressable
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={handleBackArrowPress}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={styles.logBackArrowWrap}
-              >
-                <View style={styles.minimizeIconButton}>
-                  <LinearGradient
-                    colors={colors.tabBarBorder as [string, string]}
-                    style={[StyleSheet.absoluteFillObject, { borderRadius: 15 }]}
-                  />
-                  <LinearGradient
-                    colors={colors.tabBarFill as [string, string]}
-                    style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 14 }}
-                  />
-                  <Ionicons name="chevron-down" size={18} color={colors.primaryLight} />
-                </View>
-              </AnimatedPressable>
-              <View style={styles.logTopCenter} pointerEvents="box-none">
-                <Text style={[styles.logTitle, { color: colors.primaryLight }]}>{activeWorkout.name || 'Workout'}</Text>
-                <Text style={[styles.logTimer, { color: colors.primaryLight + '99' }]}>{formatElapsed(elapsedSeconds)}</Text>
-              </View>
-              <AnimatedPressable
-                style={[styles.finishButton, { backgroundColor: colors.primaryLight }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={() =>
-                  isSavingWorkout
-                    ? undefined
-                    : Alert.alert(
-                        'Finish Workout',
-                        'Save this workout?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Save', onPress: finishWorkout },
-                        ]
-                      )
-                }
-                disabled={isSavingWorkout}
-              >
-                <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
-              </AnimatedPressable>
-            </View>
-            </AnimatedFadeInUp>
-
-            {/* ─── HEVY-STYLE SUMMARY STATS ROW (committed state only; draft never affects volume/sets) ─── */}
-            <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
-            <View style={styles.summaryRow}>
-              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
-                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
-                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
-                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
-              </View>
-              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
-                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
-                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
-                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
-              </View>
-              <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
-                <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◎</Text>
-                <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{activeWorkout.exercises.length}</Text>
-                <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>exercises</Text>
-              </View>
-            </View>
-            </AnimatedFadeInUp>
-
-            {/* ─── HEVY-STYLE REST TIMER PANEL ─── */}
-            {restTimerActive && restTimeRemaining > 0 && (
-              <AnimatedFadeInUp delay={80} duration={300} trigger={overlayTrigger} instant>
-              <View style={[styles.restTimerPanel, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '20' }]}>
-                <View style={styles.restTimerHeader}>
-                  <Text style={[styles.restTimerLabel, { color: colors.primaryLight + '80' }]}>REST TIMER</Text>
-                </View>
-                <Text style={[styles.restTimerCountdown, { color: colors.primaryLight }]}>{formatDuration(restTimeRemaining)}</Text>
-                <View style={[styles.restTimerProgressTrack, { backgroundColor: colors.primaryLight + '15' }]}>
-                  <View style={[styles.restTimerProgressFill, { backgroundColor: colors.primaryLight, width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
-                </View>
-                <View style={styles.restTimerButtonsRow}>
-                  <AnimatedPressable
-                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={() => setRestTimeRemaining((prev) => Math.max(0, prev - 15))}
-                  >
-                    <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>−15s</Text>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    style={[styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={skipRestTimer}
-                  >
-                    <Text style={[styles.restTimerSkipButtonText, { color: colors.primaryDark }]}>Skip</Text>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={() => setRestTimeRemaining((prev) => prev + 15)}
-                  >
-                    <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>+15s</Text>
-                  </AnimatedPressable>
-                </View>
-              </View>
-              </AnimatedFadeInUp>
-            )}
-
-            {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
-            {activeWorkout.exercises.length === 0 ? (
-              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
-              <AnimatedPressable
-                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={openExercisePicker}
-              >
-                <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
-              </AnimatedPressable>
-              </AnimatedFadeInUp>
-            ) : null}
-            {activeWorkout.exercises.map((exercise, exerciseIndex) => (
-              <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
-              <View
-                style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}
-                onLayout={(e) => setTableBlockYRef.current.set(exerciseIndex, e.nativeEvent.layout.y)}
-              >
-                {/* Exercise header */}
-                <View style={styles.exerciseBlockHeader}>
-                  <View style={styles.exerciseBlockTitleRow}>
-                    <View style={[styles.exerciseBlockIcon, { backgroundColor: colors.primaryLight + '15' }]}>
-                      <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
+            <ScrollView
+              ref={workoutScrollRef}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.contentContainer,
+                {
+                  paddingTop: insets.top + 12,
+                  paddingBottom: Math.max(160, insets.bottom + 120),
+                  paddingLeft: Math.max(8, insets.left),
+                  paddingRight: Math.max(8, insets.right),
+                },
+              ]}
+            >
+              <Pressable style={{ flex: 1 }} onPress={() => commitActiveFieldIfNeeded('outside')}>
+                {/* ─── HEVY-STYLE TOP BAR ─── */}
+                <AnimatedFadeInUp delay={0} duration={280} trigger={overlayTrigger} instant>
+                  <View style={[styles.logTopBar, { paddingVertical: 8, paddingLeft: 4, paddingRight: insets.right + 4 }]}>
+                    <AnimatedPressable
+                      onPressIn={playIn}
+                      onPressOut={playOut}
+                      onPress={handleBackArrowPress}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={styles.logBackArrowWrap}
+                    >
+                      <View style={styles.minimizeIconButton}>
+                        <LinearGradient
+                          colors={colors.tabBarBorder as [string, string]}
+                          style={[StyleSheet.absoluteFillObject, { borderRadius: 15 }]}
+                        />
+                        <LinearGradient
+                          colors={colors.tabBarFill as [string, string]}
+                          style={{ position: 'absolute', top: 1, left: 1, right: 1, bottom: 1, borderRadius: 14 }}
+                        />
+                        <Ionicons name="chevron-down" size={18} color={colors.primaryLight} />
+                      </View>
+                    </AnimatedPressable>
+                    <View style={styles.logTopCenter} pointerEvents="box-none">
+                      <Text style={[styles.logTitle, { color: colors.primaryLight }]}>{activeWorkout.name || 'Workout'}</Text>
+                      <Text style={[styles.logTimer, { color: colors.primaryLight + '99' }]}>{formatElapsed(elapsedSeconds)}</Text>
                     </View>
-                    <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
+                    <AnimatedPressable
+                      style={[styles.finishButton, { backgroundColor: colors.primaryLight }]}
+                      onPressIn={playIn}
+                      onPressOut={playOut}
+                      onPress={() =>
+                        isSavingWorkout
+                          ? undefined
+                          : Alert.alert(
+                            'Finish Workout',
+                            'Save this workout?',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Save', onPress: finishWorkout },
+                            ]
+                          )
+                      }
+                      disabled={isSavingWorkout}
+                    >
+                      <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
+                    </AnimatedPressable>
                   </View>
-                  <TouchableOpacity
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    onPress={() => showExerciseMenu(exerciseIndex)}
-                  >
-                    <Text style={[styles.exerciseBlockMenu, { color: colors.primaryLight + '60' }]}>⋮</Text>
-                  </TouchableOpacity>
-                </View>
+                </AnimatedFadeInUp>
 
-                {/* Rest timer badge – pressable to edit (only when rest timer is set) */}
-                {exercise.restTimer ? (
-                  <Pressable
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={() => {
-                      setRestEditMinutes(Math.floor(exercise.restTimer! / 60));
-                      setRestEditSeconds(exercise.restTimer! % 60);
-                      setRestTimeEditExerciseIndex(exerciseIndex);
-                    }}
-                    style={[styles.restTimerBadge, { backgroundColor: colors.primaryLight + '10' }]}
-                  >
-                    <Text style={[styles.restTimerBadgeText, { color: colors.primaryLight }]}>
-                      Rest: {formatDuration(exercise.restTimer)}
-                    </Text>
-                  </Pressable>
-                ) : null}
+                {/* ─── HEVY-STYLE SUMMARY STATS ROW (committed state only; draft never affects volume/sets) ─── */}
+                <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
+                  <View style={styles.summaryRow}>
+                    <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                      <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
+                      <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
+                      <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
+                    </View>
+                    <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                      <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
+                      <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
+                      <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
+                    </View>
+                    <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                      <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◎</Text>
+                      <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{activeWorkout.exercises.length}</Text>
+                      <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>exercises</Text>
+                    </View>
+                  </View>
+                </AnimatedFadeInUp>
 
-                {/* Notes */}
-                <Text style={[styles.notesPlaceholder, { color: colors.primaryLight + '50' }]}>+ Add notes</Text>
-
-                {/* Set table header — same flex column ratios as row cells */}
-                <View style={styles.setTableHeader}>
-                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
-                    <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">SET</Text>
-                  </View>
-                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
-                    <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">PREVIOUS</Text>
-                  </View>
-                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight }]}>
-                    <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">{weightUnit.toUpperCase()}</Text>
-                  </View>
-                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps }]}>
-                    <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">REPS</Text>
-                  </View>
-                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
-                    <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1}>✓</Text>
-                  </View>
-                </View>
-
-                {/* Set rows — same flex column ratios as header */}
-                {exercise.sets.map((set, setIndex) => {
-                  const isCompleted = set.completed;
-                  const rowKey = `${exerciseIndex}-${setIndex}`;
-                  return (
-                    <View key={set.id}>
-                    <Swipeable
-                      renderRightActions={() => (
-                        <Pressable
-                          style={({ pressed }) => [styles.setRowDeleteAction, pressed && { opacity: 0.8 }]}
+                {/* ─── HEVY-STYLE REST TIMER PANEL (animated enter/exit) ─── */}
+                {restTimerVisible && (
+                  <AnimatedReanimated.View style={[styles.restTimerPanelWrapper, restTimerPanelStyle]}>
+                    <View style={[styles.restTimerPanel, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '20' }]}>
+                      {/* Row 0 – label */}
+                      <AnimatedReanimated.View style={[styles.restTimerRow, rtRow0Style]}>
+                        <Text style={[styles.restTimerLabel, { color: colors.primaryLight + '80' }]}>REST TIMER</Text>
+                      </AnimatedReanimated.View>
+                      {/* Row 1 – countdown */}
+                      <AnimatedReanimated.View style={rtRow1Style}>
+                        <Text style={[styles.restTimerCountdown, { color: colors.primaryLight }]}>{formatDuration(restTimeRemaining)}</Text>
+                      </AnimatedReanimated.View>
+                      {/* Row 2 – progress bar */}
+                      <AnimatedReanimated.View style={[{ width: '100%' }, rtRow2Style]}>
+                        <View style={[styles.restTimerProgressTrack, { backgroundColor: colors.primaryLight + '15' }]}>
+                          <View style={[styles.restTimerProgressFill, { backgroundColor: colors.primaryLight, width: `${Math.max(0, (restTimeRemaining / (activeWorkout.exercises[currentExerciseIndex]?.restTimer || 120)) * 100)}%` }]} />
+                        </View>
+                      </AnimatedReanimated.View>
+                      {/* Row 3 – buttons */}
+                      <AnimatedReanimated.View style={[styles.restTimerButtonsRow, rtRow3Style]}>
+                        <AnimatedPressable
+                          style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
                           onPressIn={playIn}
                           onPressOut={playOut}
-                          onPress={() => removeSet(exerciseIndex, setIndex)}
+                          onPress={() => adjustRestTimer(-15)}
                         >
-                          <Text style={styles.setRowDeleteText}>Delete</Text>
-                        </Pressable>
-                      )}
-                      friction={2}
-                      rightThreshold={40}
+                          <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>−15s</Text>
+                        </AnimatedPressable>
+                        <AnimatedPressable
+                          style={[styles.restTimerSkipButton, { backgroundColor: colors.primaryLight }]}
+                          onPressIn={playIn}
+                          onPressOut={playOut}
+                          onPress={() => skipRestTimer()}
+                        >
+                          <Text style={[styles.restTimerSkipButtonText, { color: colors.primaryDark }]}>Skip</Text>
+                        </AnimatedPressable>
+                        <AnimatedPressable
+                          style={[styles.restTimerAdjustButton, { backgroundColor: colors.primaryLight + '15' }]}
+                          onPressIn={playIn}
+                          onPressOut={playOut}
+                          onPress={() => adjustRestTimer(15)}
+                        >
+                          <Text style={[styles.restTimerAdjustButtonText, { color: colors.primaryLight }]}>+15s</Text>
+                        </AnimatedPressable>
+                      </AnimatedReanimated.View>
+                    </View>
+                  </AnimatedReanimated.View>
+                )}
+
+                {/* ─── HEVY-STYLE EXERCISE BLOCKS ─── */}
+                {activeWorkout.exercises.length === 0 ? (
+                  <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+                    <AnimatedPressable
+                      style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
+                      onPressIn={playIn}
+                      onPressOut={playOut}
+                      onPress={openExercisePicker}
                     >
-                      <View
-                        onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
-                        style={[
-                          styles.setRow,
-                          { width: '100%', minHeight: SET_ROW_HEIGHT },
-                          isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', marginTop: 6 },
-                          pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
-                        ]}
-                      >
-                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
-                          <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
-                            <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
-                              {setIndex + 1}
-                            </Text>
+                      <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
+                    </AnimatedPressable>
+                  </AnimatedFadeInUp>
+                ) : null}
+                {activeWorkout.exercises.map((exercise, exerciseIndex) => (
+                  <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
+                    <View
+                      style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}
+                      onLayout={(e) => setTableBlockYRef.current.set(exerciseIndex, e.nativeEvent.layout.y)}
+                    >
+                      {/* Exercise header */}
+                      <View style={styles.exerciseBlockHeader}>
+                        <View style={styles.exerciseBlockTitleRow}>
+                          <View style={[styles.exerciseBlockIcon, { backgroundColor: colors.primaryLight + '15' }]}>
+                            <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                           </View>
+                          <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
                         </View>
-
-                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
-                          <View style={styles.setPreviousTextWrap}>
-                            <Text
-                              style={[styles.setCellDim, { color: colors.primaryLight + '50' }, isCompleted && { color: colors.primaryLight + '70' }]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
-                                ? `${formatWeightDisplay(toDisplayWeight(exercise.sets[setIndex - 1].weight, weightUnit), weightUnit)}×${exercise.sets[setIndex - 1].reps}`
-                                : '—'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
-                          <View style={styles.setCellContentCenter}>
-                          {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
-                            <View
-                              ref={(r) => { focusedInputWrapperRef.current = r; }}
-                              onLayout={(e) => {
-                                if (!__DEV__) return;
-                                const { width, height } = e.nativeEvent.layout;
-                                console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width, height });
-                              }}
-                              style={[
-                                styles.setInputCellBase,
-                                { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
-                                styles.setInputCellActiveVisual,
-                                { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                { overflow: 'hidden' as const },
-                              ]}
-                              collapsable={false}
-                            >
-                              <Input
-                                value={editingCellValue}
-                                onChangeText={(text) => {
-                                  setEditingCellValue(text);
-                                  if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
-                                }}
-                                onFocus={() => {
-                                  const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                  setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                  setEditingCellValue(displayValue);
-                                  scrollToSetRow(exerciseIndex, setIndex);
-                                  if (__DEV__) {
-                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
-                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'weight', isActive: true });
-                                    setTimeout(() => {
-                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
-                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width: w, height: h });
-                                      });
-                                    }, 0);
-                                  }
-                                }}
-                                onBlur={() => commitActiveFieldIfNeeded('blur')}
-                                onEndEditing={() => {}}
-                                autoFocus
-                                keyboardType="decimal-pad"
-                                placeholder="—"
-                                multiline={false}
-                                maxLength={5}
-                                containerStyle={styles.setInputCellInner}
-                                style={[
-                                  styles.setInputTextVisible,
-                                  styles.setInputFixedDimensions,
-                                  { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
-                                ]}
-                                placeholderTextColor={colors.primaryLight + '50'}
-                                selectionColor={colors.primaryLight + '60'}
-                                includeFontPadding={false}
-                                textAlignVertical="center"
-                                underlineColorAndroid="transparent"
-                              />
-                            </View>
-                          ) : (
-                            <Pressable
-                              onPressIn={playIn}
-                              onPressOut={playOut}
-                              onPress={() => {
-                                const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                setEditingCellValue(displayValue);
-                                if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
-                              }}
-                              style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
-                              </Text>
-                            </Pressable>
-                          )}
-                          </View>
-                        </View>
-
-                        <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
-                          <View style={styles.setCellContentCenter}>
-                          {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
-                            <View
-                              ref={(r) => { focusedInputWrapperRef.current = r; }}
-                              onLayout={(e) => {
-                                if (!__DEV__) return;
-                                const { width, height } = e.nativeEvent.layout;
-                                console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width, height });
-                              }}
-                              style={[
-                                styles.setInputCellBase,
-                                { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
-                                styles.setInputCellActiveVisual,
-                                { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                { overflow: 'hidden' as const },
-                              ]}
-                              collapsable={false}
-                            >
-                              <Input
-                                value={editingCellValue}
-                                onChangeText={(text) => {
-                                  setEditingCellValue(text);
-                                  if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
-                                }}
-                                onFocus={() => {
-                                  const displayValue = set.reps > 0 ? String(set.reps) : '';
-                                  setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                  setEditingCellValue(displayValue);
-                                  scrollToSetRow(exerciseIndex, setIndex);
-                                  if (__DEV__) {
-                                    console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
-                                    console.log('[Workout Input UI] focus visual', { setId: set.id, field: 'reps', isActive: true });
-                                    setTimeout(() => {
-                                      focusedInputWrapperRef.current?.measure((_x, _y, w, h) => {
-                                        console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width: w, height: h });
-                                      });
-                                    }, 0);
-                                  }
-                                }}
-                                onBlur={() => commitActiveFieldIfNeeded('blur')}
-                                onEndEditing={() => {}}
-                                autoFocus
-                                keyboardType="number-pad"
-                                placeholder="—"
-                                multiline={false}
-                                maxLength={4}
-                                containerStyle={styles.setInputCellInner}
-                                style={[
-                                  styles.setInputTextVisible,
-                                  styles.setInputFixedDimensions,
-                                  { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
-                                ]}
-                                placeholderTextColor={colors.primaryLight + '50'}
-                                selectionColor={colors.primaryLight + '60'}
-                                includeFontPadding={false}
-                                textAlignVertical="center"
-                                underlineColorAndroid="transparent"
-                              />
-                            </View>
-                          ) : (
-                            <Pressable
-                              onPressIn={playIn}
-                              onPressOut={playOut}
-                              onPress={() => {
-                                const displayValue = set.reps > 0 ? String(set.reps) : '';
-                                setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                setEditingCellValue(displayValue);
-                                if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
-                              }}
-                              style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                {set.reps > 0 ? String(set.reps) : '—'}
-                              </Text>
-                            </Pressable>
-                          )}
-                          </View>
-                        </View>
-
-                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
-                          <View style={styles.setCellContentCenter}>
-                        <Pressable
-                          style={[styles.setCheckWrap, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}
-                          onPressIn={() => {
-                            playIn();
-                            setPressedCheckRowKey(rowKey);
-                          }}
-                          onPressOut={() => {
-                            playOut();
-                            setPressedCheckRowKey(null);
-                          }}
-                          onPress={() => {
-                            const nextCompleted = !set.completed;
-                            const isEditingThisSet =
-                              editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
-                            if (isEditingThisSet && editingCell) {
-                              const { field } = editingCell;
-                              if (field === 'weight') {
-                                const n = parseNumericInput(editingCellValue, 'float');
-                                if (n !== null) {
-                                  updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
-                                  if (__DEV__) {
-                                    console.log('[Workout Field Commit]', { setId: set.id, field: 'weight', parsed: n, source: 'check' });
-                                    console.log('[Workout Set Commit]', {
-                                      setId: set.id,
-                                      completed: nextCompleted,
-                                      weightRawLb: fromDisplayWeight(n, weightUnit),
-                                      reps: set.reps,
-                                    });
-                                  }
-                                } else {
-                                  updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                  if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
-                                }
-                              } else {
-                                const n = parseNumericInput(editingCellValue, 'int');
-                                if (n !== null) {
-                                  updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
-                                  if (__DEV__) {
-                                    console.log('[Workout Field Commit]', { setId: set.id, field: 'reps', parsed: n, source: 'check' });
-                                    console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: n });
-                                  }
-                                } else {
-                                  updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                  if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
-                                }
-                              }
-                              setEditingCell(null);
-                              setEditingCellValue('');
-                              Keyboard.dismiss();
-                            } else {
-                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
-                            }
-                            if (!set.completed && exercise.restTimer) {
-                              startRestTimer(exercise.restTimer, setIndex, exerciseIndex);
-                            }
-                          }}
+                        <TouchableOpacity
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          onPress={() => showExerciseMenu(exerciseIndex)}
                         >
-                          <Text style={[styles.setCheckText, { color: colors.primaryLight + '40' }, isCompleted && { color: colors.primaryDark }]}>✓</Text>
+                          <Text style={[styles.exerciseBlockMenu, { color: colors.primaryLight + '60' }]}>⋮</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Rest timer badge – pressable to edit (only when rest timer is set) */}
+                      {exercise.restTimer ? (
+                        <Pressable
+                          onPressIn={playIn}
+                          onPressOut={playOut}
+                          onPress={() => {
+                            setRestEditMinutes(Math.floor(exercise.restTimer! / 60));
+                            setRestEditSeconds(exercise.restTimer! % 60);
+                            setRestTimeEditExerciseIndex(exerciseIndex);
+                          }}
+                          style={[styles.restTimerBadge, { backgroundColor: colors.primaryLight + '10' }]}
+                        >
+                          <Text style={[styles.restTimerBadgeText, { color: colors.primaryLight }]}>
+                            Rest: {formatDuration(exercise.restTimer)}
+                          </Text>
                         </Pressable>
-                          </View>
+                      ) : null}
+
+                      {/* Notes */}
+                      <Text style={[styles.notesPlaceholder, { color: colors.primaryLight + '50' }]}>+ Add notes</Text>
+
+                      {/* Set table header — same flex column ratios as row cells */}
+                      <View style={styles.setTableHeader}>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">SET</Text>
+                        </View>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">PREVIOUS</Text>
+                        </View>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">{weightUnit.toUpperCase()}</Text>
+                        </View>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">REPS</Text>
+                        </View>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1}>✓</Text>
                         </View>
                       </View>
-                    </Swipeable>
-                    </View>
-                  );
-                })}
 
-                {/* Add set button */}
-                <Pressable
-                  style={({ pressed }) => [styles.addSetButtonBlock, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
-                  onPressIn={playIn}
-                  onPressOut={playOut}
-                  onPress={() => addSet(exerciseIndex)}
-                >
-                  <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
-                </Pressable>
-              </View>
-            </AnimatedFadeInUp>
-            ))}
-            {activeWorkout.exercises.length > 0 ? (
-              <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
-              <AnimatedPressable
-                style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
-                onPressIn={playIn}
-                onPressOut={playOut}
-                onPress={openExercisePicker}
-              >
-                <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
-              </AnimatedPressable>
-              </AnimatedFadeInUp>
-            ) : null}
-            </Pressable>
-          </ScrollView>
+                      {/* Set rows — same flex column ratios as header */}
+                      {exercise.sets.map((set, setIndex) => {
+                        const isCompleted = set.completed;
+                        const rowKey = `${exerciseIndex}-${setIndex}`;
+                        return (
+                          <View key={set.id}>
+                            <Swipeable
+                              renderRightActions={() => (
+                                <Pressable
+                                  style={({ pressed }) => [styles.setRowDeleteAction, pressed && { opacity: 0.8 }]}
+                                  onPressIn={playIn}
+                                  onPressOut={playOut}
+                                  onPress={() => removeSet(exerciseIndex, setIndex)}
+                                >
+                                  <Text style={styles.setRowDeleteText}>Delete</Text>
+                                </Pressable>
+                              )}
+                              friction={2}
+                              rightThreshold={40}
+                            >
+                              <View
+                                onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
+                                style={[
+                                  styles.setRow,
+                                  { width: '100%', minHeight: SET_ROW_HEIGHT },
+                                  isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', marginTop: 6 },
+                                  pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
+                                ]}
+                              >
+                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
+                                  <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
+                                    <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
+                                      {setIndex + 1}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
+                                  <View style={styles.setPreviousTextWrap}>
+                                    <Text
+                                      style={[styles.setCellDim, { color: colors.primaryLight + '50' }, isCompleted && { color: colors.primaryLight + '70' }]}
+                                      numberOfLines={1}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
+                                        ? `${formatWeightDisplay(toDisplayWeight(exercise.sets[setIndex - 1].weight, weightUnit), weightUnit)}×${exercise.sets[setIndex - 1].reps}`
+                                        : '—'}
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
+                                  <View style={styles.setCellContentCenter}>
+                                    {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
+                                      <View
+                                        ref={(r) => { focusedInputWrapperRef.current = r; }}
+                                        onLayout={(e) => {
+                                          if (!__DEV__) return;
+                                          const { width, height } = e.nativeEvent.layout;
+                                          console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width, height });
+                                        }}
+                                        style={[
+                                          styles.setInputCellBase,
+                                          { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                          styles.setInputCellActiveVisual,
+                                          { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                          // overflow:hidden removed — it clips the glow shadow and can disturb the native
+                                          // TextInput hit-test, causing spurious blurs on rapid re-taps.
+                                        ]}
+                                        collapsable={false}
+                                      >
+                                        <Input
+                                          value={editingCellValue}
+                                          onChangeText={(text) => {
+                                            setEditingCellValue(text);
+                                            if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
+                                          }}
+                                          onFocus={() => {
+                                            // DO NOT call setEditingCell / setEditingCellValue here.
+                                            // Both are already set by the Pressable onPress handler that
+                                            // switched this branch to the active Input. Re-setting them
+                                            // triggers an extra render which can fire onBlur on some RN
+                                            // versions → commitActiveFieldIfNeeded runs with an empty draft
+                                            // and strands commitInProgressRef in the locked state.
+                                            scrollToSetRow(exerciseIndex, setIndex);
+                                            if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'weight', currentDraft: editingCellValue });
+                                          }}
+                                          onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                          onEndEditing={() => { }}
+                                          autoFocus
+                                          keyboardType="decimal-pad"
+                                          placeholder="—"
+                                          multiline={false}
+                                          maxLength={5}
+                                          containerStyle={styles.setInputCellInner}
+                                          style={[
+                                            styles.setInputTextVisible,
+                                            styles.setInputFixedDimensions,
+                                            { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
+                                          ]}
+                                          placeholderTextColor={colors.primaryLight + '50'}
+                                          selectionColor={colors.primaryLight + '60'}
+                                          includeFontPadding={false}
+                                          textAlignVertical="center"
+                                          underlineColorAndroid="transparent"
+                                        />
+                                      </View>
+                                    ) : (
+                                      <Pressable
+                                        onPressIn={playIn}
+                                        onPressOut={playOut}
+                                        onPress={() => {
+                                          const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
+                                          setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
+                                          setEditingCellValue(displayValue);
+                                          if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
+                                        }}
+                                        style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      >
+                                        <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                          {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
+                                        </Text>
+                                      </Pressable>
+                                    )}
+                                  </View>
+                                </View>
+
+                                <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
+                                  <View style={styles.setCellContentCenter}>
+                                    {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
+                                      <View
+                                        ref={(r) => { focusedInputWrapperRef.current = r; }}
+                                        onLayout={(e) => {
+                                          if (!__DEV__) return;
+                                          const { width, height } = e.nativeEvent.layout;
+                                          console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width, height });
+                                        }}
+                                        style={[
+                                          styles.setInputCellBase,
+                                          { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                          styles.setInputCellActiveVisual,
+                                          { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                          // overflow:hidden removed — same reason as weight cell above.
+                                        ]}
+                                        collapsable={false}
+                                      >
+                                        <Input
+                                          value={editingCellValue}
+                                          onChangeText={(text) => {
+                                            setEditingCellValue(text);
+                                            if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
+                                          }}
+                                          onFocus={() => {
+                                            // DO NOT call setEditingCell / setEditingCellValue here.
+                                            // See weight onFocus comment above for the full explanation.
+                                            scrollToSetRow(exerciseIndex, setIndex);
+                                            if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'reps', currentDraft: editingCellValue });
+                                          }}
+                                          onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                          onEndEditing={() => { }}
+                                          autoFocus
+                                          keyboardType="number-pad"
+                                          placeholder="—"
+                                          multiline={false}
+                                          maxLength={4}
+                                          containerStyle={styles.setInputCellInner}
+                                          style={[
+                                            styles.setInputTextVisible,
+                                            styles.setInputFixedDimensions,
+                                            { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
+                                          ]}
+                                          placeholderTextColor={colors.primaryLight + '50'}
+                                          selectionColor={colors.primaryLight + '60'}
+                                          includeFontPadding={false}
+                                          textAlignVertical="center"
+                                          underlineColorAndroid="transparent"
+                                        />
+                                      </View>
+                                    ) : (
+                                      <Pressable
+                                        onPressIn={playIn}
+                                        onPressOut={playOut}
+                                        onPress={() => {
+                                          const displayValue = set.reps > 0 ? String(set.reps) : '';
+                                          setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
+                                          setEditingCellValue(displayValue);
+                                          if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
+                                        }}
+                                        style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      >
+                                        <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                          {set.reps > 0 ? String(set.reps) : '—'}
+                                        </Text>
+                                      </Pressable>
+                                    )}
+                                  </View>
+                                </View>
+
+                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
+                                  <View style={styles.setCellContentCenter}>
+                                    <Pressable
+                                      style={[styles.setCheckWrap, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}
+                                      onPressIn={() => {
+                                        playIn();
+                                        setPressedCheckRowKey(rowKey);
+                                      }}
+                                      onPressOut={() => {
+                                        playOut();
+                                        setPressedCheckRowKey(null);
+                                      }}
+                                      onPress={() => {
+                                        const nextCompleted = !set.completed;
+                                        const isEditingThisSet =
+                                          editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
+                                        if (isEditingThisSet && editingCell) {
+                                          const { field } = editingCell;
+                                          if (field === 'weight') {
+                                            const n = parseNumericInput(editingCellValue, 'float');
+                                            if (n !== null) {
+                                              updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
+                                              if (__DEV__) {
+                                                console.log('[Workout Field Commit]', { setId: set.id, field: 'weight', parsed: n, source: 'check' });
+                                                console.log('[Workout Set Commit]', {
+                                                  setId: set.id,
+                                                  completed: nextCompleted,
+                                                  weightRawLb: fromDisplayWeight(n, weightUnit),
+                                                  reps: set.reps,
+                                                });
+                                              }
+                                            } else {
+                                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                            }
+                                          } else {
+                                            const n = parseNumericInput(editingCellValue, 'int');
+                                            if (n !== null) {
+                                              updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
+                                              if (__DEV__) {
+                                                console.log('[Workout Field Commit]', { setId: set.id, field: 'reps', parsed: n, source: 'check' });
+                                                console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: n });
+                                              }
+                                            } else {
+                                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                            }
+                                          }
+                                          setEditingCell(null);
+                                          setEditingCellValue('');
+                                          Keyboard.dismiss();
+                                        } else {
+                                          updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                          if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                        }
+                                        if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted });
+                                        if (nextCompleted === true) {
+                                          if (exercise.restTimer) {
+                                            startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
+                                          }
+                                        } else {
+                                          skipRestTimer(set.id);
+                                          if (__DEV__) console.log('[Workout RestTimer] skipped schedule on uncommit', { setId: set.id });
+                                        }
+                                      }}
+                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    >
+                                      <Text style={[styles.setCheckText, { color: colors.primaryLight + '40' }, isCompleted && { color: colors.primaryDark }]}>✓</Text>
+                                    </Pressable>
+                                  </View>
+                                </View>
+                              </View>
+                            </Swipeable>
+                          </View>
+                        );
+                      })}
+
+                      {/* Add set button */}
+                      <Pressable
+                        style={({ pressed }) => [styles.addSetButtonBlock, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
+                        onPressIn={playIn}
+                        onPressOut={playOut}
+                        onPress={() => addSet(exerciseIndex)}
+                      >
+                        <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
+                      </Pressable>
+                    </View>
+                  </AnimatedFadeInUp>
+                ))}
+                {activeWorkout.exercises.length > 0 ? (
+                  <AnimatedFadeInUp delay={100} duration={320} trigger={overlayTrigger} instant>
+                    <AnimatedPressable
+                      style={[styles.addSetButtonBlock, styles.addExerciseBlock, { backgroundColor: colors.primaryLight + '15' }]}
+                      onPressIn={playIn}
+                      onPressOut={playOut}
+                      onPress={openExercisePicker}
+                    >
+                      <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
+                    </AnimatedPressable>
+                  </AnimatedFadeInUp>
+                ) : null}
+              </Pressable>
+            </ScrollView>
           </KeyboardAvoidingView>
           {/* Confirm pill above keyboard — same bubble UI as profile sheet / tab bar pills */}
           {editingCell && (
@@ -1385,34 +1493,39 @@ export default function WorkoutScreen({
 
       {activeWorkout && exerciseMenuIndex !== null && (
         <Modal visible animationType="fade" transparent>
-          <Pressable style={styles.exerciseMenuOverlay} onPress={closeExerciseMenu}>
-            <Pressable style={[styles.exerciseMenuCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]} onPress={(e) => e.stopPropagation()}>
-              <Text style={[styles.exerciseMenuTitle, { color: colors.primaryLight }]} numberOfLines={1}>
-                {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
-              </Text>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
-                onPress={handleReplaceFromMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Replace exercise</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, { backgroundColor: colors.primaryDarkLighter }]}
-                onPress={handleDeleteFromMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, styles.exerciseMenuOptionDestructive, { color: colors.accentRed }]}>
-                  Delete exercise
+          <Pressable style={[styles.exerciseMenuOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]} onPress={closeExerciseMenu}>
+            <Pressable style={styles.exerciseMenuCardWrap} onPress={(e) => e.stopPropagation()}>
+              <Card gradientFill borderRadius={20} style={styles.exerciseMenuCard}>
+                <Text style={[styles.exerciseMenuTitle, { color: colors.primaryLight }]} numberOfLines={1}>
+                  {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.exerciseMenuOption, styles.exerciseMenuOptionCancel]}
-                onPress={closeExerciseMenu}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.exerciseMenuOptionText, { color: colors.primaryLight }]}>Cancel</Text>
-              </TouchableOpacity>
+                <View style={styles.exerciseMenuButtons}>
+                  <AnimatedPressable
+                    style={[styles.exerciseMenuButtonReplace, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={handleReplaceFromMenu}
+                  >
+                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight }]}>Replace exercise</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={styles.exerciseMenuButtonDelete}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={handleDeleteFromMenu}
+                  >
+                    <Text style={styles.exerciseMenuButtonDeleteText}>Delete exercise</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={[styles.exerciseMenuButtonCancel, { borderColor: colors.primaryLight + '15' }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={closeExerciseMenu}
+                  >
+                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight + '70' }]}>Cancel</Text>
+                  </AnimatedPressable>
+                </View>
+              </Card>
             </Pressable>
           </Pressable>
         </Modal>
@@ -1651,6 +1764,10 @@ const styles = StyleSheet.create({
   },
 
   // ─── HEVY-STYLE REST TIMER PANEL ──────────────────────────────────────────
+  /** Outer animated wrapper — overflow visible so the translateY slide doesn't clip content. */
+  restTimerPanelWrapper: {
+    overflow: 'visible' as const,
+  },
   restTimerPanel: {
     marginBottom: Spacing.lg,
     paddingVertical: 20,
@@ -1660,6 +1777,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: Colors.primaryLight + '20',
+  },
+  /** Replaces the old restTimerHeader — keeps the same 8px bottom margin for the label row. */
+  restTimerRow: {
+    marginBottom: 8,
   },
   restTimerHeader: {
     marginBottom: 8,
@@ -1770,7 +1891,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  // ─── Exercise menu popup (replace/delete) – TMLSN design ───────────────────
+  // ─── Exercise menu popup (replace/delete) – workout tracker card + buttons ─
   exerciseMenuOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1778,15 +1899,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
   },
-  exerciseMenuCard: {
+  exerciseMenuCardWrap: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: Colors.primaryDark,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
+  },
+  exerciseMenuCard: {
     padding: Spacing.lg,
-    ...Shadows.card,
+    overflow: 'hidden',
+  },
+  exerciseMenuTitle: {
+    fontSize: Typography.h2,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    color: Colors.primaryLight,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.primaryLight + '25',
+  },
+  exerciseMenuButtons: {
+    gap: 10,
+    marginTop: Spacing.sm,
+  },
+  exerciseMenuButtonReplace: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderWidth: 1,
+  },
+  exerciseMenuButtonText: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+  },
+  exerciseMenuButtonDelete: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    backgroundColor: '#C6C6C6',
+  },
+  exerciseMenuButtonDeleteText: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    color: '#2F3032',
+  },
+  exerciseMenuButtonCancel: {
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
   },
   restTimeEditCard: {
     width: '100%',
@@ -1840,35 +2009,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   restTimeEditButtonTextPrimary: {},
-  exerciseMenuTitle: {
-    fontFamily: Font.semiBold,
-    fontSize: Typography.h2,
-    color: Colors.primaryLight,
-    marginBottom: Spacing.md,
-    paddingBottom: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '25',
-  },
-  exerciseMenuOption: {
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.xs,
-    backgroundColor: Colors.primaryDarkLighter,
-  },
-  exerciseMenuOptionText: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.body,
-    color: Colors.primaryLight,
-  },
-  exerciseMenuOptionDestructive: {
-    color: Colors.accentRed,
-  },
-  exerciseMenuOptionCancel: {
-    marginTop: Spacing.sm,
-    marginBottom: 0,
-    backgroundColor: 'transparent',
-  },
   restTimerBadge: {
     alignSelf: 'flex-start',
     alignItems: 'center',

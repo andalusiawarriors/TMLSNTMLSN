@@ -53,6 +53,7 @@
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
 - `utils/foodApi.ts` (main + obh) – List Food matching patch: word-level typo (applyWordLevelTypos), multi-food tokenization (getListFoodSearchTokens), expanded listFoodQueryVariants; searchFoodFirstMatch single try per variant
+- `app/(tabs)/nutrition.tsx` – List Food: backspace on empty line removes line (removeListFoodLine)
 - `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx` – List Food best-effort matching: searchFoodFirstMatchBestEffort (fallbacks + synthetic), no "No match found" in confirm list; obh synced
 - `app/(tabs)/nutrition.tsx` – List Food modal: focus new row on Enter (listFoodFocusAfterAdd, listFoodInputRefs, useEffect)
 - `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx`, `app/search-food.tsx` – quicksilver for all Foundation (not Top 100): isFoundationVerified(), solid quicksilver nutrition text on cards; obh synced
@@ -69,6 +70,8 @@
 - `app/search-food.tsx` – TMLSN Basics tick: replaced Text "✓" with `gold_checkmark_badge.png`; placement from obh: marginLeft 1, marginTop -3 on wrap
 - `app/(tabs)/nutrition.tsx` – Food DB modal: same gold tick PNG + placement for TMLSN Basics badge
 - `app/(tabs)/nutrition.tsx` – fixed crash after logging food: health score card used `log` (out of scope); changed to `viewingDateLog`; synced to obh
+- `.env.local.example` – added with EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY so the other person can copy to .env.local and fix “Supabase not configured”; README setup step updated to mention Supabase
+- `app/(tabs)/workout/your-routines.tsx` – Save Routine: template targets, delete, UI polish
 - `app/search-food.tsx` – fixed keyboard dip on first character: use single FlatList always (no ScrollView/FlatList swap), TextInput stays mounted; synced to obh
 - Supabase auth: `lib/supabase.ts`, `context/AuthContext.tsx`, `components/AuthModal.tsx`, `components/ProfileSheet.tsx`, `utils/storage.ts`, `utils/supabaseStorage.ts`, `constants/storageDefaults.ts`, `supabase/migrations/001_user_data.sql`, `app/_layout.tsx`, `.env.local.example` – login/create account in profile, per-account cloud storage
 - `components/FitnessGraphWidget.tsx` – fixed layout shift: valueSection minHeight 48px, bubblesRow minHeight 52px so chart stays fixed when tapping pillar or switching metric
