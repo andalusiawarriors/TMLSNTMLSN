@@ -27,9 +27,22 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *(none)*     | —                 | —                         | —               | —       |
+|| — | — | — | — |
+*Just finished: List Food modal — focus new row on Enter: listFoodFocusAfterAdd state, listFoodInputRefs, useEffect + requestAnimationFrame to focus; addListFoodLine(section, lines.length); main only (obh has different List Food UI).*
+*Just finished: List Food — hint, headings, bullets, placeholders, Log Food button, conversion popup (search → confirm → log), searchFoodFirstMatch; fontFamily→fontWeight, listFoodInput white; main + obh synced.*
+*Previously: Dedupe search results by USDA fdcId — ParsedNutrition.fdcId, dedupKey usda:fdcId so same food appears once; verified+rest and preload/nextPage dedupe by fdcId; main + obh synced.*
+*Just finished: Quicksilver for all Foundation (not Top 100) — isFoundationVerified() in foodApi; solid QUICKSILVER_TEXT for nutrition on cards so it always shows; main + obh synced.*
+*Just finished: Remove SR Legacy from USDA food API and UI — Foundation + Branded only; Verified = Foundation only; main + obh synced.*
 
-*Previously: Workout UI – Save Routine refactored to match workout design* – fixed layout shift when tapping pillar (VALUE_SECTION_HEIGHT, BUBBLES_ROW_HEIGHT)*
+*Just finished: App sounds — set interruptionMode to mixWithOthers so taps/FAB/popup/card sounds don't pause or duck background music (nutrition.tsx, _layout.tsx, useButtonSound.ts; synced to obh).*
+
+*Just finished: Search food page — same background as profile (HomeGradientBackground), content layer transparent so gradient shows through.*
+
+*Just finished: Home page background — replaced assets/home-background.png with user’s dark gradient image; gradient overlay unchanged.*
+
+*Just finished: List Food popup — full-screen blurred modal with back button; “type one food per line” + ListBullets icon; Breakfast/Lunch/Dinner/Snacks each with 2 editable bullet lines; synced to obh.*
+
+*Previously: Profile Fitness – fixed layout shift when tapping pillar (VALUE_SECTION_HEIGHT, BUBBLES_ROW_HEIGHT)*
 
 *Claim a row when you start; list the main files you’re touching so other agents can avoid them. Clear or update when you finish.*
 
@@ -39,7 +52,23 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `app/(tabs)/workout/your-routines.tsx` – Save Routine: template targets, delete, UI polish
+- `utils/foodApi.ts` (main + obh) – List Food matching patch: word-level typo (applyWordLevelTypos), multi-food tokenization (getListFoodSearchTokens), expanded listFoodQueryVariants; searchFoodFirstMatch single try per variant
+- `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx` – List Food best-effort matching: searchFoodFirstMatchBestEffort (fallbacks + synthetic), no "No match found" in confirm list; obh synced
+- `app/(tabs)/nutrition.tsx` – List Food modal: focus new row on Enter (listFoodFocusAfterAdd, listFoodInputRefs, useEffect)
+- `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx`, `app/search-food.tsx` – quicksilver for all Foundation (not Top 100): isFoundationVerified(), solid quicksilver nutrition text on cards; obh synced
+- `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx`, `app/search-food.tsx` – removed SR Legacy: USDA_DATA_TYPES = Foundation + Branded only; Verified = Foundation only; obh synced
+- `app/(tabs)/nutrition.tsx`, `app/(tabs)/_layout.tsx`, `hooks/useButtonSound.ts` – audio: interruptionMode `mixWithOthers` (no pause/duck of background music); obh synced
+- `app/search-food.tsx` – background: HomeGradientBackground (same as profile); wrapper + transparent content layer
+- `assets/home-background.png` – replaced with user’s dark abstract gradient image (home page background); gradient overlay in nutrition.tsx unchanged
+- `app/search-food.tsx`, `app/(tabs)/nutrition.tsx` – TMLSN Basics → TMLSN VERIFIED: Foundation + SR Legacy foods use quicksilver gradient on food name + quicksilver badge tick inline; add-meal popup shows “TMLSN VERIFIED” label and title with gradient + tick; synced to obh
+- `app/(tabs)/nutrition.tsx` – List Food modal: full-screen blur, BackButton, “type one food per line” + ListBullets icon, Breakfast/Lunch/Dinner/Snacks with 2 editable lines each; pill “list food” opens this modal; synced to obh
+- `app/(tabs)/nutrition.tsx` – Add Meal title: show food name when opened from selected food (mealName or "Add Meal"); synced to obh
+- `app/search-food.tsx` – Add Meal overlay title: same
+- `app/(tabs)/nutrition.tsx` – Saved Foods + Food Search modals: full-screen blur (intensity 50 + tint like ProfileSheet), BackButton closes modal and calls onCloseModal when asModal
+- `components/NutritionHero.tsx` – Arc: solid dark stroke (no static gradient); moving rect uses glimmer-only gradient (dark–light–dark narrow band). Bars: narrow-band gradient (dark–dark–light–dark–dark with locations) so the only light is the moving strip. Removed unused getArcStops.
+- `app/search-food.tsx` – TMLSN Basics tick: replaced Text "✓" with `gold_checkmark_badge.png`; placement from obh: marginLeft 1, marginTop -3 on wrap
+- `app/(tabs)/nutrition.tsx` – Food DB modal: same gold tick PNG + placement for TMLSN Basics badge
+- `app/(tabs)/nutrition.tsx` – fixed crash after logging food: health score card used `log` (out of scope); changed to `viewingDateLog`; synced to obh
 - `app/search-food.tsx` – fixed keyboard dip on first character: use single FlatList always (no ScrollView/FlatList swap), TextInput stays mounted; synced to obh
 - Supabase auth: `lib/supabase.ts`, `context/AuthContext.tsx`, `components/AuthModal.tsx`, `components/ProfileSheet.tsx`, `utils/storage.ts`, `utils/supabaseStorage.ts`, `constants/storageDefaults.ts`, `supabase/migrations/001_user_data.sql`, `app/_layout.tsx`, `.env.local.example` – login/create account in profile, per-account cloud storage
 - `components/FitnessGraphWidget.tsx` – fixed layout shift: valueSection minHeight 48px, bubblesRow minHeight 52px so chart stays fixed when tapping pillar or switching metric

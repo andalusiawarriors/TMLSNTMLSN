@@ -175,14 +175,18 @@ function MacroBar({
   const labelColor = prevState !== state && transitionAnim
     ? transitionAnim.interpolate({ inputRange: [0, 1], outputRange: [palettePrev.mid, paletteCurr.mid] })
     : paletteCurr.mid;
-  const LabelWrapper = state === 'gold'
-    ? ({ children }: { children: React.ReactNode }) => (
-        <Animated.View style={prevState !== state ? { opacity: currOpacity } : undefined}>
+  const gradientColors = paletteCurr.gradient as [string, string, string, string, string];
+  // During transition, use solid interpolated color so MaskedView is never under animated opacity
+  // (MaskedView can show only gradient block when parent opacity < 1 - e.g. silver state transition)
+  const LabelWrapper = state !== 'flat'
+    ? ({ children }: { children: React.ReactNode }) =>
+        prevState !== state ? (
+          <Animated.Text style={[styles.macroLabel, { color: labelColor }]}>{children}</Animated.Text>
+        ) : (
           <MaskedView style={styles.macroLabelMaskWrap} maskElement={<Text style={[styles.macroLabel, styles.labelMaskText]}>{children}</Text>}>
-            <LinearGradient colors={[GOLD.dark, GOLD.mid, GOLD.light, GOLD.mid, GOLD.dark]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={gradientColors} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
           </MaskedView>
-        </Animated.View>
-      )
+        )
     : ({ children }: { children: React.ReactNode }) => <Animated.Text style={[styles.macroLabel, { color: labelColor }]}>{children}</Animated.Text>;
 
   return (
@@ -266,8 +270,17 @@ function MacroBar({
           ]}
         />
       </View>
-      {state === 'gold' ? (
-        <Animated.View style={prevState !== state ? { opacity: currOpacity } : undefined}>
+      {state !== 'flat' ? (
+        prevState !== state ? (
+          <Animated.Text
+            style={[styles.macroValue, styles.macroGoal, { color: labelColor }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          >
+            {current} / {goal} g
+          </Animated.Text>
+        ) : (
           <MaskedView
             style={styles.macroValueMaskWrap}
             maskElement={
@@ -276,9 +289,9 @@ function MacroBar({
               </Text>
             }
           >
-            <LinearGradient colors={[GOLD.dark, GOLD.mid, GOLD.light, GOLD.mid, GOLD.dark]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+            <LinearGradient colors={gradientColors} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
           </MaskedView>
-        </Animated.View>
+        )
       ) : (
         <Animated.Text
           style={[styles.macroValue, { color: labelColor }]}
@@ -524,7 +537,7 @@ export default function NutritionHero({ data }: { data: NutritionData }) {
               </View>
             </MaskedView>
           </View>
-          {state === 'gold' ? (
+          {state !== 'flat' ? (
             <Animated.View
               style={[
                 styles.goldLabelsWrap,
@@ -532,8 +545,12 @@ export default function NutritionHero({ data }: { data: NutritionData }) {
               ]}
               pointerEvents="none"
             >
-              <Text style={[styles.kcalLabel, { color: GOLD.light }]}>calories</Text>
-              <Text style={[styles.calGoal, { color: GOLD.light }]}>{calories.current} / {calories.goal}</Text>
+              <MaskedView style={styles.kcalLabelMaskWrap} maskElement={<Text style={[styles.kcalLabel, styles.labelMaskText]}>calories</Text>}>
+                <LinearGradient colors={[...currPalette.gradient]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+              </MaskedView>
+              <MaskedView style={styles.calGoalMaskWrap} maskElement={<Text style={[styles.calGoal, styles.labelMaskText]}>{calories.current} / {calories.goal}</Text>}>
+                <LinearGradient colors={[...currPalette.gradient]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+              </MaskedView>
             </Animated.View>
           ) : (
             <>
@@ -581,7 +598,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   calNumberMaskText: { color: 'white' },
-  goldLabelsWrap: { alignItems: 'center', minHeight: 32 },
+  goldLabelsWrap: { alignItems: 'center', minHeight: 44, overflow: 'visible' },
+  kcalLabelMaskWrap: { alignSelf: 'center', minHeight: 14, minWidth: 56, marginTop: 4, overflow: 'visible' },
+  calGoalMaskWrap: { alignSelf: 'center', minHeight: 22, minWidth: 80, marginTop: 6, overflow: 'visible' },
   labelMaskWrap: { alignSelf: 'center', overflow: 'hidden', minHeight: 14 },
   labelMaskText: { color: 'white', backgroundColor: 'transparent' },
   kcalLabel: {

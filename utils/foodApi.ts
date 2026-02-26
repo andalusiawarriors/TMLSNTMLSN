@@ -752,15 +752,53 @@ export async function searchFoodsNextPage(
   }
 }
 
-/** Returns the first search result for a query. Uses searchFoodsProgressive internally; does not modify search logic. */
-export function searchFoodFirstMatch(query: string): Promise<ParsedNutrition | null> {
+/** Typo corrections used only for List Food first-match. Applied per word so "chiken saled" → "chicken salad". */
+const FIRST_MATCH_TYPO_MAP: Record<string, string> = {
+  chiken: 'chicken',
+  egs: 'eggs', egg: 'eggs',
+  cheeze: 'cheese', chese: 'cheese',
+  tomatos: 'tomatoes',
+  brocoli: 'broccoli', brocolli: 'broccoli',
+  saled: 'salad', lettus: 'lettuce',
+  spinnach: 'spinach', spinich: 'spinach',
+  yogert: 'yogurt', yougurt: 'yogurt', yogourt: 'yogurt',
+  avacado: 'avocado',
+  potatos: 'potatoes',
+  pastsa: 'pasta',
+  bannana: 'banana',
+  oates: 'oats', otas: 'oats',
+  salamon: 'salmon', salomn: 'salmon',
+  turky: 'turkey',
+  beaf: 'beef', beff: 'beef',
+  ric: 'rice',
+  carots: 'carrots', carrotts: 'carrots',
+  onoin: 'onion', onoins: 'onions',
+  lettace: 'lettuce',
+  cabage: 'cabbage',
+  stawberry: 'strawberry', stawberries: 'strawberries',
+  bluberry: 'blueberry', bluberries: 'blueberries',
+  rasberry: 'raspberry', rasberries: 'raspberries',
+  bred: 'bread',
+  buter: 'butter',
+  hone: 'honey',
+};
+
+/** Applies word-level typo correction for List Food. "chiken saled" → "chicken salad". */
+function applyWordLevelTypos(line: string): string {
+  const words = line.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return line.trim();
+  const corrected = words.map((w) => {
+    const lower = w.toLowerCase();
+    return FIRST_MATCH_TYPO_MAP[lower] ?? w;
+  });
+  return corrected.join(' ').toLowerCase();
+}
+
+/** Runs one search and returns the first result or null. Used only by searchFoodFirstMatch. */
+function tryFirstMatchQuery(query: string): Promise<ParsedNutrition | null> {
   return new Promise((resolve) => {
-    if (!query.trim()) {
-      resolve(null);
-      return;
-    }
     let resolved = false;
-    searchFoodsProgressive(query.trim(), (results) => {
+    searchFoodsProgressive(query, (results) => {
       if (!resolved && results.length > 0) {
         resolved = true;
         resolve(results[0]);
@@ -769,6 +807,94 @@ export function searchFoodFirstMatch(query: string): Promise<ParsedNutrition | n
       if (!resolved) resolve(null);
     });
   });
+}
+
+/** Returns the first search result for a query. Used by List Food; variants (with typo correction) are built by listFoodQueryVariants so we try each query once. */
+export async function searchFoodFirstMatch(query: string): Promise<ParsedNutrition | null> {
+  const q = query.trim();
+  if (!q) return null;
+  return tryFirstMatchQuery(q);
+}
+
+const LIST_FOOD_STOPWORDS = new Set(['and', 'with', 'the', 'a', 'an', '&']);
+
+/** Splits a List Food line into search tokens (e.g. "eggs and toast" → ["eggs", "toast"]). Filters empty and numbers-only tokens. */
+function getListFoodSearchTokens(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\s+(?:and|with|,|&)\s+|\s*,\s*/i).map((p) => p.trim()).filter(Boolean);
+  return parts.filter((p) => !/^\d+$/.test(p));
+}
+
+/**
+ * Builds ordered list of query variants for List Food: full line, word-level typo-corrected line,
+ * then each token (typo-corrected), then first word. Deduped. Try order: full phrase first, then tokens so multi-food lines match.
+ */
+function listFoodQueryVariants(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const fullTypoCorrected = applyWordLevelTypos(trimmed);
+  const tokens = getListFoodSearchTokens(trimmed);
+  const tokensCorrected = tokens.map((t) => applyWordLevelTypos(t)).filter(Boolean);
+  const firstWord = trimmed.split(/\s+/)[0] ?? trimmed;
+  const firstWordCorrected = applyWordLevelTypos(firstWord);
+  const allWords = trimmed.split(/\s+/).filter((w) => !/^\d+$/.test(w) && !LIST_FOOD_STOPWORDS.has(w.toLowerCase()));
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (q: string) => {
+    const qq = q.trim().toLowerCase();
+    if (!qq || seen.has(qq) || /^\d+$/.test(qq)) return;
+    seen.add(qq);
+    out.push(qq);
+  };
+
+  add(trimmed);
+  add(fullTypoCorrected);
+  for (const t of tokensCorrected) add(t);
+  for (const w of allWords) add(applyWordLevelTypos(w));
+  add(firstWord);
+  add(firstWordCorrected);
+
+  return out;
+}
+
+/**
+ * Best-effort first match for List Food confirmation only. Try order: full line, typo-corrected line,
+ * then tokens (multi-food), then words; first match wins. Never returns null: synthetic row (user text, 0 macros) if all fail.
+ * Does not change search API behaviour used by search screen or Food Database Search modal.
+ */
+export async function searchFoodFirstMatchBestEffort(query: string): Promise<ParsedNutrition> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return {
+      name: 'Unknown',
+      brand: '',
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      servingSize: '100',
+      unit: 'g',
+      source: 'usda',
+    };
+  }
+  const variants = listFoodQueryVariants(query);
+  for (const q of variants) {
+    const match = await searchFoodFirstMatch(q);
+    if (match) return match;
+  }
+  return {
+    name: trimmed,
+    brand: '',
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    servingSize: '100',
+    unit: 'g',
+    source: 'usda',
+  };
 }
 
 /** Preload Foundation (TMLSN Verified) results for common queries so they show instantly when user searches. Call once on app/screen load. */

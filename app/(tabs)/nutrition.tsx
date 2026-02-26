@@ -77,7 +77,7 @@ import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
-import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatch, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatchBestEffort, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
@@ -288,18 +288,16 @@ export default function NutritionScreen({
   const [showSavedFoods, setShowSavedFoods] = useState(false);
   const [savedFoodsList, setSavedFoodsList] = useState<SavedFood[]>([]);
   const [showListFood, setShowListFood] = useState(false);
-  const [listFoodBreakfast1, setListFoodBreakfast1] = useState('');
-  const [listFoodBreakfast2, setListFoodBreakfast2] = useState('');
-  const [listFoodLunch1, setListFoodLunch1] = useState('');
-  const [listFoodLunch2, setListFoodLunch2] = useState('');
-  const [listFoodDinner1, setListFoodDinner1] = useState('');
-  const [listFoodDinner2, setListFoodDinner2] = useState('');
-  const [listFoodSnacks1, setListFoodSnacks1] = useState('');
-  const [listFoodSnacks2, setListFoodSnacks2] = useState('');
+  const [listFoodBreakfastLines, setListFoodBreakfastLines] = useState<string[]>(['', '']);
+  const [listFoodLunchLines, setListFoodLunchLines] = useState<string[]>(['', '']);
+  const [listFoodDinnerLines, setListFoodDinnerLines] = useState<string[]>(['', '']);
+  const [listFoodSnacksLines, setListFoodSnacksLines] = useState<string[]>(['', '']);
   const [showListFoodConfirm, setShowListFoodConfirm] = useState(false);
   const [listFoodConfirmRows, setListFoodConfirmRows] = useState<Array<{ userInput: string; mealType: MealType; matched: ParsedNutrition | null; grams: number }>>([]);
   const [listFoodConfirmLoading, setListFoodConfirmLoading] = useState(false);
   const [listFoodFocusedInputId, setListFoodFocusedInputId] = useState<string | null>(null);
+  const [listFoodFocusAfterAdd, setListFoodFocusAfterAdd] = useState<{ section: 'breakfast' | 'lunch' | 'dinner' | 'snacks'; index: number } | null>(null);
+  const listFoodInputRefs = useRef<Record<string, TextInput | null>>({});
   const [showFoodSearch, setShowFoodSearch] = useState(false);
   const [foodSearchQuery, setFoodSearchQuery] = useState('');
   const [foodSearchResults, setFoodSearchResults] = useState<ParsedNutrition[]>([]);
@@ -309,6 +307,8 @@ export default function NutritionScreen({
   const [foodSearchHasMore, setFoodSearchHasMore] = useState(true);
   const [permission, requestPermission] = useCameraPermissions();
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const foodSearchResultsRef = useRef<ParsedNutrition[]>([]);
+  foodSearchResultsRef.current = foodSearchResults;
 
   // Tab-bar pill dimensions for FAB positioning
 
@@ -612,40 +612,39 @@ export default function NutritionScreen({
 
   const handleLogFoodPress = useCallback(async () => {
     const items: Array<{ userInput: string; mealType: MealType }> = [];
-    const pairs: Array<[string, MealType]> = [
-      [listFoodBreakfast1.trim(), 'breakfast'],
-      [listFoodBreakfast2.trim(), 'breakfast'],
-      [listFoodLunch1.trim(), 'lunch'],
-      [listFoodLunch2.trim(), 'lunch'],
-      [listFoodDinner1.trim(), 'dinner'],
-      [listFoodDinner2.trim(), 'dinner'],
-      [listFoodSnacks1.trim(), 'snack'],
-      [listFoodSnacks2.trim(), 'snack'],
+    const sections: Array<{ lines: string[]; mealType: MealType }> = [
+      { lines: listFoodBreakfastLines, mealType: 'breakfast' },
+      { lines: listFoodLunchLines, mealType: 'lunch' },
+      { lines: listFoodDinnerLines, mealType: 'dinner' },
+      { lines: listFoodSnacksLines, mealType: 'snack' },
     ];
-    for (const [val, mealType] of pairs) {
-      if (val) items.push({ userInput: val, mealType });
+    for (const { lines, mealType } of sections) {
+      for (const line of lines) {
+        const val = line.trim();
+        if (val) items.push({ userInput: val, mealType });
+      }
     }
     if (items.length === 0) return;
     setListFoodConfirmRows(items.map((i) => ({ ...i, matched: null, grams: 100 })));
     setListFoodConfirmLoading(true);
+    setShowListFood(false);
     setShowListFoodConfirm(true);
-    const rows = await Promise.all(
-      items.map(async (i) => {
-        const matched = await searchFoodFirstMatch(i.userInput);
-        return { ...i, matched, grams: 100 };
-      })
-    );
-    setListFoodConfirmRows(rows);
-    setListFoodConfirmLoading(false);
+    try {
+      const rows = await Promise.all(
+        items.map(async (i) => {
+          const matched = await searchFoodFirstMatchBestEffort(i.userInput);
+          return { ...i, matched, grams: 100 };
+        })
+      );
+      setListFoodConfirmRows(rows);
+    } finally {
+      setListFoodConfirmLoading(false);
+    }
   }, [
-    listFoodBreakfast1,
-    listFoodBreakfast2,
-    listFoodLunch1,
-    listFoodLunch2,
-    listFoodDinner1,
-    listFoodDinner2,
-    listFoodSnacks1,
-    listFoodSnacks2,
+    listFoodBreakfastLines,
+    listFoodLunchLines,
+    listFoodDinnerLines,
+    listFoodSnacksLines,
   ]);
 
   const updateListFoodConfirmGrams = useCallback((index: number, grams: number) => {
@@ -710,19 +709,61 @@ export default function NutritionScreen({
     setShowListFoodConfirm(false);
     setShowListFood(false);
     asModal && onCloseModal?.();
-    setListFoodBreakfast1('');
-    setListFoodBreakfast2('');
-    setListFoodLunch1('');
-    setListFoodLunch2('');
-    setListFoodDinner1('');
-    setListFoodDinner2('');
-    setListFoodSnacks1('');
-    setListFoodSnacks2('');
+    setListFoodBreakfastLines(['', '']);
+    setListFoodLunchLines(['', '']);
+    setListFoodDinnerLines(['', '']);
+    setListFoodSnacksLines(['', '']);
   }, [listFoodConfirmRows, todayLog, viewingDate, asModal, onCloseModal]);
 
   const handleListFoodConfirmCancel = useCallback(() => {
     setShowListFoodConfirm(false);
   }, []);
+
+  type ListFoodSection = 'breakfast' | 'lunch' | 'dinner' | 'snacks';
+  const listFoodSectionPlaceholders: Record<ListFoodSection, string[]> = {
+    breakfast: ['40g oats with milk', '2 eggs, 1 slice toast'],
+    lunch: ['150g chicken salad', '1 turkey wrap'],
+    dinner: ['180g grilled salmon', '1 cup stir-fry'],
+    snacks: ['1 apple, 2 tbsp almonds', '150g Greek yogurt'],
+  };
+  const setListFoodLine = useCallback((section: ListFoodSection, index: number, value: string) => {
+    if (section === 'breakfast') setListFoodBreakfastLines((p) => p.map((v, i) => (i === index ? value : v)));
+    else if (section === 'lunch') setListFoodLunchLines((p) => p.map((v, i) => (i === index ? value : v)));
+    else if (section === 'dinner') setListFoodDinnerLines((p) => p.map((v, i) => (i === index ? value : v)));
+    else setListFoodSnacksLines((p) => p.map((v, i) => (i === index ? value : v)));
+  }, []);
+  const addListFoodLine = useCallback((section: ListFoodSection, newRowIndex: number) => {
+    setListFoodFocusAfterAdd({ section, index: newRowIndex });
+    if (section === 'breakfast') setListFoodBreakfastLines((p) => [...p, '']);
+    else if (section === 'lunch') setListFoodLunchLines((p) => [...p, '']);
+    else if (section === 'dinner') setListFoodDinnerLines((p) => [...p, '']);
+    else setListFoodSnacksLines((p) => [...p, '']);
+  }, []);
+
+  const removeListFoodLine = useCallback((section: ListFoodSection, index: number) => {
+    const remove = (prev: string[]) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index));
+    if (section === 'breakfast') setListFoodBreakfastLines(remove);
+    else if (section === 'lunch') setListFoodLunchLines(remove);
+    else if (section === 'dinner') setListFoodDinnerLines(remove);
+    else setListFoodSnacksLines(remove);
+    if (index > 0) setListFoodFocusAfterAdd({ section, index: index - 1 });
+  }, []);
+
+  useEffect(() => {
+    if (!listFoodFocusAfterAdd) return;
+    const key = `${listFoodFocusAfterAdd.section}-${listFoodFocusAfterAdd.index}`;
+    const focusInput = () => {
+      const el = listFoodInputRefs.current[key];
+      if (el) el.focus();
+      setListFoodFocusAfterAdd(null);
+    };
+    const id = setTimeout(focusInput, 50);
+    return () => clearTimeout(id);
+  }, [listFoodFocusAfterAdd]);
+
+  useEffect(() => {
+    if (!showListFood) setListFoodFocusAfterAdd(null);
+  }, [showListFood]);
 
   const handleChoiceSavedFoods = async () => {
     const foods = await getSavedFoods();
@@ -933,11 +974,15 @@ export default function NutritionScreen({
           seenQueryPrefix.add(dedupeKey);
           merged.push(r);
           }
+          foodSearchResultsRef.current = merged;
           setFoodSearchResults(merged);
           if (results.length > 0) setFoodSearchLoading(false);
         },
       )
-        .then(() => setFoodSearchLoading(false))
+        .then(() => {
+          setFoodSearchLoading(false);
+          setFoodSearchHasMore(foodSearchResultsRef.current.length >= 25);
+        })
         .catch(() => {
           if (cached.length === 0) setFoodSearchResults([]);
           setFoodSearchLoading(false);
@@ -950,9 +995,8 @@ export default function NutritionScreen({
     const nextPage = foodSearchPage + 1;
     setFoodSearchLoadingMore(true);
     searchFoodsNextPage(foodSearchQuery, nextPage, (newResults) => {
-      if (newResults.length === 0) {
-        setFoodSearchHasMore(false);
-      } else {
+      if (newResults.length < 25) setFoodSearchHasMore(false);
+      if (newResults.length > 0) {
         const existingKeys = new Set(
           foodSearchResults.map((r) => `${r.name}|${r.brand}`.toLowerCase()),
         );
@@ -2226,42 +2270,43 @@ export default function NutritionScreen({
                 <PencilSimpleLine size={17} color="#888" />
                 <Text style={styles.listFoodHintText}>write below your food for the day</Text>
               </View>
-              <Text style={styles.listFoodSectionTitle}>Breakfast</Text>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'breakfast1' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="40g oats with milk" placeholderTextColor="#888" value={listFoodBreakfast1} onChangeText={setListFoodBreakfast1} onFocus={() => setListFoodFocusedInputId('breakfast1')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'breakfast2' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="2 eggs, 1 slice toast" placeholderTextColor="#888" value={listFoodBreakfast2} onChangeText={setListFoodBreakfast2} onFocus={() => setListFoodFocusedInputId('breakfast2')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <Text style={styles.listFoodSectionTitle}>Lunch</Text>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'lunch1' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="150g chicken salad" placeholderTextColor="#888" value={listFoodLunch1} onChangeText={setListFoodLunch1} onFocus={() => setListFoodFocusedInputId('lunch1')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'lunch2' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="1 turkey wrap" placeholderTextColor="#888" value={listFoodLunch2} onChangeText={setListFoodLunch2} onFocus={() => setListFoodFocusedInputId('lunch2')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <Text style={styles.listFoodSectionTitle}>Dinner</Text>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'dinner1' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="180g grilled salmon" placeholderTextColor="#888" value={listFoodDinner1} onChangeText={setListFoodDinner1} onFocus={() => setListFoodFocusedInputId('dinner1')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'dinner2' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="1 cup stir-fry" placeholderTextColor="#888" value={listFoodDinner2} onChangeText={setListFoodDinner2} onFocus={() => setListFoodFocusedInputId('dinner2')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <Text style={styles.listFoodSectionTitle}>Snacks</Text>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'snacks1' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="1 apple, 2 tbsp almonds" placeholderTextColor="#888" value={listFoodSnacks1} onChangeText={setListFoodSnacks1} onFocus={() => setListFoodFocusedInputId('snacks1')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
-              <View style={styles.listFoodBulletRow}>
-                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'snacks2' ? '#FFFFFF' : '#888' }]}>•</Text>
-                <TextInput style={styles.listFoodInput} placeholder="150g Greek yogurt" placeholderTextColor="#888" value={listFoodSnacks2} onChangeText={setListFoodSnacks2} onFocus={() => setListFoodFocusedInputId('snacks2')} onBlur={() => setListFoodFocusedInputId(null)} />
-              </View>
+              {(['breakfast', 'lunch', 'dinner', 'snacks'] as const).map((section) => {
+                const lines = section === 'breakfast' ? listFoodBreakfastLines : section === 'lunch' ? listFoodLunchLines : section === 'dinner' ? listFoodDinnerLines : listFoodSnacksLines;
+                const title = section === 'breakfast' ? 'Breakfast' : section === 'lunch' ? 'Lunch' : section === 'dinner' ? 'Dinner' : 'Snacks';
+                const placeholders = listFoodSectionPlaceholders[section];
+                return (
+                  <View key={section}>
+                    <Text style={styles.listFoodSectionTitle}>{title}</Text>
+                    {lines.map((lineVal, idx) => {
+                      const inputId = `${section}-${idx}`;
+                      const placeholder = placeholders[idx] ?? 'Add another…';
+                      return (
+                        <View key={idx} style={styles.listFoodBulletRow}>
+                          <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === inputId ? '#FFFFFF' : '#888' }]}>•</Text>
+                          <TextInput
+                            ref={(r) => { listFoodInputRefs.current[inputId] = r; }}
+                            style={styles.listFoodInput}
+                            placeholder={placeholder}
+                            placeholderTextColor="#888"
+                            value={lineVal}
+                            onChangeText={(t) => setListFoodLine(section, idx, t)}
+                            onFocus={() => setListFoodFocusedInputId(inputId)}
+                            onBlur={() => setListFoodFocusedInputId(null)}
+                            onSubmitEditing={() => addListFoodLine(section, lines.length)}
+                            onKeyPress={(e) => {
+                              if (e.nativeEvent.key === 'Backspace' && !lineVal.trim() && lines.length > 1) {
+                                removeListFoodLine(section, idx);
+                              }
+                            }}
+                            returnKeyType="next"
+                            blurOnSubmit={false}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
               <View style={styles.listFoodLogButtonWrap}>
                 <TouchableOpacity style={styles.listFoodLogButton} onPress={handleLogFoodPress} activeOpacity={1}>
                   <View style={styles.listFoodLogButtonBorderWrap}>
@@ -2319,9 +2364,7 @@ export default function NutritionScreen({
                         />
                       </View>
                     </>
-                  ) : (
-                    !listFoodConfirmLoading && <Text style={[styles.listFoodHintText, { color: '#888' }]}>No match found</Text>
-                  )}
+                  ) : null}
                 </View>
               ))}
               {!listFoodConfirmLoading && listFoodConfirmRows.length > 0 && (

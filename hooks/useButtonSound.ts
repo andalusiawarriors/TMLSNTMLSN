@@ -13,7 +13,7 @@ export function useButtonSound() {
     setAudioModeAsync({
       playsInSilentMode: false,
       shouldPlayInBackground: false,
-      interruptionMode: 'duckOthers',
+      interruptionMode: 'mixWithOthers',
     }).catch(() => {});
   }, []);
 
