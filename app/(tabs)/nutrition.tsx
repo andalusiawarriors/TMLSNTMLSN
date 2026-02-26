@@ -54,11 +54,13 @@ import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { PencilSimpleLine } from 'phosphor-react-native';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
+import { BackButton } from '../../components/BackButton';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, HeadingLetterSpacing } from '../../constants/theme';
 import {
   getNutritionLogByDate,
   getNutritionLogs,
@@ -74,7 +76,8 @@ import { generateId, getTodayDateString, toDateString } from '../../utils/helper
 import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, preloadCommonSearches, ParsedNutrition } from '../../utils/foodApi';
+import { useTheme } from '../../context/ThemeContext';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatch, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
@@ -85,6 +88,13 @@ import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
+
+const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
+const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
+const QUICKSILVER_GRADIENT = ['#C0C4C8', '#9A9EA4', '#8E9298'] as const;
+const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
+const CHAMPAGNE_GRADIENT = ['#E5D4B8', '#D4B896', '#A8895E'] as const;
+const TMLSN_VERIFIED_TICK_HEIGHT = 18;
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -98,7 +108,6 @@ const Font = {
 // Card letterSpacing only; font = system default (same as date/week strip in SwipeableWeekView). Rule: .cursor/rules/card-font-weight.mdc
 const CardFont = { letterSpacing: -0.1 } as const;
 
-const HeadingLetterSpacing = -1;
 const CARD_LABEL_COLOR = '#FFFFFF';
 const CARD_NUMBER_COLOR = '#FFFFFF'; // quantity text on cards – full white, animation restores to this
 const CARD_UNIFIED_HEIGHT = Math.round(100 * 1.2); // 20% taller, all cards same height (120)
@@ -125,6 +134,7 @@ export default function NutritionScreen({
   onCloseModal,
 }: NutritionScreenModalProps = {}) {
   const pathname = usePathname();
+  const { colors } = useTheme();
   const router = useRouter();
   const { openCard, addSavedFood, addFoodResult, openScan } = useLocalSearchParams<{
     openCard?: string;
@@ -134,10 +144,13 @@ export default function NutritionScreen({
   }>();
   const openCardProcessedRef = useRef(false);
   const addFoodParamProcessedRef = useRef(false);
+  const addMealInSearchOverlayRef = useRef(false);
+  const cameFromSearchFoodRef = useRef(false);
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
+  const [searchOverlayScreen, setSearchOverlayScreen] = useState<'list' | 'addMeal'>('list');
   const [showEditGoals, setShowEditGoals] = useState(false);
   const [nutritionPage, setNutritionPage] = useState(0); // 0 = macros, 1 = electrolytes
   const [fitnessCardPage, setFitnessCardPage] = useState(0);
@@ -274,6 +287,19 @@ export default function NutritionScreen({
   const [showAiDescribe, setShowAiDescribe] = useState(false);
   const [showSavedFoods, setShowSavedFoods] = useState(false);
   const [savedFoodsList, setSavedFoodsList] = useState<SavedFood[]>([]);
+  const [showListFood, setShowListFood] = useState(false);
+  const [listFoodBreakfast1, setListFoodBreakfast1] = useState('');
+  const [listFoodBreakfast2, setListFoodBreakfast2] = useState('');
+  const [listFoodLunch1, setListFoodLunch1] = useState('');
+  const [listFoodLunch2, setListFoodLunch2] = useState('');
+  const [listFoodDinner1, setListFoodDinner1] = useState('');
+  const [listFoodDinner2, setListFoodDinner2] = useState('');
+  const [listFoodSnacks1, setListFoodSnacks1] = useState('');
+  const [listFoodSnacks2, setListFoodSnacks2] = useState('');
+  const [showListFoodConfirm, setShowListFoodConfirm] = useState(false);
+  const [listFoodConfirmRows, setListFoodConfirmRows] = useState<Array<{ userInput: string; mealType: MealType; matched: ParsedNutrition | null; grams: number }>>([]);
+  const [listFoodConfirmLoading, setListFoodConfirmLoading] = useState(false);
+  const [listFoodFocusedInputId, setListFoodFocusedInputId] = useState<string | null>(null);
   const [showFoodSearch, setShowFoodSearch] = useState(false);
   const [foodSearchQuery, setFoodSearchQuery] = useState('');
   const [foodSearchResults, setFoodSearchResults] = useState<ParsedNutrition[]>([]);
@@ -294,6 +320,7 @@ export default function NutritionScreen({
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
   const [mealImage, setMealImage] = useState<string | undefined>();
+  const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
 
   // Edit Goals Form State
   const [editCalories, setEditCalories] = useState('');
@@ -441,7 +468,7 @@ export default function NutritionScreen({
     setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: false,
-      interruptionMode: 'duckOthers',
+      interruptionMode: 'mixWithOthers',
     }).catch(() => {});
   }, []);
 
@@ -491,14 +518,22 @@ export default function NutritionScreen({
   // ── Form helpers ──
   const resetMealForm = () => {
     setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
+    setAddMealTitleBrand('');
   };
 
-  const fillAndShowForm = (data: ParsedNutrition) => {
+  const fillFormFromFood = (data: ParsedNutrition) => {
     setMealName(data.name);
     setCalories(String(data.calories || ''));
     setProtein(String(data.protein || ''));
     setCarbs(String(data.carbs || ''));
     setFat(String(data.fat || ''));
+    const top100 = isTmlsnTop100(data);
+    const isTmlsnVerified = isFoundationVerified(data);
+    setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
+  };
+
+  const fillAndShowForm = (data: ParsedNutrition) => {
+    fillFormFromFood(data);
     setShowAddMeal(true);
   };
 
@@ -547,14 +582,23 @@ export default function NutritionScreen({
     // Reset form
     resetMealForm();
     setMealType('breakfast');
-    setShowAddMeal(false);
-    asModal && onCloseModal?.();
+    if (addMealInSearchOverlayRef.current) {
+      addMealInSearchOverlayRef.current = false;
+      setSearchOverlayScreen('list');
+    } else {
+      setShowAddMeal(false);
+      asModal && onCloseModal?.();
+      if (cameFromSearchFoodRef.current) {
+        cameFromSearchFoodRef.current = false;
+        router.push('/search-food');
+      }
+    }
   };
 
   // ── Bridge: card selected in popup (rendered in _layout.tsx) → open feature ──
   useEffect(() => {
     const unsub = onCardSelect((card) => {
-      if (card === 'saved') handleChoiceSavedFoods();
+      if (card === 'saved') handleChoiceListFood();
       else if (card === 'search') handleChoiceFoodDatabase();
       else if (card === 'scan') handleChoiceScanFood();
     });
@@ -562,6 +606,124 @@ export default function NutritionScreen({
   }, []);
 
   // ── Choice popup handlers (popup is closed by _layout.tsx before emitting) ──
+  const handleChoiceListFood = () => {
+    setShowListFood(true);
+  };
+
+  const handleLogFoodPress = useCallback(async () => {
+    const items: Array<{ userInput: string; mealType: MealType }> = [];
+    const pairs: Array<[string, MealType]> = [
+      [listFoodBreakfast1.trim(), 'breakfast'],
+      [listFoodBreakfast2.trim(), 'breakfast'],
+      [listFoodLunch1.trim(), 'lunch'],
+      [listFoodLunch2.trim(), 'lunch'],
+      [listFoodDinner1.trim(), 'dinner'],
+      [listFoodDinner2.trim(), 'dinner'],
+      [listFoodSnacks1.trim(), 'snack'],
+      [listFoodSnacks2.trim(), 'snack'],
+    ];
+    for (const [val, mealType] of pairs) {
+      if (val) items.push({ userInput: val, mealType });
+    }
+    if (items.length === 0) return;
+    setListFoodConfirmRows(items.map((i) => ({ ...i, matched: null, grams: 100 })));
+    setListFoodConfirmLoading(true);
+    setShowListFoodConfirm(true);
+    const rows = await Promise.all(
+      items.map(async (i) => {
+        const matched = await searchFoodFirstMatch(i.userInput);
+        return { ...i, matched, grams: 100 };
+      })
+    );
+    setListFoodConfirmRows(rows);
+    setListFoodConfirmLoading(false);
+  }, [
+    listFoodBreakfast1,
+    listFoodBreakfast2,
+    listFoodLunch1,
+    listFoodLunch2,
+    listFoodDinner1,
+    listFoodDinner2,
+    listFoodSnacks1,
+    listFoodSnacks2,
+  ]);
+
+  const updateListFoodConfirmGrams = useCallback((index: number, grams: number) => {
+    setListFoodConfirmRows((prev) => prev.map((r, i) => (i === index ? { ...r, grams } : r)));
+  }, []);
+
+  const handleListFoodConfirmLog = useCallback(async () => {
+    const rows = listFoodConfirmRows.filter((r): r is typeof r & { matched: ParsedNutrition } => r.matched != null);
+    if (rows.length === 0) {
+      setShowListFoodConfirm(false);
+      return;
+    }
+    let log = todayLog ?? (await getNutritionLogByDate(viewingDate));
+    if (!log || log.date !== viewingDate) {
+      log = {
+        id: generateId(),
+        date: viewingDate,
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        water: todayLog?.water ?? 0,
+        meals: todayLog?.meals ?? [],
+      };
+    }
+    let totalCal = log.calories;
+    let totalPro = log.protein;
+    let totalCarb = log.carbs;
+    let totalFat = log.fat;
+    const newMeals: Meal[] = rows.map((r) => {
+      const scale = r.grams / 100;
+      const cal = Math.round(r.matched.calories * scale);
+      const pro = Math.round(r.matched.protein * scale);
+      const carb = Math.round(r.matched.carbs * scale);
+      const fatVal = Math.round(r.matched.fat * scale);
+      totalCal += cal;
+      totalPro += pro;
+      totalCarb += carb;
+      totalFat += fatVal;
+      return {
+        id: generateId(),
+        name: r.matched.name,
+        mealType: r.mealType,
+        time: new Date().toISOString(),
+        calories: cal,
+        protein: pro,
+        carbs: carb,
+        fat: fatVal,
+      };
+    });
+    const updatedLog: NutritionLog = {
+      ...log,
+      calories: totalCal,
+      protein: totalPro,
+      carbs: totalCarb,
+      fat: totalFat,
+      meals: [...log.meals, ...newMeals],
+    };
+    await saveNutritionLog(updatedLog);
+    setTodayLog(updatedLog);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowListFoodConfirm(false);
+    setShowListFood(false);
+    asModal && onCloseModal?.();
+    setListFoodBreakfast1('');
+    setListFoodBreakfast2('');
+    setListFoodLunch1('');
+    setListFoodLunch2('');
+    setListFoodDinner1('');
+    setListFoodDinner2('');
+    setListFoodSnacks1('');
+    setListFoodSnacks2('');
+  }, [listFoodConfirmRows, todayLog, viewingDate, asModal, onCloseModal]);
+
+  const handleListFoodConfirmCancel = useCallback(() => {
+    setShowListFoodConfirm(false);
+  }, []);
+
   const handleChoiceSavedFoods = async () => {
     const foods = await getSavedFoods();
     setSavedFoodsList(foods);
@@ -571,6 +733,7 @@ export default function NutritionScreen({
   const handleChoiceFoodDatabase = () => {
     setFoodSearchQuery('');
     setFoodSearchResults([]);
+    setSearchOverlayScreen('list');
     setShowFoodSearch(true);
   };
 
@@ -593,7 +756,7 @@ export default function NutritionScreen({
   // When asModal (opened from FAB on another tab), open the right flow from initialOpenCard
   useEffect(() => {
     if (!asModal || !initialOpenCard) return;
-    if (initialOpenCard === 'saved') handleChoiceSavedFoods();
+    if (initialOpenCard === 'saved') handleChoiceListFood();
     else if (initialOpenCard === 'search') handleChoiceFoodDatabase();
     else if (initialOpenCard === 'scan') handleChoiceScanFood();
   }, [asModal, initialOpenCard]);
@@ -607,7 +770,7 @@ export default function NutritionScreen({
     }
     if (openCardProcessedRef.current) return;
     openCardProcessedRef.current = true;
-    if (openCard === 'saved') handleChoiceSavedFoods();
+    if (openCard === 'saved') handleChoiceListFood();
     else if (openCard === 'search') handleChoiceFoodDatabase();
     else if (openCard === 'scan') handleChoiceScanFood();
     router.setParams({});
@@ -638,6 +801,7 @@ export default function NutritionScreen({
     addFoodParamProcessedRef.current = true;
     try {
       const data = JSON.parse(payload) as ParsedNutrition;
+      if (addFoodResult) cameFromSearchFoodRef.current = true;
       fillAndShowForm(data);
     } catch (_) {
       // ignore invalid JSON
@@ -717,14 +881,59 @@ export default function NutritionScreen({
     setFoodSearchLoadingMore(false);
     searchTimeoutRef.current = setTimeout(async () => {
       const cached = await searchFoodHistory(query);
-      if (cached.length > 0) setFoodSearchResults(cached);
+      if (cached.length > 0) {
+        const queryNorm = query.trim().toLowerCase();
+        const seenFdcId = new Set<number>();
+        const seenNameBrand = new Set<string>();
+        const seenQueryPrefix = new Set<string>();
+        const dedupedCache: ParsedNutrition[] = [];
+        for (const r of cached) {
+          const normName = (r.name ?? '').trim().toLowerCase();
+          const dedupeKey = queryNorm && normName.includes(queryNorm) ? queryNorm : normName;
+          if (seenQueryPrefix.has(dedupeKey)) continue;
+          if (r.source === 'usda' && r.fdcId != null) {
+            if (seenFdcId.has(r.fdcId)) continue;
+            seenFdcId.add(r.fdcId);
+          } else {
+            const key = `${(r.name ?? '')}|${(r.brand ?? '')}`.toLowerCase();
+            if (seenNameBrand.has(key)) continue;
+            seenNameBrand.add(key);
+          }
+          seenQueryPrefix.add(dedupeKey);
+          dedupedCache.push(r);
+        }
+        setFoodSearchResults(dedupedCache);
+      }
       setFoodSearchLoading(true);
       searchFoodsProgressive(
         query,
         (results) => {
           const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
           const apiOnly = results.filter((f) => !historyNames.has(f.name.toLowerCase()));
-          setFoodSearchResults([...cached, ...apiOnly]);
+          const combined = [...cached, ...apiOnly];
+          const queryNorm = query.trim().toLowerCase();
+          const seenFdcId = new Set<number>();
+          const seenNameBrand = new Set<string>();
+          const seenNormalizedName = new Set<string>();
+          const seenQueryPrefix = new Set<string>();
+          const merged: ParsedNutrition[] = [];
+          for (const r of combined) {
+            const normName = (r.name ?? '').trim().toLowerCase();
+            const dedupeKey = queryNorm && normName.includes(queryNorm) ? queryNorm : normName;
+            if (seenQueryPrefix.has(dedupeKey)) continue;
+            if (r.source === 'usda' && r.fdcId != null) {
+              if (seenFdcId.has(r.fdcId)) continue;
+              seenFdcId.add(r.fdcId);
+            } else {
+              const key = `${(r.name ?? '')}|${(r.brand ?? '')}`.toLowerCase();
+              if (seenNameBrand.has(key)) continue;
+              seenNameBrand.add(key);
+            }
+            seenNormalizedName.add(normName);
+          seenQueryPrefix.add(dedupeKey);
+          merged.push(r);
+          }
+          setFoodSearchResults(merged);
           if (results.length > 0) setFoodSearchLoading(false);
         },
       )
@@ -747,9 +956,23 @@ export default function NutritionScreen({
         const existingKeys = new Set(
           foodSearchResults.map((r) => `${r.name}|${r.brand}`.toLowerCase()),
         );
-        const fresh = newResults.filter(
-          (r) => !existingKeys.has(`${r.name}|${r.brand}`.toLowerCase()),
+        const existingFdcIds = new Set(
+          foodSearchResults.map((r) => r.fdcId).filter((id): id is number => id != null),
         );
+        const queryNorm = foodSearchQuery.trim().toLowerCase();
+        const existingDedupeKeys = new Set(
+          foodSearchResults.map((r) => {
+            const n = (r.name ?? '').trim().toLowerCase();
+            return queryNorm && n.includes(queryNorm) ? queryNorm : n;
+          }),
+        );
+        const fresh = newResults.filter((r) => {
+          if (r.source === 'usda' && r.fdcId != null && existingFdcIds.has(r.fdcId)) return false;
+          const n = (r.name ?? '').trim().toLowerCase();
+          const key = queryNorm && n.includes(queryNorm) ? queryNorm : n;
+          if (existingDedupeKeys.has(key)) return false;
+          return !existingKeys.has(`${r.name}|${r.brand}`.toLowerCase());
+        });
         if (fresh.length === 0) {
           setFoodSearchPage(nextPage);
         } else {
@@ -763,8 +986,9 @@ export default function NutritionScreen({
 
   const handleSelectFood = (food: ParsedNutrition) => {
     addToFoodHistory(food);
-    setShowFoodSearch(false);
-    fillAndShowForm(food);
+    fillFormFromFood(food);
+    addMealInSearchOverlayRef.current = true;
+    setSearchOverlayScreen('addMeal');
   };
 
   const handleSelectSavedFood = (food: SavedFood) => {
@@ -969,7 +1193,6 @@ export default function NutritionScreen({
   };
 
   const _unused = () => {
-    fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition:onCarouselScrollBeginDrag',message:'carousel scroll drag started',data:{hypothesisId:'H3'},timestamp:Date.now()})}).catch(()=>{});
     carouselDraggedRef.current = true; // user is dragging carousel – don’t count release as tap
   };
 
@@ -1094,10 +1317,8 @@ export default function NutritionScreen({
   const headerTop = 54;
   const headerMeasureRef = useRef<View>(null);
   const onHeaderLayout = useCallback(() => {
-    headerMeasureRef.current?.measureInWindow((x, y) => {
-      fetch('http://127.0.0.1:7243/ingest/d7e803ab-9a90-4a93-8bc3-01772338bb68',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'nutrition.tsx:onHeaderLayout',message:'Header measured Y',data:{measuredY:y,headerTop,insetsTop:insets.top,expectedY:insets.top+19,gapFromNotch:y-insets.top},timestamp:Date.now(),hypothesisId:'measure'})}).catch(()=>{});
-    });
-  }, [headerTop, insets.top]);
+    headerMeasureRef.current?.measureInWindow(() => {});
+  }, []);
   const calorieCardLeft = CONTENT_PADDING + (CAROUSEL_WIDTH - CALORIES_CARD_WIDTH) / 2;
   const TOP_RIGHT_CIRCLE_SIZE = 40;
   const TOP_RIGHT_CIRCLE_RADIUS = TOP_RIGHT_CIRCLE_SIZE / 2;
@@ -1952,128 +2173,291 @@ export default function NutritionScreen({
         </View>
       </Modal>
 
-      {/* Saved Foods Modal */}
-      <Modal visible={showSavedFoods} animationType="slide" transparent onRequestClose={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }}>
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
-            <Text style={styles.modalTitle}>Saved Foods</Text>
-            {savedFoodsList.length === 0 ? (
-              <Text style={styles.emptyText}>No saved foods yet. Foods you log will appear here.</Text>
-            ) : (
-              <FlatList
-                data={savedFoodsList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectSavedFood(item)}>
+      {/* Saved Foods Modal — full-screen blur like profile, back closes */}
+      <Modal visible={showSavedFoods} animationType="fade" transparent onRequestClose={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
+          </Pressable>
+          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
+            <View style={[styles.fullScreenSheetCloseRow, { marginTop: insets.top + 16 }]}>
+              <BackButton onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }} />
+            </View>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={styles.fullScreenSheetScrollContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Saved Foods</Text>
+              {savedFoodsList.length === 0 ? (
+                <Text style={styles.emptyText}>No saved foods yet. Foods you log will appear here.</Text>
+              ) : (
+                savedFoodsList.map((item) => (
+                  <TouchableOpacity key={item.id} style={styles.foodSearchItem} onPress={() => handleSelectSavedFood(item)}>
                     <Text style={styles.foodSearchName}>{item.name}</Text>
                     {item.brand ? <Text style={styles.foodSearchBrand}>{item.brand}</Text> : null}
                     <Text style={styles.foodSearchMacros}>
                       {item.calories} cal · {item.protein}p · {item.carbs}c · {item.fat}f
                     </Text>
                   </TouchableOpacity>
-                )}
-              />
-            )}
-            <Button title="Close" onPress={() => { setShowSavedFoods(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+                ))
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Food Database Search Modal */}
-      <Modal visible={showFoodSearch} animationType="slide" transparent onRequestClose={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }}>
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { maxHeight: '85%' }]}>
-            <Text style={styles.modalTitle}>Search food</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search foods…"
-              placeholderTextColor="#888"
-              value={foodSearchQuery}
-              onChangeText={handleFoodSearch}
-              autoFocus
-            />
-            {foodSearchLoading && <ActivityIndicator style={{ marginVertical: 12 }} color="#C6C6C6" />}
-            <FlatList
-              data={foodSearchResults}
-              keyExtractor={(_, i) => String(i)}
-              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-              renderItem={({ item }) => (
+      {/* List Food Modal — full-screen blur; type one food per line by meal */}
+      <Modal
+        visible={showListFood}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => { setShowListFood(false); asModal && onCloseModal?.(); }}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { setShowListFood(false); asModal && onCloseModal?.(); }}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
+          </Pressable>
+          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
+              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { setShowListFood(false); asModal && onCloseModal?.(); }} />
+            </View>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48 }]} showsVerticalScrollIndicator={false}>
+              <View style={styles.listFoodHintRow}>
+                <PencilSimpleLine size={17} color="#888" />
+                <Text style={styles.listFoodHintText}>write below your food for the day</Text>
+              </View>
+              <Text style={styles.listFoodSectionTitle}>Breakfast</Text>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'breakfast1' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="40g oats with milk" placeholderTextColor="#888" value={listFoodBreakfast1} onChangeText={setListFoodBreakfast1} onFocus={() => setListFoodFocusedInputId('breakfast1')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'breakfast2' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="2 eggs, 1 slice toast" placeholderTextColor="#888" value={listFoodBreakfast2} onChangeText={setListFoodBreakfast2} onFocus={() => setListFoodFocusedInputId('breakfast2')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <Text style={styles.listFoodSectionTitle}>Lunch</Text>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'lunch1' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="150g chicken salad" placeholderTextColor="#888" value={listFoodLunch1} onChangeText={setListFoodLunch1} onFocus={() => setListFoodFocusedInputId('lunch1')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'lunch2' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="1 turkey wrap" placeholderTextColor="#888" value={listFoodLunch2} onChangeText={setListFoodLunch2} onFocus={() => setListFoodFocusedInputId('lunch2')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <Text style={styles.listFoodSectionTitle}>Dinner</Text>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'dinner1' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="180g grilled salmon" placeholderTextColor="#888" value={listFoodDinner1} onChangeText={setListFoodDinner1} onFocus={() => setListFoodFocusedInputId('dinner1')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'dinner2' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="1 cup stir-fry" placeholderTextColor="#888" value={listFoodDinner2} onChangeText={setListFoodDinner2} onFocus={() => setListFoodFocusedInputId('dinner2')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <Text style={styles.listFoodSectionTitle}>Snacks</Text>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'snacks1' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="1 apple, 2 tbsp almonds" placeholderTextColor="#888" value={listFoodSnacks1} onChangeText={setListFoodSnacks1} onFocus={() => setListFoodFocusedInputId('snacks1')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <View style={styles.listFoodBulletRow}>
+                <Text style={[styles.listFoodBullet, { color: listFoodFocusedInputId === 'snacks2' ? '#FFFFFF' : '#888' }]}>•</Text>
+                <TextInput style={styles.listFoodInput} placeholder="150g Greek yogurt" placeholderTextColor="#888" value={listFoodSnacks2} onChangeText={setListFoodSnacks2} onFocus={() => setListFoodFocusedInputId('snacks2')} onBlur={() => setListFoodFocusedInputId(null)} />
+              </View>
+              <View style={styles.listFoodLogButtonWrap}>
+                <TouchableOpacity style={styles.listFoodLogButton} onPress={handleLogFoodPress} activeOpacity={1}>
+                  <View style={styles.listFoodLogButtonBorderWrap}>
+                    <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: 28 }]} />
+                    <View style={[styles.listFoodLogButtonShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                      <Text style={styles.listFoodLogButtonText}>log my food.</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* List Food Confirmation Modal — full-screen blur; user input → matched name + grams; Confirm & Log / Cancel */}
+      <Modal
+        visible={showListFoodConfirm}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={handleListFoodConfirmCancel}
+      >
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={handleListFoodConfirmCancel}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
+          </Pressable>
+          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
+              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={handleListFoodConfirmCancel} />
+            </View>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48 }]} showsVerticalScrollIndicator={false}>
+              {listFoodConfirmLoading && (
+                <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+                  <ActivityIndicator color="#C6C6C6" size="large" />
+                  <Text style={[styles.listFoodHintText, { marginTop: 12 }]}>Searching foods…</Text>
+                </View>
+              )}
+              {listFoodConfirmRows.map((row, index) => (
+                <View key={index} style={{ marginBottom: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.primaryLight + '30', paddingBottom: Spacing.sm }}>
+                  <Text style={[styles.listFoodSectionTitle, { marginTop: Spacing.sm }]} numberOfLines={1}>“{row.userInput}”</Text>
+                  {row.matched ? (
+                    <>
+                      <Text style={[styles.listFoodHintText, { marginBottom: Spacing.xs }]} numberOfLines={1}>→ {row.matched.name}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[styles.listFoodHintText, { flexShrink: 0 }]}>grams:</Text>
+                        <TextInput
+                          style={[styles.listFoodInput, { flex: 1, maxWidth: 80 }]}
+                          value={String(row.grams)}
+                          onChangeText={(t) => updateListFoodConfirmGrams(index, Math.max(0, parseFloat(t) || 0))}
+                          keyboardType="numeric"
+                          placeholder="100"
+                          placeholderTextColor="#888"
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    !listFoodConfirmLoading && <Text style={[styles.listFoodHintText, { color: '#888' }]}>No match found</Text>
+                  )}
+                </View>
+              ))}
+              {!listFoodConfirmLoading && listFoodConfirmRows.length > 0 && (
+                <View style={{ flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg }}>
+                  <Button title="Cancel" onPress={handleListFoodConfirmCancel} variant="secondary" style={styles.modalButton} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
+                  <Button title="Confirm & Log" onPress={handleListFoodConfirmLog} style={styles.modalButton} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Food Database Search Modal — full-screen blur; list or add-meal form, back stays in search */}
+      <Modal visible={showFoodSearch} animationType="fade" transparent statusBarTranslucent onRequestClose={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
+          </Pressable>
+          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: headerTop, left: 0, right: 0, zIndex: 10 }]}>
+              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }} />
+            </View>
+            {searchOverlayScreen === 'list' ? (
+            <View style={[styles.fullScreenSheetScroll, { paddingTop: headerTop + 48 }]}>
+              <Text style={styles.modalTitle}>Search food</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search foods…"
+                placeholderTextColor="#888"
+                value={foodSearchQuery}
+                onChangeText={handleFoodSearch}
+                autoFocus
+              />
+              {foodSearchLoading && <ActivityIndicator style={{ marginVertical: 12 }} color="#C6C6C6" />}
+              <FlatList
+                data={foodSearchResults}
+                keyExtractor={(_, i) => String(i)}
+                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+                style={{ flex: 1 }}
+                renderItem={({ item }) => (
                 <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
                   <View style={styles.foodSearchCardLeft}>
                     {(() => {
-                      const isBasic =
-                        item.source === 'usda' &&
-                        (!item.brand || item.brand.trim() === '') &&
-                        item.dataType === 'Foundation';
-                      const brandLabel = isBasic
-                        ? 'TMLSN BASICS'
-                        : (item.brand && item.brand.trim() !== '' ? item.brand : '');
-                      if (brandLabel === 'TMLSN BASICS') {
-                        const TMLSN_BASICS_BADGE_SIZE = 14;
+                      const top100 = isTmlsnTop100(item);
+                      const isVerified = isFoundationVerified(item);
+                      const brandLabel = item.brand && item.brand.trim() !== '' ? item.brand : '';
+                      if (top100) {
                         return (
-                          <View style={styles.foodSearchTmlsnBasicsRow}>
+                          <View style={styles.foodSearchVerifiedNameRow}>
                             <MaskedView
-                              style={styles.foodSearchTmlsnBasicsMaskWrap}
+                              style={styles.foodSearchVerifiedNameMaskWrap}
                               maskElement={
-                                <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
-                                  tmlsn basics
+                                <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                  {item.name}
                                 </Text>
                               }
                             >
-                              <LinearGradient
-                                colors={['#D4B896', '#A8895E']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                              >
-                                <Text style={[styles.foodSearchBrand, styles.foodSearchBrandTmlsnBasics, { opacity: 0 }]}>
-                                  tmlsn basics
+                              <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                                <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                  {item.name}
                                 </Text>
                               </LinearGradient>
                             </MaskedView>
-                            <View style={[styles.foodSearchTmlsnBasicsCheckmarkWrap, { width: TMLSN_BASICS_BADGE_SIZE, height: TMLSN_BASICS_BADGE_SIZE }]}>
-                              <Image
-                                source={require('../../assets/gold_checkmark_badge.png')}
-                                style={{
-                                  width: TMLSN_BASICS_BADGE_SIZE,
-                                  height: TMLSN_BASICS_BADGE_SIZE,
-                                }}
-                                resizeMode="contain"
-                              />
-                            </View>
+                            <Image
+                              source={GOLD_VERIFIED_BADGE}
+                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }}
+                              resizeMode="contain"
+                            />
+                          </View>
+                        );
+                      }
+                      if (isVerified) {
+                        return (
+                          <View style={styles.foodSearchVerifiedNameRow}>
+                            <MaskedView
+                              style={styles.foodSearchVerifiedNameMaskWrap}
+                              maskElement={
+                                <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                  {item.name}
+                                </Text>
+                              }
+                            >
+                              <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                                <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                  {item.name}
+                                </Text>
+                              </LinearGradient>
+                            </MaskedView>
+                            <Image
+                              source={QUICKSILVER_VERIFIED_BADGE}
+                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }}
+                              resizeMode="contain"
+                            />
                           </View>
                         );
                       }
                       if (brandLabel) {
                         return (
-                          <Text style={styles.foodSearchBrand} numberOfLines={1} ellipsizeMode="tail">
+                          <Text style={[styles.foodSearchBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
                             {brandLabel}
                           </Text>
                         );
                       }
                       return null;
                     })()}
-                    <Text style={styles.foodSearchName} numberOfLines={1} ellipsizeMode="tail">
-                      {item.name}
-                    </Text>
+                    {!isTmlsnTop100(item) && !isFoundationVerified(item) ? (
+                      <Text style={[styles.foodSearchName, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
+                        {item.name}
+                      </Text>
+                    ) : null}
                     <View style={styles.foodSearchMacrosRow}>
                       <Text style={styles.foodSearchMacrosPrefix}>per 100{item.unit ?? 'g'}</Text>
-                      <MaskedView
-                        maskElement={
-                          <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
-                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
-                          </Text>
-                        }
-                      >
-                        <LinearGradient
-                          colors={['#D4B896', '#A8895E']}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 0 }}
+                      {isTmlsnTop100(item) ? (
+                        <MaskedView
+                          style={styles.foodSearchMacrosGradientWrap}
+                          maskElement={
+                            <Text style={{ fontSize: 12, fontWeight: '500', backgroundColor: 'transparent' }}>
+                              {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                            </Text>
+                          }
                         >
-                          <Text style={{ fontSize: 12, fontWeight: '500', opacity: 0 }}>
-                            {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
+                          <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                            <Text style={{ fontSize: 12, fontWeight: '500', opacity: 0 }}>{item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F</Text>
+                          </LinearGradient>
+                        </MaskedView>
+                      ) : isFoundationVerified(item) ? (
+                        <Text style={{ fontSize: 12, fontWeight: '500', color: QUICKSILVER_TEXT }}>
+                          {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                        </Text>
+                      ) : (
+                        <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF' }}>
+                          {item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F
+                        </Text>
+                      )}
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -2098,125 +2482,304 @@ export default function NutritionScreen({
                   ) : null
                 ) : null
               }
-            />
-            <Button title="Close" onPress={() => { setShowFoodSearch(false); asModal && onCloseModal?.(); }} variant="secondary" style={{ marginTop: Spacing.md }} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+              />
+            </View>
+            ) : (
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: headerTop + 48 }]} showsVerticalScrollIndicator={false}>
+              <View style={styles.addMealTitleWrap}>
+                {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
+                  <>
+                    <View style={styles.addMealVerifiedTitleRow}>
+                      <MaskedView
+                        style={styles.addMealVerifiedTitleMaskWrap}
+                        maskElement={
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        }
+                      >
+                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                      <Image
+                        source={GOLD_VERIFIED_BADGE}
+                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={styles.modalTitleBrand}>TMLSN TOP 100</Text>
+                  </>
+                ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
+                  <>
+                    <View style={styles.addMealVerifiedTitleRow}>
+                      <MaskedView
+                        style={styles.addMealVerifiedTitleMaskWrap}
+                        maskElement={
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        }
+                      >
+                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                      <Image
+                        source={QUICKSILVER_VERIFIED_BADGE}
+                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={styles.modalTitleBrand}>TMLSN VERIFIED</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
+                    {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
+                  </>
+                )}
+              </View>
+              <Text style={styles.inputLabel}>Meal type</Text>
+              <View style={styles.mealTypeRow}>
+                {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.mealTypeChip, mealType === type && styles.mealTypeChipActive]}
+                    onPress={() => setMealType(type)}
+                  >
+                    <Text style={[styles.mealTypeChipText, mealType === type && styles.mealTypeChipTextActive]}>{MEAL_TYPE_LABELS[type]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Input label="Meal Name" value={mealName} onChangeText={setMealName} placeholder="e.g., Breakfast, Chicken Salad" fontFamily={Font.regular} />
+              <View style={styles.photoButtons}>
+                <Button title="📷 Take Photo" onPress={takePhoto} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+                <Button title="🖼️ Choose Photo" onPress={pickImage} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+              </View>
+              <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" fontFamily={Font.regular} />
+              <View style={styles.macroRow}>
+                <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+                <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="numeric" placeholder="40" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+                <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+              </View>
+              <View style={styles.modalButtons}>
+                <Button title="Cancel" onPress={() => { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); }} variant="secondary" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+                <Button title="Add Meal" onPress={handleAddMeal} style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+              </View>
+            </ScrollView>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Meal Form Modal (Add Meal) */}
+      {/* Meal Form Modal (Add Meal) — full-screen blur; back goes to search-food page if user came from there */}
       <Modal
         visible={showAddMeal}
-        animationType="slide"
+        animationType="fade"
         transparent
-        onRequestClose={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
+        statusBarTranslucent
+        onRequestClose={() => {
+          setAddMealTitleBrand('');
+          setShowAddMeal(false);
+          if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
+          else asModal && onCloseModal?.();
+        }}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Meal</Text>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+<Pressable style={StyleSheet.absoluteFill} onPress={() => {
+            setAddMealTitleBrand('');
+            setShowAddMeal(false);
+            if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
+          else asModal && onCloseModal?.();
+          }}>
+            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
+          </Pressable>
+          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: Math.max(0, headerTop - insets.top), left: 0, right: 0, zIndex: 10 }]}>
+              <BackButton
+                style={{ position: 'relative', top: 0, left: 0 }}
+                onPress={() => {
+                  setAddMealTitleBrand('');
+                  setShowAddMeal(false);
+                  if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
+                  else asModal && onCloseModal?.();
+                }}
+              />
+            </View>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: Math.max(0, headerTop - insets.top) + 48 }]} showsVerticalScrollIndicator={false}>
+              <View style={styles.addMealTitleWrap}>
+                {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
+                  <>
+                    <View style={styles.addMealVerifiedTitleRow}>
+                      <MaskedView
+                        style={styles.addMealVerifiedTitleMaskWrap}
+                        maskElement={
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        }
+                      >
+                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                      <Image
+                        source={GOLD_VERIFIED_BADGE}
+                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={styles.modalTitleBrand}>TMLSN TOP 100</Text>
+                  </>
+                ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
+                  <>
+                    <View style={styles.addMealVerifiedTitleRow}>
+                      <MaskedView
+                        style={styles.addMealVerifiedTitleMaskWrap}
+                        maskElement={
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        }
+                      >
+                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
+                            {mealName.trim() || 'Add Meal'}.
+                          </Text>
+                        </LinearGradient>
+                      </MaskedView>
+                      <Image
+                        source={QUICKSILVER_VERIFIED_BADGE}
+                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <Text style={styles.modalTitleBrand}>TMLSN VERIFIED</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
+                    {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
+                  </>
+                )}
+              </View>
 
-            <Text style={styles.inputLabel}>Meal type</Text>
-            <View style={styles.mealTypeRow}>
-              {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  style={[
-                    styles.mealTypeChip,
-                    mealType === type && styles.mealTypeChipActive,
-                  ]}
-                  onPress={() => setMealType(type)}
-                >
-                  <Text
+              <Text style={styles.inputLabel}>Meal type</Text>
+              <View style={styles.mealTypeRow}>
+                {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
+                  <TouchableOpacity
+                    key={type}
                     style={[
-                      styles.mealTypeChipText,
-                      mealType === type && styles.mealTypeChipTextActive,
+                      styles.mealTypeChip,
+                      mealType === type && styles.mealTypeChipActive,
                     ]}
+                    onPress={() => setMealType(type)}
                   >
-                    {MEAL_TYPE_LABELS[type]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Text
+                      style={[
+                        styles.mealTypeChipText,
+                        mealType === type && styles.mealTypeChipTextActive,
+                      ]}
+                    >
+                      {MEAL_TYPE_LABELS[type]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            <Input
-              label="Meal Name"
-              value={mealName}
-              onChangeText={setMealName}
-              placeholder="e.g., Breakfast, Chicken Salad"
-              fontFamily={Font.regular}
-            />
-
-            <View style={styles.photoButtons}>
-              <Button
-                title="📷 Take Photo"
-                onPress={takePhoto}
-                variant="secondary"
-                style={styles.photoButton}
-                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-              />
-              <Button
-                title="🖼️ Choose Photo"
-                onPress={pickImage}
-                variant="secondary"
-                style={styles.photoButton}
-                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-              />
-            </View>
-
-            <Input
-              label="Calories"
-              value={calories}
-              onChangeText={setCalories}
-              keyboardType="numeric"
-              placeholder="500"
-              fontFamily={Font.regular}
-            />
-
-            <View style={styles.macroRow}>
               <Input
-                label="Protein (g)"
-                value={protein}
-                onChangeText={setProtein}
-                keyboardType="numeric"
-                placeholder="30"
-                containerStyle={styles.macroInput}
+                label="Meal Name"
+                value={mealName}
+                onChangeText={setMealName}
+                placeholder="e.g., Breakfast, Chicken Salad"
                 fontFamily={Font.regular}
               />
-              <Input
-                label="Carbs (g)"
-                value={carbs}
-                onChangeText={setCarbs}
-                keyboardType="numeric"
-                placeholder="40"
-                containerStyle={styles.macroInput}
-                fontFamily={Font.regular}
-              />
-              <Input
-                label="Fat (g)"
-                value={fat}
-                onChangeText={setFat}
-                keyboardType="numeric"
-                placeholder="15"
-                containerStyle={styles.macroInput}
-                fontFamily={Font.regular}
-              />
-            </View>
 
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancel"
-                onPress={() => { setShowAddMeal(false); asModal && onCloseModal?.(); }}
-                variant="secondary"
-                style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
+              <View style={styles.photoButtons}>
+                <Button
+                  title="📷 Take Photo"
+                  onPress={takePhoto}
+                  variant="secondary"
+                  style={styles.photoButton}
+                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
+                />
+                <Button
+                  title="🖼️ Choose Photo"
+                  onPress={pickImage}
+                  variant="secondary"
+                  style={styles.photoButton}
+                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
+                />
+              </View>
+
+              <Input
+                label="Calories"
+                value={calories}
+                onChangeText={setCalories}
+                keyboardType="numeric"
+                placeholder="500"
+                fontFamily={Font.regular}
               />
-              <Button
-                title="Add Meal"
-                onPress={handleAddMeal}
-                style={styles.modalButton}
-                textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-              />
-            </View>
+
+              <View style={styles.macroRow}>
+                <Input
+                  label="Protein (g)"
+                  value={protein}
+                  onChangeText={setProtein}
+                  keyboardType="numeric"
+                  placeholder="30"
+                  containerStyle={styles.macroInput}
+                  fontFamily={Font.regular}
+                />
+                <Input
+                  label="Carbs (g)"
+                  value={carbs}
+                  onChangeText={setCarbs}
+                  keyboardType="numeric"
+                  placeholder="40"
+                  containerStyle={styles.macroInput}
+                  fontFamily={Font.regular}
+                />
+                <Input
+                  label="Fat (g)"
+                  value={fat}
+                  onChangeText={setFat}
+                  keyboardType="numeric"
+                  placeholder="15"
+                  containerStyle={styles.macroInput}
+                  fontFamily={Font.regular}
+                />
+              </View>
+
+              <View style={styles.modalButtons}>
+                <Button
+title="Cancel"
+                  onPress={() => {
+                    setAddMealTitleBrand('');
+                    setShowAddMeal(false);
+                    if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
+                  else asModal && onCloseModal?.();
+                  }}
+                  variant="secondary"
+                  style={styles.modalButton}
+                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
+                />
+                <Button
+                  title="Add Meal"
+                  onPress={handleAddMeal}
+                  style={styles.modalButton}
+                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
+                />
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2853,32 +3416,19 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 2,
   },
-  foodSearchBrandTmlsnBasics: {
-    color: Colors.accentChampagne,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  foodSearchTmlsnBasicsRow: {
+  foodSearchVerifiedNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 2,
-    gap: 4,
+    gap: 2,
+    flexShrink: 1,
   },
-  foodSearchTmlsnBasicsMaskWrap: {
-    alignSelf: 'flex-start',
+  foodSearchVerifiedNameMaskWrap: {
+    flexShrink: 1,
+    maxWidth: '100%',
   },
-  foodSearchTmlsnBasicsCheckmarkWrap: {
-    marginLeft: 1,
-    marginTop: -3,
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: 'transparent',
-  },
-  foodSearchTmlsnBasicsCheckmark: {
-    color: '#D4B896',
-    fontWeight: '700',
-    lineHeight: 14,
+  foodSearchVerifiedNameText: {
+    marginBottom: 0,
   },
   foodSearchName: {
     fontSize: 15,
@@ -2900,14 +3450,112 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.primaryLight,
   },
+  foodSearchMacrosPrefixWrap: {
+    alignSelf: 'flex-start',
+  },
+  foodSearchMacrosGradientWrap: {
+    alignSelf: 'flex-start',
+  },
   foodSearchMacrosValues: {
     fontSize: 12,
-    color: Colors.accentChampagne,
+    color: Colors.accentGold,
     fontWeight: '500',
   },
   addButton: {
     marginTop: Spacing.md,
     marginBottom: Spacing.xl,
+  },
+  blurTintOverlay: {
+    backgroundColor: 'rgba(47, 48, 49, 0.5)',
+  },
+  fullScreenSheetContent: {
+    justifyContent: 'flex-start',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: 0,
+  },
+  fullScreenSheetCloseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  fullScreenSheetScroll: {
+    flex: 1,
+  },
+  fullScreenSheetScrollContent: {
+    paddingBottom: Spacing.xxl,
+  },
+  listFoodHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.lg,
+  },
+  listFoodHintText: {
+    fontSize: Typography.body,
+    color: '#888',
+    marginBottom: 0,
+  },
+  listFoodSectionTitle: {
+    fontSize: Math.round(Typography.label * 1.2),
+    fontWeight: '500',
+    color: '#ffffff',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+    letterSpacing: HeadingLetterSpacing,
+  },
+  listFoodBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
+  listFoodBullet: {
+    fontSize: Typography.body,
+    marginRight: 8,
+    width: 16,
+    textAlign: 'center',
+  },
+  listFoodInput: {
+    flex: 1,
+    fontSize: Typography.body,
+    color: '#FFFFFF',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.primaryLight + '40',
+  },
+  listFoodLogButtonWrap: {
+    marginTop: Spacing.lg,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  listFoodLogButton: {
+    height: 48,
+    width: 200,
+    alignSelf: 'center',
+  },
+  listFoodLogButtonBorderWrap: {
+    flex: 1,
+    height: 48,
+    overflow: 'hidden',
+    borderRadius: 28,
+  },
+  listFoodLogButtonShell: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderRadius: 27,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listFoodLogButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.11,
+    ...(Platform.OS === 'android' && { includeFontPadding: false }),
   },
   modalContainer: {
     flex: 1,
@@ -2928,6 +3576,34 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     marginBottom: Spacing.lg,
     letterSpacing: HeadingLetterSpacing,
+  },
+  addMealTitleWrap: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  addMealTitleCentered: {
+    textAlign: 'center',
+  },
+  addMealTitleSmall: {
+    fontSize: Math.round(Typography.h1 * 0.5),
+  },
+  addMealVerifiedTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  addMealVerifiedTitleMaskWrap: {
+    alignSelf: 'center',
+  },
+  modalTitleBrand: {
+    fontFamily: Font.regular,
+    fontSize: Typography.body,
+    fontWeight: '400',
+    color: Colors.primaryLight,
+    marginTop: 4,
+    textAlign: 'center',
+    opacity: 0.85,
   },
   inputLabel: {
     fontFamily: Font.extraBold,

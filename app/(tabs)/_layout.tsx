@@ -20,7 +20,7 @@ import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
-import { BarbellIcon, BarcodeIcon, BookmarkSimple, MagnifyingGlass, PlayIcon } from 'phosphor-react-native';
+import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
 
@@ -404,7 +404,7 @@ export default function TabsLayout() {
     setAudioModeAsync({
       playsInSilentMode: true,
       shouldPlayInBackground: false,
-      interruptionMode: 'duckOthers',
+      interruptionMode: 'mixWithOthers',
     }).catch(() => {});
   }, []);
 
@@ -644,11 +644,15 @@ export default function TabsLayout() {
       RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
     ]).start(() => {
       setShowPopup(false);
-      // All food actions use full-screen stack except scan (camera overlay).
-      if (card === 'saved') router.push('/saved-foods');
-      else if (card === 'search') router.push('/search-food');
-      else {
-        // scan: exception = standalone camera overlay (emit on nutrition tab, modal from other tabs)
+      // list food: emit on nutrition tab (opens List Food modal); from other tabs use food-action-modal.
+      // search food: always push to full search-food page.
+      // scan: emit on nutrition (camera overlay); from other tabs use food-action-modal.
+      if (card === 'saved') {
+        if (isNutritionSelected) emitCardSelect('saved');
+        else router.push({ pathname: '/food-action-modal', params: { card: 'saved' } });
+      } else if (card === 'search') {
+        router.push('/search-food');
+      } else {
         if (isNutritionSelected) emitCardSelect('scan');
         else router.push({ pathname: '/food-action-modal', params: { card: 'scan' } });
       }
@@ -1069,8 +1073,8 @@ export default function TabsLayout() {
                       <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
                       <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <BookmarkSimple size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>saved foods</Text>
+                          <ClipboardText size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>list food</Text>
                         </View>
                       </View>
                     </View>
