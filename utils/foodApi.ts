@@ -14,6 +14,22 @@ const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY ?? 'DEMO_KEY'; // USDA Food
 const USDA_FETCH_TIMEOUT_MS = 15_000;
 const OFF_FETCH_TIMEOUT_MS = 15_000;
 
+/** USDA data types we request; Survey (FNDDS) and SR Legacy are excluded. */
+const USDA_DATA_TYPES = ['Foundation', 'Branded'] as const;
+
+/** Common queries to preload Foundation (TMLSN Verified) foods for instant display. */
+const PRELOAD_QUERIES = [
+  'chicken', 'rice', 'egg', 'bread', 'milk', 'banana', 'oats',
+  'potato', 'beef', 'salmon', 'yogurt', 'cheese', 'pasta', 'apple',
+  'butter', 'avocado', 'broccoli', 'turkey', 'tuna', 'spinach',
+];
+const preloadCache = new Map<string, ParsedNutrition[]>();
+
+function getPreloadedResults(query: string): ParsedNutrition[] {
+  const key = query.trim().toLowerCase();
+  return preloadCache.get(key) ?? [];
+}
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
@@ -56,6 +72,32 @@ export interface ParsedNutrition {
   source: 'usda' | 'off';
   originalDescription?: string;
   dataType?: string;
+  /** USDA FoodData Central id — use for deduping so same food appears once */
+  fdcId?: number;
+}
+
+/** TMLSN TOP 100: USDA foods (any type) whose name matches one of these ingredients. */
+const TMLSN_TOP_100_NAMES: string[] = [
+  'kiwis', 'coffee', 'pineapple', 'apple cider vinegar', 'natural orange juice',
+  'oysters', 'mince beef', 'eggs', 'salmon', 'sardines', 'sourdough bread',
+  'olive oil', 'butter', 'avocado oil', 'coconut oil', 'honey', 'carrot', 'blueberries',
+].map((s) => s.toLowerCase().trim());
+const TMLSN_TOP_100_SORTED = [...TMLSN_TOP_100_NAMES].sort((a, b) => b.length - a.length);
+
+/** True if food is from USDA (any dataType) and its name matches the TOP 100 list (exact or name starts with entry). */
+export function isTmlsnTop100(food: ParsedNutrition): boolean {
+  if (food.source !== 'usda') return false;
+  const name = food.name.toLowerCase().trim().replace(/\s+/g, ' ');
+  return TMLSN_TOP_100_SORTED.some(
+    (entry) => name === entry || name.startsWith(entry + ',') || name.startsWith(entry + ' '),
+  );
+}
+
+/** True if food is USDA Foundation (quicksilver styling). Defensive on dataType. */
+export function isFoundationVerified(food: ParsedNutrition): boolean {
+  if (food.source !== 'usda') return false;
+  const dt = food.dataType ?? '';
+  return dt === 'Foundation' || (dt.length > 0 && dt.toLowerCase().includes('foundation'));
 }
 
 /* ------------------------------------------------------------------ */
@@ -308,6 +350,7 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     source: 'usda',
     originalDescription: (food.description ?? '').toLowerCase(),
     dataType: food.dataType ?? '',
+    fdcId: food.fdcId,
   };
 }
 
@@ -442,12 +485,23 @@ async function fetchUSDA(url: string, body: object, externalSignal?: AbortSignal
   }
 }
 
-async function searchFoodsUSDA(query: string, pageSize: number, page = 1, signal?: AbortSignal): Promise<ParsedNutrition[]> {
+async function searchFoodsUSDA(
+  query: string,
+  pageSize: number,
+  page = 1,
+  signal?: AbortSignal,
+  dataType?: string[],
+): Promise<ParsedNutrition[]> {
   const q = query.trim();
   if (!q) return [];
 
   const url = `${USDA_BASE}/foods/search?api_key=${API_KEY}`;
-  const body = { query: q, pageSize, pageNumber: page };
+  const body: { query: string; pageSize: number; pageNumber: number; dataType?: string[] } = {
+    query: q,
+    pageSize,
+    pageNumber: page,
+  };
+  if (dataType && dataType.length > 0) body.dataType = dataType;
 
   try {
     const res = await fetchUSDA(url, body, signal);
@@ -490,18 +544,17 @@ function nameMatchesQuery(item: ParsedNutrition, query: string): boolean {
   });
 }
 
-function sortBasicsFirst(items: ParsedNutrition[]): ParsedNutrition[] {
+/** TMLSN TOP 100 first, then other Verified (Foundation), then rest. */
+function sortVerifiedFirst(items: ParsedNutrition[]): ParsedNutrition[] {
   return [...items].sort((a, b) => {
-    const aIsBasic =
-      a.source === 'usda' &&
-      (!a.brand || a.brand.trim() === '') &&
-      (a.dataType === 'Foundation' || a.dataType === 'SR Legacy' || a.dataType === 'Survey (FNDDS)');
-    const bIsBasic =
-      b.source === 'usda' &&
-      (!b.brand || b.brand.trim() === '') &&
-      (b.dataType === 'Foundation' || b.dataType === 'SR Legacy' || b.dataType === 'Survey (FNDDS)');
-    if (aIsBasic && !bIsBasic) return -1;
-    if (!aIsBasic && bIsBasic) return 1;
+    const aTop = isTmlsnTop100(a);
+    const bTop = isTmlsnTop100(b);
+    if (aTop && !bTop) return -1;
+    if (!aTop && bTop) return 1;
+    const aVerified = a.source === 'usda' && a.dataType === 'Foundation';
+    const bVerified = b.source === 'usda' && b.dataType === 'Foundation';
+    if (aVerified && !bVerified) return -1;
+    if (!aVerified && bVerified) return 1;
     return 0;
   });
 }
@@ -561,49 +614,89 @@ export async function searchFoodsProgressive(
     return;
   }
 
+  const trimmed = query.trim();
   const half = Math.ceil(pageSize / 2);
 
-  const usdaPromise = searchFoodsUSDA(query, half).catch(() => [] as ParsedNutrition[]);
-  const offPromise = searchFoodsOFF(query, half, 1, signal).catch(() => [] as ParsedNutrition[]);
-
-  // Emit USDA as soon as it arrives (don't wait for OFF)
-  usdaPromise.then((results) => {
-    const matched = results.filter((f) => nameMatchesQuery(f, query));
-    if (matched.length > 0) {
-      onResults(filterResults(sortBasicsFirst(matched)));
-    }
-  });
-
-  // Wait for both to finish
-  const [usdaRes, offRes] = await Promise.allSettled([usdaPromise, offPromise]);
-  const usda = usdaRes.status === 'fulfilled' ? usdaRes.value : [];
-  const off = offRes.status === 'fulfilled' ? offRes.value : [];
-
-  // Filter OFF — must match query words in the name
-  let offFiltered = off.filter((f) => nameMatchesQuery(f, query));
-
-  // Merge + dedup
-  const seen = new Set<string>();
-  const merged: ParsedNutrition[] = [];
-  for (const f of [...usda, ...offFiltered]) {
-    const key = `${f.name}|${f.brand}`.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(f);
-    }
+  // Show preloaded Verified (Foundation) immediately if we have them
+  const preloaded = getPreloadedResults(trimmed);
+  if (preloaded.length > 0) {
+    onResults(filterResults(sortVerifiedFirst(preloaded)));
   }
 
-  const matched = merged.filter((f) => nameMatchesQuery(f, query));
-  const final = filterResults(sortBasicsFirst(matched).slice(0, pageSize));
-  if (__DEV__) console.log('[Search]', query, '→', { usda: usda.length, off: off.length, offFiltered: offFiltered.length, final: final.length });
+  // Fetch Foundation first, then rest of USDA (Foundation, Branded — no Survey, no SR Legacy)
+  const usdaVerifiedPromise = searchFoodsUSDA(trimmed, half, 1, signal, ['Foundation']).catch(() => [] as ParsedNutrition[]);
+  const usdaAllPromise = searchFoodsUSDA(trimmed, half, 1, signal, [...USDA_DATA_TYPES]).catch(() => [] as ParsedNutrition[]);
+  const offPromise = searchFoodsOFF(trimmed, half, 1, signal).catch(() => [] as ParsedNutrition[]);
+
+  const [verifiedRes, usdaAllRes, offRes] = await Promise.allSettled([
+    usdaVerifiedPromise,
+    usdaAllPromise,
+    offPromise,
+  ]);
+  const usdaVerified = verifiedRes.status === 'fulfilled' ? verifiedRes.value : [];
+  const usdaAll = usdaAllRes.status === 'fulfilled' ? usdaAllRes.value : [];
+  const off = offRes.status === 'fulfilled' ? offRes.value : [];
+
+  const verifiedMatched = usdaVerified.filter((f) => nameMatchesQuery(f, trimmed));
+  const verifiedFdcIds = new Set(verifiedMatched.map((f) => f.fdcId).filter((id): id is number => id != null));
+  const usdaRest = usdaAll.filter(
+    (f) =>
+      nameMatchesQuery(f, trimmed) &&
+      (f.fdcId == null || !verifiedFdcIds.has(f.fdcId)) &&
+      !verifiedMatched.some((b) => (b.fdcId != null && f.fdcId != null ? b.fdcId === f.fdcId : `${b.name}|${b.brand}`.toLowerCase() === `${f.name}|${f.brand}`.toLowerCase())),
+  );
+  const usda = [...verifiedMatched, ...usdaRest];
+
+  // Emit USDA (Verified first) as soon as we have it
+  if (usda.length > 0) {
+    onResults(filterResults(sortVerifiedFirst(usda)));
+  }
+
+  const offFiltered = off.filter((f) => nameMatchesQuery(f, trimmed));
+
+  const seenById = new Set<string>();
+  const seenByContent = new Set<string>();
+  const merged: ParsedNutrition[] = [];
+  const contentKey = (f: ParsedNutrition): string =>
+    `${(f.name ?? '').trim().toLowerCase()}|${(f.brand ?? '').trim().toLowerCase()}|${f.calories}|${f.protein}|${f.carbs}|${f.fat}`;
+  const dedupKey = (f: ParsedNutrition): string => {
+    if (f.source === 'usda' && f.fdcId != null) return `usda:${f.fdcId}`;
+    const n = (f.name ?? '').trim().toLowerCase();
+    const b = (f.brand ?? '').trim().toLowerCase();
+    return `${f.source}:${n}|${b}`;
+  };
+  for (const f of [...preloaded, ...usda, ...offFiltered]) {
+    const idKey = dedupKey(f);
+    const cKey = contentKey(f);
+    if (seenByContent.has(cKey)) continue;
+    if (f.source === 'usda' && f.fdcId != null && seenById.has(idKey)) continue;
+    seenById.add(idKey);
+    seenByContent.add(cKey);
+    merged.push(f);
+  }
+
+  const matched = merged.filter((f) => nameMatchesQuery(f, trimmed));
+  const final = filterResults(sortVerifiedFirst(matched).slice(0, pageSize));
+  if (__DEV__) console.log('[Search]', trimmed, '→', { preloaded: preloaded.length, verified: verifiedMatched.length, usdaAll: usdaAll.length, off: off.length, final: final.length });
   onResults(final);
 
   // Translation phase — only for non-English queries
   const translateResult = await translateToEnglish(query).catch(() => null);
   if (translateResult && translateResult.text !== query.toLowerCase().trim()) {
     try {
-      const usdaTranslated = await searchFoodsUSDA(translateResult.text, half);
-      const transMatched = usdaTranslated.filter((f) => nameMatchesQuery(f, translateResult.text));
+      const [verifiedTrans, usdaTranslated] = await Promise.all([
+        searchFoodsUSDA(translateResult.text, half, 1, undefined, ['Foundation']),
+        searchFoodsUSDA(translateResult.text, half, 1, undefined, [...USDA_DATA_TYPES]),
+      ]);
+      const verifiedTransMatched = verifiedTrans.filter((f) => nameMatchesQuery(f, translateResult.text));
+      const transVerifiedFdcIds = new Set(verifiedTransMatched.map((f) => f.fdcId).filter((id): id is number => id != null));
+      const restTrans = usdaTranslated.filter(
+        (f) =>
+          nameMatchesQuery(f, translateResult.text) &&
+          (f.fdcId == null || !transVerifiedFdcIds.has(f.fdcId)) &&
+          !verifiedTransMatched.some((b) => (b.fdcId != null && f.fdcId != null ? b.fdcId === f.fdcId : `${b.name}|${b.brand}`.toLowerCase() === `${f.name}|${f.brand}`.toLowerCase())),
+      );
+      const transMatched = [...verifiedTransMatched, ...restTrans];
 
       if (transMatched.length > 0 && translateResult.sourceLang && translateResult.sourceLang !== 'en') {
         const names = transMatched.map((f) => f.name);
@@ -614,17 +707,19 @@ export async function searchFoodsProgressive(
       }
 
       for (const f of transMatched) {
-        const key = `${f.name}|${f.brand}`.toLowerCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(f);
-        }
+        const idKey = dedupKey(f);
+        const cKey = contentKey(f);
+        if (seenByContent.has(cKey)) continue;
+        if (f.source === 'usda' && f.fdcId != null && seenById.has(idKey)) continue;
+        seenById.add(idKey);
+        seenByContent.add(cKey);
+        merged.push(f);
       }
 
       const allMatched = merged.filter(
         (f) => nameMatchesQuery(f, query) || (translateResult.text && nameMatchesQuery(f, translateResult.text)),
       );
-      onResults(filterResults(sortBasicsFirst(allMatched).slice(0, pageSize)));
+      onResults(filterResults(sortVerifiedFirst(allMatched).slice(0, pageSize)));
     } catch {}
   }
 }
@@ -639,11 +734,69 @@ export async function searchFoodsNextPage(
   if (!query.trim() || page < 2) return;
 
   try {
-    const results = await searchFoodsUSDA(query, pageSize, page);
+    const results = await searchFoodsUSDA(query, pageSize, page, undefined, [...USDA_DATA_TYPES]);
     const filtered = results.filter((f) => nameMatchesQuery(f, query));
-    onResults(filterResults(filtered));
+    const byFdcId = new Set<number>();
+    const byContent = new Set<string>();
+    const deduped = filtered.filter((f) => {
+      if (f.source === 'usda' && f.fdcId != null && byFdcId.has(f.fdcId)) return false;
+      const cKey = `${(f.name ?? '').trim().toLowerCase()}|${(f.brand ?? '').trim().toLowerCase()}|${f.calories}|${f.protein}|${f.carbs}|${f.fat}`;
+      if (byContent.has(cKey)) return false;
+      if (f.source === 'usda' && f.fdcId != null) byFdcId.add(f.fdcId);
+      byContent.add(cKey);
+      return true;
+    });
+    onResults(filterResults(sortVerifiedFirst(deduped)));
   } catch {
     onResults([]);
   }
 }
 
+/** Returns the first search result for a query. Uses searchFoodsProgressive internally; does not modify search logic. */
+export function searchFoodFirstMatch(query: string): Promise<ParsedNutrition | null> {
+  return new Promise((resolve) => {
+    if (!query.trim()) {
+      resolve(null);
+      return;
+    }
+    let resolved = false;
+    searchFoodsProgressive(query.trim(), (results) => {
+      if (!resolved && results.length > 0) {
+        resolved = true;
+        resolve(results[0]);
+      }
+    }, 25).then(() => {
+      if (!resolved) resolve(null);
+    });
+  });
+}
+
+/** Preload Foundation (TMLSN Verified) results for common queries so they show instantly when user searches. Call once on app/screen load. */
+export function preloadCommonSearches(): void {
+  PRELOAD_QUERIES.forEach((q, i) => {
+    const key = q.trim().toLowerCase();
+    if (preloadCache.has(key)) return;
+    setTimeout(() => {
+      searchFoodsUSDA(q, 10, 1, undefined, ['Foundation'])
+        .then((results) => {
+          const matched = results.filter((f) => nameMatchesQuery(f, q));
+          const byFdcId = new Set<number>();
+          const byContent = new Set<string>();
+          const deduped = matched.filter((f) => {
+            if (f.source === 'usda' && f.fdcId != null && byFdcId.has(f.fdcId)) return false;
+            const cKey = `${(f.name ?? '').trim().toLowerCase()}|${(f.brand ?? '').trim().toLowerCase()}|${f.calories}|${f.protein}|${f.carbs}|${f.fat}`;
+            if (byContent.has(cKey)) return false;
+            if (f.source === 'usda' && f.fdcId != null) byFdcId.add(f.fdcId);
+            byContent.add(cKey);
+            return true;
+          });
+          if (deduped.length > 0) {
+            const filtered = filterResults(deduped);
+            preloadCache.set(key, filtered);
+            if (__DEV__) console.log('[Preload]', q, '→', filtered.length, 'Verified');
+          }
+        })
+        .catch(() => {});
+    }, 2000 + i * 400);
+  });
+}

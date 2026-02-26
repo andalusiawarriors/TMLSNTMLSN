@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,12 +17,14 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
-import { searchFoodsProgressive, searchFoodsNextPage, ParsedNutrition } from '../utils/foodApi';
+import { searchFoodsProgressive, searchFoodsNextPage, preloadCommonSearches, ParsedNutrition } from '../utils/foodApi';
 import { addToFoodHistory } from '../utils/foodHistory';
 import { Colors, Spacing } from '../constants/theme';
 import { BackButton } from '../components/BackButton';
 
+const GOLD_CHECKMARK_BADGE = require('../assets/gold_checkmark_badge.png');
 const SEARCH_DEBOUNCE_MS = 500;
+const TMLSN_BASICS_BADGE_SIZE = 14;
 
 type HistoryTab = 'all' | 'saved';
 
@@ -39,6 +41,10 @@ export default function SearchFoodScreen() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQueryRef = useRef('');
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    preloadCommonSearches();
+  }, []);
 
   const runSearch = useCallback((q: string) => {
     const trimmed = q.trim();
@@ -270,15 +276,15 @@ export default function SearchFoodScreen() {
                 const isBasic =
                   item.source === 'usda' &&
                   (!item.brand || item.brand.trim() === '') &&
-                  (item.dataType === 'Foundation' || item.dataType === 'SR Legacy');
+                  item.dataType === 'Foundation';
                 const brandLabel = isBasic
                   ? 'TMLSN BASICS'
                   : (item.brand && item.brand.trim() !== '' ? item.brand : '');
                 if (brandLabel === 'TMLSN BASICS') {
-                  const TMLSN_BASICS_BADGE_SIZE = 11;
                   return (
                     <View style={styles.tmlsnBasicsRow}>
                       <MaskedView
+                        style={styles.tmlsnBasicsMaskWrap}
                         maskElement={
                           <Text style={[styles.resultBrand, styles.resultBrandTmlsnBasics, { backgroundColor: 'transparent' }]}>
                             tmlsn basics
@@ -295,15 +301,12 @@ export default function SearchFoodScreen() {
                           </Text>
                         </LinearGradient>
                       </MaskedView>
-                      <View style={styles.tmlsnBasicsCheckmarkWrap}>
+                      <View style={[styles.tmlsnBasicsCheckmarkWrap, { width: TMLSN_BASICS_BADGE_SIZE, height: TMLSN_BASICS_BADGE_SIZE }]}>
                         <Image
-                          source={require('../assets/gold_checkmark_badge.png')}
-                          style={{
-                            width: TMLSN_BASICS_BADGE_SIZE,
-                            height: TMLSN_BASICS_BADGE_SIZE,
-                            backgroundColor: 'transparent',
-                          }}
+                          source={GOLD_CHECKMARK_BADGE}
+                          style={{ width: TMLSN_BASICS_BADGE_SIZE, height: TMLSN_BASICS_BADGE_SIZE }}
                           resizeMode="contain"
+                          onError={(e) => console.warn('[Search] Gold badge image failed to load', e.nativeEvent.error)}
                         />
                       </View>
                     </View>
@@ -547,15 +550,23 @@ const styles = StyleSheet.create({
   tmlsnBasicsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 1,
+    gap: 4,
+  },
+  tmlsnBasicsMaskWrap: {
+    alignSelf: 'flex-start',
   },
   tmlsnBasicsCheckmarkWrap: {
     marginLeft: 1,
+    marginTop: -3,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'center',
     backgroundColor: 'transparent',
-    marginTop: -3,
+  },
+  tmlsnBasicsCheckmark: {
+    color: '#D4B896',
+    fontWeight: '700',
+    lineHeight: 14,
   },
   resultName: {
     fontSize: 15,
