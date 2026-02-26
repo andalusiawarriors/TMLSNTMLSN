@@ -83,6 +83,7 @@ export default function SearchFoodScreen() {
 
   const [showAddMealOverlay, setShowAddMealOverlay] = useState(false);
   const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
+  const [addMealBrandName, setAddMealBrandName] = useState('');
   const [mealType, setMealType] = useState<MealType>('breakfast');
   const [mealName, setMealName] = useState('');
   const [calories, setCalories] = useState('');
@@ -117,29 +118,27 @@ export default function SearchFoodScreen() {
 
     searchFoodsProgressive(trimmed, (rawResults) => {
       if (trimmed !== lastQueryRef.current) return;
-      const queryNorm = trimmed.toLowerCase();
       const seenFdcId = new Set<number>();
-      const seenName = new Set<string>();
+      const seenContent = new Set<string>();
+      const contentKey = (r: ParsedNutrition) =>
+        `${(r.name ?? '').trim().toLowerCase()}|${(r.brand ?? '').trim().toLowerCase()}|${r.calories}|${r.protein}|${r.carbs}|${r.fat}`;
       const deduped: ParsedNutrition[] = [];
       for (const r of rawResults) {
-        const normName = (r.name ?? '').trim().toLowerCase();
-        const dedupeKey = queryNorm && normName.includes(queryNorm) ? queryNorm : normName;
-        if (seenName.has(dedupeKey)) continue;
         if (r.source === 'usda' && r.fdcId != null) {
           if (seenFdcId.has(r.fdcId)) continue;
           seenFdcId.add(r.fdcId);
         }
-        seenName.add(dedupeKey);
+        const ck = contentKey(r);
+        if (seenContent.has(ck)) continue;
+        seenContent.add(ck);
         deduped.push(r);
       }
       setResults(deduped);
+      setHasMore(deduped.length > 0);
       if (deduped.length > 0) setLoading(false);
     }, SEARCH_PAGE_SIZE, signal)
       .then(() => {
-        if (trimmed === lastQueryRef.current) {
-          setLoading(false);
-          setHasMore(resultsRef.current.length >= SEARCH_PAGE_SIZE);
-        }
+        if (trimmed === lastQueryRef.current) setLoading(false);
       })
       .catch(() => {
         if (trimmed === lastQueryRef.current) setLoading(false);
@@ -152,25 +151,19 @@ export default function SearchFoodScreen() {
     setLoadingMore(true);
     searchFoodsNextPage(query, nextPage, (newResults) => {
       const current = resultsRef.current;
-      const queryNorm = query.trim().toLowerCase();
-      const existingDedupeKeys = new Set(
-        current.map((r) => {
-          const n = (r.name ?? '').trim().toLowerCase();
-          return queryNorm && n.includes(queryNorm) ? queryNorm : n;
-        }),
-      );
       const existingFdcIds = new Set(current.map((r) => r.fdcId).filter((id): id is number => id != null));
+      const contentKey = (r: ParsedNutrition) =>
+        `${(r.name ?? '').trim().toLowerCase()}|${(r.brand ?? '').trim().toLowerCase()}|${r.calories}|${r.protein}|${r.carbs}|${r.fat}`;
+      const existingContent = new Set(current.map(contentKey));
       const fresh = newResults.filter((r) => {
         if (r.source === 'usda' && r.fdcId != null && existingFdcIds.has(r.fdcId)) return false;
-        const n = (r.name ?? '').trim().toLowerCase();
-        const key = queryNorm && n.includes(queryNorm) ? queryNorm : n;
-        if (existingDedupeKeys.has(key)) return false;
+        if (existingContent.has(contentKey(r))) return false;
         return true;
       });
       if (fresh.length > 0) {
         setResults((prev) => [...prev, ...fresh]);
       }
-      if (newResults.length < SEARCH_PAGE_SIZE) setHasMore(false);
+      if (newResults.length === 0) setHasMore(false);
       setPage(nextPage);
       setLoadingMore(false);
     }, SEARCH_PAGE_SIZE).catch(() => {
@@ -196,6 +189,7 @@ export default function SearchFoodScreen() {
     const top100 = isTmlsnTop100(food);
     const isTmlsnVerified = isFoundationVerified(food);
     setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (food.brand ?? ''));
+    setAddMealBrandName(food.brand ?? '');
     setCalories(String(food.calories ?? ''));
     setProtein(String(food.protein ?? ''));
     setCarbs(String(food.carbs ?? ''));
@@ -204,7 +198,7 @@ export default function SearchFoodScreen() {
   };
 
   const closeAddMealOverlay = () => {
-    setAddMealTitleBrand('');
+    setAddMealTitleBrand(''); setAddMealBrandName('');
     setShowAddMealOverlay(false);
   };
 
@@ -254,7 +248,7 @@ export default function SearchFoodScreen() {
       fat: newMeal.fat,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setAddMealTitleBrand('');
+    setAddMealTitleBrand(''); setAddMealBrandName('');
     setMealName('');
     setCalories('');
     setProtein('');
@@ -409,10 +403,13 @@ export default function SearchFoodScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         ListHeaderComponent={listHeader}
+        onEndReached={query.trim() && results.length > 0 && hasMore && !loadingMore ? loadMore : undefined}
+        onEndReachedThreshold={0.4}
         renderItem={({ item }) => {
+          const hasBrand = item.brand && item.brand.trim() !== '';
           const top100 = isTmlsnTop100(item);
           const isVerified = isFoundationVerified(item);
-          const showVerifiedStripe = top100 || isVerified;
+          const showVerifiedStripe = !hasBrand && (top100 || isVerified);
           return (
           <TouchableOpacity
             style={styles.historyCardBorderWrap}
@@ -435,6 +432,64 @@ export default function SearchFoodScreen() {
                 const top100 = isTmlsnTop100(item);
                 const isVerified = isFoundationVerified(item);
                 const brandLabel = item.brand && item.brand.trim() !== '' ? item.brand : '';
+                if (brandLabel) {
+                  return (
+                    <>
+                      <Text style={[styles.resultBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
+                        {brandLabel}
+                      </Text>
+                      {top100 ? (
+                        <View style={[styles.verifiedNameRow, { marginTop: 2 }]}>
+                          <MaskedView
+                            style={styles.verifiedNameMaskWrap}
+                            maskElement={
+                              <Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                {item.name}
+                              </Text>
+                            }
+                          >
+                            <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                              <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                {item.name}
+                              </Text>
+                            </LinearGradient>
+                          </MaskedView>
+                          <Image
+                            source={GOLD_VERIFIED_BADGE}
+                            style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : isVerified ? (
+                        <View style={[styles.verifiedNameRow, { marginTop: 2 }]}>
+                          <MaskedView
+                            style={styles.verifiedNameMaskWrap}
+                            maskElement={
+                              <Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                {item.name}
+                              </Text>
+                            }
+                          >
+                            <LinearGradient colors={QUICKSILVER_GRADIENT} locations={QUICKSILVER_GRADIENT_LOCATIONS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                              <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                {item.name}
+                              </Text>
+                            </LinearGradient>
+                          </MaskedView>
+                          <Image
+                            source={QUICKSILVER_VERIFIED_BADGE}
+                            style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <Text style={[styles.resultName, item.source === 'off' && { color: '#FFFFFF' }, { marginTop: 2 }]} numberOfLines={1} ellipsizeMode="tail">
+                          {item.name}
+                        </Text>
+                      )}
+                    </>
+                  );
+                }
                 if (top100) {
                   return (
                     <View style={styles.verifiedNameRow}>
@@ -485,16 +540,9 @@ export default function SearchFoodScreen() {
                     </View>
                   );
                 }
-                if (brandLabel) {
-                  return (
-                    <Text style={[styles.resultBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
-                      {brandLabel}
-                    </Text>
-                  );
-                }
                 return null;
               })()}
-              {!isTmlsnTop100(item) && !isFoundationVerified(item) ? (
+              {!(item.brand && item.brand.trim() !== '') && !isTmlsnTop100(item) && !isFoundationVerified(item) ? (
                 <Text style={[styles.resultName, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
                   {item.name}
                 </Text>
@@ -562,13 +610,14 @@ export default function SearchFoodScreen() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.5)' }]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, addMealOverlayStyles.sheetContent]} pointerEvents="box-none">
-            <View style={[addMealOverlayStyles.closeRow, { marginTop: insets.top + 16 }]}>
+            <View style={[addMealOverlayStyles.closeRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10 }]}>
               <BackButton onPress={closeAddMealOverlay} />
             </View>
-            <ScrollView style={addMealOverlayStyles.scroll} contentContainerStyle={addMealOverlayStyles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView style={addMealOverlayStyles.scroll} contentContainerStyle={[addMealOverlayStyles.scrollContent, { paddingTop: 54 + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
               <View style={addMealOverlayStyles.titleWrap}>
                 {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={addMealOverlayStyles.brandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={addMealOverlayStyles.verifiedTitleRow}>
                       <MaskedView
                         style={addMealOverlayStyles.verifiedTitleMaskWrap}
@@ -578,7 +627,7 @@ export default function SearchFoodScreen() {
                           </Text>
                         }
                       >
-                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                           <Text style={[addMealOverlayStyles.title, addMealOverlayStyles.titleSmall, addMealOverlayStyles.titleCentered, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -590,10 +639,15 @@ export default function SearchFoodScreen() {
                         resizeMode="contain"
                       />
                     </View>
-                    <Text style={addMealOverlayStyles.titleBrand}>TMLSN TOP 100</Text>
+                    <MaskedView style={addMealOverlayStyles.subtitleMaskWrap} maskElement={<Text style={[addMealOverlayStyles.subtitleTop100, { backgroundColor: 'transparent' }]}>TMLSN TOP 100</Text>}>
+                      <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
+                        <Text style={[addMealOverlayStyles.subtitleTop100, { opacity: 0 }]}>TMLSN TOP 100</Text>
+                      </LinearGradient>
+                    </MaskedView>
                   </>
                 ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={addMealOverlayStyles.brandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={addMealOverlayStyles.verifiedTitleRow}>
                       <MaskedView
                         style={addMealOverlayStyles.verifiedTitleMaskWrap}
@@ -603,7 +657,7 @@ export default function SearchFoodScreen() {
                           </Text>
                         }
                       >
-                        <LinearGradient colors={QUICKSILVER_GRADIENT} locations={QUICKSILVER_GRADIENT_LOCATIONS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={QUICKSILVER_GRADIENT} locations={QUICKSILVER_GRADIENT_LOCATIONS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                           <Text style={[addMealOverlayStyles.title, addMealOverlayStyles.titleSmall, addMealOverlayStyles.titleCentered, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -619,6 +673,7 @@ export default function SearchFoodScreen() {
                   </>
                 ) : (
                   <>
+                    {addMealBrandName.trim() ? <Text style={addMealOverlayStyles.brandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <Text style={[addMealOverlayStyles.title, addMealOverlayStyles.titleSmall, addMealOverlayStyles.titleCentered]}>{mealName.trim() || 'Add Meal'}.</Text>
                     {addMealTitleBrand.trim() ? (
                       <Text style={addMealOverlayStyles.titleBrand}>{addMealTitleBrand.trim()}</Text>
@@ -638,7 +693,6 @@ export default function SearchFoodScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Input label="Meal Name" value={mealName} onChangeText={setMealName} placeholder="e.g., Breakfast, Chicken Salad" />
               <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" />
               <View style={addMealOverlayStyles.macroRow}>
                 <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={addMealOverlayStyles.macroInput} />
@@ -659,26 +713,29 @@ export default function SearchFoodScreen() {
 }
 
 const addMealOverlayStyles = StyleSheet.create({
-  sheetContent: { justifyContent: 'flex-start', paddingHorizontal: Spacing.lg },
-  closeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
+  sheetContent: { justifyContent: 'flex-start', paddingHorizontal: Spacing.lg, alignItems: 'center' },
+  closeRow: { flexDirection: 'row', alignItems: 'center' },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: Spacing.xxl },
   titleWrap: { alignItems: 'center', marginBottom: Spacing.lg },
   title: { fontSize: Typography.h1, fontWeight: '700', color: Colors.primaryLight, letterSpacing: -0.11 },
   titleSmall: { fontSize: Math.round(Typography.h1 * 0.5) },
   titleCentered: { textAlign: 'center' },
-  titleBrand: { fontSize: Typography.body, fontWeight: '400', color: Colors.primaryLight, marginTop: 4, textAlign: 'center', opacity: 0.85 },
+  titleBrand: { fontSize: Typography.body, fontWeight: '600', color: Colors.primaryLight, marginTop: 4, textAlign: 'center', opacity: 0.85 },
+  brandLabel: { fontSize: 11, color: Colors.primaryLight, fontWeight: '400', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
+  subtitleTop100: { fontSize: Typography.body, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  subtitleMaskWrap: { alignSelf: 'center' },
   verifiedTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
   verifiedTitleMaskWrap: { alignSelf: 'center' },
-  inputLabel: { fontSize: Typography.label, color: Colors.primaryLight, marginBottom: Spacing.xs, fontWeight: '500' },
-  mealTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md },
+  inputLabel: { fontSize: Typography.label, color: Colors.primaryLight, marginBottom: Spacing.xs, fontWeight: '500', textAlign: 'center' },
+  mealTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md, justifyContent: 'center' },
   mealTypeChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: Colors.primaryDarkLighter },
   mealTypeChipActive: { backgroundColor: Colors.primaryLight, opacity: 0.9 },
   mealTypeChipText: { fontSize: 14, fontWeight: '500', color: Colors.primaryLight },
   mealTypeChipTextActive: { color: Colors.primaryDark },
-  macroRow: { flexDirection: 'row', gap: Spacing.sm },
+  macroRow: { flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center' },
   macroInput: { flex: 1, marginBottom: Spacing.md },
-  buttons: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
+  buttons: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg, justifyContent: 'center' },
   button: { flex: 1 },
 });
 

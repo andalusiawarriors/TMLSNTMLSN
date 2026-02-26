@@ -27,7 +27,17 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-|| — | — | — | — |
+| *(none)* | — | — | — | — |
+*Just finished: Add-meal pop-up ingredient title visible — removed style={StyleSheet.absoluteFill} from LinearGradient in MaskedView for Top 100 and Verified title in both add-meal blocks (Food DB overlay + Meal Form modal); gradient now sizes to text so title shows. Main + obh nutrition.tsx.*
+*Just finished: List Food match fix v3 — exact-preload only in tryFirstMatchQuery (getPreloadedResultsExact); pickBestForListFood prefers zero contradiction then min penalty; sourdough vs any non-sourdough bread, chicken breast vs non-breast penalty; scoreResult breast-in-name +50, fortified milk (added+vitamin) −50; main + obh synced.*
+*Just finished: Branded Top 100 gold gradient + tick — search cards: branded+Top100 = brand then gold gradient + gold tick; branded+Foundation = quicksilver gradient + tick; branded+neither = plain name; removed " · X cal" and "X cal/100g" subtitle; nutrition only in macros row. Main + obh: search-food.tsx, nutrition.tsx.*
+*Just finished: Explore feed redesign — achievements card extracted to components/workout/AchievementsCard.tsx; Explore tab (workout index) now has homepage background image + gradient, header (Heart \| Explore \| Profile), FlatList feed with post cards and suggested-accounts blocks, infinite scroll, notifications modal (Likes/Follows/Mentions); main + obh synced.*
+*Just finished: List Food v2 — oats vs oat milk, coconut vs dairy milk, rice protein powder vs fried rice; short-name preference; parseListFoodQuantity: dash (5ml), handful (20g), one apple (182g); main + obh synced.*
+*Just finished: List Food correct-ingredient + quantity — getListFoodContradictionPenalty (breast vs drumstick, sourdough vs white, oats vs oat bread, milk vs ricotta, protein powder vs flour); scoreResult multi-word bonus; parseListFoodQuantity (250g, one cup, slice, scoop); items/rows with defaultAmount/defaultUnit; confirm pre-fill grams/ml; main + obh synced.*
+*Just finished: List Food keyword fix — ingredient name carries weight: extractListFoodIngredientName ("with a dash of olive oil"→"olive oil", "1 apple"→"apple"); scoreResult composite penalty ("apple + mango" / "olive oil with a dash of basil" −80); variants try extracted ingredient first; isAmountOnlyVariant blocks "dash"/"200g"; main + obh synced.*
+*Just finished: List Food — one ingredient→one row; multi-ingredient line→one row per ingredient (getListFoodSearchTokens); tryFirstMatchQuery preload-first + best by scoreResult; listFoodQueryVariants full line + tokens only (no per-word collapse); main + obh synced.*
+*Just finished: List Food fix — Brother saw old "TMLSN Basics" label on top in search food. obh app/(tabs)/search-food.tsx was still old design. Updated obh to folding stripe + gradient name + gold/quicksilver tick (verifiedCardLeftStripe, verifiedNameRow, GOLD/QUICKSILVER_VERIFIED_BADGE). Main already had new design.*
+*Just finished: Search food — instant first (USDA then OFF, partial preload), gold first, Show more always + onEndReached; main + obh.*
 *Just finished: List Food modal — focus new row on Enter: listFoodFocusAfterAdd state, listFoodInputRefs, useEffect + requestAnimationFrame to focus; addListFoodLine(section, lines.length); main only (obh has different List Food UI).*
 *Just finished: List Food — hint, headings, bullets, placeholders, Log Food button, conversion popup (search → confirm → log), searchFoodFirstMatch; fontFamily→fontWeight, listFoodInput white; main + obh synced.*
 *Previously: Dedupe search results by USDA fdcId — ParsedNutrition.fdcId, dedupKey usda:fdcId so same food appears once; verified+rest and preload/nextPage dedupe by fdcId; main + obh synced.*
@@ -52,7 +62,17 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
-- `utils/foodApi.ts` (main + obh) – List Food matching patch: word-level typo (applyWordLevelTypos), multi-food tokenization (getListFoodSearchTokens), expanded listFoodQueryVariants; searchFoodFirstMatch single try per variant
+- `app/(tabs)/workout/index.tsx` (main + obh), `components/explore/ExploreProfileModal.tsx` (main + obh) – Notifications & profile revamp: modal-level back row at 54px + BackButton style override (position relative 0,0); notifications Instagram layout (Today/This week/Earlier, avatar + text + time + optional thumb per row); card height + flex scroll to fix clipping; profile BackButton override, scrollContent alignItems center, inner width 100%, grid width 100%; synced to obh
+- `app/(tabs)/workout/index.tsx` (main + obh), `components/explore/ExploreProfileModal.tsx` (main + obh) – Notifications + Explore profile polish: back at 54px in both; notifications card top: 54, back row, scroll content padding; Explore profile absolute back row, paddingTop 54+48, centered stats (statsRowWrap + gap), spacing
+- `app/(tabs)/workout/index.tsx` (main), `.cursor/worktrees/tmlsn-app_2/obh/app/(tabs)/workout/index.tsx` (obh) – Explore feed fixes: no title, header 54px from top + absolute overlay, Instagram-style post cards (media first), FlatList full screen, Explore profile modal (avatar/followers/posts grid); profile icon opens ExploreProfileModal only
+- `components/explore/ExploreProfileModal.tsx` (main + obh) – new Instagram-style profile modal
+- `components/workout/AchievementsCard.tsx` (main + obh) – extracted achievements card
+- `app/search-food.tsx`, `app/(tabs)/nutrition.tsx` (main + obh) – Search: disambiguate same-name rows (calorie subtitle for verified when no brand, "name · X cal" for non-verified)
+- `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx` (main + obh) – List Food: one row per ingredient (getListFoodSearchTokens), preload-first + best-by-scoreResult in tryFirstMatchQuery, variants = full line + tokens only
+- (Search final pass: no code edits — confirmed multiple "sourdough bread" rows expected; UX recommendation + slop check in foodApi/search-food.tsx)
+- `.cursor/worktrees/tmlsn-app_2/obh/app/(tabs)/search-food.tsx` – Search label: old "TMLSN Basics" on top replaced with folding stripe + gradient name + gold/quicksilver tick (verifiedCardLeftStripe, verifiedNameRow, badge images)
+- `app/search-food.tsx`, `app/(tabs)/nutrition.tsx`, `utils/foodApi.ts` (main + obh) – Search: instant first (USDA first then OFF, partial preload 400+i*300ms), gold-first sort, Show more always (hasMore only when 0 new results), onEndReached load more
+- `app/search-food.tsx`, `app/(tabs)/nutrition.tsx`, `utils/foodApi.ts` (main + obh) – Search food: fixed over-deduping (was using query as dedupe key so “white bread” showed 1 result); dedupe now by contentKey + fdcId; hasMore set in callback from result length; OFF verified in flow; __DEV__ logs for translation/next-page failures – List Food matching patch: word-level typo (applyWordLevelTypos), multi-food tokenization (getListFoodSearchTokens), expanded listFoodQueryVariants; searchFoodFirstMatch single try per variant
 - `app/(tabs)/nutrition.tsx` – List Food: backspace on empty line removes line (removeListFoodLine)
 - `utils/foodApi.ts`, `app/(tabs)/nutrition.tsx` – List Food best-effort matching: searchFoodFirstMatchBestEffort (fallbacks + synthetic), no "No match found" in confirm list; obh synced
 - `app/(tabs)/nutrition.tsx` – List Food modal: focus new row on Enter (listFoodFocusAfterAdd, listFoodInputRefs, useEffect)

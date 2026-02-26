@@ -4,11 +4,13 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Pressable,
   Modal,
   Alert,
   Dimensions,
+  ImageBackground,
   NativeSyntheticEvent,
   NativeScrollEvent,
   KeyboardAvoidingView,
@@ -47,9 +49,12 @@ import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
-import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
+import { BlurView } from 'expo-blur';
+import { Heart, UserCircle, UserPlus, At } from 'phosphor-react-native';
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
+import { BackButton } from '../../../components/BackButton';
+import { ExploreProfileModal } from '../../../components/explore/ExploreProfileModal';
 import Slider from '@react-native-community/slider';
 
 
@@ -121,6 +126,77 @@ if (__DEV__) {
   console.log('[Workout Set Table] column flex:', SET_TABLE_FLEX, 'input maxWidth=', SET_INPUT_MAX_WIDTH);
 }
 
+// ── Explore feed types and mock data ─────────────────────────────────────────
+type FeedPost = {
+  type: 'post';
+  id: string;
+  authorName: string;
+  authorHandle: string;
+  caption: string;
+  likes: number;
+  comments: number;
+  timeAgo: string;
+};
+
+type SuggestedProfile = {
+  id: string;
+  name: string;
+  username: string;
+};
+
+type FeedSuggested = {
+  type: 'suggested';
+  id: string;
+  profiles: SuggestedProfile[];
+};
+
+type FeedItem = FeedPost | FeedSuggested;
+
+type MockPostInput = Omit<FeedPost, 'id' | 'type'>;
+const MOCK_POSTS: MockPostInput[] = [
+  { authorName: 'Alex', authorHandle: 'alex_fit', caption: 'Push day done. 3 plates on bench.', likes: 24, comments: 3, timeAgo: '2h' },
+  { authorName: 'Jordan', authorHandle: 'jordan_lifts', caption: 'New PR on deadlift. 180 kg.', likes: 89, comments: 12, timeAgo: '5h' },
+  { authorName: 'Sam', authorHandle: 'sam_trains', caption: 'Morning session. Consistency over intensity.', likes: 15, comments: 1, timeAgo: '8h' },
+  { authorName: 'Casey', authorHandle: 'casey_gains', caption: 'Leg day. Squats and RDLs.', likes: 42, comments: 5, timeAgo: '1d' },
+  { authorName: 'Riley', authorHandle: 'riley_strong', caption: 'Upper body focus. Feeling strong.', likes: 31, comments: 2, timeAgo: '1d' },
+];
+
+const MOCK_SUGGESTED: SuggestedProfile[] = [
+  { id: 's1', name: 'Morgan', username: 'morgan_fit' },
+  { id: 's2', name: 'Taylor', username: 'taylor_lifts' },
+  { id: 's3', name: 'Quinn', username: 'quinn_trains' },
+  { id: 's4', name: 'Drew', username: 'drew_gains' },
+  { id: 's5', name: 'Jamie', username: 'jamie_strong' },
+];
+
+function buildInitialFeedItems(): FeedItem[] {
+  const items: FeedItem[] = [];
+  let postIndex = 0;
+  let suggestedIndex = 0;
+  for (let i = 0; i < 12; i++) {
+    if (i > 0 && i % 4 === 0) {
+      const batch = MOCK_SUGGESTED.slice(suggestedIndex % MOCK_SUGGESTED.length, (suggestedIndex % MOCK_SUGGESTED.length) + 3);
+      if (batch.length) {
+        items.push({ type: 'suggested', id: `sug-${suggestedIndex}`, profiles: batch });
+        suggestedIndex++;
+      }
+    }
+    const p = MOCK_POSTS[postIndex % MOCK_POSTS.length];
+    items.push({
+      type: 'post',
+      id: `post-${postIndex}`,
+      authorName: p.authorName,
+      authorHandle: p.authorHandle,
+      caption: p.caption,
+      likes: p.likes,
+      comments: p.comments,
+      timeAgo: ['2h', '5h', '8h', '1d', '2d'][postIndex % 5],
+    });
+    postIndex++;
+  }
+  return items;
+}
+
 export type WorkoutScreenModalProps = {
   asModal?: boolean;
   initialActiveWorkout?: WorkoutSession | null;
@@ -168,6 +244,11 @@ export default function WorkoutScreen({
   const [restEditSeconds, setRestEditSeconds] = useState(0);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [animTrigger, setAnimTrigger] = useState(0);
+
+  // Explore feed and notifications
+  const [showNotificationsPopup, setShowNotificationsPopup] = useState(false);
+  const [showExploreProfile, setShowExploreProfile] = useState(false);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>(() => buildInitialFeedItems());
 
   // Rest Timer State
   const [restTimerActive, setRestTimerActive] = useState(false);
@@ -830,44 +911,203 @@ export default function WorkoutScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      <HomeGradientBackground />
+      {/* Explore background: same as homepage (nutrition) – image + gradient overlay */}
+      {!asModal && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
+          <ImageBackground
+            source={require('../../../assets/home-background.png')}
+            style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
+            resizeMode="cover"
+          >
+            <LinearGradient
+              colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+              locations={[0, 0.2, 0.35, 0.45, 0.65]}
+              style={StyleSheet.absoluteFill}
+            />
+          </ImageBackground>
+        </View>
+      )}
       {/* Main menu – hidden when asModal (FAB opened from another tab); only overlay is shown */}
       {!asModal && (
         <>
-          <ScrollView
-            style={styles.scrollViewLayer}
-            contentContainerStyle={[
-              styles.contentContainer,
+          {/* Explore header: 54px from top edge; absolute overlay; Heart (left) | Profile (right); no title */}
+          <View
+            style={[
+              styles.exploreHeader,
+              styles.exploreHeaderOverlay,
               {
-                paddingTop: TOP_LEFT_PILL_TOP,
-                paddingBottom: Math.max(Spacing.md, insets.bottom + 100),
+                paddingTop: 54,
+                paddingHorizontal: Spacing.md + (insets.left || 0),
+                paddingRight: Spacing.md + (insets.right || 0),
               },
             ]}
+            pointerEvents="box-none"
           >
-            {/* Header: profile + tmlsn tracker */}
-            <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-              <View style={styles.pageHeaderRow}>
-                <View style={styles.pageHeaderLeft} />
-                <View style={styles.pageHeaderTitleWrap} pointerEvents="box-none">
-                  <Text style={[styles.pageHeading, { color: colors.primaryLight }]}>tmlsn tracker.</Text>
+            <Pressable
+              onPress={() => setShowNotificationsPopup(true)}
+              style={styles.exploreHeaderIconWrap}
+              hitSlop={12}
+            >
+              <Heart size={24} weight="regular" color={colors.primaryLight} />
+            </Pressable>
+            <View style={styles.exploreHeaderSpacer} />
+            <Pressable
+              onPress={() => setShowExploreProfile(true)}
+              style={styles.exploreHeaderIconWrap}
+              hitSlop={12}
+            >
+              <UserCircle size={24} weight="regular" color={colors.primaryLight} />
+            </Pressable>
+          </View>
+
+          <FlatList
+            data={feedItems}
+            keyExtractor={(item) => item.id}
+            style={styles.exploreFeedList}
+            renderItem={({ item }) => {
+              if (item.type === 'post') {
+                return (
+                  <View style={[styles.feedPostCard, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '20' }]}>
+                    <View style={[styles.feedPostMedia, { backgroundColor: colors.primaryLight + '12' }]} />
+                    <View style={styles.feedPostHeader}>
+                      <View style={[styles.feedPostAvatar, { backgroundColor: colors.primaryLight + '25' }]}>
+                        <Text style={[styles.feedPostAvatarText, { color: colors.primaryLight }]}>{item.authorName[0]}</Text>
+                      </View>
+                      <View style={styles.feedPostMeta}>
+                        <Text style={[styles.feedPostAuthor, { color: colors.primaryLight }]} numberOfLines={1}>{item.authorName}</Text>
+                        <Text style={[styles.feedPostHandle, { color: colors.primaryLight + '99' }]} numberOfLines={1}>@{item.authorHandle} · {item.timeAgo}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.feedPostCaption, { color: colors.primaryLight }]}>{item.caption}</Text>
+                    <View style={styles.feedPostFooter}>
+                      <Text style={[styles.feedPostStats, { color: colors.primaryLight + '99' }]}>{item.likes} likes · {item.comments} comments</Text>
+                    </View>
+                  </View>
+                );
+              }
+              return (
+                <View style={[styles.feedSuggestedBlock, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '20' }]}>
+                  <Text style={[styles.feedSuggestedTitle, { color: colors.primaryLight }]}>Suggested for you</Text>
+                  {item.profiles.map((profile) => (
+                    <View key={profile.id} style={styles.feedSuggestedRow}>
+                      <View style={[styles.feedPostAvatar, styles.feedSuggestedAvatar, { backgroundColor: colors.primaryLight + '25' }]}>
+                        <Text style={[styles.feedPostAvatarText, { color: colors.primaryLight }]}>{profile.name[0]}</Text>
+                      </View>
+                      <View style={styles.feedSuggestedMeta}>
+                        <Text style={[styles.feedPostAuthor, { color: colors.primaryLight }]} numberOfLines={1}>{profile.name}</Text>
+                        <Text style={[styles.feedPostHandle, { color: colors.primaryLight + '99' }]} numberOfLines={1}>@{profile.username}</Text>
+                      </View>
+                      <Pressable style={[styles.feedFollowButton, { backgroundColor: colors.primaryLight }]}>
+                        <Text style={[styles.feedFollowButtonText, { color: colors.primaryDark }]}>Follow</Text>
+                      </Pressable>
+                    </View>
+                  ))}
                 </View>
-                <View style={styles.pageHeaderRight} />
+              );
+            }}
+            contentContainerStyle={{
+              paddingHorizontal: Spacing.md,
+              paddingBottom: Math.max(Spacing.lg, insets.bottom + 100),
+              paddingTop: 54 + 40 + Spacing.sm,
+            }}
+            onEndReached={() => {
+              const next = feedItems.length;
+              const more: FeedItem[] = [];
+              for (let i = 0; i < 4; i++) {
+                const p = MOCK_POSTS[(next + i) % MOCK_POSTS.length];
+                more.push({
+                  type: 'post',
+                  id: `post-${next + i}`,
+                  authorName: p.authorName,
+                  authorHandle: p.authorHandle,
+                  caption: p.caption,
+                  likes: p.likes,
+                  comments: p.comments,
+                  timeAgo: ['2h', '5h', '8h', '1d', '2d'][(next + i) % 5],
+                });
+              }
+              if (next > 0 && next % 8 === 0) {
+                const start = (next / 4) % MOCK_SUGGESTED.length;
+                more.unshift({
+                  type: 'suggested',
+                  id: `sug-${next}`,
+                  profiles: MOCK_SUGGESTED.slice(start, start + 3),
+                });
+              }
+              setFeedItems((prev) => [...prev, ...more]);
+            }}
+            onEndReachedThreshold={0.4}
+          />
+
+          {/* Notifications popup (heart tap) – back at 54px from top; modal-level back row per nutrition pattern */}
+          <Modal
+            visible={showNotificationsPopup}
+            animationType="fade"
+            transparent
+            onRequestClose={() => setShowNotificationsPopup(false)}
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowNotificationsPopup(false)}>
+              <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            </Pressable>
+            <View style={[styles.notificationsBackRowModal, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
+              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => setShowNotificationsPopup(false)} />
+            </View>
+            <View style={[styles.notificationsPopupContent, { top: 54, height: windowHeight - 54 - 24 - insets.bottom, paddingBottom: 24 + insets.bottom }]} pointerEvents="box-none">
+              <View style={[styles.notificationsPopupInner, { flex: 1 }]}>
+                <ScrollView style={styles.notificationsScroll} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.notificationsScrollContent, { paddingTop: 54 + 48, paddingBottom: Spacing.lg + insets.bottom }]}>
+                  <Text style={[styles.notificationsPopupTitle, { color: colors.primaryLight }]}>Notifications</Text>
+                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>Today</Text>
+                  {[
+                    { id: '1', from: 'Alex', text: 'liked your post', time: '2h', hasThumb: true },
+                    { id: '2', from: 'Jordan', text: 'liked your post', time: '5h', hasThumb: true },
+                  ].map((n) => (
+                    <View key={n.id} style={styles.notificationRow}>
+                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
+                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
+                      </View>
+                      <View style={styles.notificationCenter}>
+                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
+                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
+                      </View>
+                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
+                    </View>
+                  ))}
+                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>This week</Text>
+                  {[
+                    { id: '3', from: 'Sam', text: 'followed you', time: '2d', hasThumb: false },
+                  ].map((n) => (
+                    <View key={n.id} style={styles.notificationRow}>
+                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
+                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
+                      </View>
+                      <View style={styles.notificationCenter}>
+                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
+                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
+                      </View>
+                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
+                    </View>
+                  ))}
+                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>Earlier</Text>
+                  {[
+                    { id: '4', from: 'Casey', text: 'mentioned you in a post', time: '1w', hasThumb: true },
+                  ].map((n) => (
+                    <View key={n.id} style={styles.notificationRow}>
+                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
+                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
+                      </View>
+                      <View style={styles.notificationCenter}>
+                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
+                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
+                      </View>
+                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
+                    </View>
+                  ))}
+                </ScrollView>
               </View>
-            </AnimatedFadeInUp>
+            </View>
+          </Modal>
 
-            {/* Achievements – progress widget moved to profile (progress tab, Fitness toggle) */}
-            <AnimatedFadeInUp delay={320} duration={380} trigger={animTrigger}>
-              <View style={styles.achievementsStack}>
-                <AnimatedPressable style={styles.achievementCardWrap}>
-                  <Card gradientFill borderRadius={38} style={styles.achievementCard}>
-                    <Text style={[styles.mainMenuButtonText, { color: colors.cardIconTint }]}>achievements</Text>
-                  </Card>
-                </AnimatedPressable>
-              </View>
-            </AnimatedFadeInUp>
-
-          </ScrollView>
-
+          <ExploreProfileModal visible={showExploreProfile} onClose={() => setShowExploreProfile(false)} />
         </>
       )}
 
@@ -1620,35 +1860,202 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     textAlign: 'center',
   },
+  exploreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: Spacing.sm,
+    zIndex: 1,
+  },
+  exploreHeaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
+  exploreHeaderIconWrap: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exploreHeaderSpacer: {
+    flex: 1,
+  },
+  exploreFeedList: {
+    flex: 1,
+  },
+  feedPostCard: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+    overflow: 'hidden',
+  },
+  feedPostMedia: {
+    width: '100%',
+    aspectRatio: 1,
+  },
+  feedPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+  },
+  feedPostAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  feedPostAvatarText: {
+    fontSize: Typography.body,
+    fontWeight: '600',
+  },
+  feedPostMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  feedPostAuthor: {
+    fontSize: Typography.body,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+  },
+  feedPostHandle: {
+    fontSize: Typography.label,
+    marginTop: 2,
+  },
+  feedPostCaption: {
+    fontSize: Typography.body,
+    fontWeight: '400',
+    letterSpacing: -0.11,
+    lineHeight: 22,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  feedPostFooter: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+  },
+  feedPostStats: {
+    fontSize: Typography.label,
+  },
+  feedSuggestedBlock: {
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  feedSuggestedTitle: {
+    fontSize: Typography.body,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    marginBottom: Spacing.sm,
+  },
+  feedSuggestedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+  },
+  feedSuggestedMeta: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: Spacing.sm,
+  },
+  feedSuggestedAvatar: {
+    marginRight: 0,
+  },
+  feedFollowButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: 20,
+  },
+  feedFollowButtonText: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+  },
+  notificationsBackRowModal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  notificationsPopupContent: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    top: 54,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    backgroundColor: Colors.primaryDarkLighter,
+    maxHeight: '80%',
+  },
+  notificationsPopupInner: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+  },
+  notificationsPopupTitle: {
+    fontSize: Typography.h2,
+    fontWeight: '600',
+    letterSpacing: -0.11,
+    marginBottom: Spacing.md,
+  },
+  notificationsScroll: {
+    flex: 1,
+  },
+  notificationsScrollContent: {
+    paddingBottom: Spacing.lg,
+  },
+  notificationsSectionLabel: {
+    fontSize: Typography.label,
+    fontWeight: '600',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: 0,
+  },
+  notificationAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  notificationAvatarText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  notificationCenter: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  notificationText: {
+    fontSize: Typography.body,
+    fontWeight: '400',
+  },
+  notificationTextBold: {
+    fontWeight: '600',
+  },
+  notificationSecondary: {
+    fontSize: Typography.label,
+    marginTop: 2,
+  },
+  notificationThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    marginLeft: Spacing.sm,
+  },
   mainMenuButton: {
     width: BUTTON_WIDTH,
     height: MAIN_MENU_BUTTON_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 0,
-    marginVertical: 0,
-  },
-  mainMenuButtonText: {
-    fontSize: Typography.promptText,
-    fontWeight: '500' as const,
-    lineHeight: 16,
-    letterSpacing: -0.11,
-    color: '#C6C6C6',
-    textAlign: 'center',
-  },
-  achievementsStack: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: MAIN_MENU_BUTTON_GAP,
-    marginBottom: Spacing.sm,
-  },
-  achievementCardWrap: {
-    alignSelf: 'center',
-  },
-  achievementCard: {
-    width: PROGRESS_CARD_WIDTH,
-    height: PROGRESS_CARD_HEIGHT,
-    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 0,

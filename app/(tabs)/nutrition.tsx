@@ -77,7 +77,7 @@ import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
-import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatchBestEffort, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatchBestEffort, getListFoodSearchTokens, parseListFoodQuantity, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
@@ -93,8 +93,11 @@ const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_ba
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
 const QUICKSILVER_GRADIENT = ['#C0C4C8', '#9A9EA4', '#8E9298'] as const;
 const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
+const CHAMPAGNE_TEXT = '#D4B896';
 const CHAMPAGNE_GRADIENT = ['#E5D4B8', '#D4B896', '#A8895E'] as const;
 const TMLSN_VERIFIED_TICK_HEIGHT = 18;
+/** Tick size next to add-meal title (gradient + badge row). */
+const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -293,7 +296,7 @@ export default function NutritionScreen({
   const [listFoodDinnerLines, setListFoodDinnerLines] = useState<string[]>(['', '']);
   const [listFoodSnacksLines, setListFoodSnacksLines] = useState<string[]>(['', '']);
   const [showListFoodConfirm, setShowListFoodConfirm] = useState(false);
-  const [listFoodConfirmRows, setListFoodConfirmRows] = useState<Array<{ userInput: string; mealType: MealType; matched: ParsedNutrition | null; grams: number }>>([]);
+  const [listFoodConfirmRows, setListFoodConfirmRows] = useState<Array<{ userInput: string; mealType: MealType; matched: ParsedNutrition | null; grams: number; unit: 'g' | 'ml' }>>([]);
   const [listFoodConfirmLoading, setListFoodConfirmLoading] = useState(false);
   const [listFoodFocusedInputId, setListFoodFocusedInputId] = useState<string | null>(null);
   const [listFoodFocusAfterAdd, setListFoodFocusAfterAdd] = useState<{ section: 'breakfast' | 'lunch' | 'dinner' | 'snacks'; index: number } | null>(null);
@@ -321,6 +324,7 @@ export default function NutritionScreen({
   const [fat, setFat] = useState('');
   const [mealImage, setMealImage] = useState<string | undefined>();
   const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
+  const [addMealBrandName, setAddMealBrandName] = useState('');
 
   // Edit Goals Form State
   const [editCalories, setEditCalories] = useState('');
@@ -518,7 +522,7 @@ export default function NutritionScreen({
   // ── Form helpers ──
   const resetMealForm = () => {
     setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
-    setAddMealTitleBrand('');
+    setAddMealTitleBrand(''); setAddMealBrandName('');
   };
 
   const fillFormFromFood = (data: ParsedNutrition) => {
@@ -530,6 +534,7 @@ export default function NutritionScreen({
     const top100 = isTmlsnTop100(data);
     const isTmlsnVerified = isFoundationVerified(data);
     setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
+    setAddMealBrandName(data.brand || '');
   };
 
   const fillAndShowForm = (data: ParsedNutrition) => {
@@ -611,7 +616,7 @@ export default function NutritionScreen({
   };
 
   const handleLogFoodPress = useCallback(async () => {
-    const items: Array<{ userInput: string; mealType: MealType }> = [];
+    const items: Array<{ userInput: string; mealType: MealType; defaultAmount: number; defaultUnit: 'g' | 'ml' }> = [];
     const sections: Array<{ lines: string[]; mealType: MealType }> = [
       { lines: listFoodBreakfastLines, mealType: 'breakfast' },
       { lines: listFoodLunchLines, mealType: 'lunch' },
@@ -621,11 +626,32 @@ export default function NutritionScreen({
     for (const { lines, mealType } of sections) {
       for (const line of lines) {
         const val = line.trim();
-        if (val) items.push({ userInput: val, mealType });
+        if (!val) continue;
+        const segments = getListFoodSearchTokens(val);
+        if (segments.length === 0) {
+          const parsed = parseListFoodQuantity(val);
+          items.push({
+            userInput: val,
+            mealType,
+            defaultAmount: parsed?.amount ?? 100,
+            defaultUnit: parsed?.unit ?? 'g',
+          });
+        } else {
+          for (const segment of segments) {
+            if (!segment) continue;
+            const parsed = parseListFoodQuantity(segment);
+            items.push({
+              userInput: segment,
+              mealType,
+              defaultAmount: parsed?.amount ?? 100,
+              defaultUnit: parsed?.unit ?? 'g',
+            });
+          }
+        }
       }
     }
     if (items.length === 0) return;
-    setListFoodConfirmRows(items.map((i) => ({ ...i, matched: null, grams: 100 })));
+    setListFoodConfirmRows(items.map((i) => ({ ...i, matched: null, grams: i.defaultAmount, unit: i.defaultUnit })));
     setListFoodConfirmLoading(true);
     setShowListFood(false);
     setShowListFoodConfirm(true);
@@ -633,7 +659,7 @@ export default function NutritionScreen({
       const rows = await Promise.all(
         items.map(async (i) => {
           const matched = await searchFoodFirstMatchBestEffort(i.userInput);
-          return { ...i, matched, grams: 100 };
+          return { ...i, matched, grams: i.defaultAmount, unit: i.defaultUnit };
         })
       );
       setListFoodConfirmRows(rows);
@@ -923,24 +949,19 @@ export default function NutritionScreen({
     searchTimeoutRef.current = setTimeout(async () => {
       const cached = await searchFoodHistory(query);
       if (cached.length > 0) {
-        const queryNorm = query.trim().toLowerCase();
         const seenFdcId = new Set<number>();
-        const seenNameBrand = new Set<string>();
-        const seenQueryPrefix = new Set<string>();
+        const seenContent = new Set<string>();
+        const contentKey = (r: ParsedNutrition) =>
+          `${(r.name ?? '').trim().toLowerCase()}|${(r.brand ?? '').trim().toLowerCase()}|${r.calories}|${r.protein}|${r.carbs}|${r.fat}`;
         const dedupedCache: ParsedNutrition[] = [];
         for (const r of cached) {
-          const normName = (r.name ?? '').trim().toLowerCase();
-          const dedupeKey = queryNorm && normName.includes(queryNorm) ? queryNorm : normName;
-          if (seenQueryPrefix.has(dedupeKey)) continue;
           if (r.source === 'usda' && r.fdcId != null) {
             if (seenFdcId.has(r.fdcId)) continue;
             seenFdcId.add(r.fdcId);
-          } else {
-            const key = `${(r.name ?? '')}|${(r.brand ?? '')}`.toLowerCase();
-            if (seenNameBrand.has(key)) continue;
-            seenNameBrand.add(key);
           }
-          seenQueryPrefix.add(dedupeKey);
+          const ck = contentKey(r);
+          if (seenContent.has(ck)) continue;
+          seenContent.add(ck);
           dedupedCache.push(r);
         }
         setFoodSearchResults(dedupedCache);
@@ -949,39 +970,36 @@ export default function NutritionScreen({
       searchFoodsProgressive(
         query,
         (results) => {
-          const historyNames = new Set(cached.map((c) => c.name.toLowerCase()));
-          const apiOnly = results.filter((f) => !historyNames.has(f.name.toLowerCase()));
+          const historyContent = new Set(
+            cached.map((c) =>
+              `${(c.name ?? '').trim().toLowerCase()}|${(c.brand ?? '').trim().toLowerCase()}|${c.calories}|${c.protein}|${c.carbs}|${c.fat}`,
+            ),
+          );
+          const contentKey = (r: ParsedNutrition) =>
+            `${(r.name ?? '').trim().toLowerCase()}|${(r.brand ?? '').trim().toLowerCase()}|${r.calories}|${r.protein}|${r.carbs}|${r.fat}`;
+          const apiOnly = results.filter((f) => !historyContent.has(contentKey(f)));
           const combined = [...cached, ...apiOnly];
-          const queryNorm = query.trim().toLowerCase();
           const seenFdcId = new Set<number>();
-          const seenNameBrand = new Set<string>();
-          const seenNormalizedName = new Set<string>();
-          const seenQueryPrefix = new Set<string>();
+          const seenContent = new Set<string>();
           const merged: ParsedNutrition[] = [];
           for (const r of combined) {
-            const normName = (r.name ?? '').trim().toLowerCase();
-            const dedupeKey = queryNorm && normName.includes(queryNorm) ? queryNorm : normName;
-            if (seenQueryPrefix.has(dedupeKey)) continue;
             if (r.source === 'usda' && r.fdcId != null) {
               if (seenFdcId.has(r.fdcId)) continue;
               seenFdcId.add(r.fdcId);
-            } else {
-              const key = `${(r.name ?? '')}|${(r.brand ?? '')}`.toLowerCase();
-              if (seenNameBrand.has(key)) continue;
-              seenNameBrand.add(key);
             }
-            seenNormalizedName.add(normName);
-          seenQueryPrefix.add(dedupeKey);
-          merged.push(r);
+            const ck = contentKey(r);
+            if (seenContent.has(ck)) continue;
+            seenContent.add(ck);
+            merged.push(r);
           }
           foodSearchResultsRef.current = merged;
           setFoodSearchResults(merged);
+          setFoodSearchHasMore(merged.length > 0);
           if (results.length > 0) setFoodSearchLoading(false);
         },
       )
         .then(() => {
           setFoodSearchLoading(false);
-          setFoodSearchHasMore(foodSearchResultsRef.current.length >= 25);
         })
         .catch(() => {
           if (cached.length === 0) setFoodSearchResults([]);
@@ -995,27 +1013,17 @@ export default function NutritionScreen({
     const nextPage = foodSearchPage + 1;
     setFoodSearchLoadingMore(true);
     searchFoodsNextPage(foodSearchQuery, nextPage, (newResults) => {
-      if (newResults.length < 25) setFoodSearchHasMore(false);
+      if (newResults.length === 0) setFoodSearchHasMore(false);
       if (newResults.length > 0) {
-        const existingKeys = new Set(
-          foodSearchResults.map((r) => `${r.name}|${r.brand}`.toLowerCase()),
-        );
+        const contentKey = (r: ParsedNutrition) =>
+          `${(r.name ?? '').trim().toLowerCase()}|${(r.brand ?? '').trim().toLowerCase()}|${r.calories}|${r.protein}|${r.carbs}|${r.fat}`;
         const existingFdcIds = new Set(
           foodSearchResults.map((r) => r.fdcId).filter((id): id is number => id != null),
         );
-        const queryNorm = foodSearchQuery.trim().toLowerCase();
-        const existingDedupeKeys = new Set(
-          foodSearchResults.map((r) => {
-            const n = (r.name ?? '').trim().toLowerCase();
-            return queryNorm && n.includes(queryNorm) ? queryNorm : n;
-          }),
-        );
+        const existingContent = new Set(foodSearchResults.map(contentKey));
         const fresh = newResults.filter((r) => {
           if (r.source === 'usda' && r.fdcId != null && existingFdcIds.has(r.fdcId)) return false;
-          const n = (r.name ?? '').trim().toLowerCase();
-          const key = queryNorm && n.includes(queryNorm) ? queryNorm : n;
-          if (existingDedupeKeys.has(key)) return false;
-          return !existingKeys.has(`${r.name}|${r.brand}`.toLowerCase());
+          return !existingContent.has(contentKey(r));
         });
         if (fresh.length === 0) {
           setFoodSearchPage(nextPage);
@@ -2353,13 +2361,13 @@ export default function NutritionScreen({
                     <>
                       <Text style={[styles.listFoodHintText, { marginBottom: Spacing.xs }]} numberOfLines={1}>→ {row.matched.name}</Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={[styles.listFoodHintText, { flexShrink: 0 }]}>grams:</Text>
+                        <Text style={[styles.listFoodHintText, { flexShrink: 0 }]}>{row.unit === 'ml' ? 'ml:' : 'grams:'}</Text>
                         <TextInput
                           style={[styles.listFoodInput, { flex: 1, maxWidth: 80 }]}
                           value={String(row.grams)}
                           onChangeText={(t) => updateListFoodConfirmGrams(index, Math.max(0, parseFloat(t) || 0))}
                           keyboardType="numeric"
-                          placeholder="100"
+                          placeholder={row.unit === 'ml' ? '240' : '100'}
                           placeholderTextColor="#888"
                         />
                       </View>
@@ -2379,15 +2387,15 @@ export default function NutritionScreen({
       </Modal>
 
       {/* Food Database Search Modal — full-screen blur; list or add-meal form, back stays in search */}
-      <Modal visible={showFoodSearch} animationType="fade" transparent statusBarTranslucent onRequestClose={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
+      <Modal visible={showFoodSearch} animationType="fade" transparent statusBarTranslucent onRequestClose={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }}>
             <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
             <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: headerTop, left: 0, right: 0, zIndex: 10 }]}>
-              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }} />
+              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }} />
             </View>
             {searchOverlayScreen === 'list' ? (
             <View style={[styles.fullScreenSheetScroll, { paddingTop: headerTop + 48 }]}>
@@ -2413,6 +2421,64 @@ export default function NutritionScreen({
                       const top100 = isTmlsnTop100(item);
                       const isVerified = isFoundationVerified(item);
                       const brandLabel = item.brand && item.brand.trim() !== '' ? item.brand : '';
+                      if (brandLabel) {
+                        return (
+                          <>
+                            <Text style={[styles.foodSearchBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
+                              {brandLabel}
+                            </Text>
+                            {top100 ? (
+                              <View style={[styles.foodSearchVerifiedNameRow, { marginTop: 2 }]}>
+                                <MaskedView
+                                  style={styles.foodSearchVerifiedNameMaskWrap}
+                                  maskElement={
+                                    <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                      {item.name}
+                                    </Text>
+                                  }
+                                >
+                                  <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                                    <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                      {item.name}
+                                    </Text>
+                                  </LinearGradient>
+                                </MaskedView>
+                                <Image
+                                  source={GOLD_VERIFIED_BADGE}
+                                  style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            ) : isVerified ? (
+                              <View style={[styles.foodSearchVerifiedNameRow, { marginTop: 2 }]}>
+                                <MaskedView
+                                  style={styles.foodSearchVerifiedNameMaskWrap}
+                                  maskElement={
+                                    <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">
+                                      {item.name}
+                                    </Text>
+                                  }
+                                >
+                                  <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                                    <Text style={[styles.foodSearchName, styles.foodSearchVerifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">
+                                      {item.name}
+                                    </Text>
+                                  </LinearGradient>
+                                </MaskedView>
+                                <Image
+                                  source={QUICKSILVER_VERIFIED_BADGE}
+                                  style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            ) : (
+                              <Text style={[styles.foodSearchName, item.source === 'off' && { color: '#FFFFFF' }, { marginTop: 2 }]} numberOfLines={1} ellipsizeMode="tail">
+                                {item.name}
+                              </Text>
+                            )}
+                          </>
+                        );
+                      }
                       if (top100) {
                         return (
                           <View style={styles.foodSearchVerifiedNameRow}>
@@ -2432,7 +2498,7 @@ export default function NutritionScreen({
                             </MaskedView>
                             <Image
                               source={GOLD_VERIFIED_BADGE}
-                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }}
+                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }}
                               resizeMode="contain"
                             />
                           </View>
@@ -2457,22 +2523,15 @@ export default function NutritionScreen({
                             </MaskedView>
                             <Image
                               source={QUICKSILVER_VERIFIED_BADGE}
-                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }}
+                              style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }}
                               resizeMode="contain"
                             />
                           </View>
                         );
                       }
-                      if (brandLabel) {
-                        return (
-                          <Text style={[styles.foodSearchBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
-                            {brandLabel}
-                          </Text>
-                        );
-                      }
                       return null;
                     })()}
-                    {!isTmlsnTop100(item) && !isFoundationVerified(item) ? (
+                    {!(item.brand && item.brand.trim() !== '') && !isTmlsnTop100(item) && !isFoundationVerified(item) ? (
                       <Text style={[styles.foodSearchName, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
                         {item.name}
                       </Text>
@@ -2528,10 +2587,11 @@ export default function NutritionScreen({
               />
             </View>
             ) : (
-            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: headerTop + 48 }]} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: headerTop + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
               <View style={styles.addMealTitleWrap}>
                 {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={styles.addMealVerifiedTitleRow}>
                       <MaskedView
                         style={styles.addMealVerifiedTitleMaskWrap}
@@ -2541,7 +2601,7 @@ export default function NutritionScreen({
                           </Text>
                         }
                       >
-                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
                           <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -2549,14 +2609,19 @@ export default function NutritionScreen({
                       </MaskedView>
                       <Image
                         source={GOLD_VERIFIED_BADGE}
-                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
                         resizeMode="contain"
                       />
                     </View>
-                    <Text style={styles.modalTitleBrand}>TMLSN TOP 100</Text>
+                    <MaskedView style={styles.addMealSubtitleMaskWrap} maskElement={<Text style={[styles.addMealSubtitleTop100, { backgroundColor: 'transparent' }]}>TMLSN TOP 100</Text>}>
+                      <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
+                        <Text style={[styles.addMealSubtitleTop100, { opacity: 0 }]}>TMLSN TOP 100</Text>
+                      </LinearGradient>
+                    </MaskedView>
                   </>
                 ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={styles.addMealVerifiedTitleRow}>
                       <MaskedView
                         style={styles.addMealVerifiedTitleMaskWrap}
@@ -2566,7 +2631,7 @@ export default function NutritionScreen({
                           </Text>
                         }
                       >
-                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
                           <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -2574,7 +2639,7 @@ export default function NutritionScreen({
                       </MaskedView>
                       <Image
                         source={QUICKSILVER_VERIFIED_BADGE}
-                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
                         resizeMode="contain"
                       />
                     </View>
@@ -2582,6 +2647,7 @@ export default function NutritionScreen({
                   </>
                 ) : (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
                     {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
                   </>
@@ -2599,7 +2665,6 @@ export default function NutritionScreen({
                   </TouchableOpacity>
                 ))}
               </View>
-              <Input label="Meal Name" value={mealName} onChangeText={setMealName} placeholder="e.g., Breakfast, Chicken Salad" fontFamily={Font.regular} />
               <View style={styles.photoButtons}>
                 <Button title="📷 Take Photo" onPress={takePhoto} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
                 <Button title="🖼️ Choose Photo" onPress={pickImage} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
@@ -2611,7 +2676,7 @@ export default function NutritionScreen({
                 <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={styles.macroInput} fontFamily={Font.regular} />
               </View>
               <View style={styles.modalButtons}>
-                <Button title="Cancel" onPress={() => { addMealInSearchOverlayRef.current = false; setSearchOverlayScreen('list'); }} variant="secondary" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+                <Button title="Cancel" onPress={() => { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); }} variant="secondary" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
                 <Button title="Add Meal" onPress={handleAddMeal} style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
               </View>
             </ScrollView>
@@ -2627,7 +2692,7 @@ export default function NutritionScreen({
         transparent
         statusBarTranslucent
         onRequestClose={() => {
-          setAddMealTitleBrand('');
+          setAddMealTitleBrand(''); setAddMealBrandName('');
           setShowAddMeal(false);
           if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
           else asModal && onCloseModal?.();
@@ -2635,7 +2700,7 @@ export default function NutritionScreen({
       >
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
 <Pressable style={StyleSheet.absoluteFill} onPress={() => {
-            setAddMealTitleBrand('');
+            setAddMealTitleBrand(''); setAddMealBrandName('');
             setShowAddMeal(false);
             if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
           else asModal && onCloseModal?.();
@@ -2644,21 +2709,22 @@ export default function NutritionScreen({
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: Math.max(0, headerTop - insets.top), left: 0, right: 0, zIndex: 10 }]}>
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10 }]}>
               <BackButton
                 style={{ position: 'relative', top: 0, left: 0 }}
                 onPress={() => {
-                  setAddMealTitleBrand('');
+                  setAddMealTitleBrand(''); setAddMealBrandName('');
                   setShowAddMeal(false);
                   if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
                   else asModal && onCloseModal?.();
                 }}
               />
             </View>
-            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: Math.max(0, headerTop - insets.top) + 48 }]} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
               <View style={styles.addMealTitleWrap}>
                 {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={styles.addMealVerifiedTitleRow}>
                       <MaskedView
                         style={styles.addMealVerifiedTitleMaskWrap}
@@ -2668,7 +2734,7 @@ export default function NutritionScreen({
                           </Text>
                         }
                       >
-                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
                           <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -2676,14 +2742,19 @@ export default function NutritionScreen({
                       </MaskedView>
                       <Image
                         source={GOLD_VERIFIED_BADGE}
-                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
                         resizeMode="contain"
                       />
                     </View>
-                    <Text style={styles.modalTitleBrand}>TMLSN TOP 100</Text>
+                    <MaskedView style={styles.addMealSubtitleMaskWrap} maskElement={<Text style={[styles.addMealSubtitleTop100, { backgroundColor: 'transparent' }]}>TMLSN TOP 100</Text>}>
+                      <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
+                        <Text style={[styles.addMealSubtitleTop100, { opacity: 0 }]}>TMLSN TOP 100</Text>
+                      </LinearGradient>
+                    </MaskedView>
                   </>
                 ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <View style={styles.addMealVerifiedTitleRow}>
                       <MaskedView
                         style={styles.addMealVerifiedTitleMaskWrap}
@@ -2693,7 +2764,7 @@ export default function NutritionScreen({
                           </Text>
                         }
                       >
-                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill}>
+                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
                           <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
                             {mealName.trim() || 'Add Meal'}.
                           </Text>
@@ -2701,7 +2772,7 @@ export default function NutritionScreen({
                       </MaskedView>
                       <Image
                         source={QUICKSILVER_VERIFIED_BADGE}
-                        style={{ width: 18, height: 18, marginLeft: 2 }}
+                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
                         resizeMode="contain"
                       />
                     </View>
@@ -2709,6 +2780,7 @@ export default function NutritionScreen({
                   </>
                 ) : (
                   <>
+                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
                     <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
                     {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
                   </>
@@ -2737,14 +2809,6 @@ export default function NutritionScreen({
                   </TouchableOpacity>
                 ))}
               </View>
-
-              <Input
-                label="Meal Name"
-                value={mealName}
-                onChangeText={setMealName}
-                placeholder="e.g., Breakfast, Chicken Salad"
-                fontFamily={Font.regular}
-              />
 
               <View style={styles.photoButtons}>
                 <Button
@@ -2806,7 +2870,7 @@ export default function NutritionScreen({
                 <Button
 title="Cancel"
                   onPress={() => {
-                    setAddMealTitleBrand('');
+                    setAddMealTitleBrand(''); setAddMealBrandName('');
                     setShowAddMeal(false);
                     if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
                   else asModal && onCloseModal?.();
@@ -3515,6 +3579,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingHorizontal: Spacing.lg,
     paddingTop: 0,
+    alignItems: 'center',
   },
   fullScreenSheetCloseRow: {
     flexDirection: 'row',
@@ -3623,6 +3688,7 @@ const styles = StyleSheet.create({
   addMealTitleWrap: {
     alignItems: 'center',
     marginBottom: Spacing.lg,
+    alignSelf: 'stretch',
   },
   addMealTitleCentered: {
     textAlign: 'center',
@@ -3633,20 +3699,40 @@ const styles = StyleSheet.create({
   addMealVerifiedTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
+    justifyContent: 'space-between',
+    width: '100%',
   },
   addMealVerifiedTitleMaskWrap: {
+    flex: 1,
+    minWidth: 0,
     alignSelf: 'center',
   },
   modalTitleBrand: {
     fontFamily: Font.regular,
     fontSize: Typography.body,
-    fontWeight: '400',
+    fontWeight: '600',
     color: Colors.primaryLight,
     marginTop: 4,
     textAlign: 'center',
     opacity: 0.85,
+  },
+  addMealBrandLabel: {
+    fontSize: 11,
+    color: Colors.primaryLight,
+    fontWeight: '400',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  addMealSubtitleTop100: {
+    fontSize: Typography.body,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  addMealSubtitleMaskWrap: {
+    alignSelf: 'center',
   },
   inputLabel: {
     fontFamily: Font.extraBold,
@@ -3654,12 +3740,15 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     marginBottom: Spacing.xs,
     letterSpacing: HeadingLetterSpacing,
+    textAlign: 'center',
   },
   mealTypeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   mealTypeChip: {
     paddingVertical: Spacing.sm,
@@ -3684,6 +3773,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
   },
   photoButton: {
     flex: 1,
@@ -3691,6 +3782,8 @@ const styles = StyleSheet.create({
   macroRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   macroInput: {
     flex: 1,
@@ -3699,6 +3792,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     marginTop: Spacing.lg,
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   modalButton: {
     flex: 1,
