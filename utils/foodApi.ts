@@ -25,9 +25,25 @@ const PRELOAD_QUERIES = [
 ];
 const preloadCache = new Map<string, ParsedNutrition[]>();
 
+/** Exact key first; else best partial match so "white bread" can show preloaded "bread" instantly. */
 function getPreloadedResults(query: string): ParsedNutrition[] {
   const key = query.trim().toLowerCase();
-  return preloadCache.get(key) ?? [];
+  const exact = preloadCache.get(key);
+  if (exact && exact.length > 0) return exact;
+  for (const preloadKey of PRELOAD_QUERIES.map((q) => q.trim().toLowerCase()).sort((a, b) => b.length - a.length)) {
+    if (key.includes(preloadKey) || preloadKey.includes(key)) {
+      const hit = preloadCache.get(preloadKey);
+      if (hit && hit.length > 0) return hit;
+    }
+  }
+  return [];
+}
+
+/** List Food first-match only: use preload only when cache has exact key. Avoids "chicken breast" using "chicken" preload. */
+function getPreloadedResultsExact(query: string): ParsedNutrition[] {
+  const key = query.trim().toLowerCase();
+  const exact = preloadCache.get(key);
+  return exact && exact.length > 0 ? exact : [];
 }
 
 /* ------------------------------------------------------------------ */
@@ -76,7 +92,7 @@ export interface ParsedNutrition {
   fdcId?: number;
 }
 
-/** TMLSN TOP 100: USDA foods (any type) whose name matches one of these ingredients. */
+/** TMLSN TOP 100: ingredients that get gold styling when the product is primarily that ingredient (not a composite meal). */
 const TMLSN_TOP_100_NAMES: string[] = [
   'kiwis', 'coffee', 'pineapple', 'apple cider vinegar', 'natural orange juice',
   'oysters', 'mince beef', 'eggs', 'salmon', 'sardines', 'sourdough bread',
@@ -84,13 +100,47 @@ const TMLSN_TOP_100_NAMES: string[] = [
 ].map((s) => s.toLowerCase().trim());
 const TMLSN_TOP_100_SORTED = [...TMLSN_TOP_100_NAMES].sort((a, b) => b.length - a.length);
 
-/** True if food is from USDA (any dataType) and its name matches the TOP 100 list (exact or name starts with entry). */
+/** Words that can appear between entry tokens and still count as "same ingredient" (e.g. sourdough [round artisan style] bread). */
+const TOP_100_MODIFIER_WORDS = new Set([
+  'round', 'artisan', 'style', 'organic', 'whole', 'grain', 'fresh', 'plain', 'classic', 'traditional',
+  'stone', 'baked', 'soft', 'crusty', 'sliced', 'unsliced', 'extra', 'virgin', 'cold', 'pressed', 'raw',
+  'natural', 'pure', 'refined', 'unrefined', 'white', 'natural', 'liquid', 'filtered', 'unfiltered',
+]);
+
+/** True if name suggests a composite dish/meal (multiple components), so we do not gold it. */
+function isCompositeMealName(name: string): boolean {
+  const n = name.toLowerCase().trim().replace(/\s+/g, ' ');
+  const patterns = [
+    ' on ', ' with ', ' and ', ' & ',
+    ' sandwich ', ' wrap ', ' salad ', ' burger ', ' blt ', ' sub ', ' pizza ', ' bowl ', ' platter ', ' combo ', ' meal ',
+  ];
+  return patterns.some((p) => n.includes(p));
+}
+
+/** True if name contains entry's words in order with only modifier words between them (e.g. "sourdough round artisan style bread" for entry "sourdough bread"). */
+function nameMatchesEntryWithModifiers(name: string, entry: string): boolean {
+  const entryWords = entry.split(/\s+/).filter(Boolean);
+  const nameWords = name.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  let entryIdx = 0;
+  for (const w of nameWords) {
+    if (entryIdx < entryWords.length && w === entryWords[entryIdx]) {
+      entryIdx++;
+    } else if (!TOP_100_MODIFIER_WORDS.has(w)) {
+      return false;
+    }
+  }
+  return entryIdx === entryWords.length;
+}
+
+/** True if food is primarily a Top 100 ingredient (USDA or OFF). Excludes composite meals (e.g. "Turkey BLT on sourdough bread"). */
 export function isTmlsnTop100(food: ParsedNutrition): boolean {
-  if (food.source !== 'usda') return false;
   const name = food.name.toLowerCase().trim().replace(/\s+/g, ' ');
-  return TMLSN_TOP_100_SORTED.some(
-    (entry) => name === entry || name.startsWith(entry + ',') || name.startsWith(entry + ' '),
-  );
+  if (isCompositeMealName(name)) return false;
+  return TMLSN_TOP_100_SORTED.some((entry) => {
+    if (name === entry || name.startsWith(entry + ',') || name.startsWith(entry + ' ')) return true;
+    if (name.includes(entry)) return true;
+    return nameMatchesEntryWithModifiers(name, entry);
+  });
 }
 
 /** True if food is USDA Foundation (quicksilver styling). Defensive on dataType. */
@@ -559,10 +609,68 @@ function sortVerifiedFirst(items: ParsedNutrition[]): ParsedNutrition[] {
   });
 }
 
+/** List Food only: penalty when result name indicates a different product than the query. */
+function getListFoodContradictionPenalty(query: string, resultName: string): number {
+  const q = query.toLowerCase().trim();
+  const name = resultName.toLowerCase().trim();
+  let penalty = 0;
+
+  // Chicken cuts: query says breast → penalize drumstick, thigh, wing, leg
+  if (/\bbreast\b/.test(q) && /\b(drumstick|thigh|wing|leg)\b/.test(name)) penalty += 100;
+  if (/\b(drumstick|thigh|wing|leg)\b/.test(q) && /\bbreast\b/.test(name)) penalty += 100;
+
+  // Bread: query says sourdough → penalize any bread that does not contain sourdough (white, whole wheat, commercially prepared, etc.)
+  if (/\bsourdough\b/.test(q) && /\bbread\b/.test(name) && !/\bsourdough\b/.test(name)) penalty += 100;
+
+  // Chicken: query says breast → penalize chicken/poultry result that does not contain breast (drumstick, thigh, or generic "meat only")
+  if (/\bbreast\b/.test(q) && /\b(chicken|poultry)\b/.test(name) && !/\bbreast\b/.test(name)) penalty += 100;
+
+  // Grain vs baked: query is oats (grain) → penalize "bread" (oat bread)
+  if (/\boats?\b/.test(q) && /\bbread\b/.test(name)) penalty += 100;
+
+  // Oats (grain) vs oat milk / beverage: query is oats → penalize oat milk, barista blend, beverage
+  if (/\boats?\b/.test(q) && !/\b(rolled|whole\s+grain|oat,)\b/.test(name) && /\b(milk|barista|blend|beverage)\b/.test(name)) penalty += 100;
+
+  // Coconut milk vs dairy milk: query has coconut → penalize dairy milk (whole milk, milk without coconut)
+  if (/\bcoconut\b/.test(q) && /\bmilk\b/.test(name) && !/\bcoconut\b/.test(name)) penalty += 100;
+
+  // Milk vs dairy products: query is milk (dairy) → penalize cheese, ricotta, yogurt, butter
+  if (/\bmilk\b/.test(q) && !/\bcoconut\b/.test(q) && /\b(ricotta|cheese|yogurt|yoghurt|butter)\b/.test(name)) penalty += 100;
+
+  // Powder vs flour: query says protein powder → penalize flour when protein not in result
+  if (/\bprotein\s+powder\b/.test(q) && /\bflour\b/.test(name) && !/\bprotein\b/.test(name)) penalty += 100;
+
+  // Rice protein powder vs prepared rice dishes: query has protein powder → penalize fried rice, restaurant, chinese
+  if (/\bprotein\s+powder\b/.test(q) && (/\b(fried|restaurant|chinese)\b/.test(name)) && !(/\bprotein\b/.test(name) && /\bpowder\b/.test(name))) penalty += 100;
+
+  return penalty;
+}
+
+/** List Food only: true if result is the same ingredient type as the query (no contradiction). Used as hard filter before ranking. */
+function listFoodCorresponds(canonicalQuery: string, resultName: string): boolean {
+  return getListFoodContradictionPenalty(canonicalQuery.trim().toLowerCase(), resultName.trim()) === 0;
+}
+
 function scoreResult(item: ParsedNutrition, query: string): number {
   let score = 0;
   const q = query.toLowerCase().trim();
-  const words = q.split(/\s+/);
+  const words = q.split(/\s+/).filter(Boolean);
+  const name = item.name.toLowerCase();
+
+  // Contradiction penalty: wrong product (drumstick vs breast, oat bread vs oats, ricotta vs milk, flour vs powder)
+  score -= getListFoodContradictionPenalty(q, item.name);
+
+  // Query says breast → strong bonus when result name contains breast (so "Chicken breast" beats long USDA "Chicken, meat only, boneless, skinless")
+  if (/\bbreast\b/.test(q) && /\bbreast\b/.test(name)) score += 50;
+
+  // Composite product penalty: when user types a simple ingredient (e.g. "apple", "olive oil"),
+  // prefer the actual ingredient over "apple + mango 1 fruit bar" or "olive oil with a dash of basil"
+  const isSimpleIngredientQuery = words.length <= 2 && !q.includes(' of ');
+  const hasPlusComposite = /\s+\+\s+/.test(item.name);
+  const hasExtraIngredient = /\s+with\s+a\s+(dash|splash|bit)\s+of\s+\w+/i.test(item.name);
+  if (isSimpleIngredientQuery && (hasPlusComposite || hasExtraIngredient)) {
+    score -= 80;
+  }
 
   // If query is a simple food word (no brand signals), prioritize unbranded
   const hasBrandSignal = words.some(
@@ -570,21 +678,40 @@ function scoreResult(item: ParsedNutrition, query: string): number {
   ) || q.includes("'s") || q.includes('brand');
 
   if (!hasBrandSignal && !item.brand) {
-    score += 100; // push unbranded basics to top
+    score += 100;
   }
 
   if (hasBrandSignal && item.brand && item.brand.includes(q)) {
-    score += 80; // brand match
+    score += 80;
+  }
+
+  // Prefer short / canonical names when no brand (e.g. "Chicken breast" over long USDA description)
+  if (!hasBrandSignal && item.name.length <= 40) {
+    score += 15; // short name bonus
+  }
+  if (!hasBrandSignal && (/\b(added|vitamin\s+d|%\s*milk|boneless|skinless|,\s*meat\s+only)\b/i.test(item.name))) {
+    score -= 25; // long/fortified descriptor penalty
+  }
+  // Stronger penalty for fortified milk (e.g. "with added vitamin D 3.25%") so plain "Whole milk" wins when available
+  if (!hasBrandSignal && /\bmilk\b/.test(q) && /\badded\b/i.test(item.name) && /\bvitamin\b/i.test(item.name)) {
+    score -= 50;
   }
 
   // Exact name match
   if (item.name === q) score += 50;
 
-  // Name starts with query
-  if (item.name.startsWith(q)) score += 30;
+  // Multi-word: large bonus when name starts with full query (e.g. "Chicken, breast" for "chicken breast")
+  if (words.length >= 2 && name.startsWith(q)) score += 40;
+  // Name starts with query (e.g. "Apples, raw" for "apple")
+  if (name.startsWith(q)) score += 30;
+
+  // Name is exactly the query plus common suffix
+  if (name === q || name === q + 's' || name.startsWith(q + ',') || name.startsWith(q + ' ')) {
+    score += 25;
+  }
 
   // Name contains query
-  if (item.name.includes(q)) score += 10;
+  if (name.includes(q)) score += 10;
 
   // Latin ratio as secondary sort factor
   score += Math.round(latinRatio(item.name) * 5);
@@ -628,14 +755,7 @@ export async function searchFoodsProgressive(
   const usdaAllPromise = searchFoodsUSDA(trimmed, half, 1, signal, [...USDA_DATA_TYPES]).catch(() => [] as ParsedNutrition[]);
   const offPromise = searchFoodsOFF(trimmed, half, 1, signal).catch(() => [] as ParsedNutrition[]);
 
-  const [verifiedRes, usdaAllRes, offRes] = await Promise.allSettled([
-    usdaVerifiedPromise,
-    usdaAllPromise,
-    offPromise,
-  ]);
-  const usdaVerified = verifiedRes.status === 'fulfilled' ? verifiedRes.value : [];
-  const usdaAll = usdaAllRes.status === 'fulfilled' ? usdaAllRes.value : [];
-  const off = offRes.status === 'fulfilled' ? offRes.value : [];
+  const [usdaVerified, usdaAll] = await Promise.all([usdaVerifiedPromise, usdaAllPromise]);
 
   const verifiedMatched = usdaVerified.filter((f) => nameMatchesQuery(f, trimmed));
   const verifiedFdcIds = new Set(verifiedMatched.map((f) => f.fdcId).filter((id): id is number => id != null));
@@ -647,11 +767,12 @@ export async function searchFoodsProgressive(
   );
   const usda = [...verifiedMatched, ...usdaRest];
 
-  // Emit USDA (Verified first) as soon as we have it
+  // Emit USDA immediately (gold/verified first) so first results show in ~1–2s
   if (usda.length > 0) {
     onResults(filterResults(sortVerifiedFirst(usda)));
   }
 
+  const off = await offPromise;
   const offFiltered = off.filter((f) => nameMatchesQuery(f, trimmed));
 
   const seenById = new Set<string>();
@@ -720,7 +841,9 @@ export async function searchFoodsProgressive(
         (f) => nameMatchesQuery(f, query) || (translateResult.text && nameMatchesQuery(f, translateResult.text)),
       );
       onResults(filterResults(sortVerifiedFirst(allMatched).slice(0, pageSize)));
-    } catch {}
+    } catch (err) {
+      if (__DEV__) console.warn('[Search] translation phase failed:', err instanceof Error ? err.message : err);
+    }
   }
 }
 
@@ -747,7 +870,8 @@ export async function searchFoodsNextPage(
       return true;
     });
     onResults(filterResults(sortVerifiedFirst(deduped)));
-  } catch {
+  } catch (err) {
+    if (__DEV__) console.warn('[Search] next page failed:', err instanceof Error ? err.message : err);
     onResults([]);
   }
 }
@@ -794,32 +918,146 @@ function applyWordLevelTypos(line: string): string {
   return corrected.join(' ').toLowerCase();
 }
 
-/** Runs one search and returns the first result or null. Used only by searchFoodFirstMatch. */
-function tryFirstMatchQuery(query: string): Promise<ParsedNutrition | null> {
+/** Prefixes that describe amount/serving, not the ingredient name. Strip so "with a dash of olive oil" → "olive oil". */
+const LIST_FOOD_AMOUNT_PREFIXES = [
+  /^\s*with\s+a\s+(dash|splash|bit|little)\s+of\s+/i,
+  /^\s*(?:a\s+)?(dash|splash|bit)\s+of\s+/i,
+  /^\s*\d+(\.\d+)?\s*(g|ml|oz|cup|cups|tbsp|tsp|scoop|scoops|slice|slices|serving|servings)?\s*(?:of\s+)?/i,
+];
+
+/** Single-word variants that are amount/serving only — never use as search query so "dash" doesn't drive the match. */
+const LIST_FOOD_AMOUNT_ONLY_WORDS = new Set(['dash', 'splash', 'bit', 'scoops', 'scoop', 'cups', 'cup', 'slices', 'slice', 'servings', 'serving']);
+function isAmountOnlyVariant(q: string): boolean {
+  const t = q.trim().toLowerCase();
+  if (!t) return true;
+  if (LIST_FOOD_AMOUNT_ONLY_WORDS.has(t)) return true;
+  if (/^\d+$/.test(t)) return true; // "1", "4"
+  if (/^\d+(\.\d+)?\s*(g|ml|oz|tbsp|tsp)$/.test(t)) return true; // "200g", "250ml"
+  return false;
+}
+
+/**
+ * Extracts the main ingredient name from a List Food phrase so the ingredient carries the weight, not "dash", "1", or "200g of".
+ * e.g. "with a dash of olive oil" → "olive oil", "1 apple" → "apple", "4 scoops of rice protein powder" → "rice protein powder".
+ */
+function extractListFoodIngredientName(phrase: string): string {
+  let s = phrase.trim();
+  if (!s) return s;
+  for (const re of LIST_FOOD_AMOUNT_PREFIXES) {
+    s = s.replace(re, '').trim();
+  }
+  return s || phrase.trim();
+}
+
+/** Word to number for quantity parsing (one, two, ... twenty, etc.). */
+const LIST_FOOD_NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, hundred: 100,
+};
+const ML_PER_CUP = 240;
+const G_PER_SLICE_BREAD = 30;
+const G_PER_SCOOP = 30;
+const ML_PER_TBSP = 15;
+const ML_PER_TSP = 5;
+const ML_PER_DASH = 5;   // "a dash of" olive oil, etc. (liquid)
+const G_PER_HANDFUL = 20; // "a handful of" arugula, greens
+const G_MEDIUM_APPLE = 182; // one apple (unspecified size → medium)
+
+/** Words that indicate a liquid for "dash of" → ml */
+const LIST_FOOD_LIQUID_WORDS = new Set(['oil', 'olive', 'milk', 'vinegar', 'juice', 'water', 'sauce', 'syrup']);
+
+/**
+ * Parses quantity from a List Food phrase (e.g. "250 grams of chicken breast", "one cup of milk").
+ * Returns amount and unit for pre-filling the confirm row; null when no quantity found.
+ */
+export function parseListFoodQuantity(phrase: string): { amount: number; unit: 'g' | 'ml' } | null {
+  const s = phrase.trim().toLowerCase();
+  if (!s) return null;
+
+  // "a dash of" / "dash of" + liquid (olive oil, oil, milk, etc.) → ml
+  const dashMatch = s.match(/^\s*(?:a\s+)?dash\s+of\s+(.+)$/);
+  if (dashMatch) {
+    const rest = dashMatch[1].trim().split(/\s+/);
+    if (rest.some((w) => LIST_FOOD_LIQUID_WORDS.has(w.replace(/,/g, '')))) return { amount: ML_PER_DASH, unit: 'ml' };
+  }
+
+  // "a handful of" / "handful of" / "one handful" → g
+  if (/^\s*(?:a\s+)?handful\s+of\s+\w+/i.test(s) || /^\s*(?:one|1)\s+handful\b/i.test(s)) {
+    return { amount: G_PER_HANDFUL, unit: 'g' };
+  }
+
+  // "one apple" / "1 apple" (no size) → medium apple in g
+  if (/^\s*(?:one|1)\s+apple\b(?!\s+(?:small|medium|large))/i.test(s)) return { amount: G_MEDIUM_APPLE, unit: 'g' };
+
+  // Numeric + unit at start: 250g, 250 g, 250 grams, 350ml, 350 ml, 350 milliliters
+  const numUnitMatch = s.match(/^\s*(\d+(?:\.\d+)?)\s*(g|gram|grams|ml|milliliter|milliliters)\b/i);
+  if (numUnitMatch) {
+    const amount = parseFloat(numUnitMatch[1]);
+    const u = numUnitMatch[2].toLowerCase();
+    if (u === 'g' || u.startsWith('gram')) return { amount: Math.round(amount), unit: 'g' };
+    if (u === 'ml' || u.startsWith('milliliter')) return { amount: Math.round(amount), unit: 'ml' };
+  }
+
+  // Word number + unit: one cup, 2 cups, one slice, 4 scoops, 1 tbsp, 2 tsp
+  const wordNumMatch = s.match(/^\s*(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(cup|cups|slice|slices|scoop|scoops|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\b/i);
+  if (wordNumMatch) {
+    const numStr = wordNumMatch[1].toLowerCase();
+    const n = LIST_FOOD_NUMBER_WORDS[numStr] ?? (parseInt(numStr, 10) || 1);
+    const unitWord = wordNumMatch[2].toLowerCase();
+    if (unitWord === 'cup' || unitWord === 'cups') return { amount: n * ML_PER_CUP, unit: 'ml' };
+    if (unitWord === 'slice' || unitWord === 'slices') return { amount: n * G_PER_SLICE_BREAD, unit: 'g' };
+    if (unitWord === 'scoop' || unitWord === 'scoops') return { amount: n * G_PER_SCOOP, unit: 'g' };
+    if (unitWord === 'tbsp' || unitWord === 'tablespoon' || unitWord === 'tablespoons') return { amount: n * ML_PER_TBSP, unit: 'ml' };
+    if (unitWord === 'tsp' || unitWord === 'teaspoon' || unitWord === 'teaspoons') return { amount: n * ML_PER_TSP, unit: 'ml' };
+  }
+
+  return null;
+}
+
+/** Picks best match: only candidates that correspond to the canonical ingredient (hard filter); then rank by score. Returns null if none correspond. */
+function pickBestForListFood(items: ParsedNutrition[], canonicalQuery: string): ParsedNutrition | null {
+  if (items.length === 0) return null;
+  const q = canonicalQuery.trim().toLowerCase();
+  const corresponding = items.filter((item) => listFoodCorresponds(q, item.name));
+  if (corresponding.length === 0) return null;
+  const byScore = (a: ParsedNutrition, b: ParsedNutrition) => scoreResult(a, canonicalQuery) - scoreResult(b, canonicalQuery);
+  const sorted = [...corresponding].sort((a, b) => byScore(b, a));
+  return sorted[0] ?? null;
+}
+
+/** Runs one search and returns the best match or null. Waits for full merged pool (USDA+OFF) before selecting. Uses canonicalForSelection for correspondence filter when provided (so variant "milk" does not accept dairy when user said "coconut milk"). */
+function tryFirstMatchQuery(query: string, canonicalForSelection?: string): Promise<ParsedNutrition | null> {
+  const trimmed = query.trim();
+  if (!trimmed) return Promise.resolve(null);
+  const canonical = (canonicalForSelection ?? trimmed).trim().toLowerCase();
+
+  const preloaded = getPreloadedResultsExact(trimmed);
+  if (preloaded.length > 0) {
+    const best = pickBestForListFood(preloaded, canonical);
+    if (best) return Promise.resolve(best);
+  }
+
   return new Promise((resolve) => {
-    let resolved = false;
-    searchFoodsProgressive(query, (results) => {
-      if (!resolved && results.length > 0) {
-        resolved = true;
-        resolve(results[0]);
-      }
-    }, 25).then(() => {
-      if (!resolved) resolve(null);
+    let fullPool: ParsedNutrition[] = [];
+    searchFoodsProgressive(trimmed, (results) => {
+      fullPool = results;
+    }, 40).then(() => {
+      const best = pickBestForListFood(fullPool, canonical);
+      resolve(best);
     });
   });
 }
 
-/** Returns the first search result for a query. Used by List Food; variants (with typo correction) are built by listFoodQueryVariants so we try each query once. */
-export async function searchFoodFirstMatch(query: string): Promise<ParsedNutrition | null> {
+/** Returns the first search result for a query. For List Food use canonicalForSelection so selection respects the user's ingredient (e.g. "coconut milk") not the variant used to fetch (e.g. "milk"). */
+export async function searchFoodFirstMatch(query: string, canonicalForSelection?: string): Promise<ParsedNutrition | null> {
   const q = query.trim();
   if (!q) return null;
-  return tryFirstMatchQuery(q);
+  return tryFirstMatchQuery(q, canonicalForSelection);
 }
 
-const LIST_FOOD_STOPWORDS = new Set(['and', 'with', 'the', 'a', 'an', '&']);
-
-/** Splits a List Food line into search tokens (e.g. "eggs and toast" → ["eggs", "toast"]). Filters empty and numbers-only tokens. */
-function getListFoodSearchTokens(line: string): string[] {
+/** Splits a List Food line into ingredients (e.g. "eggs and toast" → ["eggs", "toast"]). Splits on " and ", " with ", ", ", " & " only; filters empty and numbers-only. Export for nutrition screen so one line → one row per ingredient. */
+export function getListFoodSearchTokens(line: string): string[] {
   const trimmed = line.trim();
   if (!trimmed) return [];
   const parts = trimmed.split(/\s+(?:and|with|,|&)\s+|\s*,\s*/i).map((p) => p.trim()).filter(Boolean);
@@ -827,42 +1065,42 @@ function getListFoodSearchTokens(line: string): string[] {
 }
 
 /**
- * Builds ordered list of query variants for List Food: full line, word-level typo-corrected line,
- * then each token (typo-corrected), then first word. Deduped. Try order: full phrase first, then tokens so multi-food lines match.
+ * Builds query variants for List Food. The ingredient name always carries the most weight:
+ * we try the extracted ingredient first (e.g. "olive oil" from "with a dash of olive oil"),
+ * then full line, typo-corrected, then tokens. We do NOT add each word so phrases like
+ * "one cup of milk" don't collapse to "milk" only.
  */
 function listFoodQueryVariants(query: string): string[] {
   const trimmed = query.trim();
-  if (!trimmed) return [];
+  if (!trimmed || /^\d+$/.test(trimmed)) return [];
+  const ingredientFirst = extractListFoodIngredientName(trimmed);
   const fullTypoCorrected = applyWordLevelTypos(trimmed);
   const tokens = getListFoodSearchTokens(trimmed);
-  const tokensCorrected = tokens.map((t) => applyWordLevelTypos(t)).filter(Boolean);
-  const firstWord = trimmed.split(/\s+/)[0] ?? trimmed;
-  const firstWordCorrected = applyWordLevelTypos(firstWord);
-  const allWords = trimmed.split(/\s+/).filter((w) => !/^\d+$/.test(w) && !LIST_FOOD_STOPWORDS.has(w.toLowerCase()));
+  const tokensCorrected = tokens.map((t) => applyWordLevelTypos(extractListFoodIngredientName(t))).filter(Boolean);
 
   const seen = new Set<string>();
   const out: string[] = [];
   const add = (q: string) => {
     const qq = q.trim().toLowerCase();
-    if (!qq || seen.has(qq) || /^\d+$/.test(qq)) return;
+    if (!qq || seen.has(qq) || isAmountOnlyVariant(qq)) return;
     seen.add(qq);
     out.push(qq);
   };
 
+  // Ingredient name first so "dash" / "1" don't drive the match
+  add(ingredientFirst);
+  add(applyWordLevelTypos(ingredientFirst));
   add(trimmed);
   add(fullTypoCorrected);
   for (const t of tokensCorrected) add(t);
-  for (const w of allWords) add(applyWordLevelTypos(w));
-  add(firstWord);
-  add(firstWordCorrected);
 
   return out;
 }
 
 /**
- * Best-effort first match for List Food confirmation only. Try order: full line, typo-corrected line,
- * then tokens (multi-food), then words; first match wins. Never returns null: synthetic row (user text, 0 macros) if all fail.
- * Does not change search API behaviour used by search screen or Food Database Search modal.
+ * Best-effort first match for List Food. Uses canonical ingredient (extracted + typo-corrected) for correspondence:
+ * we try each variant to fetch a pool but only accept results that correspond to the canonical (e.g. "coconut milk" not "milk").
+ * Never returns null: synthetic row (user text, 0 macros) if no corresponding match.
  */
 export async function searchFoodFirstMatchBestEffort(query: string): Promise<ParsedNutrition> {
   const trimmed = query.trim();
@@ -879,9 +1117,10 @@ export async function searchFoodFirstMatchBestEffort(query: string): Promise<Par
       source: 'usda',
     };
   }
+  const canonicalIngredient = applyWordLevelTypos(extractListFoodIngredientName(trimmed)).trim().toLowerCase();
   const variants = listFoodQueryVariants(query);
-  for (const q of variants) {
-    const match = await searchFoodFirstMatch(q);
+  for (const variant of variants) {
+    const match = await searchFoodFirstMatch(variant, canonicalIngredient);
     if (match) return match;
   }
   return {
@@ -923,6 +1162,6 @@ export function preloadCommonSearches(): void {
           }
         })
         .catch(() => {});
-    }, 2000 + i * 400);
+    }, 400 + i * 300);
   });
 }
