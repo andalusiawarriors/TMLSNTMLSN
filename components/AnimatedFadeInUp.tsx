@@ -22,6 +22,8 @@ interface AnimatedFadeInUpProps {
   style?: ViewStyle;
   /** When this value changes, the animation restarts (e.g. for replay on screen focus) */
   trigger?: number;
+  /** Skip the animation and jump to completed state */
+  instant?: boolean;
 }
 
 export function AnimatedFadeInUp({
@@ -30,11 +32,17 @@ export function AnimatedFadeInUp({
   duration = DEFAULT_DURATION,
   style,
   trigger = 0,
+  instant = false,
 }: AnimatedFadeInUpProps) {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(20);
 
   useEffect(() => {
+    if (instant) {
+      opacity.value = 1;
+      translateY.value = 0;
+      return;
+    }
     opacity.value = 0;
     translateY.value = 20;
     opacity.value = withDelay(
@@ -45,7 +53,7 @@ export function AnimatedFadeInUp({
       delay,
       withTiming(0, { duration, easing: Easing.out(Easing.cubic) })
     );
-  }, [delay, duration, trigger]);
+  }, [delay, duration, trigger, instant]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

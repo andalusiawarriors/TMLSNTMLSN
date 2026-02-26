@@ -516,6 +516,7 @@ export async function supabaseSaveWorkoutSession(
           weight: Number(s.weight ?? 0),
           reps: Number(s.reps ?? 0),
           completed: Boolean(s.completed ?? false),
+          notes: s.notes ?? null,
         });
       }
     }
@@ -563,6 +564,7 @@ function assembleWorkoutSession(
         weight: Number(sr.weight ?? 0),
         reps: Number(sr.reps ?? 0),
         completed: Boolean(sr.completed ?? false),
+        notes: sr.notes != null ? String(sr.notes) : undefined,
       }));
       return {
         id: String(er.id ?? ''),
@@ -733,25 +735,25 @@ function mapSavedRoutineRowToRoutine(row: Record<string, unknown>): SavedRoutine
   const ex = row.exercises_json;
   const exercises = Array.isArray(ex)
     ? (
-        ex as {
-          id?: string;
-          name?: string;
-          restTimer?: number;
-          exerciseDbId?: string;
-          targetSets?: number;
-          targetReps?: number;
-          suggestedWeight?: number;
-        }[]
-      ).map((e) => ({
-        id: String(e?.id ?? ''),
-        name: String(e?.name ?? ''),
-        restTimer: Number(e?.restTimer ?? 0),
-        exerciseDbId: e?.exerciseDbId,
-        targetSets: Number(e?.targetSets ?? 3),
-        targetReps: Number(e?.targetReps ?? 8),
-        suggestedWeight:
-          e?.suggestedWeight != null && e.suggestedWeight >= 0 ? Number(e.suggestedWeight) : undefined,
-      }))
+      ex as {
+        id?: string;
+        name?: string;
+        restTimer?: number;
+        exerciseDbId?: string;
+        targetSets?: number;
+        targetReps?: number;
+        suggestedWeight?: number;
+      }[]
+    ).map((e) => ({
+      id: String(e?.id ?? ''),
+      name: String(e?.name ?? ''),
+      restTimer: Number(e?.restTimer ?? 0),
+      exerciseDbId: e?.exerciseDbId,
+      targetSets: Number(e?.targetSets ?? 3),
+      targetReps: Number(e?.targetReps ?? 8),
+      suggestedWeight:
+        e?.suggestedWeight != null && e.suggestedWeight >= 0 ? Number(e.suggestedWeight) : undefined,
+    }))
     : [];
   return {
     id: String(row.id ?? ''),

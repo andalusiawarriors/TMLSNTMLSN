@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  FlatList,
   TouchableOpacity,
   Pressable,
   Modal,
@@ -16,6 +15,8 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
+  TextInput,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,11 +51,10 @@ import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { BlurView } from 'expo-blur';
-import { Heart, UserCircle, UserPlus, At } from 'phosphor-react-native';
+import { UserPlus, At, Gear, List } from 'phosphor-react-native';
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { BackButton } from '../../../components/BackButton';
-import { ExploreProfileModal } from '../../../components/explore/ExploreProfileModal';
 import Slider from '@react-native-community/slider';
 
 
@@ -126,81 +126,70 @@ if (__DEV__) {
   console.log('[Workout Set Table] column flex:', SET_TABLE_FLEX, 'input maxWidth=', SET_INPUT_MAX_WIDTH);
 }
 
-// ── Explore feed types and mock data ─────────────────────────────────────────
-type FeedPost = {
-  type: 'post';
-  id: string;
-  authorName: string;
-  authorHandle: string;
-  caption: string;
-  likes: number;
-  comments: number;
-  timeAgo: string;
-};
-
-type SuggestedProfile = {
-  id: string;
-  name: string;
-  username: string;
-};
-
-type FeedSuggested = {
-  type: 'suggested';
-  id: string;
-  profiles: SuggestedProfile[];
-};
-
-type FeedItem = FeedPost | FeedSuggested;
-
-type MockPostInput = Omit<FeedPost, 'id' | 'type'>;
-const MOCK_POSTS: MockPostInput[] = [
-  { authorName: 'Alex', authorHandle: 'alex_fit', caption: 'Push day done. 3 plates on bench.', likes: 24, comments: 3, timeAgo: '2h' },
-  { authorName: 'Jordan', authorHandle: 'jordan_lifts', caption: 'New PR on deadlift. 180 kg.', likes: 89, comments: 12, timeAgo: '5h' },
-  { authorName: 'Sam', authorHandle: 'sam_trains', caption: 'Morning session. Consistency over intensity.', likes: 15, comments: 1, timeAgo: '8h' },
-  { authorName: 'Casey', authorHandle: 'casey_gains', caption: 'Leg day. Squats and RDLs.', likes: 42, comments: 5, timeAgo: '1d' },
-  { authorName: 'Riley', authorHandle: 'riley_strong', caption: 'Upper body focus. Feeling strong.', likes: 31, comments: 2, timeAgo: '1d' },
-];
-
-const MOCK_SUGGESTED: SuggestedProfile[] = [
-  { id: 's1', name: 'Morgan', username: 'morgan_fit' },
-  { id: 's2', name: 'Taylor', username: 'taylor_lifts' },
-  { id: 's3', name: 'Quinn', username: 'quinn_trains' },
-  { id: 's4', name: 'Drew', username: 'drew_gains' },
-  { id: 's5', name: 'Jamie', username: 'jamie_strong' },
-];
-
-function buildInitialFeedItems(): FeedItem[] {
-  const items: FeedItem[] = [];
-  let postIndex = 0;
-  let suggestedIndex = 0;
-  for (let i = 0; i < 12; i++) {
-    if (i > 0 && i % 4 === 0) {
-      const batch = MOCK_SUGGESTED.slice(suggestedIndex % MOCK_SUGGESTED.length, (suggestedIndex % MOCK_SUGGESTED.length) + 3);
-      if (batch.length) {
-        items.push({ type: 'suggested', id: `sug-${suggestedIndex}`, profiles: batch });
-        suggestedIndex++;
-      }
-    }
-    const p = MOCK_POSTS[postIndex % MOCK_POSTS.length];
-    items.push({
-      type: 'post',
-      id: `post-${postIndex}`,
-      authorName: p.authorName,
-      authorHandle: p.authorHandle,
-      caption: p.caption,
-      likes: p.likes,
-      comments: p.comments,
-      timeAgo: ['2h', '5h', '8h', '1d', '2d'][postIndex % 5],
-    });
-    postIndex++;
-  }
-  return items;
-}
-
 export type WorkoutScreenModalProps = {
   asModal?: boolean;
   initialActiveWorkout?: WorkoutSession | null;
   onCloseModal?: () => void;
+};
+
+const AnimatedSetNote = ({
+  notes,
+  isExpanded,
+  onToggle,
+  onEdit
+}: {
+  notes: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+}) => {
+  const { colors } = useTheme();
+  const open = useSharedValue(isExpanded ? 1 : 0);
+
+  useEffect(() => {
+    open.value = withTiming(isExpanded ? 1 : 0, {
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isExpanded]);
+
+  const bubbleStyle = useAnimatedStyle(() => {
+    const v = open.value;
+    return {
+      transform: [{ scale: 0.985 + 0.015 * v }],
+      opacity: 0.85 + 0.15 * v,
+    };
+  });
+
+  return (
+    <Pressable onPress={onToggle} hitSlop={8}>
+      <AnimatedReanimated.View style={[styles.setNoteRowInner, bubbleStyle]}>
+        {!isExpanded ? (
+          <>
+            <Text style={styles.setNoteText} numberOfLines={2} ellipsizeMode="tail">
+              {notes}
+            </Text>
+            <Text style={styles.setNoteFadeHint}>tap to expand</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.setNoteTextExpanded}>
+              {notes}
+            </Text>
+            <Text style={styles.setNoteFadeHint}>tap to collapse</Text>
+
+            <TouchableOpacity
+              onPress={onEdit}
+              style={styles.setNoteEditButton}
+            >
+              <Ionicons name="pencil-sharp" size={14} color={colors.primaryLight + '60'} />
+              <Text style={styles.setNoteEditButtonText}>Edit Note</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </AnimatedReanimated.View>
+    </Pressable>
+  );
 };
 
 export default function WorkoutScreen({
@@ -244,11 +233,6 @@ export default function WorkoutScreen({
   const [restEditSeconds, setRestEditSeconds] = useState(0);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [animTrigger, setAnimTrigger] = useState(0);
-
-  // Explore feed and notifications
-  const [showNotificationsPopup, setShowNotificationsPopup] = useState(false);
-  const [showExploreProfile, setShowExploreProfile] = useState(false);
-  const [feedItems, setFeedItems] = useState<FeedItem[]>(() => buildInitialFeedItems());
 
   // Rest Timer State
   const [restTimerActive, setRestTimerActive] = useState(false);
@@ -322,6 +306,13 @@ export default function WorkoutScreen({
   const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
   /** Keyboard height for positioning the confirm bar above the keyboard. */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Set/Exercise-level notes editor state
+  const [showSetNotesModal, setShowSetNotesModal] = useState(false);
+  const [editingNotes, setEditingNotes] = useState<{ exerciseIndex: number; setIndex?: number } | null>(null);
+  const [setNotesText, setSetNotesText] = useState('');
+  // Track which set notes are expanded
+  const [expandedSetNotes, setExpandedSetNotes] = useState<Record<string, boolean>>({});
 
   const { playIn, playOut } = useButtonSound();
 
@@ -595,7 +586,40 @@ export default function WorkoutScreen({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const updateSet = (exerciseIndex: number, setIndex: number, updates: { weight?: number; reps?: number; completed?: boolean }) => {
+  const openSetNotesModal = (exerciseIndex: number, setIndex: number) => {
+    const set = activeWorkout?.exercises[exerciseIndex]?.sets[setIndex];
+    if (set) {
+      setEditingNotes({ exerciseIndex, setIndex });
+      setSetNotesText(set.notes || '');
+      setShowSetNotesModal(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const openExerciseNotesModal = (exerciseIndex: number) => {
+    const exercise = activeWorkout?.exercises[exerciseIndex];
+    if (exercise) {
+      setEditingNotes({ exerciseIndex });
+      setSetNotesText(exercise.notes || '');
+      setShowSetNotesModal(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const saveNotes = () => {
+    if (editingNotes) {
+      if (editingNotes.setIndex !== undefined) {
+        updateSet(editingNotes.exerciseIndex, editingNotes.setIndex, { notes: setNotesText });
+      } else {
+        updateExerciseNotes(editingNotes.exerciseIndex, setNotesText);
+      }
+      setShowSetNotesModal(false);
+      setEditingNotes(null);
+      setSetNotesText('');
+    }
+  };
+
+  const updateSet = (exerciseIndex: number, setIndex: number, updates: { weight?: number; reps?: number; completed?: boolean; notes?: string }) => {
     if (!activeWorkout) return;
     const exercise = activeWorkout.exercises[exerciseIndex];
     if (!exercise || !exercise.sets[setIndex]) return;
@@ -612,6 +636,7 @@ export default function WorkoutScreen({
       ...(weightUpdate !== undefined && { weight: weightUpdate }),
       ...(updates.reps !== undefined && { reps: updates.reps }),
       ...(updates.completed !== undefined && { completed: updates.completed }),
+      ...(updates.notes !== undefined && { notes: updates.notes }),
     };
 
     const updatedExercises = [...activeWorkout.exercises];
@@ -668,6 +693,13 @@ export default function WorkoutScreen({
 
     setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const updateExerciseNotes = (exerciseIndex: number, notes: string) => {
+    if (!activeWorkout) return;
+    const updatedExercises = [...activeWorkout.exercises];
+    updatedExercises[exerciseIndex] = { ...updatedExercises[exerciseIndex], notes };
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
   };
 
   const updateExerciseRestTimer = (exerciseIndex: number, restTimer: number) => {
@@ -811,9 +843,8 @@ export default function WorkoutScreen({
       setCurrentExerciseIndex(0);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success!', 'Workout saved successfully', [
-        { text: 'OK', onPress: () => onCloseModal?.() },
-      ]);
+      onCloseModal?.();
+      router.push({ pathname: '/workout-save', params: { sessionId: payload.id } });
     } catch (e) {
       if (__DEV__) console.warn('[Workout UI] save failed:', e);
       Alert.alert('Save failed', 'Could not save workout. Try again.', [{ text: 'OK' }]);
@@ -911,203 +942,70 @@ export default function WorkoutScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      {/* Explore background: same as homepage (nutrition) – image + gradient overlay */}
-      {!asModal && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-          <ImageBackground
-            source={require('../../../assets/home-background.png')}
-            style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
-            resizeMode="cover"
-          >
-            <LinearGradient
-              colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-              locations={[0, 0.2, 0.35, 0.45, 0.65]}
-              style={StyleSheet.absoluteFill}
-            />
-          </ImageBackground>
-        </View>
-      )}
-      {/* Main menu – hidden when asModal (FAB opened from another tab); only overlay is shown */}
-      {!asModal && (
+      {/* Workout home – background, header (settings | history), three start buttons */}
+      {!asModal && !activeWorkout && (
         <>
-          {/* Explore header: 54px from top edge; absolute overlay; Heart (left) | Profile (right); no title */}
+          <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
+            <ImageBackground
+              source={require('../../../assets/home-background.png')}
+              style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
+              resizeMode="cover"
+            >
+              <LinearGradient
+                colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+                locations={[0, 0.2, 0.35, 0.45, 0.65]}
+                style={StyleSheet.absoluteFill}
+              />
+            </ImageBackground>
+          </View>
           <View
             style={[
               styles.exploreHeader,
               styles.exploreHeaderOverlay,
-              {
-                paddingTop: 54,
-                paddingHorizontal: Spacing.md + (insets.left || 0),
-                paddingRight: Spacing.md + (insets.right || 0),
-              },
+              { paddingTop: 54, paddingHorizontal: Spacing.md + (insets.left || 0), paddingRight: Spacing.md + (insets.right || 0) },
             ]}
-            pointerEvents="box-none"
           >
-            <Pressable
-              onPress={() => setShowNotificationsPopup(true)}
-              style={styles.exploreHeaderIconWrap}
-              hitSlop={12}
-            >
-              <Heart size={24} weight="regular" color={colors.primaryLight} />
+            <Pressable onPress={() => router.push('/workout/settings')} style={styles.exploreHeaderIconWrap} hitSlop={12}>
+              <Gear size={24} weight="regular" color={colors.primaryLight} />
             </Pressable>
             <View style={styles.exploreHeaderSpacer} />
-            <Pressable
-              onPress={() => setShowExploreProfile(true)}
-              style={styles.exploreHeaderIconWrap}
-              hitSlop={12}
-            >
-              <UserCircle size={24} weight="regular" color={colors.primaryLight} />
+            <Pressable onPress={() => router.push('/workout-history')} style={styles.exploreHeaderIconWrap} hitSlop={12}>
+              <List size={24} weight="regular" color={colors.primaryLight} />
             </Pressable>
           </View>
-
-          <FlatList
-            data={feedItems}
-            keyExtractor={(item) => item.id}
-            style={styles.exploreFeedList}
-            renderItem={({ item }) => {
-              if (item.type === 'post') {
-                return (
-                  <View style={[styles.feedPostCard, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '20' }]}>
-                    <View style={[styles.feedPostMedia, { backgroundColor: colors.primaryLight + '12' }]} />
-                    <View style={styles.feedPostHeader}>
-                      <View style={[styles.feedPostAvatar, { backgroundColor: colors.primaryLight + '25' }]}>
-                        <Text style={[styles.feedPostAvatarText, { color: colors.primaryLight }]}>{item.authorName[0]}</Text>
-                      </View>
-                      <View style={styles.feedPostMeta}>
-                        <Text style={[styles.feedPostAuthor, { color: colors.primaryLight }]} numberOfLines={1}>{item.authorName}</Text>
-                        <Text style={[styles.feedPostHandle, { color: colors.primaryLight + '99' }]} numberOfLines={1}>@{item.authorHandle} · {item.timeAgo}</Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.feedPostCaption, { color: colors.primaryLight }]}>{item.caption}</Text>
-                    <View style={styles.feedPostFooter}>
-                      <Text style={[styles.feedPostStats, { color: colors.primaryLight + '99' }]}>{item.likes} likes · {item.comments} comments</Text>
-                    </View>
-                  </View>
-                );
-              }
-              return (
-                <View style={[styles.feedSuggestedBlock, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '20' }]}>
-                  <Text style={[styles.feedSuggestedTitle, { color: colors.primaryLight }]}>Suggested for you</Text>
-                  {item.profiles.map((profile) => (
-                    <View key={profile.id} style={styles.feedSuggestedRow}>
-                      <View style={[styles.feedPostAvatar, styles.feedSuggestedAvatar, { backgroundColor: colors.primaryLight + '25' }]}>
-                        <Text style={[styles.feedPostAvatarText, { color: colors.primaryLight }]}>{profile.name[0]}</Text>
-                      </View>
-                      <View style={styles.feedSuggestedMeta}>
-                        <Text style={[styles.feedPostAuthor, { color: colors.primaryLight }]} numberOfLines={1}>{profile.name}</Text>
-                        <Text style={[styles.feedPostHandle, { color: colors.primaryLight + '99' }]} numberOfLines={1}>@{profile.username}</Text>
-                      </View>
-                      <Pressable style={[styles.feedFollowButton, { backgroundColor: colors.primaryLight }]}>
-                        <Text style={[styles.feedFollowButtonText, { color: colors.primaryDark }]}>Follow</Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              );
-            }}
-            contentContainerStyle={{
-              paddingHorizontal: Spacing.md,
-              paddingBottom: Math.max(Spacing.lg, insets.bottom + 100),
-              paddingTop: 54 + 40 + Spacing.sm,
-            }}
-            onEndReached={() => {
-              const next = feedItems.length;
-              const more: FeedItem[] = [];
-              for (let i = 0; i < 4; i++) {
-                const p = MOCK_POSTS[(next + i) % MOCK_POSTS.length];
-                more.push({
-                  type: 'post',
-                  id: `post-${next + i}`,
-                  authorName: p.authorName,
-                  authorHandle: p.authorHandle,
-                  caption: p.caption,
-                  likes: p.likes,
-                  comments: p.comments,
-                  timeAgo: ['2h', '5h', '8h', '1d', '2d'][(next + i) % 5],
-                });
-              }
-              if (next > 0 && next % 8 === 0) {
-                const start = (next / 4) % MOCK_SUGGESTED.length;
-                more.unshift({
-                  type: 'suggested',
-                  id: `sug-${next}`,
-                  profiles: MOCK_SUGGESTED.slice(start, start + 3),
-                });
-              }
-              setFeedItems((prev) => [...prev, ...more]);
-            }}
-            onEndReachedThreshold={0.4}
-          />
-
-          {/* Notifications popup (heart tap) – back at 54px from top; modal-level back row per nutrition pattern */}
-          <Modal
-            visible={showNotificationsPopup}
-            animationType="fade"
-            transparent
-            onRequestClose={() => setShowNotificationsPopup(false)}
+          <ScrollView
+            contentContainerStyle={[
+              styles.workoutHomeContent,
+              { paddingTop: 54 + 48, paddingBottom: Math.max(Spacing.xl, insets.bottom + 100), paddingHorizontal: Spacing.lg },
+            ]}
+            showsVerticalScrollIndicator={false}
           >
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowNotificationsPopup(false)}>
-              <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
-            </Pressable>
-            <View style={[styles.notificationsBackRowModal, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
-              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => setShowNotificationsPopup(false)} />
-            </View>
-            <View style={[styles.notificationsPopupContent, { top: 54, height: windowHeight - 54 - 24 - insets.bottom, paddingBottom: 24 + insets.bottom }]} pointerEvents="box-none">
-              <View style={[styles.notificationsPopupInner, { flex: 1 }]}>
-                <ScrollView style={styles.notificationsScroll} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.notificationsScrollContent, { paddingTop: 54 + 48, paddingBottom: Spacing.lg + insets.bottom }]}>
-                  <Text style={[styles.notificationsPopupTitle, { color: colors.primaryLight }]}>Notifications</Text>
-                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>Today</Text>
-                  {[
-                    { id: '1', from: 'Alex', text: 'liked your post', time: '2h', hasThumb: true },
-                    { id: '2', from: 'Jordan', text: 'liked your post', time: '5h', hasThumb: true },
-                  ].map((n) => (
-                    <View key={n.id} style={styles.notificationRow}>
-                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
-                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
-                      </View>
-                      <View style={styles.notificationCenter}>
-                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
-                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
-                      </View>
-                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
-                    </View>
-                  ))}
-                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>This week</Text>
-                  {[
-                    { id: '3', from: 'Sam', text: 'followed you', time: '2d', hasThumb: false },
-                  ].map((n) => (
-                    <View key={n.id} style={styles.notificationRow}>
-                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
-                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
-                      </View>
-                      <View style={styles.notificationCenter}>
-                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
-                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
-                      </View>
-                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
-                    </View>
-                  ))}
-                  <Text style={[styles.notificationsSectionLabel, { color: colors.primaryLight + '99' }]}>Earlier</Text>
-                  {[
-                    { id: '4', from: 'Casey', text: 'mentioned you in a post', time: '1w', hasThumb: true },
-                  ].map((n) => (
-                    <View key={n.id} style={styles.notificationRow}>
-                      <View style={[styles.notificationAvatar, { backgroundColor: colors.primaryLight + '20' }]}>
-                        <Text style={[styles.notificationAvatarText, { color: colors.primaryLight }]}>{n.from[0]}</Text>
-                      </View>
-                      <View style={styles.notificationCenter}>
-                        <Text style={[styles.notificationText, { color: colors.primaryLight }]}><Text style={[styles.notificationTextBold, { color: colors.primaryLight }]}>{n.from}</Text> {n.text}</Text>
-                        {n.time ? <Text style={[styles.notificationSecondary, { color: colors.primaryLight + '99' }]}>{n.time}</Text> : null}
-                      </View>
-                      {n.hasThumb ? <View style={[styles.notificationThumb, { backgroundColor: colors.primaryLight + '15' }]} /> : null}
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </Modal>
-
-          <ExploreProfileModal visible={showExploreProfile} onClose={() => setShowExploreProfile(false)} />
+            <Text style={[styles.workoutHomeTitle, { color: colors.primaryLight }]}>Start workout</Text>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push('/workout/tmlsn-routines')}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>TMLSN workouts</Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push('/workout/your-routines')}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>Your workouts</Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push({ pathname: '/workout', params: { startEmpty: '1' } })}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>Empty workout</Text>
+            </AnimatedPressable>
+          </ScrollView>
         </>
       )}
 
@@ -1312,7 +1210,11 @@ export default function WorkoutScreen({
                       ) : null}
 
                       {/* Notes */}
-                      <Text style={[styles.notesPlaceholder, { color: colors.primaryLight + '50' }]}>+ Add notes</Text>
+                      <Pressable onPress={() => openExerciseNotesModal(exerciseIndex)}>
+                        <Text style={[styles.notesPlaceholder, { color: colors.primaryLight + (exercise.notes ? '90' : '50') }]}>
+                          {exercise.notes ? exercise.notes : '+ Add notes'}
+                        </Text>
+                      </Pressable>
 
                       {/* Set table header — same flex column ratios as row cells */}
                       <View style={styles.setTableHeader}>
@@ -1338,7 +1240,11 @@ export default function WorkoutScreen({
                         const isCompleted = set.completed;
                         const rowKey = `${exerciseIndex}-${setIndex}`;
                         return (
-                          <View key={set.id}>
+                          <View
+                            key={set.id}
+                            style={styles.setBlock}
+                            onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
+                          >
                             <Swipeable
                               renderRightActions={() => (
                                 <Pressable
@@ -1354,258 +1260,255 @@ export default function WorkoutScreen({
                               rightThreshold={40}
                             >
                               <View
-                                onLayout={(e) => setTableRowYRef.current.set(rowKey, e.nativeEvent.layout.y)}
                                 style={[
-                                  styles.setRow,
-                                  { width: '100%', minHeight: SET_ROW_HEIGHT },
-                                  isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', marginTop: 6 },
+                                  styles.setRowWrapper,
+                                  isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20' },
                                   pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
                                 ]}
                               >
-                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
-                                  <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
-                                    <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
-                                      {setIndex + 1}
-                                    </Text>
-                                  </View>
-                                </View>
-
-                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
-                                  <View style={styles.setPreviousTextWrap}>
-                                    <Text
-                                      style={[styles.setCellDim, { color: colors.primaryLight + '50' }, isCompleted && { color: colors.primaryLight + '70' }]}
-                                      numberOfLines={1}
-                                      ellipsizeMode="tail"
+                                <View style={[styles.setRow, { borderBottomWidth: 1 }]}>
+                                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.set }]}>
+                                    <TouchableOpacity
+                                      onPress={() => openSetNotesModal(exerciseIndex, setIndex)}
+                                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                      style={styles.setDotPressable}
                                     >
-                                      {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
-                                        ? `${formatWeightDisplay(toDisplayWeight(exercise.sets[setIndex - 1].weight, weightUnit), weightUnit)}×${exercise.sets[setIndex - 1].reps}`
-                                        : '—'}
-                                    </Text>
-                                  </View>
-                                </View>
-
-                                <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
-                                  <View style={styles.setCellContentCenter}>
-                                    {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
-                                      <View
-                                        ref={(r) => { focusedInputWrapperRef.current = r; }}
-                                        onLayout={(e) => {
-                                          if (!__DEV__) return;
-                                          const { width, height } = e.nativeEvent.layout;
-                                          console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width, height });
-                                        }}
-                                        style={[
-                                          styles.setInputCellBase,
-                                          { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
-                                          styles.setInputCellActiveVisual,
-                                          { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                          // overflow:hidden removed — it clips the glow shadow and can disturb the native
-                                          // TextInput hit-test, causing spurious blurs on rapid re-taps.
-                                        ]}
-                                        collapsable={false}
-                                      >
-                                        <Input
-                                          value={editingCellValue}
-                                          onChangeText={(text) => {
-                                            setEditingCellValue(text);
-                                            if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
-                                          }}
-                                          onFocus={() => {
-                                            // DO NOT call setEditingCell / setEditingCellValue here.
-                                            // Both are already set by the Pressable onPress handler that
-                                            // switched this branch to the active Input. Re-setting them
-                                            // triggers an extra render which can fire onBlur on some RN
-                                            // versions → commitActiveFieldIfNeeded runs with an empty draft
-                                            // and strands commitInProgressRef in the locked state.
-                                            scrollToSetRow(exerciseIndex, setIndex);
-                                            if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'weight', currentDraft: editingCellValue });
-                                          }}
-                                          onBlur={() => commitActiveFieldIfNeeded('blur')}
-                                          onEndEditing={() => { }}
-                                          autoFocus
-                                          keyboardType="decimal-pad"
-                                          placeholder="—"
-                                          multiline={false}
-                                          maxLength={5}
-                                          containerStyle={styles.setInputCellInner}
-                                          style={[
-                                            styles.setInputTextVisible,
-                                            styles.setInputFixedDimensions,
-                                            { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
-                                          ]}
-                                          placeholderTextColor={colors.primaryLight + '50'}
-                                          selectionColor={colors.primaryLight + '60'}
-                                          includeFontPadding={false}
-                                          textAlignVertical="center"
-                                          underlineColorAndroid="transparent"
-                                        />
-                                      </View>
-                                    ) : (
-                                      <Pressable
-                                        onPressIn={playIn}
-                                        onPressOut={playOut}
-                                        onPress={() => {
-                                          const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                          setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                          setEditingCellValue(displayValue);
-                                          if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
-                                        }}
-                                        style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                      >
-                                        <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                          {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
+                                      <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
+                                        <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
+                                          {setIndex + 1}
                                         </Text>
-                                      </Pressable>
-                                    )}
-                                  </View>
-                                </View>
-
-                                <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
-                                  <View style={styles.setCellContentCenter}>
-                                    {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
-                                      <View
-                                        ref={(r) => { focusedInputWrapperRef.current = r; }}
-                                        onLayout={(e) => {
-                                          if (!__DEV__) return;
-                                          const { width, height } = e.nativeEvent.layout;
-                                          console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width, height });
-                                        }}
-                                        style={[
-                                          styles.setInputCellBase,
-                                          { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
-                                          styles.setInputCellActiveVisual,
-                                          { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                          // overflow:hidden removed — same reason as weight cell above.
-                                        ]}
-                                        collapsable={false}
-                                      >
-                                        <Input
-                                          value={editingCellValue}
-                                          onChangeText={(text) => {
-                                            setEditingCellValue(text);
-                                            if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
-                                          }}
-                                          onFocus={() => {
-                                            // DO NOT call setEditingCell / setEditingCellValue here.
-                                            // See weight onFocus comment above for the full explanation.
-                                            scrollToSetRow(exerciseIndex, setIndex);
-                                            if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'reps', currentDraft: editingCellValue });
-                                          }}
-                                          onBlur={() => commitActiveFieldIfNeeded('blur')}
-                                          onEndEditing={() => { }}
-                                          autoFocus
-                                          keyboardType="number-pad"
-                                          placeholder="—"
-                                          multiline={false}
-                                          maxLength={4}
-                                          containerStyle={styles.setInputCellInner}
-                                          style={[
-                                            styles.setInputTextVisible,
-                                            styles.setInputFixedDimensions,
-                                            { color: colors.primaryLight, backgroundColor: 'transparent', outlineStyle: 'none' as const },
-                                          ]}
-                                          placeholderTextColor={colors.primaryLight + '50'}
-                                          selectionColor={colors.primaryLight + '60'}
-                                          includeFontPadding={false}
-                                          textAlignVertical="center"
-                                          underlineColorAndroid="transparent"
-                                        />
                                       </View>
-                                    ) : (
-                                      <Pressable
-                                        onPressIn={playIn}
-                                        onPressOut={playOut}
-                                        onPress={() => {
-                                          const displayValue = set.reps > 0 ? String(set.reps) : '';
-                                          setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                          setEditingCellValue(displayValue);
-                                          if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
-                                        }}
-                                        style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                      >
-                                        <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                          {set.reps > 0 ? String(set.reps) : '—'}
-                                        </Text>
-                                      </Pressable>
-                                    )}
+                                    </TouchableOpacity>
                                   </View>
-                                </View>
 
-                                <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
-                                  <View style={styles.setCellContentCenter}>
-                                    <Pressable
-                                      style={[styles.setCheckWrap, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}
-                                      onPressIn={() => {
-                                        playIn();
-                                        setPressedCheckRowKey(rowKey);
-                                      }}
-                                      onPressOut={() => {
-                                        playOut();
-                                        setPressedCheckRowKey(null);
-                                      }}
-                                      onPress={() => {
-                                        const nextCompleted = !set.completed;
-                                        const isEditingThisSet =
-                                          editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
-                                        if (isEditingThisSet && editingCell) {
-                                          const { field } = editingCell;
-                                          if (field === 'weight') {
-                                            const n = parseNumericInput(editingCellValue, 'float');
-                                            if (n !== null) {
-                                              updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
-                                              if (__DEV__) {
-                                                console.log('[Workout Field Commit]', { setId: set.id, field: 'weight', parsed: n, source: 'check' });
-                                                console.log('[Workout Set Commit]', {
-                                                  setId: set.id,
-                                                  completed: nextCompleted,
-                                                  weightRawLb: fromDisplayWeight(n, weightUnit),
-                                                  reps: set.reps,
-                                                });
+                                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.previous }]}>
+                                    <View style={styles.setPreviousTextWrap}>
+                                      <Text
+                                        style={[styles.setCellDim, { color: colors.primaryLight + '50' }, isCompleted && { color: colors.primaryLight + '70' }]}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                      >
+                                        {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
+                                          ? `${formatWeightDisplay(toDisplayWeight(exercise.sets[setIndex - 1].weight, weightUnit), weightUnit)}×${exercise.sets[setIndex - 1].reps}`
+                                          : '—'}
+                                      </Text>
+                                    </View>
+                                  </View>
+
+                                  <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
+                                    <View style={styles.setCellContentCenter}>
+                                      {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
+                                        <View
+                                          ref={(r) => { focusedInputWrapperRef.current = r; }}
+                                          onLayout={(e) => {
+                                            if (!__DEV__) return;
+                                            const { width, height } = e.nativeEvent.layout;
+                                            console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'weight', width, height });
+                                          }}
+                                          style={[
+                                            styles.setInputCellBase,
+                                            { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                            styles.setInputCellActiveVisual,
+                                            { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                          ]}
+                                          collapsable={false}
+                                        >
+                                          <Input
+                                            value={editingCellValue}
+                                            onChangeText={(text) => {
+                                              setEditingCellValue(text);
+                                              if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'weight', draft: text });
+                                            }}
+                                            onFocus={() => {
+                                              scrollToSetRow(exerciseIndex, setIndex);
+                                              if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'weight', currentDraft: editingCellValue });
+                                            }}
+                                            onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                            onEndEditing={() => { }}
+                                            autoFocus
+                                            keyboardType="decimal-pad"
+                                            placeholder="—"
+                                            multiline={false}
+                                            maxLength={5}
+                                            containerStyle={styles.setInputCellInner}
+                                            style={[
+                                              styles.setInputTextVisible,
+                                              styles.setInputFixedDimensions,
+                                              { color: colors.primaryLight, backgroundColor: 'transparent' },
+                                            ]}
+                                            placeholderTextColor={colors.primaryLight + '50'}
+                                            selectionColor={colors.primaryLight + '60'}
+                                            textAlignVertical="center"
+                                          />
+                                        </View>
+                                      ) : (
+                                        <Pressable
+                                          onPressIn={playIn}
+                                          onPressOut={playOut}
+                                          onPress={() => {
+                                            const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
+                                            setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
+                                            setEditingCellValue(displayValue);
+                                            if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
+                                          }}
+                                          style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                          <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                            {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
+                                          </Text>
+                                        </Pressable>
+                                      )}
+                                    </View>
+                                  </View>
+
+                                  <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
+                                    <View style={styles.setCellContentCenter}>
+                                      {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
+                                        <View
+                                          ref={(r) => { focusedInputWrapperRef.current = r; }}
+                                          onLayout={(e) => {
+                                            if (!__DEV__) return;
+                                            const { width, height } = e.nativeEvent.layout;
+                                            console.log('[Workout Input UI] focus cell', { setId: set.id, field: 'reps', width, height });
+                                          }}
+                                          style={[
+                                            styles.setInputCellBase,
+                                            { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                            styles.setInputCellActiveVisual,
+                                            { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                          ]}
+                                          collapsable={false}
+                                        >
+                                          <Input
+                                            value={editingCellValue}
+                                            onChangeText={(text) => {
+                                              setEditingCellValue(text);
+                                              if (__DEV__) console.log('[Workout Draft] typing (no state write)', { setId: set.id, field: 'reps', draft: text });
+                                            }}
+                                            onFocus={() => {
+                                              scrollToSetRow(exerciseIndex, setIndex);
+                                              if (__DEV__) console.log('[Workout Input] focus input', { setId: set.id, field: 'reps', currentDraft: editingCellValue });
+                                            }}
+                                            onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                            onEndEditing={() => { }}
+                                            autoFocus
+                                            keyboardType="number-pad"
+                                            placeholder="—"
+                                            multiline={false}
+                                            maxLength={4}
+                                            containerStyle={styles.setInputCellInner}
+                                            style={[
+                                              styles.setInputTextVisible,
+                                              styles.setInputFixedDimensions,
+                                              { color: colors.primaryLight, backgroundColor: 'transparent' },
+                                            ]}
+                                            placeholderTextColor={colors.primaryLight + '50'}
+                                            selectionColor={colors.primaryLight + '60'}
+                                            textAlignVertical="center"
+                                          />
+                                        </View>
+                                      ) : (
+                                        <Pressable
+                                          onPressIn={playIn}
+                                          onPressOut={playOut}
+                                          onPress={() => {
+                                            const displayValue = set.reps > 0 ? String(set.reps) : '';
+                                            setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
+                                            setEditingCellValue(displayValue);
+                                            if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
+                                          }}
+                                          style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                          <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
+                                            {set.reps > 0 ? String(set.reps) : '—'}
+                                          </Text>
+                                        </Pressable>
+                                      )}
+                                    </View>
+                                  </View>
+
+                                  <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
+                                    <View style={styles.setCellContentCenter}>
+                                      <Pressable
+                                        style={[styles.setCheckWrap, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}
+                                        onPressIn={() => {
+                                          playIn();
+                                          setPressedCheckRowKey(rowKey);
+                                        }}
+                                        onPressOut={() => {
+                                          playOut();
+                                          setPressedCheckRowKey(null);
+                                        }}
+                                        onPress={() => {
+                                          const nextCompleted = !set.completed;
+                                          const isEditingThisSet =
+                                            editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
+                                          if (isEditingThisSet && editingCell) {
+                                            const { field } = editingCell;
+                                            if (field === 'weight') {
+                                              const n = parseNumericInput(editingCellValue, 'float');
+                                              if (n !== null) {
+                                                updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
+                                              } else {
+                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
                                               }
                                             } else {
-                                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
+                                              const n = parseNumericInput(editingCellValue, 'int');
+                                              if (n !== null) {
+                                                updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
+                                              } else {
+                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                              }
+                                            }
+                                            setEditingCell(null);
+                                            setEditingCellValue('');
+                                            Keyboard.dismiss();
+                                          } else {
+                                            updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                          }
+                                          if (nextCompleted === true) {
+                                            if (exercise.restTimer) {
+                                              startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
                                             }
                                           } else {
-                                            const n = parseNumericInput(editingCellValue, 'int');
-                                            if (n !== null) {
-                                              updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
-                                              if (__DEV__) {
-                                                console.log('[Workout Field Commit]', { setId: set.id, field: 'reps', parsed: n, source: 'check' });
-                                                console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: n });
-                                              }
-                                            } else {
-                                              updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                              if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
-                                            }
+                                            skipRestTimer(set.id);
                                           }
-                                          setEditingCell(null);
-                                          setEditingCellValue('');
-                                          Keyboard.dismiss();
-                                        } else {
-                                          updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                          if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted, weightRawLb: set.weight, reps: set.reps });
-                                        }
-                                        if (__DEV__) console.log('[Workout Set Commit]', { setId: set.id, completed: nextCompleted });
-                                        if (nextCompleted === true) {
-                                          if (exercise.restTimer) {
-                                            startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
-                                          }
-                                        } else {
-                                          skipRestTimer(set.id);
-                                          if (__DEV__) console.log('[Workout RestTimer] skipped schedule on uncommit', { setId: set.id });
-                                        }
-                                      }}
-                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    >
-                                      <Text style={[styles.setCheckText, { color: colors.primaryLight + '40' }, isCompleted && { color: colors.primaryDark }]}>✓</Text>
-                                    </Pressable>
+                                        }}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      >
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={24}
+                                          color={isCompleted ? colors.primaryDark : colors.primaryLight + '40'}
+                                        />
+                                      </Pressable>
+                                    </View>
                                   </View>
                                 </View>
                               </View>
                             </Swipeable>
+
+                            {/* Note affordance / preview row */}
+                            <View style={styles.setNoteRowOuter}>
+                              {!set.notes ? (
+                                <Pressable
+                                  style={styles.setNoteRow}
+                                  onPress={() => openSetNotesModal(exerciseIndex, setIndex)}
+                                  hitSlop={8}
+                                >
+                                  <Text style={[styles.setNoteText, { color: colors.primaryLight + '40' }]}>+ note</Text>
+                                </Pressable>
+                              ) : (
+                                <AnimatedSetNote
+                                  notes={set.notes}
+                                  isExpanded={!!expandedSetNotes[set.id]}
+                                  onToggle={() => setExpandedSetNotes(prev => ({ ...prev, [set.id]: !prev[set.id] }))}
+                                  onEdit={() => openSetNotesModal(exerciseIndex, setIndex)}
+                                />
+                              )}
+                            </View>
                           </View>
                         );
                       })}
@@ -1799,6 +1702,60 @@ export default function WorkoutScreen({
           defaultRestTimer={120}
         />
       )}
+
+      {/* Set/Exercise Notes Modal — Bottom Sheet Style */}
+      <Modal
+        visible={showSetNotesModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSetNotesModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSetNotesModal(false)} />
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalKeyboardAvoiding}
+          >
+            <View style={styles.setNotesSheet}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHandle} />
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>
+                    {editingNotes?.setIndex !== undefined ? 'Set Notes' : 'Exercise Notes'}
+                  </Text>
+                  <Pressable
+                    onPress={() => setShowSetNotesModal(false)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close-circle" size={24} color={colors.primaryLight + '50'} />
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.modalContent}>
+                <TextInput
+                  style={styles.setNotesInput}
+                  value={setNotesText}
+                  onChangeText={setSetNotesText}
+                  placeholder={editingNotes?.setIndex !== undefined ? "Add notes for this set..." : "Add notes for this exercise..."}
+                  placeholderTextColor={colors.primaryLight + '30'}
+                  multiline
+                  autoFocus
+                  textAlignVertical="top"
+                />
+
+                <TouchableOpacity
+                  style={[styles.saveNotesButton, { backgroundColor: colors.primaryLight }]}
+                  onPress={saveNotes}
+                >
+                  <Text style={[styles.saveNotesButtonText, { color: colors.primaryDark }]}>Save Note</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
     </View>
   );
@@ -2074,6 +2031,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
+  workoutHomeContent: { flex: 1, paddingBottom: Spacing.xl },
+  workoutHomeTitle: { fontSize: Typography.h2, fontWeight: '600', marginBottom: Spacing.xl },
+  workoutHomeButton: {
+    width: '100%',
+    maxWidth: BUTTON_WIDTH,
+    height: MAIN_MENU_BUTTON_HEIGHT,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: MAIN_MENU_BUTTON_GAP,
+  },
+  workoutHomeButtonText: { fontSize: Typography.body, fontWeight: '600' },
   // (history modal styles moved to WorkoutProgressWidget)
   // ─── HEVY-STYLE LOG WORKOUT LAYOUT ──────────────────────────────────────────
   logTopBar: {
@@ -2700,6 +2670,151 @@ const styles = StyleSheet.create({
     fontSize: Typography.label,
     fontWeight: '600' as const,
     color: Colors.primaryLight + '90',
+    letterSpacing: -0.11,
+  },
+  // Set-level notes styles
+  setBlock: {
+    marginBottom: 6,
+  },
+  setRowWrapper: {
+    width: '100%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  setDotPressable: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  setNoteRowOuter: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  setNoteRowInner: {
+    width: '92%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: 'rgba(198,198,198,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.10)',
+  },
+  setNoteRow: {
+    width: '92%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(198,198,198,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setNoteText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.primaryLight + 'D9', // ~85% opacity
+    letterSpacing: -0.11,
+    lineHeight: 12 * 1.25,
+  },
+  setNoteTextExpanded: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.primaryLight + 'D9',
+    letterSpacing: -0.11,
+    lineHeight: 12 * 1.3,
+    paddingBottom: 2,
+  },
+  setNoteFadeHint: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: Colors.primaryLight + '66', // ~40% opacity
+    letterSpacing: -0.11,
+  },
+  setNoteEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: Colors.primaryLight + '10',
+  },
+  setNoteEditButtonText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.primaryLight + '99',
+    letterSpacing: -0.11,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalKeyboardAvoiding: {
+    width: '100%',
+  },
+  setNotesSheet: {
+    backgroundColor: Colors.primaryDark,
+    borderTopLeftRadius: 38,
+    borderTopRightRadius: 38,
+    minHeight: 340,
+    paddingBottom: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  modalHeader: {
+    paddingTop: 12,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignSelf: 'center',
+    marginBottom: 8,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: Colors.primaryLight,
+    letterSpacing: -0.11,
+  },
+  modalContent: {
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.lg,
+  },
+  setNotesInput: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 20,
+    padding: 16,
+    height: 140,
+    color: Colors.primaryLight,
+    fontSize: 16,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  saveNotesButton: {
+    height: 56,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveNotesButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
     letterSpacing: -0.11,
   },
 });

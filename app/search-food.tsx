@@ -33,8 +33,9 @@ import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { Input } from '../components/Input';
 import type { Meal, MealType, NutritionLog } from '../types';
 
-const QUICKSILVER_VERIFIED_BADGE = require('../assets/quicksilver_verified_badge.png');
+// Quicksilver badge not in repo; use gold until quicksilver_verified_badge.png is added
 const GOLD_VERIFIED_BADGE = require('../assets/gold_checkmark_badge.png');
+const QUICKSILVER_VERIFIED_BADGE = GOLD_VERIFIED_BADGE;
 const SEARCH_DEBOUNCE_MS = 500;
 const SEARCH_PAGE_SIZE = 25;
 /** Tick inline with food name — match height to name line height (fontSize 15 ~ 18px). */

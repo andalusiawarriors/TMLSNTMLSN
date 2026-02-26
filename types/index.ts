@@ -59,6 +59,7 @@ export interface Set {
   weight: number;
   reps: number;
   completed: boolean;
+  notes?: string;
 }
 
 export interface WorkoutSplit {

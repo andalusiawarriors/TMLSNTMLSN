@@ -1,8 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { Spacing } from '../../../constants/theme';
+import { useTheme } from '../../../context/ThemeContext';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { PillSegmentedControl, type SegmentValue } from '../../../components/PillSegmentedControl';
 import { HomeGradientBackground } from '../../../components/HomeGradientBackground';
@@ -13,7 +15,10 @@ import { FitnessGraphWidget } from '../../../components/FitnessGraphWidget';
 const SEGMENT_CONTROL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+
   const [animTrigger, setAnimTrigger] = useState(0);
   const [progressSegment, setProgressSegment] = useState<SegmentValue>('Nutrition');
 
@@ -31,26 +36,32 @@ export default function ProfileScreen() {
         contentContainerStyle={[styles.container, { paddingTop: insets.top + Spacing.md }]}
         showsVerticalScrollIndicator={false}
       >
-      <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
-        <View style={styles.toggleWrap}>
-          <PillSegmentedControl
-            value={progressSegment}
-            onValueChange={(v) => setProgressSegment(v as 'Nutrition' | 'Fitness')}
-            width={SEGMENT_CONTROL_WIDTH}
-          />
-        </View>
-      </AnimatedFadeInUp>
-      <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
-        <View style={styles.progressSection}>
-          {progressSegment === 'Fitness' && (
-            <>
-              <FitnessGraphWidget />
-              <WorkoutProgressWidget />
-              <StatisticsButtonWidget />
-            </>
-          )}
-        </View>
-      </AnimatedFadeInUp>
+        <AnimatedFadeInUp delay={0} duration={380} trigger={animTrigger}>
+          <View style={styles.toggleWrap}>
+            <PillSegmentedControl
+              value={progressSegment}
+              onValueChange={(v) => setProgressSegment(v as 'Nutrition' | 'Fitness')}
+              width={SEGMENT_CONTROL_WIDTH}
+            />
+          </View>
+        </AnimatedFadeInUp>
+        <AnimatedFadeInUp delay={50} duration={380} trigger={animTrigger}>
+          <View style={styles.progressSection}>
+            {progressSegment === 'Fitness' && (
+              <>
+                <FitnessGraphWidget />
+                <WorkoutProgressWidget />
+                <StatisticsButtonWidget />
+                <TouchableOpacity
+                  style={[styles.historyBtn, { backgroundColor: colors.primaryDarkLighter }]}
+                  onPress={() => router.push('/workout-history')}
+                >
+                  <Text style={[styles.historyBtnText, { color: colors.primaryLight }]}>History</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </AnimatedFadeInUp>
       </ScrollView>
     </View>
   );
@@ -81,4 +92,17 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
   },
+  historyBtn: {
+    marginTop: Spacing.md,
+    width: '100%',
+    paddingVertical: Spacing.md,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyBtnText: {
+    fontFamily: 'EBGaramond_600SemiBold',
+    fontSize: 18,
+  },
 });
+

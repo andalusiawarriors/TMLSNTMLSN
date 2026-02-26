@@ -84,6 +84,16 @@ export const getNutritionLogByDate = async (dateString: string): Promise<Nutriti
   }
 };
 
+/** Delete all nutrition (food) logs from local storage. */
+export const clearAllNutritionLogs = async (): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(KEYS.NUTRITION_LOGS, JSON.stringify([]));
+  } catch (error) {
+    console.error('Error clearing nutrition logs:', error);
+    throw error;
+  }
+};
+
 // Workout Storage Functions
 export const saveWorkoutSession = async (session: WorkoutSession): Promise<void> => {
   const uid = getStorageUserId();

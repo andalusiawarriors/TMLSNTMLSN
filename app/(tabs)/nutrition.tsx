@@ -65,6 +65,7 @@ import {
   getNutritionLogByDate,
   getNutritionLogs,
   saveNutritionLog,
+  clearAllNutritionLogs,
   getUserSettings,
   saveUserSettings,
   getSavedFoods,
@@ -89,8 +90,9 @@ import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
-const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
+// Quicksilver badge asset not in repo; use gold badge until quicksilver_verified_badge.png is added
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
+const QUICKSILVER_VERIFIED_BADGE = GOLD_VERIFIED_BADGE;
 const QUICKSILVER_GRADIENT = ['#C0C4C8', '#9A9EA4', '#8E9298'] as const;
 const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
 const CHAMPAGNE_TEXT = '#D4B896';
@@ -378,6 +380,18 @@ export default function NutritionScreen({
 
   const loadDataRef = useRef(loadData);
   loadDataRef.current = loadData;
+  // One-time clear of all food logs (remove this block after use)
+  const clearLogsOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!clearLogsOnceRef.current) {
+        clearLogsOnceRef.current = true;
+        clearAllNutritionLogs()
+          .then(() => loadDataRef.current())
+          .catch((e) => console.warn('[Nutrition] clear logs once:', e));
+      }
+    }, [])
+  );
   // Only run entrance animations when the tab actually gains focus, not when viewingDate changes.
   // (useFocusEffect re-runs when its callback identity changes; loadData changes with viewingDate, so we use a ref to keep the callback stable.)
   useFocusEffect(
@@ -1085,6 +1099,26 @@ export default function NutritionScreen({
     setShowEditGoals(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
+
+  const handleClearAllFoodLogs = useCallback(() => {
+    Alert.alert(
+      'Delete all food logs?',
+      'This will remove every day\'s food log. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllNutritionLogs();
+            setTodayLog(null);
+            loadData();
+            setShowEditGoals(false);
+          },
+        },
+      ]
+    );
+  }, [loadData]);
 
   const MEAL_TYPE_LABELS: Record<MealType, string> = {
     breakfast: 'Breakfast',
@@ -2956,6 +2990,9 @@ title="Cancel"
                 textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
+            <Pressable onPress={handleClearAllFoodLogs} style={{ marginTop: Spacing.md, paddingVertical: Spacing.sm }}>
+              <Text style={{ fontSize: 14, color: Colors.primaryLight + '99' }}>Clear all food logs</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
