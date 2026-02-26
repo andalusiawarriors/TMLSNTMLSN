@@ -3,6 +3,8 @@ import type { ParsedNutrition } from './foodApi';
 
 const HISTORY_KEY = 'food_search_history';
 const MAX_HISTORY = 100;
+/** Max results from search so we don't flood the list with history-only hits. */
+const MAX_SEARCH_HISTORY_RESULTS = 8;
 
 interface FoodHistoryEntry {
   food: ParsedNutrition;
@@ -50,5 +52,6 @@ export async function searchFoodHistory(query: string): Promise<ParsedNutrition[
   return history
     .filter((h) => h.food.name.includes(q) || (h.food.brand && h.food.brand.includes(q)))
     .sort((a, b) => b.count - a.count)
+    .slice(0, MAX_SEARCH_HISTORY_RESULTS)
     .map((h) => h.food);
 }
