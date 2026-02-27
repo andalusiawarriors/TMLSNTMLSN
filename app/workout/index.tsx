@@ -24,22 +24,21 @@ import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Input } from '../../../components/Input';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
-import { TMLSN_SPLITS } from '../../../constants/workoutSplits';
+import { Input } from '../../components/Input';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../constants/theme';
+import { TMLSN_SPLITS } from '../../constants/workoutSplits';
 import {
   saveWorkoutSession,
   getSavedRoutines,
   getUserSettings,
-  getWorkoutSessions,
-} from '../../../utils/storage';
-import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay, parseNumericInput } from '../../../utils/units';
-import { logStreakWorkout } from '../../../utils/streak';
-import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
-import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
-import { scheduleRestTimerNotification, cancelNotification } from '../../../utils/notifications';
+} from '../../utils/storage';
+import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay, parseNumericInput } from '../../utils/units';
+import { logStreakWorkout } from '../../utils/streak';
+import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../types';
+import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../utils/helpers';
+import { scheduleRestTimerNotification, cancelNotification } from '../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useButtonSound } from '../../../hooks/useButtonSound';
+import { useButtonSound } from '../../hooks/useButtonSound';
 import AnimatedReanimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -47,16 +46,17 @@ import AnimatedReanimated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import { AnimatedPressable } from '../../../components/AnimatedPressable';
-import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
-import { Card } from '../../../components/Card';
-import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
+import { AnimatedPressable } from '../../components/AnimatedPressable';
+import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
+import { Card } from '../../components/Card';
+import { ExercisePickerModal } from '../../components/ExercisePickerModal';
 import { BlurView } from 'expo-blur';
-import { UserPlus, At, Gear, List, Clock, Database } from 'phosphor-react-native';
-import { format } from 'date-fns';
-import { useTheme } from '../../../context/ThemeContext';
-import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
-import { BackButton } from '../../../components/BackButton';
+import { UserPlus, At, Gear, List } from 'phosphor-react-native';
+import { useTheme } from '../../context/ThemeContext';
+import { supabase } from '../../lib/supabase';
+import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
+import { BackButton } from '../../components/BackButton';
+import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
 
 
@@ -235,7 +235,6 @@ export default function WorkoutScreen({
   const [restEditSeconds, setRestEditSeconds] = useState(0);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [animTrigger, setAnimTrigger] = useState(0);
-  const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
 
   // Rest Timer State
   const [restTimerActive, setRestTimerActive] = useState(false);
@@ -346,7 +345,6 @@ export default function WorkoutScreen({
     useCallback(() => {
       setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => setWeightUnit(s.weightUnit));
-      getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 5)));
     }, [])
   );
 
@@ -846,6 +844,16 @@ export default function WorkoutScreen({
       setShowExerciseEntry(false);
       setCurrentExerciseIndex(0);
 
+      const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      if (!session) {
+        if (__DEV__) console.log('[Workout] blocked post-save: no session');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onCloseModal?.();
+        Alert.alert('Saved locally', 'Log in to post this workout to Explore.');
+        router.push('/workout-history');
+        return;
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCloseModal?.();
       router.push({ pathname: '/workout-save', params: { sessionId: payload.id } });
@@ -951,7 +959,7 @@ export default function WorkoutScreen({
         <>
           <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
             <ImageBackground
-              source={require('../../../assets/home-background.png')}
+              source={require('../../assets/home-background.png')}
               style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
               resizeMode="cover"
             >
@@ -978,68 +986,37 @@ export default function WorkoutScreen({
             </Pressable>
           </View>
           <ScrollView
-            contentContainerStyle={{
-              paddingTop: 54 + 48,
-              paddingBottom: Math.max(Spacing.xl, insets.bottom + 100),
-              paddingHorizontal: Spacing.lg,
-            }}
+            contentContainerStyle={[
+              styles.workoutHomeContent,
+              { paddingTop: 54 + 48, paddingBottom: Math.max(Spacing.xl, insets.bottom + 100), paddingHorizontal: Spacing.lg },
+            ]}
             showsVerticalScrollIndicator={false}
           >
-            {recentSessions.length === 0 ? (
-              <View style={{ alignItems: 'center', marginTop: 60 }}>
-                <Text style={{ color: colors.primaryLight + '60', fontFamily: 'DMMono_400Regular', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-                  {'Start a workout using\nthe + button below'}
-                </Text>
-              </View>
-            ) : (
-              <>
-                <Text style={{ color: '#D4B896', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 4 }}>Recent</Text>
-                {recentSessions.map((session) => {
-                  const rawVolume = session.exercises.reduce((acc: number, ex: any) =>
-                    acc + ex.sets.filter((s: any) => s.completed).reduce((sacc: number, set: any) => sacc + (set.weight * set.reps), 0), 0);
-                  const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
-                  return (
-                    <Pressable
-                      key={session.id}
-                      style={{
-                        backgroundColor: 'rgba(40,40,40,0.6)',
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.06)',
-                        borderRadius: 18,
-                        padding: Spacing.md,
-                        marginBottom: Spacing.sm + 4,
-                      }}
-                      onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: session.id } })}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ fontFamily: 'EBGaramond_600SemiBold', fontSize: 18, color: colors.primaryLight }}>{session.name}</Text>
-                        <Text style={{ fontFamily: 'DMMono_400Regular', fontSize: 12, color: colors.primaryLight + '80' }}>
-                          {format(new Date(session.date), 'MMM d, yyyy')}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 38 }}>
-                          <Clock size={14} color={colors.primaryLight + 'A0'} />
-                          <Text style={{ fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.primaryLight }}>{session.duration}m</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 38 }}>
-                          <Database size={14} color={colors.primaryLight + 'A0'} />
-                          <Text style={{ fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.primaryLight }}>{formatWeightDisplay(volumeDisplay, weightUnit)}</Text>
-                        </View>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-                <Pressable
-                  onPress={() => router.push('/workout-history')}
-                  style={{ alignItems: 'center', marginTop: 8, paddingVertical: 8 }}
-                >
-                  <Text style={{ color: '#D4B896', fontSize: 14, fontFamily: 'DMMono_400Regular', textDecorationLine: 'underline' }}>
-                    View all history
-                  </Text>
-                </Pressable>
-              </>
-            )}
+            <Text style={[styles.workoutHomeTitle, { color: colors.primaryLight }]}>Start workout</Text>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push('/workout/tmlsn-routines')}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>TMLSN workouts</Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push('/workout/your-routines')}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>Your workouts</Text>
+            </AnimatedPressable>
+            <AnimatedPressable
+              style={[styles.workoutHomeButton, { backgroundColor: colors.primaryDarkLighter, borderColor: colors.primaryLight + '25' }]}
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => router.push({ pathname: '/workout', params: { startEmpty: '1' } })}
+            >
+              <Text style={[styles.workoutHomeButtonText, { color: colors.primaryLight }]}>Empty workout</Text>
+            </AnimatedPressable>
           </ScrollView>
         </>
       )}
@@ -1678,30 +1655,9 @@ export default function WorkoutScreen({
                   {activeWorkout.exercises[exerciseMenuIndex]?.name ?? 'Exercise'}
                 </Text>
                 <View style={styles.exerciseMenuButtons}>
-                  <AnimatedPressable
-                    style={[styles.exerciseMenuButtonReplace, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={handleReplaceFromMenu}
-                  >
-                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight }]}>Replace exercise</Text>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    style={styles.exerciseMenuButtonDelete}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={handleDeleteFromMenu}
-                  >
-                    <Text style={styles.exerciseMenuButtonDeleteText}>Delete exercise</Text>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    style={[styles.exerciseMenuButtonCancel, { borderColor: colors.primaryLight + '15' }]}
-                    onPressIn={playIn}
-                    onPressOut={playOut}
-                    onPress={closeExerciseMenu}
-                  >
-                    <Text style={[styles.exerciseMenuButtonText, { color: colors.primaryLight + '70' }]}>Cancel</Text>
-                  </AnimatedPressable>
+                  <PillButton variant="outline" label="Replace exercise" onPress={handleReplaceFromMenu} style={styles.exerciseMenuBtn} />
+                  <PillButton variant="primary" label="Delete exercise" onPress={handleDeleteFromMenu} style={styles.exerciseMenuBtn} />
+                  <PillButton variant="outline" label="Cancel" onPress={closeExerciseMenu} style={styles.exerciseMenuBtn} />
                 </View>
               </Card>
             </Pressable>
@@ -2333,41 +2289,8 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: Spacing.sm,
   },
-  exerciseMenuButtonReplace: {
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderWidth: 1,
-  },
-  exerciseMenuButtonText: {
-    fontSize: Typography.label,
-    fontWeight: '600',
-    letterSpacing: -0.11,
-  },
-  exerciseMenuButtonDelete: {
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    backgroundColor: '#C6C6C6',
-  },
-  exerciseMenuButtonDeleteText: {
-    fontSize: Typography.label,
-    fontWeight: '600',
-    letterSpacing: -0.11,
-    color: '#2F3032',
-  },
-  exerciseMenuButtonCancel: {
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderWidth: 1,
-    backgroundColor: 'transparent',
+  exerciseMenuBtn: {
+    width: '100%',
   },
   restTimeEditCard: {
     width: '100%',

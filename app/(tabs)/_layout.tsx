@@ -407,7 +407,7 @@ export default function TabsLayout() {
       playsInSilentMode: true,
       shouldPlayInBackground: false,
       interruptionMode: 'mixWithOthers',
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -423,25 +423,25 @@ export default function TabsLayout() {
     try {
       fabIn.seekTo(0);
       fabIn.play();
-    } catch (_) {}
+    } catch (_) { }
   }, [fabIn]);
   const playOut = useCallback(() => {
     try {
       fabOut.seekTo(0);
       fabOut.play();
-    } catch (_) {}
+    } catch (_) { }
   }, [fabOut]);
   const playPopupOpen = useCallback(() => {
     try {
       popupOpen.seekTo(0);
       popupOpen.play();
-    } catch (_) {}
+    } catch (_) { }
   }, [popupOpen]);
   const playPopupClose = useCallback(() => {
     try {
       popupClose.seekTo(0);
       popupClose.play();
-    } catch (_) {}
+    } catch (_) { }
   }, [popupClose]);
   const playPopupAmbient = useCallback(() => {
     if (popupAmbientFadeRef.current) {
@@ -452,7 +452,7 @@ export default function TabsLayout() {
       popupAmbient.volume = 0.05;
       popupAmbient.seekTo(0);
       popupAmbient.play();
-    } catch (_) {}
+    } catch (_) { }
   }, [popupAmbient]);
   const stopPopupAmbient = useCallback(() => {
     if (popupAmbientFadeRef.current) {
@@ -473,12 +473,12 @@ export default function TabsLayout() {
         try {
           popupAmbient.volume = 0;
           popupAmbient.pause();
-        } catch (_) {}
+        } catch (_) { }
         return;
       }
       try {
         popupAmbient.volume = current;
-      } catch (_) {}
+      } catch (_) { }
     }, 50);
   }, [popupAmbient]);
 
@@ -921,272 +921,272 @@ export default function TabsLayout() {
 
   return (
     <StreakShiftContext.Provider value={streakShiftX}>
-    <View style={{ flex: 1, backgroundColor: colors.primaryDark }}>
-      <Tabs
-        initialRouteName="nutrition"
-        detachInactiveScreens={false}
-        tabBar={(props) => <TabBarPropsCapture props={props} onCapture={setTabBarProps} />}
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: colors.primaryDark,
-          },
-          headerTintColor: colors.white,
-          headerTitleStyle: {
-            fontSize: Typography.h1,
-            fontWeight: Typography.weights.bold,
-          },
-        }}
-      >
-        {/* Hidden index redirect */}
-        <Tabs.Screen
-          name="index"
-          options={{ href: null, title: 'Home', headerTitle: 'TMLSN' }}
-        />
-
-        {/* ── Tab 1: Home (nutrition) ── */}
-        <Tabs.Screen
-          name="nutrition"
-          options={{ title: 'Home', headerShown: false }}
-        />
-
-        {/* ── Workout (hidden from tab bar; accessible via FAB / workout home) ── */}
-        <Tabs.Screen
-          name="workout"
-          options={{ title: 'WORKOUT', headerShown: false, href: null }}
-        />
-
-        {/* ── Tab 3: Explore (public feed) ── */}
-        <Tabs.Screen
-          name="explore"
-          options={{ title: 'EXPLORE', headerShown: false }}
-        />
-
-        {/* ── Tab 4 (center): FAB action – not a real page ── */}
-        <Tabs.Screen
-          name="fab-action"
-          options={{ title: '' }}
-        />
-
-        {/* ── Tab 5: Prompts ── */}
-        <Tabs.Screen
-          name="prompts"
-          options={{ title: 'PROMPTS', headerShown: false }}
-        />
-
-        {/* ── Tab 6: Profile (progress) ── */}
-        <Tabs.Screen
-          name="(profile)"
-          options={{ title: 'Profile', headerShown: false }}
-        />
-      </Tabs>
-
-      {/* Profile sheet — full screen, tab bar rendered on top (no bottom barrier) */}
-      {showProfile && (
-        <ProfileSheet
-          visible={showProfile}
-          onClose={() => {
-            emitProfileSheetState(false);
-            setShowProfile(false);
+      <View style={{ flex: 1, backgroundColor: colors.primaryDark }}>
+        <Tabs
+          initialRouteName="nutrition"
+          detachInactiveScreens={false}
+          tabBar={(props) => <TabBarPropsCapture props={props} onCapture={setTabBarProps} />}
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: colors.primaryDark,
+            },
+            headerTintColor: colors.white,
+            headerTitleStyle: {
+              fontSize: Typography.h1,
+              fontWeight: Typography.weights.bold,
+            },
           }}
-          onPreferencesPress={() => {
-            emitProfileSheetState(false);
-            setShowProfile(false);
-            router.push('/preferences');
-          }}
-        />
-      )}
-
-      {/* Minimize overlay — when user tries to switch tabs while workout is active */}
-      {showMinimizeOverlay && (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 100000, elevation: 100000 }]} pointerEvents="box-none">
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowMinimizeOverlay(false)}>
-            <BlurView
-              intensity={40}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-              {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-            />
-          </Pressable>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
-            <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
-              Minimize your workout to switch tabs.
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowMinimizeOverlay(false)}
-              style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
-      {tabBarProps && (
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: TAB_BAR_HEIGHT,
-            zIndex: 99999,
-            elevation: 99999,
-          }}
-          pointerEvents="box-none"
         >
-          {renderTabBar(tabBarProps)}
-        </View>
-      )}
+          {/* Hidden index redirect */}
+          <Tabs.Screen
+            name="index"
+            options={{ href: null, title: 'Home', headerTitle: 'TMLSN' }}
+          />
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* POPUP OVERLAY — rendered ABOVE Tabs so it's always on top */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      {showPopup && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {/* Backdrop blur + dismiss (tap to close) — stops above tab bar so nav stays crisp */}
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => closePopup(true)}>
-            <RNAnimated.View
-              style={[
-                { position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_HEIGHT, overflow: 'hidden', opacity: overlayOpacity },
-              ]}
-            >
+          {/* ── Tab 1: Home (nutrition) ── */}
+          <Tabs.Screen
+            name="nutrition"
+            options={{ title: 'Home', headerShown: false }}
+          />
+
+          {/* ── Workout (hidden from tab bar; accessible only via FAB) ── */}
+          <Tabs.Screen
+            name="workout"
+            options={{ title: 'WORKOUT', headerShown: false, tabBarButton: () => null }}
+          />
+
+          {/* ── Tab 3: Explore (public feed) ── */}
+          <Tabs.Screen
+            name="explore"
+            options={{ title: 'EXPLORE', headerShown: false }}
+          />
+
+          {/* ── Tab 4 (center): FAB action – not a real page ── */}
+          <Tabs.Screen
+            name="fab-action"
+            options={{ title: '' }}
+          />
+
+          {/* ── Tab 5: Prompts ── */}
+          <Tabs.Screen
+            name="prompts"
+            options={{ title: 'PROMPTS', headerShown: false }}
+          />
+
+          {/* ── Tab 6: Profile (progress) ── */}
+          <Tabs.Screen
+            name="(profile)"
+            options={{ title: 'Profile', headerShown: false }}
+          />
+        </Tabs>
+
+        {/* Profile sheet — full screen, tab bar rendered on top (no bottom barrier) */}
+        {showProfile && (
+          <ProfileSheet
+            visible={showProfile}
+            onClose={() => {
+              emitProfileSheetState(false);
+              setShowProfile(false);
+            }}
+            onPreferencesPress={() => {
+              emitProfileSheetState(false);
+              setShowProfile(false);
+              router.push('/preferences');
+            }}
+          />
+        )}
+
+        {/* Minimize overlay — when user tries to switch tabs while workout is active */}
+        {showMinimizeOverlay && (
+          <View style={[StyleSheet.absoluteFill, { zIndex: 100000, elevation: 100000 }]} pointerEvents="box-none">
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowMinimizeOverlay(false)}>
               <BlurView
-                intensity={15}
+                intensity={40}
                 tint="dark"
                 style={StyleSheet.absoluteFill}
                 {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
               />
-            </RNAnimated.View>
-          </Pressable>
-
-          {/* Pills container — equal-width columns, anchored above FAB; move up when ActiveWorkoutPill visible */}
-          <RNAnimated.View
-            pointerEvents="box-none"
-            style={{
-              ...StyleSheet.absoluteFillObject,
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + (activeWorkout && minimized ? POPUP_EXTRA_WHEN_PILL : 0),
-              opacity: contentOpacity,
-              transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
-            }}
-          >
-            <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP, width: '100%', maxWidth: 400, paddingHorizontal: 16 }}>
-              {/* Left column: saved foods, search food, scan food */}
-              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
-                <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <ClipboardText size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>list food</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card1Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('search')} onPressIn={() => cardPressIn(1)} onPressOut={() => cardPressOut(1)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <MagnifyingGlass size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>search food</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card2Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('scan')} onPressIn={() => cardPressIn(2)} onPressOut={() => cardPressOut(2)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <BarcodeIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>scan food</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-              </View>
-              {/* Right column: tmlsn workouts, your workouts, empty workout */}
-              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
-                <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('tmlsn')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: colors.cardIconTint }} resizeMode="contain" />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>tmlsn workouts</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card4Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('your-routines')} onPressIn={() => cardPressIn(4)} onPressOut={() => cardPressOut(4)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <BarbellIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>your workouts</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card5Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('empty')} onPressIn={() => cardPressIn(5)} onPressOut={() => cardPressOut(5)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <PlayIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>empty workout</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-              </View>
+            </Pressable>
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
+              <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
+                Minimize your workout to switch tabs.
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowMinimizeOverlay(false)}
+                style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
+              </TouchableOpacity>
             </View>
-          </RNAnimated.View>
+          </View>
+        )}
 
-          {/* Workout block overlay — when user tries to start workout while one is active */}
-          {showWorkoutBlockOverlay && (
-            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-              <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowWorkoutBlockOverlay(false)}>
+        {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
+        {tabBarProps && (
+          <View
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: TAB_BAR_HEIGHT,
+              zIndex: 99999,
+              elevation: 99999,
+            }}
+            pointerEvents="box-none"
+          >
+            {renderTabBar(tabBarProps)}
+          </View>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════ */}
+        {/* POPUP OVERLAY — rendered ABOVE Tabs so it's always on top */}
+        {/* ══════════════════════════════════════════════════════════ */}
+        {showPopup && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            {/* Backdrop blur + dismiss (tap to close) — stops above tab bar so nav stays crisp */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => closePopup(true)}>
+              <RNAnimated.View
+                style={[
+                  { position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_HEIGHT, overflow: 'hidden', opacity: overlayOpacity },
+                ]}
+              >
                 <BlurView
-                  intensity={40}
+                  intensity={15}
                   tint="dark"
                   style={StyleSheet.absoluteFill}
                   {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
                 />
-              </Pressable>
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
-                <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
-                  A workout can't be initiated when there's a current workout going on.
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowWorkoutBlockOverlay(false)}
-                  style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
-                </TouchableOpacity>
+              </RNAnimated.View>
+            </Pressable>
+
+            {/* Pills container — equal-width columns, anchored above FAB; move up when ActiveWorkoutPill visible */}
+            <RNAnimated.View
+              pointerEvents="box-none"
+              style={{
+                ...StyleSheet.absoluteFillObject,
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                paddingBottom: PILL_BOTTOM + PILL_HEIGHT + 24 + (activeWorkout && minimized ? POPUP_EXTRA_WHEN_PILL : 0),
+                opacity: contentOpacity,
+                transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
+              }}
+            >
+              <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP, width: '100%', maxWidth: 400, paddingHorizontal: 16 }}>
+                {/* Left column: saved foods, search food, scan food */}
+                <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
+                  <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <ClipboardText size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>list food</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                  <RNAnimated.View style={[card1Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('search')} onPressIn={() => cardPressIn(1)} onPressOut={() => cardPressOut(1)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <MagnifyingGlass size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>search food</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                  <RNAnimated.View style={[card2Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('scan')} onPressIn={() => cardPressIn(2)} onPressOut={() => cardPressOut(2)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <BarcodeIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>scan food</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                </View>
+                {/* Right column: tmlsn workouts, your workouts, empty workout */}
+                <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
+                  <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('tmlsn')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: colors.cardIconTint }} resizeMode="contain" />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>tmlsn workouts</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                  <RNAnimated.View style={[card4Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('your-routines')} onPressIn={() => cardPressIn(4)} onPressOut={() => cardPressOut(4)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <BarbellIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>your workouts</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                  <RNAnimated.View style={[card5Style, popupStyles.pillRow]}>
+                    <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('empty')} onPressIn={() => cardPressIn(5)} onPressOut={() => cardPressOut(5)} activeOpacity={1}>
+                      <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                        <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                        <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                          <View style={popupStyles.pillInner}>
+                            <PlayIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                            <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>empty workout</Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </RNAnimated.View>
+                </View>
               </View>
-            </View>
-          )}
-        </View>
-      )}
-    </View>
+            </RNAnimated.View>
+
+            {/* Workout block overlay — when user tries to start workout while one is active */}
+            {showWorkoutBlockOverlay && (
+              <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+                <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowWorkoutBlockOverlay(false)}>
+                  <BlurView
+                    intensity={40}
+                    tint="dark"
+                    style={StyleSheet.absoluteFill}
+                    {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+                  />
+                </Pressable>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
+                  <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
+                    A workout can't be initiated when there's a current workout going on.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowWorkoutBlockOverlay(false)}
+                    style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
     </StreakShiftContext.Provider>
   );
 }

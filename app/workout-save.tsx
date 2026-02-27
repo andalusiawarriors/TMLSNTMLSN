@@ -1,12 +1,31 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Image, Pressable, ActivityIndicator, Alert, Switch, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Image,
+  Pressable,
+  ActivityIndicator,
+  Alert,
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
+  ImageBackground,
+  ScrollView,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Spacing, BorderRadius } from '../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Spacing, BorderRadius, Font } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon } from 'phosphor-react-native';
+
+const ACCENT_GOLD = '#D4B896';
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -124,7 +143,7 @@ export default function WorkoutSaveScreen() {
         if (__DEV__) console.log('[WorkoutSave] uploaded image_path:', imagePath);
       }
 
-      router.replace('/workout-history');
+      router.back();
     } catch (e) {
       console.error('Save error', e);
       Alert.alert('Error', 'Could not save post.');
@@ -135,94 +154,291 @@ export default function WorkoutSaveScreen() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.black }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-          <Pressable onPress={() => router.back()} style={styles.headerBtn}>
-            <Text style={[styles.headerBtnText, { color: colors.primaryLight }]}>Skip</Text>
-          </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.primaryLight }]}>New Post</Text>
-          <Pressable onPress={handleSave} style={styles.headerBtn} disabled={isSaving}>
-            {isSaving ? <ActivityIndicator size="small" color={colors.primaryLight} /> : <Text style={[styles.headerBtnText, { color: '#007AFF', fontWeight: '600' }]}>Share</Text>}
-          </Pressable>
-        </View>
+      <View style={styles.rootContainer}>
+        {/* Background */}
+        <ImageBackground
+          source={require('../assets/home-background.png')}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        >
+          <LinearGradient
+            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
+            locations={[0, 0.2, 0.35, 0.45, 0.65]}
+            style={StyleSheet.absoluteFill}
+          />
+        </ImageBackground>
 
-        <View style={[styles.content]}>
-          {uploadError ? (
-            <View style={[styles.errorBanner, { backgroundColor: colors.primaryLight + '15', borderColor: colors.accentRed + '40' }]}>
-              <Text style={[styles.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
-            </View>
-          ) : null}
-          <View style={styles.imageSection}>
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.previewImage} />
-            ) : (
-              <View style={[styles.imagePlaceholder, { backgroundColor: colors.primaryDarkLighter }]}>
-                <Camera size={32} color={colors.primaryLight} weight="thin" />
-                <Text style={{ color: colors.primaryLight, marginTop: 8, fontWeight: '500' }}>No photo</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {/* Header */}
+          <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+            <Pressable onPress={() => router.back()} style={styles.headerBtn} hitSlop={12}>
+              <Text style={styles.headerSkipText}>Skip</Text>
+            </Pressable>
+
+            <Text style={styles.headerTitle}>New Post</Text>
+
+            <Pressable onPress={handleSave} style={styles.headerBtn} hitSlop={12} disabled={isSaving}>
+              {isSaving ? (
+                <ActivityIndicator size="small" color={ACCENT_GOLD} />
+              ) : (
+                <Text style={styles.headerShareText}>Share</Text>
+              )}
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + Spacing.xxl }]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Error Banner */}
+            {uploadError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorText}>{uploadError}</Text>
               </View>
-            )}
+            ) : null}
 
-            <View style={styles.photoActions}>
-              <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryDarkLighter }]} onPress={handleTakePhoto}>
-                <Camera size={20} color={colors.primaryLight} />
-                <Text style={[styles.photoBtnText, { color: colors.primaryLight }]}>Camera</Text>
-              </Pressable>
-              <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryDarkLighter }]} onPress={handlePickPhoto}>
-                <ImageIcon size={20} color={colors.primaryLight} />
-                <Text style={[styles.photoBtnText, { color: colors.primaryLight }]}>Gallery</Text>
-              </Pressable>
+            {/* Photo Section */}
+            <Text style={styles.sectionLabel}>Photo</Text>
+            <View style={styles.card}>
+              <View style={styles.imageRow}>
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.previewImage} />
+                ) : (
+                  <View style={styles.imagePlaceholder}>
+                    <Camera size={32} color={ACCENT_GOLD} weight="thin" />
+                    <Text style={styles.placeholderText}>No photo</Text>
+                  </View>
+                )}
+                <View style={styles.photoActions}>
+                  <Pressable style={styles.photoBtn} onPress={handleTakePhoto}>
+                    <Camera size={20} color={ACCENT_GOLD} />
+                    <Text style={styles.photoBtnText}>Camera</Text>
+                  </Pressable>
+                  <Pressable style={styles.photoBtn} onPress={handlePickPhoto}>
+                    <ImageIcon size={20} color={ACCENT_GOLD} />
+                    <Text style={styles.photoBtnText}>Gallery</Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
-          </View>
 
-          <View style={[styles.inputGroup, { borderBottomColor: colors.primaryDarkLighter }]}>
-            <TextInput
-              style={[styles.input, { color: colors.primaryLight }]}
-              placeholder="Title (e.g. Morning Push)..."
-              placeholderTextColor={colors.primaryLight + '60'}
-              value={title}
-              onChangeText={setTitle}
-            />
-          </View>
+            {/* Post Details Section */}
+            <Text style={styles.sectionLabel}>Post Details</Text>
+            <View style={styles.card}>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Title (e.g. Morning Push)..."
+                  placeholderTextColor={ACCENT_GOLD + '66'}
+                  value={title}
+                  onChangeText={setTitle}
+                />
+              </View>
+              <View style={styles.rowSeparator} />
+              <View style={styles.captionRow}>
+                <TextInput
+                  style={styles.inputArea}
+                  placeholder="Write a caption..."
+                  placeholderTextColor={ACCENT_GOLD + '66'}
+                  multiline
+                  value={description}
+                  onChangeText={setDescription}
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
 
-          <View style={[styles.inputGroup, { borderBottomColor: colors.primaryDarkLighter, flex: 1 }]}>
-            <TextInput
-              style={[styles.inputArea, { color: colors.primaryLight }]}
-              placeholder="Write a caption..."
-              placeholderTextColor={colors.primaryLight + '60'}
-              multiline
-              value={description}
-              onChangeText={setDescription}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={[styles.row, { borderBottomColor: colors.primaryDarkLighter }]}>
-            <Text style={[styles.rowLabel, { color: colors.primaryLight }]}>Publicly Visible</Text>
-            <Switch value={isPublic} onValueChange={setIsPublic} trackColor={{ false: colors.primaryDarkLighter, true: '#34C759' }} />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+            {/* Privacy Section */}
+            <Text style={styles.sectionLabel}>Privacy</Text>
+            <View style={styles.card}>
+              <View style={styles.toggleRow}>
+                <Text style={styles.toggleLabel}>Publicly Visible</Text>
+                <Switch
+                  value={isPublic}
+                  onValueChange={setIsPublic}
+                  trackColor={{ false: 'rgba(255,255,255,0.12)', true: '#34C759' }}
+                  thumbColor={isPublic ? '#fff' : '#C6C6C6'}
+                />
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
     </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, borderBottomWidth: 1, borderBottomColor: '#222' },
-  headerTitle: { fontSize: 16, fontWeight: '600' },
-  headerBtn: { padding: Spacing.sm },
-  headerBtnText: { fontSize: 16, fontWeight: '600' },
-  content: { flex: 1, padding: Spacing.lg },
-  errorBanner: { padding: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, marginBottom: Spacing.md },
-  errorText: { fontSize: 14 },
-  imageSection: { flexDirection: 'row', marginBottom: Spacing.xl },
-  previewImage: { width: 100, height: 125, borderRadius: 12 },
-  imagePlaceholder: { width: 100, height: 125, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  photoActions: { flex: 1, marginLeft: Spacing.lg, justifyContent: 'center', gap: Spacing.md },
-  photoBtn: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.md, gap: Spacing.sm },
-  photoBtnText: { fontSize: 14, fontWeight: '600' },
-  inputGroup: { paddingVertical: Spacing.md, borderBottomWidth: 1 },
-  input: { fontSize: 16, fontWeight: '400', paddingVertical: Spacing.sm },
-  inputArea: { fontSize: 16, fontWeight: '400', minHeight: 100 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.lg, borderBottomWidth: 1 },
-  rowLabel: { fontSize: 16, fontWeight: '400' }
+  rootContainer: {
+    flex: 1,
+    backgroundColor: '#2F3031',
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  headerBtn: {
+    padding: Spacing.sm,
+    minWidth: 56,
+  },
+  headerTitle: {
+    fontFamily: Font.semiBold,
+    fontSize: 18,
+    color: '#C6C6C6',
+    textAlign: 'center',
+  },
+  headerSkipText: {
+    fontFamily: Font.regular,
+    fontSize: 16,
+    color: 'rgba(198, 198, 198, 0.5)',
+  },
+  headerShareText: {
+    fontFamily: Font.semiBold,
+    fontSize: 16,
+    color: ACCENT_GOLD,
+    textAlign: 'right',
+  },
+
+  // Scroll content
+  scrollContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+  },
+
+  // Section labels
+  sectionLabel: {
+    fontFamily: Font.semiBold,
+    fontSize: 14,
+    color: ACCENT_GOLD,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+    letterSpacing: 0.5,
+  },
+
+  // Glass card
+  card: {
+    backgroundColor: 'rgba(40,40,40,0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+
+  // Photo card internals
+  imageRow: {
+    flexDirection: 'row',
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: 100,
+    height: 125,
+    borderRadius: BorderRadius.md,
+  },
+  imagePlaceholder: {
+    width: 100,
+    height: 125,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  placeholderText: {
+    fontFamily: Font.regular,
+    color: '#C6C6C6',
+    fontSize: 13,
+    marginTop: Spacing.sm,
+  },
+  photoActions: {
+    flex: 1,
+    marginLeft: Spacing.lg,
+    justifyContent: 'center',
+    gap: Spacing.md,
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    gap: Spacing.sm,
+  },
+  photoBtnText: {
+    fontFamily: Font.regular,
+    fontSize: 14,
+    color: '#C6C6C6',
+  },
+
+  // Input card internals
+  inputRow: {
+    height: 56,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  captionRow: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  input: {
+    fontFamily: Font.regular,
+    fontSize: 16,
+    color: '#C6C6C6',
+  },
+  inputArea: {
+    fontFamily: Font.regular,
+    fontSize: 16,
+    color: '#C6C6C6',
+    minHeight: 90,
+  },
+  rowSeparator: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: Spacing.md,
+  },
+
+  // Toggle row
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    paddingHorizontal: Spacing.md,
+  },
+  toggleLabel: {
+    fontFamily: Font.regular,
+    fontSize: 16,
+    color: '#C6C6C6',
+  },
+
+  // Error banner
+  errorBanner: {
+    marginTop: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,0,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,0,0,0.25)',
+  },
+  errorText: {
+    fontFamily: Font.regular,
+    fontSize: 14,
+    color: '#C6C6C6',
+  },
 });

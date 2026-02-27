@@ -1,5 +1,4 @@
-import 'react-native-url-polyfill/auto';
-
+// URL polyfill loaded in index.js (native only)
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUPABASE_URL as CONFIG_URL, SUPABASE_ANON_KEY as CONFIG_KEY } from './supabaseConfig';

@@ -1,5 +1,4 @@
-import 'react-native-url-polyfill/auto';
-
+// URL polyfill loaded in index.js (native only); no-op on web
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
@@ -38,7 +37,7 @@ function RootLayoutInner() {
           headerStyle: { backgroundColor: colors.primaryDark },
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '600' },
-          contentStyle: { backgroundColor: colors.black },
+          contentStyle: { backgroundColor: colors.primaryDark },
         }}
       >
         <Stack.Screen
@@ -110,6 +109,18 @@ function RootLayoutInner() {
             headerStyle: { backgroundColor: colors.primaryDark },
             headerTintColor: colors.primaryLight,
           }}
+        />
+        <Stack.Screen
+          name="workout-save"
+          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
+        />
+        <Stack.Screen
+          name="workout-history"
+          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
+        />
+        <Stack.Screen
+          name="workout-detail"
+          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
         />
       </Stack>
       {/* Active workout pill at root — visible above modals and overlay */}

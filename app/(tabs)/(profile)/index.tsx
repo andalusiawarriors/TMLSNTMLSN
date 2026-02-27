@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { HomeGradientBackground } from '../../../components/HomeGradientBackgrou
 import { StatisticsButtonWidget } from '../../../components/StatisticsButtonWidget';
 import { WorkoutProgressWidget } from '../../../components/WorkoutProgressWidget';
 import { FitnessGraphWidget } from '../../../components/FitnessGraphWidget';
+import { PillButton } from '../../../components/ui/PillButton';
 
 const SEGMENT_CONTROL_WIDTH = Dimensions.get('window').width - Spacing.md * 2;
 
@@ -52,12 +53,12 @@ export default function ProfileScreen() {
                 <FitnessGraphWidget />
                 <WorkoutProgressWidget />
                 <StatisticsButtonWidget />
-                <TouchableOpacity
-                  style={[styles.historyBtn, { backgroundColor: colors.primaryDarkLighter }]}
+                <PillButton
+                  variant="outline"
+                  label="History"
                   onPress={() => router.push('/workout-history')}
-                >
-                  <Text style={[styles.historyBtnText, { color: colors.primaryLight }]}>History</Text>
-                </TouchableOpacity>
+                  style={styles.historyBtn}
+                />
               </>
             )}
           </View>
@@ -95,14 +96,6 @@ const styles = StyleSheet.create({
   historyBtn: {
     marginTop: Spacing.md,
     width: '100%',
-    paddingVertical: Spacing.md,
-    borderRadius: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  historyBtnText: {
-    fontFamily: 'EBGaramond_600SemiBold',
-    fontSize: 18,
   },
 });
 
