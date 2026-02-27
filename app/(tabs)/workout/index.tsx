@@ -46,6 +46,9 @@ import AnimatedReanimated, {
   withTiming,
   withDelay,
   Easing,
+  useAnimatedScrollHandler,
+  interpolate,
+  Extrapolation,
 } from 'react-native-reanimated';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
@@ -58,6 +61,9 @@ import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { BackButton } from '../../../components/BackButton';
 import Slider from '@react-native-community/slider';
+import { StickyWorkoutHeader } from '../../../components/StickyWorkoutHeader';
+import ExerciseStatsModal from '../../../components/ExerciseStatsModal';
+import { useExerciseReorder } from '../../../components/DraggableExerciseList';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -354,7 +360,39 @@ export default function WorkoutScreen({
   const lastProcessedSplitId = useRef<string | null>(null);
   const lastProcessedRoutineId = useRef<string | null>(null);
   const activeWorkoutRef = useRef<WorkoutSession | null>(null);
-  const workoutScrollRef = useRef<ScrollView>(null);
+  const workoutScrollRef = useRef<any>(null);
+
+  // ── Scroll-aware sticky header ──────────────────────────────────────────────
+  const scrollYShared = useSharedValue(0);
+  const lastScrollYShared = useSharedValue(0);
+  const stickyHeaderAnim = useSharedValue(0);
+  const STICKY_HEADER_HEIGHT = 105;
+  const workoutScrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      'worklet';
+      const y = event.contentOffset.y;
+      const diff = y - lastScrollYShared.value;
+      lastScrollYShared.value = y;
+      if (y < STICKY_HEADER_HEIGHT) {
+        stickyHeaderAnim.value = withTiming(0, { duration: 200 });
+      } else if (diff < -6) {
+        stickyHeaderAnim.value = withTiming(1, { duration: 220 });
+      } else if (diff > 6) {
+        stickyHeaderAnim.value = withTiming(0, { duration: 180 });
+      }
+    },
+  });
+  const stickyHeaderAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(stickyHeaderAnim.value, [0, 1], [-STICKY_HEADER_HEIGHT, 0], Extrapolation.CLAMP) }],
+    opacity: stickyHeaderAnim.value,
+  }));
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // ── Exercise stats modal (graph bottom sheet) ───────────────────────────────
+  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [statsModalTab, setStatsModalTab] = useState<'volume' | 'sets'>('volume');
+  // ───────────────────────────────────────────────────────────────────────────
+
   const setTableBlockYRef = useRef<Map<number, number>>(new Map());
   const setTableRowYRef = useRef<Map<string, number>>(new Map());
   const focusedInputWrapperRef = useRef<View | null>(null);
@@ -915,6 +953,16 @@ export default function WorkoutScreen({
   const [overlayTrigger, setOverlayTrigger] = useState(0);
   const [isSavingWorkout, setIsSavingWorkout] = useState(false);
 
+  // ── Exercise drag-to-reorder ────────────────────────────────────────────────
+  const reorder = useExerciseReorder(
+    activeWorkout?.exercises ?? [],
+    (newExercises) => {
+      if (!activeWorkout) return;
+      setActiveWorkout({ ...activeWorkout, exercises: newExercises });
+    },
+  );
+  // ───────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (activeWorkout && !minimized) {
       setOverlayTrigger((t) => t + 1);
@@ -1056,8 +1104,36 @@ export default function WorkoutScreen({
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
           >
-            <ScrollView
+            {/* ── Scroll-aware sticky header overlay ── */}
+            <StickyWorkoutHeader
+              animStyle={stickyHeaderAnimStyle}
+              workoutName={activeWorkout.name || 'Workout'}
+              elapsedSeconds={elapsedSeconds}
+              totalVolumeDisplay={totalVolumeDisplay}
+              weightUnit={weightUnit}
+              completedSetsCount={completedSetsCount}
+              exerciseCount={activeWorkout.exercises.length}
+              onFinish={() =>
+                isSavingWorkout
+                  ? undefined
+                  : Alert.alert('Finish Workout', 'Save this workout?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Save', onPress: finishWorkout },
+                    ])
+              }
+              onMinimize={handleMinimize}
+              paddingTop={insets.top}
+              colors={{
+                primaryDark: colors.primaryDark,
+                primaryLight: colors.primaryLight,
+                tabBarBorder: colors.tabBarBorder as [string, string],
+                tabBarFill: colors.tabBarFill as [string, string],
+              }}
+            />
+            <AnimatedReanimated.ScrollView
               ref={workoutScrollRef}
+              onScroll={workoutScrollHandler}
+              scrollEventThrottle={16}
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={[
                 styles.contentContainer,
@@ -1122,16 +1198,24 @@ export default function WorkoutScreen({
                 {/* ─── HEVY-STYLE SUMMARY STATS ROW (committed state only; draft never affects volume/sets) ─── */}
                 <AnimatedFadeInUp delay={50} duration={300} trigger={overlayTrigger} instant>
                   <View style={styles.summaryRow}>
-                    <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                    <Pressable
+                      style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}
+                      onPress={() => { setStatsModalTab('volume'); setShowStatsModal(true); }}
+                      hitSlop={6}
+                    >
                       <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
                       <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
                       <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
-                    </View>
-                    <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}
+                      onPress={() => { setStatsModalTab('sets'); setShowStatsModal(true); }}
+                      hitSlop={6}
+                    >
                       <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
                       <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
                       <Text style={[styles.summaryStatUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
-                    </View>
+                    </Pressable>
                     <View style={[styles.summaryStatPill, { backgroundColor: colors.primaryLight + '12' }]}>
                       <Text style={[styles.summaryStatIcon, { color: colors.primaryLight + '80' }]}>◎</Text>
                       <Text style={[styles.summaryStatValue, { color: colors.primaryLight }]}>{activeWorkout.exercises.length}</Text>
@@ -1205,23 +1289,55 @@ export default function WorkoutScreen({
                 {activeWorkout.exercises.map((exercise, exerciseIndex) => (
                   <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
                     <View
-                      style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }]}
+                      style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }, reorder.getCardStyle(exerciseIndex)]}
                       onLayout={(e) => setTableBlockYRef.current.set(exerciseIndex, e.nativeEvent.layout.y)}
                     >
                       {/* Exercise header */}
                       <View style={styles.exerciseBlockHeader}>
+                        <Pressable
+                          onLongPress={() => reorder.onLongPress(exerciseIndex)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          style={[styles.dragHandle, reorder.getDragHandleStyle(exerciseIndex)]}
+                        >
+                          <Text style={{ fontSize: 16, color: colors.primaryLight + '80', letterSpacing: 1 }}>≡</Text>
+                        </Pressable>
                         <View style={styles.exerciseBlockTitleRow}>
                           <View style={[styles.exerciseBlockIcon, { backgroundColor: colors.primaryLight + '15' }]}>
                             <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                           </View>
                           <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
                         </View>
-                        <TouchableOpacity
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          onPress={() => showExerciseMenu(exerciseIndex)}
-                        >
-                          <Text style={[styles.exerciseBlockMenu, { color: colors.primaryLight + '60' }]}>⋮</Text>
-                        </TouchableOpacity>
+                        {reorder.activeIndex === exerciseIndex ? (
+                          <View style={styles.reorderControls}>
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={reorder.moveUp}
+                              disabled={exerciseIndex === 0}
+                            >
+                              <Text style={[styles.reorderArrow, { color: exerciseIndex === 0 ? colors.primaryLight + '30' : colors.primaryLight + 'CC' }]}>↑</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={reorder.moveDown}
+                              disabled={exerciseIndex === activeWorkout.exercises.length - 1}
+                            >
+                              <Text style={[styles.reorderArrow, { color: exerciseIndex === activeWorkout.exercises.length - 1 ? colors.primaryLight + '30' : colors.primaryLight + 'CC' }]}>↓</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={reorder.cancel}
+                            >
+                              <Text style={[styles.reorderArrow, { color: colors.primaryLight + '60', fontSize: 13 }]}>✕</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => showExerciseMenu(exerciseIndex)}
+                          >
+                            <Text style={[styles.exerciseBlockMenu, { color: colors.primaryLight + '60' }]}>⋮</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
 
                       {/* Rest timer badge – pressable to edit (only when rest timer is set) */}
@@ -1571,7 +1687,7 @@ export default function WorkoutScreen({
                   </AnimatedFadeInUp>
                 ) : null}
               </Pressable>
-            </ScrollView>
+            </AnimatedReanimated.ScrollView>
           </KeyboardAvoidingView>
           {/* Confirm pill above keyboard — same bubble UI as profile sheet / tab bar pills */}
           {editingCell && (
@@ -1599,6 +1715,18 @@ export default function WorkoutScreen({
               </Pressable>
             </View>
           )}
+          {/* ── Exercise Stats Modal (line graphs) ── */}
+          <ExerciseStatsModal
+            visible={showStatsModal}
+            onClose={() => setShowStatsModal(false)}
+            exercises={(activeWorkout.exercises ?? []).map(ex => ({
+              id: ex.id,
+              name: ex.name,
+              sets: ex.sets.map(s => ({ weight: s.weight, reps: s.reps, completed: s.completed })),
+            }))}
+            initialTab={statsModalTab}
+            weightUnit={weightUnit}
+          />
         </AnimatedReanimated.View>
       )}
 
@@ -2267,6 +2395,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+  },
+  dragHandle: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginRight: 2,
+  },
+  reorderControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reorderArrow: {
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 22,
   },
   exerciseBlockTitleRow: {
     flexDirection: 'row',
