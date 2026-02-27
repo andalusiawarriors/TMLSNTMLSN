@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,20 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { Spacing, BorderRadius } from '../constants/theme';
+import { format } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
+import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { supabase } from '../lib/supabase';
-import { Camera, Image as ImageIcon } from 'phosphor-react-native';
+import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
+import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { originRoute } = useActiveWorkout();
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -36,6 +40,56 @@ export default function WorkoutSaveScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [createdPostId, setCreatedPostId] = useState<string | null>(null);
+
+  const [session, setSession] = useState<any>(null);
+  const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
+
+  useEffect(() => {
+    async function loadSession() {
+      const [sessions, settings] = await Promise.all([
+        getWorkoutSessions(),
+        getUserSettings(),
+      ]);
+      const found = sessions.find((s: any) => s.id === sessionId);
+      setSession(found || null);
+      setWeightUnit(settings.weightUnit);
+    }
+    if (sessionId) loadSession();
+  }, [sessionId]);
+
+  // Derived stats
+  const duration = session?.duration ?? 0;
+  const totalSets = session
+    ? session.exercises.reduce(
+        (acc: number, ex: any) =>
+          acc + ex.sets.filter((s: any) => s.completed).length,
+        0
+      )
+    : 0;
+  const rawVolume = session
+    ? session.exercises.reduce(
+        (acc: number, ex: any) =>
+          acc +
+          ex.sets
+            .filter((s: any) => s.completed)
+            .reduce(
+              (sacc: number, set: any) => sacc + set.weight * set.reps,
+              0
+            ),
+        0
+      )
+    : 0;
+  const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
+  const volumeStr = formatWeightDisplay(volumeDisplay, weightUnit);
+
+  const formatDuration = (seconds: number): string => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
 
   const handleTakePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -79,7 +133,9 @@ export default function WorkoutSaveScreen() {
     setUploadError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
       let postId = createdPostId;
@@ -115,7 +171,9 @@ export default function WorkoutSaveScreen() {
           .upload(imagePath, blob, { upsert: true });
 
         if (uploadErr) {
-          setUploadError('Image upload failed. Post saved. Tap Share again to retry.');
+          setUploadError(
+            'Image upload failed. Post saved. Tap Save again to retry.'
+          );
           if (__DEV__) console.warn('[WorkoutSave] upload failed:', uploadErr);
           setIsSaving(false);
           return;
@@ -127,16 +185,24 @@ export default function WorkoutSaveScreen() {
           .eq('id', postId);
 
         if (updateErr) {
-          setUploadError('Could not update post with image. Tap Share again to retry.');
-          if (__DEV__) console.warn('[WorkoutSave] update image_path failed:', updateErr);
+          setUploadError(
+            'Could not update post with image. Tap Save again to retry.'
+          );
+          if (__DEV__)
+            console.warn('[WorkoutSave] update image_path failed:', updateErr);
           setIsSaving(false);
           return;
         }
 
-        if (__DEV__) console.log('[WorkoutSave] uploaded image_path:', imagePath);
+        if (__DEV__)
+          console.log('[WorkoutSave] uploaded image_path:', imagePath);
       }
 
-      router.back();
+      const dest =
+        originRoute && originRoute !== '/(tabs)/workout'
+          ? originRoute
+          : '/(tabs)/nutrition';
+      router.replace(dest as any);
     } catch (e) {
       console.error('Save error', e);
       Alert.alert('Error', 'Could not save post.');
@@ -145,6 +211,17 @@ export default function WorkoutSaveScreen() {
     }
   };
 
+  const dateLabel = format(new Date(), 'EEEE, MMMM d · h:mm a');
+
+  const divider = (
+    <View
+      style={[
+        styles.divider,
+        { backgroundColor: colors.primaryLight + '15' },
+      ]}
+    />
+  );
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
@@ -152,20 +229,43 @@ export default function WorkoutSaveScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* ─── TOP BAR ─── */}
+          {/* TOP BAR */}
           <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-            <Pressable onPress={() => router.back()} style={styles.skipWrap} hitSlop={12}>
-              <Text style={[styles.skipText, { color: colors.primaryLight + '60' }]}>Skip</Text>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.topBarLeft}
+              hitSlop={12}
+            >
+              <CaretLeft size={24} color={colors.primaryLight} weight="regular" />
             </Pressable>
 
-            <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>New Post</Text>
+            <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>
+              Save Workout
+            </Text>
 
-            <Pressable onPress={handleSave} style={styles.shareWrap} hitSlop={12} disabled={isSaving}>
+            <Pressable
+              onPress={handleSave}
+              style={styles.topBarRight}
+              hitSlop={12}
+              disabled={isSaving}
+            >
               {isSaving ? (
                 <ActivityIndicator size="small" color={colors.primaryDark} />
               ) : (
-                <View style={[styles.shareButton, { backgroundColor: colors.primaryLight }]}>
-                  <Text style={[styles.shareButtonText, { color: colors.primaryDark }]}>Share</Text>
+                <View
+                  style={[
+                    styles.saveButton,
+                    { backgroundColor: colors.primaryLight },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.saveButtonText,
+                      { color: colors.primaryDark },
+                    ]}
+                  >
+                    Save
+                  </Text>
                 </View>
               )}
             </Pressable>
@@ -173,59 +273,186 @@ export default function WorkoutSaveScreen() {
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
+            contentContainerStyle={[
+              styles.scroll,
+              { paddingBottom: insets.bottom + 48 },
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Error */}
+            {/* Error banner */}
             {uploadError ? (
-              <View style={[styles.errorRow, { backgroundColor: colors.accentRed + '15' }]}>
-                <Text style={[styles.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
+              <View
+                style={[
+                  styles.errorRow,
+                  { backgroundColor: '#FF3B30' + '15' },
+                ]}
+              >
+                <Text style={[styles.errorText, { color: colors.primaryLight }]}>
+                  {uploadError}
+                </Text>
               </View>
             ) : null}
 
-            {/* ─── PHOTO ─── */}
-            <View style={[styles.photoRow]}>
+            {/* 1. Title input */}
+            <TextInput
+              style={[styles.titleInput, { color: colors.primaryLight }]}
+              placeholder="Workout title"
+              placeholderTextColor={colors.primaryLight + '30'}
+              value={title}
+              onChangeText={setTitle}
+              returnKeyType="done"
+            />
+
+            {/* 2. Divider */}
+            {divider}
+
+            {/* 3. Stats row */}
+            <View style={styles.statsRow}>
+              <View style={styles.statCol}>
+                <Text
+                  style={[
+                    styles.statLabel,
+                    { color: colors.primaryLight + '50' },
+                  ]}
+                >
+                  Duration
+                </Text>
+                <Text
+                  style={[styles.statValue, { color: colors.primaryLight }]}
+                >
+                  {duration > 0 ? formatDuration(duration) : '--'}
+                </Text>
+              </View>
+
+              <View style={styles.statCol}>
+                <Text
+                  style={[
+                    styles.statLabel,
+                    { color: colors.primaryLight + '50' },
+                  ]}
+                >
+                  Volume
+                </Text>
+                <Text
+                  style={[styles.statValue, { color: colors.primaryLight }]}
+                >
+                  {rawVolume > 0 ? volumeStr : '--'}
+                </Text>
+              </View>
+
+              <View style={styles.statCol}>
+                <Text
+                  style={[
+                    styles.statLabel,
+                    { color: colors.primaryLight + '50' },
+                  ]}
+                >
+                  Sets
+                </Text>
+                <Text
+                  style={[styles.statValue, { color: colors.primaryLight }]}
+                >
+                  {totalSets > 0 ? String(totalSets) : '--'}
+                </Text>
+              </View>
+            </View>
+
+            {/* 4. Divider */}
+            {divider}
+
+            {/* 5. When row */}
+            <View style={styles.whenRow}>
+              <Text
+                style={[
+                  styles.whenLabel,
+                  { color: colors.primaryLight + '60' },
+                ]}
+              >
+                When
+              </Text>
+              <Text
+                style={[styles.whenValue, { color: colors.primaryLight }]}
+              >
+                {dateLabel}
+              </Text>
+            </View>
+
+            {/* 6. Divider */}
+            {divider}
+
+            {/* 7. Photo row */}
+            <View style={styles.photoRow}>
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={styles.previewImage} />
               ) : (
-                <View style={[styles.photoPlaceholder, { backgroundColor: colors.primaryLight + '08' }]}>
-                  <Camera size={28} color={colors.primaryLight + '50'} weight="thin" />
+                <View
+                  style={[
+                    styles.photoPlaceholder,
+                    { borderColor: colors.primaryLight + '25' },
+                  ]}
+                >
+                  <Camera
+                    size={22}
+                    color={colors.primaryLight + '40'}
+                    weight="regular"
+                  />
                 </View>
               )}
 
               <View style={styles.photoButtons}>
                 <Pressable
-                  style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '12' }]}
+                  style={[
+                    styles.photoBtn,
+                    { backgroundColor: colors.primaryLight + '10' },
+                  ]}
                   onPress={handleTakePhoto}
                 >
-                  <Camera size={18} color={colors.primaryLight} />
-                  <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Camera</Text>
+                  <Camera size={18} color={colors.primaryLight} weight="regular" />
+                  <Text
+                    style={[styles.photoBtnLabel, { color: colors.primaryLight }]}
+                  >
+                    Camera
+                  </Text>
                 </Pressable>
+
                 <Pressable
-                  style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '12' }]}
+                  style={[
+                    styles.photoBtn,
+                    { backgroundColor: colors.primaryLight + '10' },
+                  ]}
                   onPress={handlePickPhoto}
                 >
-                  <ImageIcon size={18} color={colors.primaryLight} />
-                  <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Gallery</Text>
+                  <ImageIcon
+                    size={18}
+                    color={colors.primaryLight}
+                    weight="regular"
+                  />
+                  <Text
+                    style={[styles.photoBtnLabel, { color: colors.primaryLight }]}
+                  >
+                    Gallery
+                  </Text>
                 </Pressable>
               </View>
             </View>
 
-            {/* ─── INPUTS ─── */}
-            <View style={[styles.inputGroup, { backgroundColor: colors.primaryLight + '08' }]}>
+            {/* 8. Divider */}
+            {divider}
+
+            {/* 9. Description */}
+            <View style={styles.descSection}>
+              <Text
+                style={[
+                  styles.descLabel,
+                  { color: colors.primaryLight + '50' },
+                ]}
+              >
+                Description
+              </Text>
               <TextInput
-                style={[styles.inputTitle, { color: colors.primaryLight }]}
-                placeholder="Title"
-                placeholderTextColor={colors.primaryLight + '30'}
-                value={title}
-                onChangeText={setTitle}
-                returnKeyType="next"
-              />
-              <View style={[styles.inputDivider, { backgroundColor: colors.primaryLight + '12' }]} />
-              <TextInput
-                style={[styles.inputCaption, { color: colors.primaryLight }]}
-                placeholder="Write a caption..."
+                style={[styles.descInput, { color: colors.primaryLight }]}
+                placeholder="How did your workout go? Leave some notes here..."
                 placeholderTextColor={colors.primaryLight + '30'}
                 multiline
                 value={description}
@@ -234,17 +461,49 @@ export default function WorkoutSaveScreen() {
               />
             </View>
 
-            {/* ─── VISIBILITY ─── */}
-            <View style={[styles.toggleRow, { backgroundColor: colors.primaryLight + '08' }]}>
-              <Text style={[styles.toggleLabel, { color: colors.primaryLight }]}>Public</Text>
+            {/* 10. Divider */}
+            {divider}
+
+            {/* 11. Visibility row */}
+            <View style={styles.visibilityRow}>
+              <Text
+                style={[styles.visibilityLabel, { color: colors.primaryLight }]}
+              >
+                Visibility
+              </Text>
               <Switch
                 value={isPublic}
                 onValueChange={setIsPublic}
-                trackColor={{ false: colors.primaryLight + '20', true: colors.primaryLight + '80' }}
-                thumbColor={isPublic ? colors.primaryDark : colors.primaryLight + '60'}
+                trackColor={{
+                  false: colors.primaryLight + '20',
+                  true: colors.primaryLight + '80',
+                }}
+                thumbColor={
+                  isPublic
+                    ? colors.primaryDark
+                    : colors.primaryLight + '60'
+                }
                 ios_backgroundColor={colors.primaryLight + '20'}
               />
             </View>
+
+            {/* 12. Divider */}
+            <View
+              style={[
+                styles.divider,
+                styles.discardDivider,
+                { backgroundColor: colors.primaryLight + '15' },
+              ]}
+            />
+
+            {/* 13. Discard button */}
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.discardWrap}
+              hitSlop={8}
+            >
+              <Text style={styles.discardText}>Discard Workout</Text>
+            </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
@@ -257,7 +516,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Top bar — matches workout overlay logTopBar
+  // Top bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -265,28 +524,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
-  skipWrap: {
-    minWidth: 52,
+  topBarLeft: {
+    minWidth: 40,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
-  skipText: {
-    fontSize: 15,
-    fontWeight: '400',
+  topBarRight: {
+    minWidth: 40,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   screenTitle: {
     fontSize: 17,
     fontWeight: '600',
     letterSpacing: -0.3,
   },
-  shareWrap: {
-    minWidth: 52,
-    alignItems: 'flex-end',
-  },
-  shareButton: {
+  saveButton: {
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingVertical: 8,
   },
-  shareButtonText: {
+  saveButtonText: {
     fontSize: 15,
     fontWeight: '600',
     letterSpacing: -0.2,
@@ -294,41 +552,86 @@ const styles = StyleSheet.create({
 
   // Scroll
   scroll: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 4,
   },
 
-  // Error
+  // Error banner
   errorRow: {
     padding: 12,
     borderRadius: 10,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   errorText: {
     fontSize: 14,
-    fontWeight: '400',
     lineHeight: 20,
   },
 
-  // Photo row
+  // Divider
+  divider: {
+    height: StyleSheet.hairlineWidth,
+  },
+
+  // 1. Title
+  titleInput: {
+    fontSize: 26,
+    fontWeight: '600',
+    letterSpacing: -0.5,
+    paddingVertical: 20,
+  },
+
+  // 3. Stats row
+  statsRow: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+  },
+  statCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // 5. When row
+  whenRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  whenLabel: {
+    fontSize: 15,
+  },
+  whenValue: {
+    fontSize: 15,
+  },
+
+  // 7. Photo row
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    marginBottom: 2,
+    gap: 16,
+    paddingVertical: 14,
   },
   photoPlaceholder: {
-    width: 88,
-    height: 110,
-    borderRadius: 12,
+    width: 72,
+    height: 90,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
   },
   previewImage: {
-    width: 88,
-    height: 110,
-    borderRadius: 12,
+    width: 72,
+    height: 90,
+    borderRadius: 10,
   },
   photoButtons: {
     flex: 1,
@@ -338,51 +641,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
     borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
   photoBtnLabel: {
     fontSize: 15,
     fontWeight: '500',
   },
 
-  // Input group
-  inputGroup: {
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  inputTitle: {
-    fontSize: 16,
-    fontWeight: '400',
-    paddingHorizontal: 16,
+  // 9. Description
+  descSection: {
     paddingVertical: 14,
   },
-  inputDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: 16,
+  descLabel: {
+    fontSize: 12,
+    marginBottom: 8,
   },
-  inputCaption: {
+  descInput: {
     fontSize: 15,
-    fontWeight: '400',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 14,
-    minHeight: 96,
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
 
-  // Toggle
-  toggleRow: {
+  // 11. Visibility
+  visibilityRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    borderRadius: 14,
-    height: 52,
+    alignItems: 'center',
+    paddingVertical: 16,
   },
-  toggleLabel: {
-    fontSize: 16,
-    fontWeight: '400',
+  visibilityLabel: {
+    fontSize: 15,
+  },
+
+  // 12. Discard divider spacing
+  discardDivider: {
+    marginTop: 16,
+  },
+
+  // 13. Discard
+  discardWrap: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  discardText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#FF3B30',
+    textAlign: 'center',
   },
 });

@@ -10,8 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { CaretLeft, Database, Clock } from 'phosphor-react-native';
-import { Spacing } from '../constants/theme';
+import { CaretLeft, Clock, ChartBar, Barbell } from 'phosphor-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { WorkoutSession } from '../types';
@@ -45,37 +44,56 @@ export default function WorkoutHistoryScreen() {
 
     const renderItem = ({ item }: { item: WorkoutSession }) => {
         const rawVolume = item.exercises.reduce((acc, ex) =>
-            acc + ex.sets.filter(s => s.completed).reduce((sacc, set) => sacc + (set.weight * set.reps), 0),
-            0);
+            acc + ex.sets.filter(s => s.completed).reduce((sacc, set) => sacc + (set.weight * set.reps), 0), 0);
         const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
+        const volumeStr = formatWeightDisplay(volumeDisplay, weightUnit);
+        const exerciseCount = item.exercises.length;
 
         return (
             <Pressable
                 style={({ pressed }) => [
                     styles.card,
-                    { backgroundColor: pressed ? colors.primaryLight + '10' : colors.primaryLight + '08' },
+                    {
+                        backgroundColor: pressed
+                            ? colors.primaryLight + '12'
+                            : colors.primaryLight + '08',
+                    },
                 ]}
-                onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: item.id } })}
+                onPress={() =>
+                    router.push({ pathname: '/workout-detail', params: { sessionId: item.id } })
+                }
             >
                 <View style={styles.cardTop}>
-                    <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
+                    <Text
+                        style={[styles.cardName, { color: colors.primaryLight }]}
+                        numberOfLines={1}
+                    >
                         {item.name}
                     </Text>
                     <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
                         {format(new Date(item.date), 'MMM d, yyyy')}
                     </Text>
                 </View>
+
                 <View style={styles.cardStats}>
-                    <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '12' }]}>
-                        <Clock size={13} color={colors.primaryLight + '80'} />
+                    <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                        <Clock size={13} color={colors.primaryLight + '70'} />
                         <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
                             {item.duration}m
                         </Text>
                     </View>
-                    <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '12' }]}>
-                        <Database size={13} color={colors.primaryLight + '80'} />
+
+                    <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                        <ChartBar size={13} color={colors.primaryLight + '70'} />
                         <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
-                            {formatWeightDisplay(volumeDisplay, weightUnit)}
+                            {volumeStr} {weightUnit}
+                        </Text>
+                    </View>
+
+                    <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                        <Barbell size={13} color={colors.primaryLight + '70'} />
+                        <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
+                            {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
                         </Text>
                     </View>
                 </View>
@@ -85,18 +103,17 @@ export default function WorkoutHistoryScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-            {/* ─── HEADER ─── */}
+            {/* TOP BAR */}
             <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
                 <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
                     <CaretLeft size={24} color={colors.primaryLight} />
                 </Pressable>
                 <Text style={[styles.title, { color: colors.primaryLight }]}>History</Text>
-                <View style={styles.headerSpacer} />
             </View>
 
             {loading ? (
                 <ActivityIndicator
-                    style={{ marginTop: Spacing.xl }}
+                    style={styles.loader}
                     color={colors.primaryLight + '80'}
                 />
             ) : (
@@ -111,8 +128,11 @@ export default function WorkoutHistoryScreen() {
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={
                         <View style={styles.emptyWrap}>
-                            <Text style={[styles.emptyText, { color: colors.primaryLight + '40' }]}>
-                                No completed workouts yet.
+                            <Text style={[styles.emptyPrimary, { color: colors.primaryLight + '30' }]}>
+                                No workouts yet.
+                            </Text>
+                            <Text style={[styles.emptySecondary, { color: colors.primaryLight + '25' }]}>
+                                Complete your first workout to see your history.
                             </Text>
                         </View>
                     }
@@ -127,7 +147,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
 
-    // Header — matches workout overlay top bar
+    // Header
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -146,51 +166,55 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         letterSpacing: -0.3,
         textAlign: 'center',
-        marginRight: 40, // offset for back button so title is truly centred
+        marginRight: 40,
     },
-    headerSpacer: {
-        width: 0,
+
+    // Loader
+    loader: {
+        marginTop: 80,
     },
 
     // List
     list: {
         paddingHorizontal: 16,
         paddingTop: 8,
-        gap: 8,
     },
 
     // Card
     card: {
-        borderRadius: 14,
-        padding: 16,
+        borderRadius: 16,
+        padding: 18,
+        marginBottom: 10,
     },
     cardTop: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 10,
-        gap: 8,
+        alignItems: 'flex-start',
     },
     cardName: {
-        fontSize: 16,
+        fontSize: 17,
         fontWeight: '600',
-        letterSpacing: -0.2,
+        letterSpacing: -0.3,
         flex: 1,
     },
     cardDate: {
         fontSize: 13,
-        fontWeight: '400',
+        marginTop: 2,
     },
+
+    // Stats row
     cardStats: {
         flexDirection: 'row',
         gap: 8,
+        marginTop: 12,
+        flexWrap: 'wrap',
     },
     statPill: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 5,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         borderRadius: 20,
     },
     statText: {
@@ -198,14 +222,21 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    // Empty
+    // Empty state
     emptyWrap: {
         alignItems: 'center',
-        marginTop: 60,
+        marginTop: 80,
     },
-    emptyText: {
-        fontSize: 15,
-        fontWeight: '400',
+    emptyPrimary: {
+        fontSize: 16,
+        fontWeight: '500',
         textAlign: 'center',
+    },
+    emptySecondary: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 8,
+        lineHeight: 20,
+        paddingHorizontal: 40,
     },
 });
