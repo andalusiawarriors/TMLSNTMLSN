@@ -31,6 +31,7 @@ import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { Input } from '../components/Input';
+import { UnitWheelPicker, UNIT_TO_GRAMS, type AddMealUnit } from '../components/UnitWheelPicker';
 import type { Meal, MealType, NutritionLog } from '../types';
 
 // Quicksilver badge not in repo; use gold until quicksilver_verified_badge.png is added
@@ -91,6 +92,9 @@ export default function SearchFoodScreen() {
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
+  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('100g');
+  const [addMealAmount, setAddMealAmount] = useState('1');
+  const selectedFoodRef = useRef<ParsedNutrition | null>(null);
 
   useEffect(() => {
     preloadCommonSearches();
@@ -186,20 +190,39 @@ export default function SearchFoodScreen() {
   const handleSelect = (food: ParsedNutrition) => {
     addToFoodHistory(food);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    selectedFoodRef.current = food;
     setMealName(food.name);
     const top100 = isTmlsnTop100(food);
     const isTmlsnVerified = isFoundationVerified(food);
     setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (food.brand ?? ''));
     setAddMealBrandName(food.brand ?? '');
-    setCalories(String(food.calories ?? ''));
-    setProtein(String(food.protein ?? ''));
-    setCarbs(String(food.carbs ?? ''));
-    setFat(String(food.fat ?? ''));
+    setAddMealUnit('100g');
+    setAddMealAmount('1');
+    const factor = UNIT_TO_GRAMS['100g'] / 100;
+    setCalories(String(Math.round((food.calories || 0) * factor)));
+    setProtein(String(Math.round((food.protein || 0) * factor)));
+    setCarbs(String(Math.round((food.carbs || 0) * factor)));
+    setFat(String(Math.round((food.fat || 0) * factor)));
     setShowAddMealOverlay(true);
   };
 
+  useEffect(() => {
+    const food = selectedFoodRef.current;
+    if (!food) return;
+    const amt = parseFloat(addMealAmount);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    const grams = amt * UNIT_TO_GRAMS[addMealUnit];
+    const scale = grams / 100;
+    setCalories(String(Math.round((food.calories || 0) * scale)));
+    setProtein(String(Math.round((food.protein || 0) * scale)));
+    setCarbs(String(Math.round((food.carbs || 0) * scale)));
+    setFat(String(Math.round((food.fat || 0) * scale)));
+  }, [addMealUnit, addMealAmount]);
+
   const closeAddMealOverlay = () => {
+    selectedFoodRef.current = null;
     setAddMealTitleBrand(''); setAddMealBrandName('');
+    setAddMealUnit('100g'); setAddMealAmount('1');
     setShowAddMealOverlay(false);
   };
 
@@ -249,12 +272,14 @@ export default function SearchFoodScreen() {
       fat: newMeal.fat,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    selectedFoodRef.current = null;
     setAddMealTitleBrand(''); setAddMealBrandName('');
     setMealName('');
     setCalories('');
     setProtein('');
     setCarbs('');
     setFat('');
+    setAddMealUnit('100g'); setAddMealAmount('1');
     setMealType('breakfast');
     setShowAddMealOverlay(false);
   };
@@ -611,8 +636,8 @@ export default function SearchFoodScreen() {
             <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(47, 48, 49, 0.5)' }]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, addMealOverlayStyles.sheetContent]} pointerEvents="box-none">
-            <View style={[addMealOverlayStyles.closeRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10 }]}>
-              <BackButton onPress={closeAddMealOverlay} />
+            <View style={[addMealOverlayStyles.closeRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
+              <BackButton onPress={closeAddMealOverlay} asModal />
             </View>
             <ScrollView style={addMealOverlayStyles.scroll} contentContainerStyle={[addMealOverlayStyles.scrollContent, { paddingTop: 54 + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
               <View style={addMealOverlayStyles.titleWrap}>
@@ -682,7 +707,6 @@ export default function SearchFoodScreen() {
                   </>
                 )}
               </View>
-              <Text style={addMealOverlayStyles.inputLabel}>Meal type</Text>
               <View style={addMealOverlayStyles.mealTypeRow}>
                 {MEAL_TYPE_ORDER.map((type) => (
                   <TouchableOpacity
@@ -694,15 +718,30 @@ export default function SearchFoodScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" />
-              <View style={addMealOverlayStyles.macroRow}>
-                <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={addMealOverlayStyles.macroInput} />
-                <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="numeric" placeholder="40" containerStyle={addMealOverlayStyles.macroInput} />
-                <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={addMealOverlayStyles.macroInput} />
+              <View style={addMealOverlayStyles.caloriesShowcaseBlock}>
+                <Text style={addMealOverlayStyles.caloriesValue}>{calories || '—'}</Text>
+                <Text style={addMealOverlayStyles.caloriesLabel}>calories</Text>
+              </View>
+              <View style={addMealOverlayStyles.macrosRow}>
+                <View style={addMealOverlayStyles.macroBlock}>
+                  <Text style={addMealOverlayStyles.macroValue}>{protein ? `${protein}g` : '—'}</Text>
+                  <Text style={addMealOverlayStyles.macroLabel}>Protein</Text>
+                </View>
+                <View style={addMealOverlayStyles.macroBlock}>
+                  <Text style={addMealOverlayStyles.macroValue}>{carbs ? `${carbs}g` : '—'}</Text>
+                  <Text style={addMealOverlayStyles.macroLabel}>Carbs</Text>
+                </View>
+                <View style={addMealOverlayStyles.macroBlock}>
+                  <Text style={addMealOverlayStyles.macroValue}>{fat ? `${fat}g` : '—'}</Text>
+                  <Text style={addMealOverlayStyles.macroLabel}>Fat</Text>
+                </View>
+              </View>
+              <View style={addMealOverlayStyles.unitAmountRow}>
+                <UnitWheelPicker value={addMealUnit} onValueChange={setAddMealUnit} compact />
+                <Input value={addMealAmount} onChangeText={setAddMealAmount} keyboardType="numeric" placeholder="" containerStyle={addMealOverlayStyles.amountContainer} style={addMealOverlayStyles.amountInput} />
               </View>
               <View style={addMealOverlayStyles.buttons}>
-                <Button title="Cancel" onPress={closeAddMealOverlay} variant="secondary" style={addMealOverlayStyles.button} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
-                <Button title="Add Meal" onPress={handleAddMealOverlay} style={addMealOverlayStyles.button} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
+                <Button title="Add Meal" onPress={handleAddMealOverlay} variant="gradient" style={addMealOverlayStyles.button} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
               </View>
             </ScrollView>
           </View>
@@ -720,15 +759,25 @@ const addMealOverlayStyles = StyleSheet.create({
   scrollContent: { paddingBottom: Spacing.xxl },
   titleWrap: { alignItems: 'center', marginBottom: Spacing.lg },
   title: { fontSize: Typography.h1, fontWeight: '700', color: Colors.primaryLight, letterSpacing: -0.11 },
-  titleSmall: { fontSize: Math.round(Typography.h1 * 0.5) },
+  titleSmall: { fontSize: 20 },
   titleCentered: { textAlign: 'center' },
-  titleBrand: { fontSize: Typography.body, fontWeight: '600', color: Colors.primaryLight, marginTop: 4, textAlign: 'center', opacity: 0.85 },
+  titleBrand: { fontSize: 11, fontWeight: '600', color: Colors.primaryLight, marginTop: 4, textAlign: 'center', opacity: 0.85 },
   brandLabel: { fontSize: 11, color: Colors.primaryLight, fontWeight: '400', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
-  subtitleTop100: { fontSize: Typography.body, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  subtitleTop100: { fontSize: 11, fontWeight: '700', marginTop: 4, textAlign: 'center' },
   subtitleMaskWrap: { alignSelf: 'center' },
   verifiedTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
   verifiedTitleMaskWrap: { alignSelf: 'center' },
+  caloriesShowcaseBlock: { alignSelf: 'stretch', alignItems: 'center', marginBottom: Spacing.lg },
+  caloriesValue: { fontSize: 48, fontWeight: '700', color: Colors.primaryLight },
+  caloriesLabel: { fontSize: Typography.label, color: Colors.primaryLight, opacity: 0.8, marginTop: Spacing.xs },
+  macrosRow: { flexDirection: 'row', justifyContent: 'center', alignSelf: 'stretch', gap: Spacing.lg, marginBottom: Spacing.lg },
+  macroBlock: { alignItems: 'center' },
+  macroLabel: { fontSize: Typography.label, color: Colors.primaryLight, opacity: 0.8, marginTop: Spacing.xs },
+  macroValue: { fontSize: Typography.dataValue, fontWeight: '600', color: Colors.primaryLight },
+  unitAmountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.md, marginBottom: Spacing.md, alignSelf: 'stretch' },
   inputLabel: { fontSize: Typography.label, color: Colors.primaryLight, marginBottom: Spacing.xs, fontWeight: '500', textAlign: 'center' },
+  amountContainer: { width: 80, marginBottom: 0 },
+  amountInput: { textAlign: 'center', minHeight: 44 },
   mealTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.md, justifyContent: 'center' },
   mealTypeChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, backgroundColor: Colors.primaryDarkLighter },
   mealTypeChipActive: { backgroundColor: Colors.primaryLight, opacity: 0.9 },
