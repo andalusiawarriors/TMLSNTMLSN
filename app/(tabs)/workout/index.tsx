@@ -987,13 +987,13 @@ export default function WorkoutScreen({
           >
             {recentSessions.length === 0 ? (
               <View style={{ alignItems: 'center', marginTop: 60 }}>
-                <Text style={{ color: colors.primaryLight + '60', fontFamily: 'DMMono_400Regular', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
+                <Text style={{ color: colors.primaryLight + '60', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
                   {'Start a workout using\nthe + button below'}
                 </Text>
               </View>
             ) : (
               <>
-                <Text style={{ color: '#D4B896', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 4 }}>Recent</Text>
+                <Text style={{ color: colors.primaryLight + '80', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 4 }}>Recent</Text>
                 {recentSessions.map((session) => {
                   const rawVolume = session.exercises.reduce((acc: number, ex: any) =>
                     acc + ex.sets.filter((s: any) => s.completed).reduce((sacc: number, set: any) => sacc + (set.weight * set.reps), 0), 0);
@@ -1002,29 +1002,27 @@ export default function WorkoutScreen({
                     <Pressable
                       key={session.id}
                       style={{
-                        backgroundColor: 'rgba(40,40,40,0.6)',
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.06)',
-                        borderRadius: 18,
+                        backgroundColor: colors.primaryLight + '08',
+                        borderRadius: 14,
                         padding: Spacing.md,
                         marginBottom: Spacing.sm + 4,
                       }}
                       onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: session.id } })}
                     >
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ fontFamily: 'EBGaramond_600SemiBold', fontSize: 18, color: colors.primaryLight }}>{session.name}</Text>
-                        <Text style={{ fontFamily: 'DMMono_400Regular', fontSize: 12, color: colors.primaryLight + '80' }}>
+                        <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.2, color: colors.primaryLight }}>{session.name}</Text>
+                        <Text style={{ fontSize: 13, color: colors.primaryLight + '50' }}>
                           {format(new Date(session.date), 'MMM d, yyyy')}
                         </Text>
                       </View>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 38 }}>
-                          <Clock size={14} color={colors.primaryLight + 'A0'} />
-                          <Text style={{ fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.primaryLight }}>{session.duration}m</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}>
+                          <Clock size={13} color={colors.primaryLight + '80'} />
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primaryLight + 'CC' }}>{session.duration}m</Text>
                         </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 38 }}>
-                          <Database size={14} color={colors.primaryLight + 'A0'} />
-                          <Text style={{ fontFamily: 'DMMono_500Medium', fontSize: 13, color: colors.primaryLight }}>{formatWeightDisplay(volumeDisplay, weightUnit)}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}>
+                          <Database size={13} color={colors.primaryLight + '80'} />
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primaryLight + 'CC' }}>{formatWeightDisplay(volumeDisplay, weightUnit)}</Text>
                         </View>
                       </View>
                     </Pressable>
@@ -1034,7 +1032,7 @@ export default function WorkoutScreen({
                   onPress={() => router.push('/workout-history')}
                   style={{ alignItems: 'center', marginTop: 8, paddingVertical: 8 }}
                 >
-                  <Text style={{ color: '#D4B896', fontSize: 14, fontFamily: 'DMMono_400Regular', textDecorationLine: 'underline' }}>
+                  <Text style={{ color: colors.primaryLight + '60', fontSize: 14, fontWeight: '500' }}>
                     View all history
                   </Text>
                 </Pressable>

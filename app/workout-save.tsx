@@ -13,19 +13,15 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
-  ImageBackground,
   ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Spacing, BorderRadius, Font } from '../constants/theme';
+import { Spacing, BorderRadius } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon } from 'phosphor-react-native';
-
-const ACCENT_GOLD = '#D4B896';
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -88,7 +84,6 @@ export default function WorkoutSaveScreen() {
 
       let postId = createdPostId;
 
-      // 1. Insert workout_posts row FIRST (or skip if retrying after upload failure)
       if (!postId) {
         const { data: postData, error: postError } = await supabase
           .from('workout_posts')
@@ -108,7 +103,6 @@ export default function WorkoutSaveScreen() {
         if (__DEV__) console.log('[WorkoutSave] created postId:', postId);
       }
 
-      // 2. If user picked an image, upload to workout-images at postId/timestamp.jpg
       if (imageUri) {
         const timestamp = Date.now();
         const imagePath = `${postId}/${timestamp}.jpg`;
@@ -121,13 +115,12 @@ export default function WorkoutSaveScreen() {
           .upload(imagePath, blob, { upsert: true });
 
         if (uploadErr) {
-          setUploadError('Image upload failed. Post saved. Tap Share again to retry upload.');
+          setUploadError('Image upload failed. Post saved. Tap Share again to retry.');
           if (__DEV__) console.warn('[WorkoutSave] upload failed:', uploadErr);
           setIsSaving(false);
           return;
         }
 
-        // 3. Update workout_posts.image_path
         const { error: updateErr } = await supabase
           .from('workout_posts')
           .update({ image_path: imagePath })
@@ -154,117 +147,103 @@ export default function WorkoutSaveScreen() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.rootContainer}>
-        {/* Background */}
-        <ImageBackground
-          source={require('../assets/home-background.png')}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-            locations={[0, 0.2, 0.35, 0.45, 0.65]}
-            style={StyleSheet.absoluteFill}
-          />
-        </ImageBackground>
-
+      <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* Header */}
-          <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
-            <Pressable onPress={() => router.back()} style={styles.headerBtn} hitSlop={12}>
-              <Text style={styles.headerSkipText}>Skip</Text>
+          {/* ─── TOP BAR ─── */}
+          <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+            <Pressable onPress={() => router.back()} style={styles.skipWrap} hitSlop={12}>
+              <Text style={[styles.skipText, { color: colors.primaryLight + '60' }]}>Skip</Text>
             </Pressable>
 
-            <Text style={styles.headerTitle}>New Post</Text>
+            <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>New Post</Text>
 
-            <Pressable onPress={handleSave} style={styles.headerBtn} hitSlop={12} disabled={isSaving}>
+            <Pressable onPress={handleSave} style={styles.shareWrap} hitSlop={12} disabled={isSaving}>
               {isSaving ? (
-                <ActivityIndicator size="small" color={ACCENT_GOLD} />
+                <ActivityIndicator size="small" color={colors.primaryDark} />
               ) : (
-                <Text style={styles.headerShareText}>Share</Text>
+                <View style={[styles.shareButton, { backgroundColor: colors.primaryLight }]}>
+                  <Text style={[styles.shareButtonText, { color: colors.primaryDark }]}>Share</Text>
+                </View>
               )}
             </Pressable>
           </View>
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + Spacing.xxl }]}
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Error Banner */}
+            {/* Error */}
             {uploadError ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{uploadError}</Text>
+              <View style={[styles.errorRow, { backgroundColor: colors.accentRed + '15' }]}>
+                <Text style={[styles.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
               </View>
             ) : null}
 
-            {/* Photo Section */}
-            <Text style={styles.sectionLabel}>Photo</Text>
-            <View style={styles.card}>
-              <View style={styles.imageRow}>
-                {imageUri ? (
-                  <Image source={{ uri: imageUri }} style={styles.previewImage} />
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Camera size={32} color={ACCENT_GOLD} weight="thin" />
-                    <Text style={styles.placeholderText}>No photo</Text>
-                  </View>
-                )}
-                <View style={styles.photoActions}>
-                  <Pressable style={styles.photoBtn} onPress={handleTakePhoto}>
-                    <Camera size={20} color={ACCENT_GOLD} />
-                    <Text style={styles.photoBtnText}>Camera</Text>
-                  </Pressable>
-                  <Pressable style={styles.photoBtn} onPress={handlePickPhoto}>
-                    <ImageIcon size={20} color={ACCENT_GOLD} />
-                    <Text style={styles.photoBtnText}>Gallery</Text>
-                  </Pressable>
+            {/* ─── PHOTO ─── */}
+            <View style={[styles.photoRow]}>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.previewImage} />
+              ) : (
+                <View style={[styles.photoPlaceholder, { backgroundColor: colors.primaryLight + '08' }]}>
+                  <Camera size={28} color={colors.primaryLight + '50'} weight="thin" />
                 </View>
+              )}
+
+              <View style={styles.photoButtons}>
+                <Pressable
+                  style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '12' }]}
+                  onPress={handleTakePhoto}
+                >
+                  <Camera size={18} color={colors.primaryLight} />
+                  <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Camera</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '12' }]}
+                  onPress={handlePickPhoto}
+                >
+                  <ImageIcon size={18} color={colors.primaryLight} />
+                  <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Gallery</Text>
+                </Pressable>
               </View>
             </View>
 
-            {/* Post Details Section */}
-            <Text style={styles.sectionLabel}>Post Details</Text>
-            <View style={styles.card}>
-              <View style={styles.inputRow}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Title (e.g. Morning Push)..."
-                  placeholderTextColor={ACCENT_GOLD + '66'}
-                  value={title}
-                  onChangeText={setTitle}
-                />
-              </View>
-              <View style={styles.rowSeparator} />
-              <View style={styles.captionRow}>
-                <TextInput
-                  style={styles.inputArea}
-                  placeholder="Write a caption..."
-                  placeholderTextColor={ACCENT_GOLD + '66'}
-                  multiline
-                  value={description}
-                  onChangeText={setDescription}
-                  textAlignVertical="top"
-                />
-              </View>
+            {/* ─── INPUTS ─── */}
+            <View style={[styles.inputGroup, { backgroundColor: colors.primaryLight + '08' }]}>
+              <TextInput
+                style={[styles.inputTitle, { color: colors.primaryLight }]}
+                placeholder="Title"
+                placeholderTextColor={colors.primaryLight + '30'}
+                value={title}
+                onChangeText={setTitle}
+                returnKeyType="next"
+              />
+              <View style={[styles.inputDivider, { backgroundColor: colors.primaryLight + '12' }]} />
+              <TextInput
+                style={[styles.inputCaption, { color: colors.primaryLight }]}
+                placeholder="Write a caption..."
+                placeholderTextColor={colors.primaryLight + '30'}
+                multiline
+                value={description}
+                onChangeText={setDescription}
+                textAlignVertical="top"
+              />
             </View>
 
-            {/* Privacy Section */}
-            <Text style={styles.sectionLabel}>Privacy</Text>
-            <View style={styles.card}>
-              <View style={styles.toggleRow}>
-                <Text style={styles.toggleLabel}>Publicly Visible</Text>
-                <Switch
-                  value={isPublic}
-                  onValueChange={setIsPublic}
-                  trackColor={{ false: 'rgba(255,255,255,0.12)', true: '#34C759' }}
-                  thumbColor={isPublic ? '#fff' : '#C6C6C6'}
-                />
-              </View>
+            {/* ─── VISIBILITY ─── */}
+            <View style={[styles.toggleRow, { backgroundColor: colors.primaryLight + '08' }]}>
+              <Text style={[styles.toggleLabel, { color: colors.primaryLight }]}>Public</Text>
+              <Switch
+                value={isPublic}
+                onValueChange={setIsPublic}
+                trackColor={{ false: colors.primaryLight + '20', true: colors.primaryLight + '80' }}
+                thumbColor={isPublic ? colors.primaryDark : colors.primaryLight + '60'}
+                ios_backgroundColor={colors.primaryLight + '20'}
+              />
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -274,171 +253,136 @@ export default function WorkoutSaveScreen() {
 }
 
 const styles = StyleSheet.create({
-  rootContainer: {
+  root: {
     flex: 1,
-    backgroundColor: '#2F3031',
   },
 
-  // Header
-  header: {
+  // Top bar — matches workout overlay logTopBar
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
-  headerBtn: {
-    padding: Spacing.sm,
-    minWidth: 56,
+  skipWrap: {
+    minWidth: 52,
   },
-  headerTitle: {
-    fontFamily: Font.semiBold,
-    fontSize: 18,
-    color: '#C6C6C6',
-    textAlign: 'center',
+  skipText: {
+    fontSize: 15,
+    fontWeight: '400',
   },
-  headerSkipText: {
-    fontFamily: Font.regular,
-    fontSize: 16,
-    color: 'rgba(198, 198, 198, 0.5)',
+  screenTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: -0.3,
   },
-  headerShareText: {
-    fontFamily: Font.semiBold,
-    fontSize: 16,
-    color: ACCENT_GOLD,
-    textAlign: 'right',
+  shareWrap: {
+    minWidth: 52,
+    alignItems: 'flex-end',
   },
-
-  // Scroll content
-  scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
+  shareButton: {
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  shareButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
 
-  // Section labels
-  sectionLabel: {
-    fontFamily: Font.semiBold,
+  // Scroll
+  scroll: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 10,
+  },
+
+  // Error
+  errorRow: {
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  errorText: {
     fontSize: 14,
-    color: ACCENT_GOLD,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
-    letterSpacing: 0.5,
+    fontWeight: '400',
+    lineHeight: 20,
   },
 
-  // Glass card
-  card: {
-    backgroundColor: 'rgba(40,40,40,0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-
-  // Photo card internals
-  imageRow: {
+  // Photo row
+  photoRow: {
     flexDirection: 'row',
-    padding: Spacing.md,
     alignItems: 'center',
+    gap: 14,
+    marginBottom: 2,
+  },
+  photoPlaceholder: {
+    width: 88,
+    height: 110,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewImage: {
-    width: 100,
-    height: 125,
-    borderRadius: BorderRadius.md,
+    width: 88,
+    height: 110,
+    borderRadius: 12,
   },
-  imagePlaceholder: {
-    width: 100,
-    height: 125,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  placeholderText: {
-    fontFamily: Font.regular,
-    color: '#C6C6C6',
-    fontSize: 13,
-    marginTop: Spacing.sm,
-  },
-  photoActions: {
+  photoButtons: {
     flex: 1,
-    marginLeft: Spacing.lg,
-    justifyContent: 'center',
-    gap: Spacing.md,
+    gap: 10,
   },
   photoBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    gap: Spacing.sm,
+    gap: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 10,
   },
-  photoBtnText: {
-    fontFamily: Font.regular,
-    fontSize: 14,
-    color: '#C6C6C6',
+  photoBtnLabel: {
+    fontSize: 15,
+    fontWeight: '500',
   },
 
-  // Input card internals
-  inputRow: {
-    height: 56,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
+  // Input group
+  inputGroup: {
+    borderRadius: 14,
+    overflow: 'hidden',
   },
-  captionRow: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-  },
-  input: {
-    fontFamily: Font.regular,
+  inputTitle: {
     fontSize: 16,
-    color: '#C6C6C6',
+    fontWeight: '400',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  inputArea: {
-    fontFamily: Font.regular,
-    fontSize: 16,
-    color: '#C6C6C6',
-    minHeight: 90,
+  inputDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
   },
-  rowSeparator: {
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
-    marginHorizontal: Spacing.md,
+  inputCaption: {
+    fontSize: 15,
+    fontWeight: '400',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    minHeight: 96,
   },
 
-  // Toggle row
+  // Toggle
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 56,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderRadius: 14,
+    height: 52,
   },
   toggleLabel: {
-    fontFamily: Font.regular,
     fontSize: 16,
-    color: '#C6C6C6',
-  },
-
-  // Error banner
-  errorBanner: {
-    marginTop: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255,0,0,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,0,0,0.25)',
-  },
-  errorText: {
-    fontFamily: Font.regular,
-    fontSize: 14,
-    color: '#C6C6C6',
+    fontWeight: '400',
   },
 });
