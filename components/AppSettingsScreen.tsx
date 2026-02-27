@@ -179,6 +179,30 @@ export default function AppSettingsScreen() {
           )}
         </SettingsCard>
 
+        <SettingsSectionHeader label="Display" />
+        <SettingsCard>
+          <SettingsRow
+            icon="body-outline"
+            label="Body map figure"
+            subtitle="anatomical figure for muscle heatmap"
+            last
+            right={
+              <View style={styles.pillRow}>
+                <SegmentPill
+                  label="Male"
+                  selected={(settings.bodyMapGender ?? 'male') === 'male'}
+                  onPress={() => updateSettings({ bodyMapGender: 'male' })}
+                />
+                <SegmentPill
+                  label="Female"
+                  selected={(settings.bodyMapGender ?? 'male') === 'female'}
+                  onPress={() => updateSettings({ bodyMapGender: 'female' })}
+                />
+              </View>
+            }
+          />
+        </SettingsCard>
+
         <View style={{ height: Spacing.xxl }} />
       </ScrollView>
     </View>

@@ -42,7 +42,8 @@ export default function ProfileStatisticsScreen() {
             <MuscleBodyHeatmap heatmapData={weeklyHeatmap} />
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No workout data for this week</Text>
+              <Text style={styles.emptyText}>No workouts logged this week</Text>
+              <Text style={styles.emptySubText}>Complete a workout to see your muscle map</Text>
             </View>
           )}
         </AnimatedFadeInUp>
@@ -61,14 +62,23 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.md,
-    paddingBottom: 48,
+    paddingTop: Spacing.md,
+    paddingBottom: 64,
   },
   emptyState: {
-    paddingVertical: 48,
+    paddingVertical: 64,
     alignItems: 'center',
+    gap: 10,
   },
   emptyText: {
     fontSize: Typography.body,
-    color: Colors.primaryLight + '80',
+    fontWeight: '500',
+    color: Colors.primaryLight + '60',
+    letterSpacing: -0.2,
+  },
+  emptySubText: {
+    fontSize: Typography.label,
+    color: Colors.primaryLight + '35',
+    letterSpacing: -0.1,
   },
 });

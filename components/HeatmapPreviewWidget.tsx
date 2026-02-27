@@ -21,6 +21,7 @@ import Animated, {
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { BodyAnatomySvg } from './BodyAnatomySvg';
 import { Colors, Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
+import { getUserSettings } from '../utils/storage';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const BODY_WIDTH = Math.min(180, PROGRESS_CARD_WIDTH - Spacing.lg * 2);
@@ -64,6 +65,13 @@ interface HeatmapPreviewWidgetProps {
 
 export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps) {
   const [pageIndex, setPageIndex] = useState(0);
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+
+  useEffect(() => {
+    getUserSettings().then((s) => {
+      if (s.bodyMapGender) setGender(s.bodyMapGender);
+    });
+  }, []);
 
   const todayDayOfWeek = useMemo(() => {
     const d = new Date();
@@ -107,6 +115,7 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
             pressedMuscleGroup={null}
             width={BODY_WIDTH}
             height={BODY_HEIGHT}
+            gender={gender}
           />
         </View>
         {/* Slide 2: Back view */}
@@ -119,6 +128,7 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
             pressedMuscleGroup={null}
             width={BODY_WIDTH}
             height={BODY_HEIGHT}
+            gender={gender}
           />
         </View>
       </ScrollView>
@@ -228,6 +238,14 @@ export function HeatmapPreviewWidgetSideBySide({
   cardWidth = Dimensions.get('window').width - 38,
   bare = false,
 }: HeatmapPreviewWidgetSideBySideProps) {
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+
+  useEffect(() => {
+    getUserSettings().then((s) => {
+      if (s.bodyMapGender) setGender(s.bodyMapGender);
+    });
+  }, []);
+
   const weekAggregate = useMemo(
     () => aggregateHeatmapLast7Days(heatmapData),
     [heatmapData]
@@ -276,6 +294,7 @@ export function HeatmapPreviewWidgetSideBySide({
             pressedMuscleGroup={null}
             width={bodyWidth}
             height={bodyHeight}
+            gender={gender}
           />
           <Text style={styles.sideBySideLabel}>front</Text>
         </View>
@@ -288,6 +307,7 @@ export function HeatmapPreviewWidgetSideBySide({
             pressedMuscleGroup={null}
             width={bodyWidth}
             height={bodyHeight}
+            gender={gender}
           />
           <Text style={styles.sideBySideLabel}>back</Text>
         </View>

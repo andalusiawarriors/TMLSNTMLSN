@@ -114,6 +114,7 @@ export interface UserSettings {
   restTimerSound: boolean;
   defaultRestTimer?: number; // seconds, for new exercises (workout)
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
+  bodyMapGender?: 'male' | 'female'; // body map anatomical figure
 }
 
 // Saved Food (for quick re-logging)
