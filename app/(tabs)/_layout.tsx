@@ -310,12 +310,19 @@ export default function TabsLayout() {
     };
   }, [streakShiftX]);
 
+  // Clamp pill X so rebound never goes outside bar (fill still bounces, display is clamped)
+  const pillTranslateXClamped = pillTranslateX.interpolate({
+    inputRange: [getTabPillX(0) - 100, getTabPillX(0), getTabPillX(4), getTabPillX(4) + 100],
+    outputRange: [getTabPillX(0), getTabPillX(0), getTabPillX(4), getTabPillX(4)],
+    extrapolate: 'clamp',
+  });
+
   useEffect(() => {
     RNAnimated.spring(pillTranslateX, {
       toValue: getTabPillX(activeTabIndex),
-      damping: 16,
-      stiffness: 130,
-      mass: 1,
+      damping: 22,
+      stiffness: 300,
+      mass: 0.7,
       useNativeDriver: true,
     }).start();
   }, [activeTabIndex, pillTranslateX]);
@@ -755,7 +762,7 @@ export default function TabsLayout() {
           transform: [{ translateX: streakShiftX }],
         }}
       >
-        {/* ── Layer 1: Animated background (recedes when FAB opens) ── */}
+        {/* ── Layer 1: Animated background (recedes when FAB opens) — transparent + gradient border, same style as selection pill ── */}
         <RNAnimated.View
           style={{
             position: 'absolute',
@@ -767,16 +774,24 @@ export default function TabsLayout() {
             overflow: 'hidden',
             transform: [{ scale: barScale }, { translateY: barTranslateY }],
             opacity: barOpacity,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 12,
+            elevation: 6,
           }}
         >
-          {/* Border gradient (matches top pills) */}
+          {/* Gradient ring — diagonal gradient; 1px edge revealed as the angled-light border */}
           <LinearGradient
-            colors={colors.tabBarBorder}
+            colors={['rgba(210,220,230,0.50)', 'rgba(180,200,215,0.18)', 'rgba(120,130,140,0.03)']}
+            locations={[0, 0.42, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS }]}
+            pointerEvents="none"
           />
-          {/* Subtle gradient fill */}
-          <LinearGradient
-            colors={colors.tabBarFill}
+          {/* Inset fill — 1px gap reveals gradient ring as border */}
+          <View
             style={{
               position: 'absolute',
               top: 1,
@@ -784,27 +799,124 @@ export default function TabsLayout() {
               right: 1,
               bottom: 1,
               borderRadius: PILL_RADIUS - 1,
+              overflow: 'hidden',
+              backgroundColor: colors.tabBarFill[0],
             }}
-          />
+          >
+            <LinearGradient
+              colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.01)']}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: PILL_RADIUS - 1 }]}
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.04)', 'transparent']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 14,
+                borderTopLeftRadius: PILL_RADIUS - 1,
+                borderTopRightRadius: PILL_RADIUS - 1,
+              }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.22)']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 28,
+                borderBottomLeftRadius: PILL_RADIUS - 1,
+                borderBottomRightRadius: PILL_RADIUS - 1,
+              }}
+            />
+          </View>
+        </RNAnimated.View>
 
-          {/* ── Layer 2: Sliding selected pill ── */}
-          <RNAnimated.View
+        {/* ── Layer 2: Sliding selected pill — sibling so shadow isn't clipped ── */}
+        <RNAnimated.View
+          style={{
+            position: 'absolute',
+            top: BORDER_INSET + SELECTED_TAB_PILL_V_PAD,
+            left: PILL_MARGIN_H,
+            width: SELECTED_TAB_PILL_WIDTH,
+            height: SELECTED_TAB_PILL_HEIGHT,
+            borderRadius: SELECTED_TAB_PILL_RADIUS,
+            overflow: 'hidden',
+            transform: [
+              { translateX: pillTranslateXClamped },
+              { scaleX: pillScaleX },
+              { scaleY: pillScaleY },
+            ],
+            opacity: pillOpacity,
+            // Soft depth (neutral, no tint)
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.2,
+            shadowRadius: 8,
+            elevation: 8,
+          }}
+        >
+          {/* Gradient ring — diagonal gradient; 1px edge revealed as the angled-light border */}
+          <LinearGradient
+            colors={['rgba(210,220,230,0.50)', 'rgba(180,200,215,0.18)', 'rgba(120,130,140,0.03)']}
+            locations={[0, 0.42, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: SELECTED_TAB_PILL_RADIUS }]}
+            pointerEvents="none"
+          />
+          {/* Inset fill — 1px gap reveals gradient ring as border */}
+          <View
             style={{
               position: 'absolute',
-              top: BORDER_INSET + SELECTED_TAB_PILL_V_PAD,
-              left: 0,
-              width: SELECTED_TAB_PILL_WIDTH,
-              height: SELECTED_TAB_PILL_HEIGHT,
-              borderRadius: SELECTED_TAB_PILL_RADIUS,
-              backgroundColor: colors.tabBarSelectedPill,
-              transform: [
-                { translateX: pillTranslateX },
-                { scaleX: pillScaleX },
-                { scaleY: pillScaleY },
-              ],
-              opacity: pillOpacity,
+              top: 1,
+              left: 1,
+              right: 1,
+              bottom: 1,
+              borderRadius: SELECTED_TAB_PILL_RADIUS - 1,
+              overflow: 'hidden',
+              backgroundColor: colors.tabBarFill[0],
             }}
-          />
+          >
+            <LinearGradient
+              colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.06)']}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: SELECTED_TAB_PILL_RADIUS - 1 }]}
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.04)', 'transparent']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 12,
+                borderTopLeftRadius: SELECTED_TAB_PILL_RADIUS - 1,
+                borderTopRightRadius: SELECTED_TAB_PILL_RADIUS - 1,
+              }}
+            />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.10)']}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 24,
+                borderBottomLeftRadius: SELECTED_TAB_PILL_RADIUS - 1,
+                borderBottomRightRadius: SELECTED_TAB_PILL_RADIUS - 1,
+              }}
+            />
+          </View>
         </RNAnimated.View>
 
         {/* ── Layer 3: Icon row (moves with bar when FAB opens) ── */}
@@ -839,7 +951,7 @@ export default function TabsLayout() {
                       height: 44.8,
                       justifyContent: 'center',
                       alignItems: 'center',
-                      transform: [{ scale: fabScaleAnim }],
+                      transform: [{ scale: RNAnimated.multiply(barScale, fabScaleAnim) }],
                     }}
                   >
                     <RNAnimated.Image
@@ -910,7 +1022,7 @@ export default function TabsLayout() {
     colors,
     streakShiftX,
     barScale, barTranslateY, barOpacity,
-    pillTranslateX, pillScaleX, pillScaleY, pillOpacity,
+    pillTranslateXClamped, pillScaleX, pillScaleY, pillOpacity,
     tabScales, handleTabPressIn, handleTabPressOut, handleTabLongPress,
     fabScaleAnim, fabStarRotateInterpolate, fabRotateInterpolate,
     handleFabPressIn, handleFabPress,

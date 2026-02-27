@@ -1,0 +1,24 @@
+---
+description: Global repo rules (always on). Applies to all agents: safety, scope, verification, and Supervisor-mediated collaboration.
+globs: []
+alwaysApply: true
+---
+# REPO CONSTITUTION (Always Apply)
+## Non-Negotiables
+- No secrets (API keys, tokens, passwords) committed or pasted into code.
+- No broad refactors, dependency upgrades, or architecture changes unless the user explicitly asks.
+- Prefer smallest safe diff aligned with existing repo patterns.
+- Every change must include verification steps (build/test/lint/typecheck) OR an explicit reason why verification couldn't be run.
+## Collaboration Rules (Synchronous Team)
+- Specialists do not coordinate directly with each other. Cross-agent questions must be sent to the Supervisor via RFI/RFC.
+- No concurrent edits to the same file. Use Supervisor file locks.
+## Output Contract (For Any Agent Reply)
+Include:
+- Summary of changes
+- Files changed (paths)
+- Commands run (build/test/lint/typecheck) and results, or why not run
+- Risks / follow-ups
+## Code Quality Defaults
+- Avoid introducing new libraries unless necessary.
+- Keep functions small, names consistent, and error handling explicit.
+- No TODOs left behind unless the user explicitly accepts them.
