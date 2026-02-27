@@ -99,6 +99,8 @@ const TMLSN_VERIFIED_TICK_HEIGHT = 18;
 /** Tick size next to add-meal title (gradient + badge row). */
 const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 
+import { UnitWheelPicker, UNIT_TO_GRAMS, type AddMealUnit } from '../../components/UnitWheelPicker';
+
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
   regular: 'EBGaramond_400Regular',
@@ -325,6 +327,9 @@ export default function NutritionScreen({
   const [mealImage, setMealImage] = useState<string | undefined>();
   const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
   const [addMealBrandName, setAddMealBrandName] = useState('');
+  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('100g');
+  const [addMealAmount, setAddMealAmount] = useState('1');
+  const selectedFoodRef = useRef<ParsedNutrition | null>(null);
 
   // Edit Goals Form State
   const [editCalories, setEditCalories] = useState('');
@@ -523,19 +528,51 @@ export default function NutritionScreen({
   const resetMealForm = () => {
     setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
     setAddMealTitleBrand(''); setAddMealBrandName('');
+    setAddMealUnit('100g'); setAddMealAmount('1');
+    selectedFoodRef.current = null;
   };
 
-  const fillFormFromFood = (data: ParsedNutrition) => {
+  const fillFormFromFood = (data: ParsedNutrition, options?: { directValues?: boolean }) => {
+    const direct = options?.directValues ?? false;
+    if (!direct) {
+      selectedFoodRef.current = data;
+      setAddMealUnit('100g');
+      setAddMealAmount('1');
+    } else {
+      selectedFoodRef.current = null;
+    }
     setMealName(data.name);
-    setCalories(String(data.calories || ''));
-    setProtein(String(data.protein || ''));
-    setCarbs(String(data.carbs || ''));
-    setFat(String(data.fat || ''));
     const top100 = isTmlsnTop100(data);
     const isTmlsnVerified = isFoundationVerified(data);
     setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
     setAddMealBrandName(data.brand || '');
+    if (direct) {
+      setCalories(String(data.calories ?? ''));
+      setProtein(String(data.protein ?? ''));
+      setCarbs(String(data.carbs ?? ''));
+      setFat(String(data.fat ?? ''));
+    } else {
+      const factor = UNIT_TO_GRAMS['100g'] / 100;
+      setCalories(String(Math.round((data.calories || 0) * factor)));
+      setProtein(String(Math.round((data.protein || 0) * factor)));
+      setCarbs(String(Math.round((data.carbs || 0) * factor)));
+      setFat(String(Math.round((data.fat || 0) * factor)));
+    }
   };
+
+  // Recompute calories/macros when unit or amount changes and we have selected food
+  useEffect(() => {
+    const food = selectedFoodRef.current;
+    if (!food) return;
+    const amt = parseFloat(addMealAmount);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    const grams = amt * UNIT_TO_GRAMS[addMealUnit];
+    const scale = grams / 100;
+    setCalories(String(Math.round((food.calories || 0) * scale)));
+    setProtein(String(Math.round((food.protein || 0) * scale)));
+    setCarbs(String(Math.round((food.carbs || 0) * scale)));
+    setFat(String(Math.round((food.fat || 0) * scale)));
+  }, [addMealUnit, addMealAmount]);
 
   const fillAndShowForm = (data: ParsedNutrition) => {
     fillFormFromFood(data);
@@ -1045,12 +1082,11 @@ export default function NutritionScreen({
 
   const handleSelectSavedFood = (food: SavedFood) => {
     setShowSavedFoods(false);
-    fillAndShowForm({
-      name: food.name, brand: food.brand || '', calories: food.calories,
-      protein: food.protein, carbs: food.carbs, fat: food.fat, servingSize: '',
-      unit: 'g',
-      source: 'usda',
-    });
+    fillFormFromFood(
+      { name: food.name, brand: food.brand || '', calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat, servingSize: '', unit: 'g', source: 'usda' },
+      { directValues: true }
+    );
+    setShowAddMeal(true);
   };
 
   const openEditGoals = () => {
@@ -2270,8 +2306,8 @@ export default function NutritionScreen({
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
-              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { setShowListFood(false); asModal && onCloseModal?.(); }} />
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
+              <BackButton asModal onPress={() => { setShowListFood(false); asModal && onCloseModal?.(); }} />
             </View>
             <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48 }]} showsVerticalScrollIndicator={false}>
               <View style={styles.listFoodHintRow}>
@@ -2344,8 +2380,8 @@ export default function NutritionScreen({
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, paddingLeft: Spacing.lg }]}>
-              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={handleListFoodConfirmCancel} />
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
+              <BackButton asModal onPress={handleListFoodConfirmCancel} />
             </View>
             <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48 }]} showsVerticalScrollIndicator={false}>
               {listFoodConfirmLoading && (
@@ -2377,8 +2413,7 @@ export default function NutritionScreen({
               ))}
               {!listFoodConfirmLoading && listFoodConfirmRows.length > 0 && (
                 <View style={{ flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg }}>
-                  <Button title="Cancel" onPress={handleListFoodConfirmCancel} variant="secondary" style={styles.modalButton} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
-                  <Button title="Confirm & Log" onPress={handleListFoodConfirmLog} style={styles.modalButton} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
+                  <Button title="Confirm & Log" onPress={handleListFoodConfirmLog} variant="gradient" style={styles.modalButton} textStyle={{ fontWeight: '600', color: Colors.primaryLight }} />
                 </View>
               )}
             </ScrollView>
@@ -2394,8 +2429,8 @@ export default function NutritionScreen({
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: headerTop, left: 0, right: 0, zIndex: 10 }]}>
-              <BackButton style={{ position: 'relative', top: 0, left: 0 }} onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }} />
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: headerTop, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
+              <BackButton asModal onPress={() => { if (searchOverlayScreen === 'addMeal') { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); } else { setShowFoodSearch(false); asModal && onCloseModal?.(); } }} />
             </View>
             {searchOverlayScreen === 'list' ? (
             <View style={[styles.fullScreenSheetScroll, { paddingTop: headerTop + 48 }]}>
@@ -2653,7 +2688,6 @@ export default function NutritionScreen({
                   </>
                 )}
               </View>
-              <Text style={styles.inputLabel}>Meal type</Text>
               <View style={styles.mealTypeRow}>
                 {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
                   <TouchableOpacity
@@ -2665,19 +2699,30 @@ export default function NutritionScreen({
                   </TouchableOpacity>
                 ))}
               </View>
-              <View style={styles.photoButtons}>
-                <Button title="📷 Take Photo" onPress={takePhoto} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
-                <Button title="🖼️ Choose Photo" onPress={pickImage} variant="secondary" style={styles.photoButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+              <View style={styles.addMealCaloriesShowcaseBlock}>
+                <Text style={styles.addMealCaloriesValue}>{calories || '—'}</Text>
+                <Text style={styles.addMealCaloriesLabel}>calories</Text>
               </View>
-              <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" fontFamily={Font.regular} />
-              <View style={styles.macroRow}>
-                <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={styles.macroInput} fontFamily={Font.regular} />
-                <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="numeric" placeholder="40" containerStyle={styles.macroInput} fontFamily={Font.regular} />
-                <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+              <View style={styles.addMealMacrosRow}>
+                <View style={styles.addMealMacroBlock}>
+                  <Text style={styles.addMealMacroValue}>{protein ? `${protein}g` : '—'}</Text>
+                  <Text style={styles.addMealMacroLabel}>Protein</Text>
+                </View>
+                <View style={styles.addMealMacroBlock}>
+                  <Text style={styles.addMealMacroValue}>{carbs ? `${carbs}g` : '—'}</Text>
+                  <Text style={styles.addMealMacroLabel}>Carbs</Text>
+                </View>
+                <View style={styles.addMealMacroBlock}>
+                  <Text style={styles.addMealMacroValue}>{fat ? `${fat}g` : '—'}</Text>
+                  <Text style={styles.addMealMacroLabel}>Fat</Text>
+                </View>
+              </View>
+              <View style={styles.addMealUnitAmountRow}>
+                <UnitWheelPicker value={addMealUnit} onValueChange={setAddMealUnit} compact />
+                <Input value={addMealAmount} onChangeText={setAddMealAmount} keyboardType="numeric" placeholder="" fontFamily={Font.regular} containerStyle={styles.addMealAmountContainer} style={styles.addMealAmountInput} />
               </View>
               <View style={styles.modalButtons}>
-                <Button title="Cancel" onPress={() => { addMealInSearchOverlayRef.current = false; setAddMealBrandName(''); setSearchOverlayScreen('list'); }} variant="secondary" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
-                <Button title="Add Meal" onPress={handleAddMeal} style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
+                <Button title="Add Meal" onPress={handleAddMeal} variant="gradient" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
               </View>
             </ScrollView>
             )}
@@ -2709,9 +2754,9 @@ export default function NutritionScreen({
             <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
           </Pressable>
           <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10 }]}>
+            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
               <BackButton
-                style={{ position: 'relative', top: 0, left: 0 }}
+                asModal
                 onPress={() => {
                   setAddMealTitleBrand(''); setAddMealBrandName('');
                   setShowAddMeal(false);
@@ -2787,101 +2832,57 @@ export default function NutritionScreen({
                 )}
               </View>
 
-              <Text style={styles.inputLabel}>Meal type</Text>
               <View style={styles.mealTypeRow}>
                 {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
                   <TouchableOpacity
                     key={type}
-                    style={[
-                      styles.mealTypeChip,
-                      mealType === type && styles.mealTypeChipActive,
-                    ]}
+                    style={[styles.mealTypeChip, mealType === type && styles.mealTypeChipActive]}
                     onPress={() => setMealType(type)}
                   >
-                    <Text
-                      style={[
-                        styles.mealTypeChipText,
-                        mealType === type && styles.mealTypeChipTextActive,
-                      ]}
-                    >
-                      {MEAL_TYPE_LABELS[type]}
-                    </Text>
+                    <Text style={[styles.mealTypeChipText, mealType === type && styles.mealTypeChipTextActive]}>{MEAL_TYPE_LABELS[type]}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-
-              <View style={styles.photoButtons}>
-                <Button
-                  title="📷 Take Photo"
-                  onPress={takePhoto}
-                  variant="secondary"
-                  style={styles.photoButton}
-                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-                />
-                <Button
-                  title="🖼️ Choose Photo"
-                  onPress={pickImage}
-                  variant="secondary"
-                  style={styles.photoButton}
-                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-                />
+              {selectedFoodRef.current ? (
+                <>
+                  <View style={styles.addMealCaloriesShowcaseBlock}>
+                    <Text style={styles.addMealCaloriesValue}>{calories || '—'}</Text>
+                    <Text style={styles.addMealCaloriesLabel}>calories</Text>
+                  </View>
+                  <View style={styles.addMealMacrosRow}>
+                    <View style={styles.addMealMacroBlock}>
+                      <Text style={styles.addMealMacroValue}>{protein ? `${protein}g` : '—'}</Text>
+                      <Text style={styles.addMealMacroLabel}>Protein</Text>
+                    </View>
+                    <View style={styles.addMealMacroBlock}>
+                      <Text style={styles.addMealMacroValue}>{carbs ? `${carbs}g` : '—'}</Text>
+                      <Text style={styles.addMealMacroLabel}>Carbs</Text>
+                    </View>
+                    <View style={styles.addMealMacroBlock}>
+                      <Text style={styles.addMealMacroValue}>{fat ? `${fat}g` : '—'}</Text>
+                      <Text style={styles.addMealMacroLabel}>Fat</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" fontFamily={Font.regular} containerStyle={styles.addMealCaloriesShowcase} style={styles.addMealCaloriesInput} />
+                  <View style={styles.macroRow}>
+                    <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+                    <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="numeric" placeholder="40" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+                    <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={styles.macroInput} fontFamily={Font.regular} />
+                  </View>
+                </>
+              )}
+              <View style={styles.addMealUnitAmountRow}>
+                <UnitWheelPicker value={addMealUnit} onValueChange={setAddMealUnit} compact />
+                <Input value={addMealAmount} onChangeText={setAddMealAmount} keyboardType="numeric" placeholder="" fontFamily={Font.regular} containerStyle={styles.addMealAmountContainer} style={styles.addMealAmountInput} />
               </View>
-
-              <Input
-                label="Calories"
-                value={calories}
-                onChangeText={setCalories}
-                keyboardType="numeric"
-                placeholder="500"
-                fontFamily={Font.regular}
-              />
-
-              <View style={styles.macroRow}>
-                <Input
-                  label="Protein (g)"
-                  value={protein}
-                  onChangeText={setProtein}
-                  keyboardType="numeric"
-                  placeholder="30"
-                  containerStyle={styles.macroInput}
-                  fontFamily={Font.regular}
-                />
-                <Input
-                  label="Carbs (g)"
-                  value={carbs}
-                  onChangeText={setCarbs}
-                  keyboardType="numeric"
-                  placeholder="40"
-                  containerStyle={styles.macroInput}
-                  fontFamily={Font.regular}
-                />
-                <Input
-                  label="Fat (g)"
-                  value={fat}
-                  onChangeText={setFat}
-                  keyboardType="numeric"
-                  placeholder="15"
-                  containerStyle={styles.macroInput}
-                  fontFamily={Font.regular}
-                />
-              </View>
-
               <View style={styles.modalButtons}>
-                <Button
-title="Cancel"
-                  onPress={() => {
-                    setAddMealTitleBrand(''); setAddMealBrandName('');
-                    setShowAddMeal(false);
-                    if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
-                  else asModal && onCloseModal?.();
-                  }}
-                  variant="secondary"
-                  style={styles.modalButton}
-                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-                />
                 <Button
                   title="Add Meal"
                   onPress={handleAddMeal}
+                  variant="gradient"
                   style={styles.modalButton}
                   textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
                 />
@@ -3694,7 +3695,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   addMealTitleSmall: {
-    fontSize: Math.round(Typography.h1 * 0.5),
+    fontSize: 20,
   },
   addMealVerifiedTitleRow: {
     flexDirection: 'row',
@@ -3709,7 +3710,7 @@ const styles = StyleSheet.create({
   },
   modalTitleBrand: {
     fontFamily: Font.regular,
-    fontSize: Typography.body,
+    fontSize: 11,
     fontWeight: '600',
     color: Colors.primaryLight,
     marginTop: 4,
@@ -3726,13 +3727,66 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   addMealSubtitleTop100: {
-    fontSize: Typography.body,
+    fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
     textAlign: 'center',
   },
   addMealSubtitleMaskWrap: {
     alignSelf: 'center',
+  },
+  addMealCaloriesShowcaseBlock: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  addMealCaloriesValue: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: Colors.primaryLight,
+  },
+  addMealCaloriesLabel: {
+    fontSize: Typography.label,
+    color: Colors.primaryLight,
+    opacity: 0.8,
+    marginTop: Spacing.xs,
+  },
+  addMealMacrosRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    gap: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  addMealMacroBlock: {
+    alignItems: 'center',
+  },
+  addMealMacroLabel: {
+    fontSize: Typography.label,
+    color: Colors.primaryLight,
+    opacity: 0.8,
+    marginTop: Spacing.xs,
+  },
+  addMealMacroValue: {
+    fontSize: Typography.dataValue,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+  },
+  addMealUnitAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+    alignSelf: 'stretch',
+  },
+  addMealCaloriesShowcase: {
+    alignSelf: 'stretch',
+    marginBottom: Spacing.md,
+  },
+  addMealCaloriesInput: {
+    fontSize: Typography.dataValue,
+    minHeight: 56,
   },
   inputLabel: {
     fontFamily: Font.extraBold,
@@ -3741,6 +3795,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
     letterSpacing: HeadingLetterSpacing,
     textAlign: 'center',
+  },
+  addMealAmountContainer: {
+    width: 80,
+    marginBottom: 0,
+  },
+  addMealAmountInput: {
+    textAlign: 'center',
+    minHeight: 44,
   },
   mealTypeRow: {
     flexDirection: 'row',
@@ -3757,7 +3819,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight + '20',
   },
   mealTypeChipActive: {
-    backgroundColor: Colors.accentBlue,
+    backgroundColor: Colors.primaryLight,
+    opacity: 0.9,
   },
   mealTypeChipText: {
     fontFamily: Font.regular,
