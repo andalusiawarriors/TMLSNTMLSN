@@ -14,8 +14,16 @@ const API_KEY = process.env.EXPO_PUBLIC_USDA_API_KEY ?? 'DEMO_KEY'; // USDA Food
 const USDA_FETCH_TIMEOUT_MS = 15_000;
 const OFF_FETCH_TIMEOUT_MS = 15_000;
 
-/** USDA data types we request; Survey (FNDDS) and SR Legacy are excluded. */
+/** USDA data types we request; Survey (FNDDS) and SR Legacy are excluded by default. */
 const USDA_DATA_TYPES = ['Foundation', 'Branded'] as const;
+
+/** For milk searches only: include SR Legacy and Survey (FNDDS) for full-fat, skimmed, etc. */
+const USDA_DATA_TYPES_MILK = ['Foundation', 'Branded', 'SR Legacy', 'Survey'] as const;
+
+function getUSDADataTypesForQuery(query: string): readonly string[] {
+  const q = query.trim().toLowerCase();
+  return /\bmilk\b/.test(q) ? USDA_DATA_TYPES_MILK : USDA_DATA_TYPES;
+}
 
 /** Common queries to preload Foundation (TMLSN Verified) foods for instant display. */
 const PRELOAD_QUERIES = [
@@ -90,6 +98,34 @@ export interface ParsedNutrition {
   dataType?: string;
   /** USDA FoodData Central id — use for deduping so same food appears once */
   fdcId?: number;
+  saturatedFat?: number;
+  transFat?: number;
+  monounsaturatedFat?: number;
+  polyunsaturatedFat?: number;
+  cholesterol?: number;
+  sodium?: number;
+  fiber?: number;
+  sugars?: number;
+  calcium?: number;
+  iron?: number;
+  potassium?: number;
+  magnesium?: number;
+  phosphorus?: number;
+  zinc?: number;
+  copper?: number;
+  manganese?: number;
+  selenium?: number;
+  vitaminA?: number;
+  vitaminC?: number;
+  vitaminD?: number;
+  vitaminE?: number;
+  vitaminK?: number;
+  thiamin?: number;
+  riboflavin?: number;
+  niacin?: number;
+  vitaminB6?: number;
+  folate?: number;
+  vitaminB12?: number;
 }
 
 /** TMLSN TOP 100: ingredients that get gold styling when the product is primarily that ingredient (not a composite meal). */
@@ -170,6 +206,60 @@ interface OFFNutriments {
   fat_100g?: number;
   fat?: number;
   fat_serving?: number;
+  'saturated-fat_100g'?: number;
+  'saturated-fat'?: number;
+  'trans-fat_100g'?: number;
+  'trans-fat'?: number;
+  cholesterol_100g?: number;
+  cholesterol?: number;
+  sodium_100g?: number;
+  sodium?: number;
+  fiber_100g?: number;
+  fiber?: number;
+  sugars_100g?: number;
+  sugars?: number;
+  calcium_100g?: number;
+  calcium?: number;
+  iron_100g?: number;
+  iron?: number;
+  potassium_100g?: number;
+  potassium?: number;
+  'monounsaturated-fat_100g'?: number;
+  'monounsaturated-fat'?: number;
+  'polyunsaturated-fat_100g'?: number;
+  'polyunsaturated-fat'?: number;
+  magnesium_100g?: number;
+  magnesium?: number;
+  phosphorus_100g?: number;
+  phosphorus?: number;
+  zinc_100g?: number;
+  zinc?: number;
+  copper_100g?: number;
+  copper?: number;
+  manganese_100g?: number;
+  manganese?: number;
+  selenium_100g?: number;
+  selenium?: number;
+  'vitamin-a_100g'?: number;
+  'vitamin-a'?: number;
+  'vitamin-c_100g'?: number;
+  'vitamin-c'?: number;
+  'vitamin-d_100g'?: number;
+  'vitamin-d'?: number;
+  'vitamin-e_100g'?: number;
+  'vitamin-e'?: number;
+  'vitamin-pp_100g'?: number;
+  'vitamin-pp'?: number;
+  'vitamin-b1_100g'?: number;
+  'vitamin-b1'?: number;
+  'vitamin-b2_100g'?: number;
+  'vitamin-b2'?: number;
+  'vitamin-b6_100g'?: number;
+  'vitamin-b6'?: number;
+  'vitamin-b9_100g'?: number;
+  'vitamin-b9'?: number;
+  'vitamin-b12_100g'?: number;
+  'vitamin-b12'?: number;
 }
 
 interface OFFProduct {
@@ -247,6 +337,34 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
     servingSize: '100g',
     unit: isLiquid ? 'ml' : 'g',
     source: 'off',
+    saturatedFat: Math.round((n['saturated-fat_100g'] ?? n['saturated-fat'] ?? 0) * 10) / 10,
+    transFat: Math.round((n['trans-fat_100g'] ?? n['trans-fat'] ?? 0) * 10) / 10,
+    monounsaturatedFat: Math.round((n['monounsaturated-fat_100g'] ?? n['monounsaturated-fat'] ?? 0) * 10) / 10,
+    polyunsaturatedFat: Math.round((n['polyunsaturated-fat_100g'] ?? n['polyunsaturated-fat'] ?? 0) * 10) / 10,
+    cholesterol: Math.round(n.cholesterol_100g ?? n.cholesterol ?? 0),
+    sodium: Math.round(n.sodium_100g ?? n.sodium ?? 0),
+    fiber: Math.round((n.fiber_100g ?? n.fiber ?? 0) * 10) / 10,
+    sugars: Math.round((n.sugars_100g ?? n.sugars ?? 0) * 10) / 10,
+    calcium: Math.round(n.calcium_100g ?? n.calcium ?? 0),
+    iron: Math.round((n.iron_100g ?? n.iron ?? 0) * 10) / 10,
+    potassium: Math.round(n.potassium_100g ?? n.potassium ?? 0),
+    magnesium: Math.round(n.magnesium_100g ?? n.magnesium ?? 0),
+    phosphorus: Math.round(n.phosphorus_100g ?? n.phosphorus ?? 0),
+    zinc: Math.round((n.zinc_100g ?? n.zinc ?? 0) * 10) / 10,
+    copper: Math.round((n.copper_100g ?? n.copper ?? 0) * 100) / 100,
+    manganese: Math.round((n.manganese_100g ?? n.manganese ?? 0) * 100) / 100,
+    selenium: Math.round((n.selenium_100g ?? n.selenium ?? 0) * 10) / 10,
+    vitaminA: Math.round(n['vitamin-a_100g'] ?? n['vitamin-a'] ?? 0),
+    vitaminC: Math.round((n['vitamin-c_100g'] ?? n['vitamin-c'] ?? 0) * 10) / 10,
+    vitaminD: Math.round((n['vitamin-d_100g'] ?? n['vitamin-d'] ?? 0) * 10) / 10,
+    vitaminE: Math.round((n['vitamin-e_100g'] ?? n['vitamin-e'] ?? 0) * 10) / 10,
+    vitaminK: 0,
+    thiamin: Math.round((n['vitamin-b1_100g'] ?? n['vitamin-b1'] ?? 0) * 100) / 100,
+    riboflavin: Math.round((n['vitamin-b2_100g'] ?? n['vitamin-b2'] ?? 0) * 100) / 100,
+    niacin: Math.round((n['vitamin-pp_100g'] ?? n['vitamin-pp'] ?? 0) * 100) / 100,
+    vitaminB6: Math.round((n['vitamin-b6_100g'] ?? n['vitamin-b6'] ?? 0) * 100) / 100,
+    folate: Math.round(n['vitamin-b9_100g'] ?? n['vitamin-b9'] ?? 0),
+    vitaminB12: Math.round((n['vitamin-b12_100g'] ?? n['vitamin-b12'] ?? 0) * 100) / 100,
   };
 }
 
@@ -289,7 +407,15 @@ function extractBrandFromDescription(description: string): { brand: string; clea
   return { brand: '', cleanName: description };
 }
 
-const NUTRIENT_MAP: Record<string, keyof Pick<ParsedNutrition, 'calories' | 'protein' | 'carbs' | 'fat'>> = {
+type NutrientKey =
+  | 'calories' | 'protein' | 'carbs' | 'fat'
+  | 'saturatedFat' | 'transFat' | 'monounsaturatedFat' | 'polyunsaturatedFat'
+  | 'cholesterol' | 'sodium' | 'fiber' | 'sugars'
+  | 'calcium' | 'iron' | 'potassium' | 'magnesium' | 'phosphorus' | 'zinc' | 'copper' | 'manganese' | 'selenium'
+  | 'vitaminA' | 'vitaminC' | 'vitaminD' | 'vitaminE' | 'vitaminK'
+  | 'thiamin' | 'riboflavin' | 'niacin' | 'vitaminB6' | 'folate' | 'vitaminB12';
+
+const NUTRIENT_MAP: Record<string, NutrientKey> = {
   '208': 'calories',
   '1008': 'calories',
   '203': 'protein',
@@ -298,6 +424,62 @@ const NUTRIENT_MAP: Record<string, keyof Pick<ParsedNutrition, 'calories' | 'pro
   '1005': 'carbs',
   '204': 'fat',
   '1004': 'fat',
+  '606': 'saturatedFat',
+  '1258': 'saturatedFat',
+  '605': 'transFat',
+  '1257': 'transFat',
+  '601': 'cholesterol',
+  '1253': 'cholesterol',
+  '307': 'sodium',
+  '1093': 'sodium',
+  '291': 'fiber',
+  '1079': 'fiber',
+  '269': 'sugars',
+  '2000': 'sugars',
+  '301': 'calcium',
+  '1087': 'calcium',
+  '303': 'iron',
+  '1089': 'iron',
+  '306': 'potassium',
+  '1092': 'potassium',
+  '645': 'monounsaturatedFat',
+  '1292': 'monounsaturatedFat',
+  '646': 'polyunsaturatedFat',
+  '1293': 'polyunsaturatedFat',
+  '304': 'magnesium',
+  '1090': 'magnesium',
+  '305': 'phosphorus',
+  '1091': 'phosphorus',
+  '309': 'zinc',
+  '1095': 'zinc',
+  '312': 'copper',
+  '1098': 'copper',
+  '315': 'manganese',
+  '1101': 'manganese',
+  '317': 'selenium',
+  '1103': 'selenium',
+  '320': 'vitaminA',
+  '1106': 'vitaminA',
+  '401': 'vitaminC',
+  '1162': 'vitaminC',
+  '328': 'vitaminD',
+  '1114': 'vitaminD',
+  '323': 'vitaminE',
+  '1109': 'vitaminE',
+  '430': 'vitaminK',
+  '1185': 'vitaminK',
+  '404': 'thiamin',
+  '1165': 'thiamin',
+  '405': 'riboflavin',
+  '1166': 'riboflavin',
+  '406': 'niacin',
+  '1167': 'niacin',
+  '415': 'vitaminB6',
+  '1175': 'vitaminB6',
+  '417': 'folate',
+  '1177': 'folate',
+  '418': 'vitaminB12',
+  '1178': 'vitaminB12',
 };
 
 function naturalizeUSDAName(desc: string): string {
@@ -327,17 +509,18 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     return null;
   }
 
-  const rawCalories = { value: 0 };
-  const rawProtein = { value: 0 };
-  const rawCarbs = { value: 0 };
-  const rawFat = { value: 0 };
+  const raw: Record<NutrientKey, number> = {
+    calories: 0, protein: 0, carbs: 0, fat: 0,
+    saturatedFat: 0, transFat: 0, monounsaturatedFat: 0, polyunsaturatedFat: 0,
+    cholesterol: 0, sodium: 0, fiber: 0, sugars: 0,
+    calcium: 0, iron: 0, potassium: 0, magnesium: 0, phosphorus: 0, zinc: 0, copper: 0, manganese: 0, selenium: 0,
+    vitaminA: 0, vitaminC: 0, vitaminD: 0, vitaminE: 0, vitaminK: 0,
+    thiamin: 0, riboflavin: 0, niacin: 0, vitaminB6: 0, folate: 0, vitaminB12: 0,
+  };
 
   for (const n of food.foodNutrients ?? []) {
     const key = NUTRIENT_MAP[String(n.nutrientNumber)] ?? NUTRIENT_MAP[String(n.nutrientId)];
-    if (key === 'calories') rawCalories.value = n.value;
-    else if (key === 'protein') rawProtein.value = n.value;
-    else if (key === 'carbs') rawCarbs.value = n.value;
-    else if (key === 'fat') rawFat.value = n.value;
+    if (key) raw[key] = n.value;
   }
 
   // Foundation, SR Legacy, Survey = per 100g. Branded = often per serving — convert when servingSize in grams
@@ -350,10 +533,10 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     ? 100 / servingGrams
     : 1;
 
-  const calories = Math.round(rawCalories.value * scale);
-  const protein = Math.round(rawProtein.value * scale);
-  const carbs = Math.round(rawCarbs.value * scale);
-  const fat = Math.round(rawFat.value * scale);
+  const calories = Math.round(raw.calories * scale);
+  const protein = Math.round(raw.protein * scale);
+  const carbs = Math.round(raw.carbs * scale);
+  const fat = Math.round(raw.fat * scale);
 
   const rawBrandField = (food.brandOwner ?? food.brandName ?? '').trim();
   const rawDescription = (food.description ?? 'unknown food').trim();
@@ -401,6 +584,34 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     originalDescription: (food.description ?? '').toLowerCase(),
     dataType: food.dataType ?? '',
     fdcId: food.fdcId,
+    saturatedFat: Math.round(raw.saturatedFat * scale * 10) / 10,
+    transFat: Math.round(raw.transFat * scale * 10) / 10,
+    monounsaturatedFat: Math.round(raw.monounsaturatedFat * scale * 10) / 10,
+    polyunsaturatedFat: Math.round(raw.polyunsaturatedFat * scale * 10) / 10,
+    cholesterol: Math.round(raw.cholesterol * scale),
+    sodium: Math.round(raw.sodium * scale),
+    fiber: Math.round(raw.fiber * scale * 10) / 10,
+    sugars: Math.round(raw.sugars * scale * 10) / 10,
+    calcium: Math.round(raw.calcium * scale),
+    iron: Math.round(raw.iron * scale * 10) / 10,
+    potassium: Math.round(raw.potassium * scale),
+    magnesium: Math.round(raw.magnesium * scale),
+    phosphorus: Math.round(raw.phosphorus * scale),
+    zinc: Math.round(raw.zinc * scale * 10) / 10,
+    copper: Math.round(raw.copper * scale * 100) / 100,
+    manganese: Math.round(raw.manganese * scale * 100) / 100,
+    selenium: Math.round(raw.selenium * scale * 10) / 10,
+    vitaminA: Math.round(raw.vitaminA * scale),
+    vitaminC: Math.round(raw.vitaminC * scale * 10) / 10,
+    vitaminD: Math.round(raw.vitaminD * scale * 10) / 10,
+    vitaminE: Math.round(raw.vitaminE * scale * 10) / 10,
+    vitaminK: Math.round(raw.vitaminK * scale * 10) / 10,
+    thiamin: Math.round(raw.thiamin * scale * 100) / 100,
+    riboflavin: Math.round(raw.riboflavin * scale * 100) / 100,
+    niacin: Math.round(raw.niacin * scale * 100) / 100,
+    vitaminB6: Math.round(raw.vitaminB6 * scale * 100) / 100,
+    folate: Math.round(raw.folate * scale),
+    vitaminB12: Math.round(raw.vitaminB12 * scale * 100) / 100,
   };
 }
 
@@ -609,6 +820,18 @@ function sortVerifiedFirst(items: ParsedNutrition[]): ParsedNutrition[] {
   });
 }
 
+/** Search results: Verified tier first, then by semantic relevance (scoreResult) so milk ranks above ricotta. */
+function sortSearchResultsByRelevance(items: ParsedNutrition[], query: string): ParsedNutrition[] {
+  const tiered = sortVerifiedFirst(items);
+  const q = query.trim().toLowerCase();
+  return [...tiered].sort((a, b) => {
+    const tierA = isTmlsnTop100(a) ? 0 : (a.source === 'usda' && a.dataType === 'Foundation') ? 1 : 2;
+    const tierB = isTmlsnTop100(b) ? 0 : (b.source === 'usda' && b.dataType === 'Foundation') ? 1 : 2;
+    if (tierA !== tierB) return tierA - tierB;
+    return scoreResult(b, q) - scoreResult(a, q);
+  });
+}
+
 /** List Food only: penalty when result name indicates a different product than the query. */
 function getListFoodContradictionPenalty(query: string, resultName: string): number {
   const q = query.toLowerCase().trim();
@@ -634,8 +857,8 @@ function getListFoodContradictionPenalty(query: string, resultName: string): num
   // Coconut milk vs dairy milk: query has coconut → penalize dairy milk (whole milk, milk without coconut)
   if (/\bcoconut\b/.test(q) && /\bmilk\b/.test(name) && !/\bcoconut\b/.test(name)) penalty += 100;
 
-  // Milk vs dairy products: query is milk (dairy) → penalize cheese, ricotta, yogurt, butter
-  if (/\bmilk\b/.test(q) && !/\bcoconut\b/.test(q) && /\b(ricotta|cheese|yogurt|yoghurt|butter)\b/.test(name)) penalty += 100;
+  // Milk vs dairy products: query is milk (dairy) → penalize cheese, ricotta, cottage, yogurt, butter
+  if (/\bmilk\b/.test(q) && !/\bcoconut\b/.test(q) && /\b(ricotta|cheese|cottage|yogurt|yoghurt|butter)\b/.test(name)) penalty += 100;
 
   // Powder vs flour: query says protein powder → penalize flour when protein not in result
   if (/\bprotein\s+powder\b/.test(q) && /\bflour\b/.test(name) && !/\bprotein\b/.test(name)) penalty += 100;
@@ -649,6 +872,12 @@ function getListFoodContradictionPenalty(query: string, resultName: string): num
 /** List Food only: true if result is the same ingredient type as the query (no contradiction). Used as hard filter before ranking. */
 function listFoodCorresponds(canonicalQuery: string, resultName: string): boolean {
   return getListFoodContradictionPenalty(canonicalQuery.trim().toLowerCase(), resultName.trim()) === 0;
+}
+
+/** Exclude results that contradict the query (e.g. ricotta when user searched milk). Same logic as List Food correspondence. */
+function filterSearchResultsByCorrespondence(items: ParsedNutrition[], query: string): ParsedNutrition[] {
+  const q = query.trim().toLowerCase();
+  return items.filter((f) => listFoodCorresponds(q, f.name));
 }
 
 function scoreResult(item: ParsedNutrition, query: string): number {
@@ -747,12 +976,16 @@ export async function searchFoodsProgressive(
   // Show preloaded Verified (Foundation) immediately if we have them
   const preloaded = getPreloadedResults(trimmed);
   if (preloaded.length > 0) {
-    onResults(filterResults(sortVerifiedFirst(preloaded)));
+    const preloadedCorr = filterSearchResultsByCorrespondence(preloaded, trimmed);
+    if (preloadedCorr.length > 0) {
+      onResults(filterResults(sortSearchResultsByRelevance(preloadedCorr, trimmed)));
+    }
   }
 
-  // Fetch Foundation first, then rest of USDA (Foundation, Branded — no Survey, no SR Legacy)
+  // Fetch Foundation first, then rest of USDA (for milk: include SR Legacy + Survey for full-fat, skimmed, etc.)
+  const usdaDataTypes = getUSDADataTypesForQuery(trimmed);
   const usdaVerifiedPromise = searchFoodsUSDA(trimmed, half, 1, signal, ['Foundation']).catch(() => [] as ParsedNutrition[]);
-  const usdaAllPromise = searchFoodsUSDA(trimmed, half, 1, signal, [...USDA_DATA_TYPES]).catch(() => [] as ParsedNutrition[]);
+  const usdaAllPromise = searchFoodsUSDA(trimmed, half, 1, signal, [...usdaDataTypes]).catch(() => [] as ParsedNutrition[]);
   const offPromise = searchFoodsOFF(trimmed, half, 1, signal).catch(() => [] as ParsedNutrition[]);
 
   const [usdaVerified, usdaAll] = await Promise.all([usdaVerifiedPromise, usdaAllPromise]);
@@ -769,7 +1002,10 @@ export async function searchFoodsProgressive(
 
   // Emit USDA immediately (gold/verified first) so first results show in ~1–2s
   if (usda.length > 0) {
-    onResults(filterResults(sortVerifiedFirst(usda)));
+    const usdaCorr = filterSearchResultsByCorrespondence(usda, trimmed);
+    if (usdaCorr.length > 0) {
+      onResults(filterResults(sortSearchResultsByRelevance(usdaCorr, trimmed)));
+    }
   }
 
   const off = await offPromise;
@@ -797,7 +1033,8 @@ export async function searchFoodsProgressive(
   }
 
   const matched = merged.filter((f) => nameMatchesQuery(f, trimmed));
-  const final = filterResults(sortVerifiedFirst(matched).slice(0, pageSize));
+  const matchedCorr = filterSearchResultsByCorrespondence(matched, trimmed);
+  const final = filterResults(sortSearchResultsByRelevance(matchedCorr, trimmed).slice(0, pageSize));
   if (__DEV__) console.log('[Search]', trimmed, '→', { preloaded: preloaded.length, verified: verifiedMatched.length, usdaAll: usdaAll.length, off: off.length, final: final.length });
   onResults(final);
 
@@ -805,9 +1042,10 @@ export async function searchFoodsProgressive(
   const translateResult = await translateToEnglish(query).catch(() => null);
   if (translateResult && translateResult.text !== query.toLowerCase().trim()) {
     try {
+      const transDataTypes = getUSDADataTypesForQuery(translateResult.text);
       const [verifiedTrans, usdaTranslated] = await Promise.all([
         searchFoodsUSDA(translateResult.text, half, 1, undefined, ['Foundation']),
-        searchFoodsUSDA(translateResult.text, half, 1, undefined, [...USDA_DATA_TYPES]),
+        searchFoodsUSDA(translateResult.text, half, 1, undefined, [...transDataTypes]),
       ]);
       const verifiedTransMatched = verifiedTrans.filter((f) => nameMatchesQuery(f, translateResult.text));
       const transVerifiedFdcIds = new Set(verifiedTransMatched.map((f) => f.fdcId).filter((id): id is number => id != null));
@@ -840,7 +1078,8 @@ export async function searchFoodsProgressive(
       const allMatched = merged.filter(
         (f) => nameMatchesQuery(f, query) || (translateResult.text && nameMatchesQuery(f, translateResult.text)),
       );
-      onResults(filterResults(sortVerifiedFirst(allMatched).slice(0, pageSize)));
+      const transCorr = filterSearchResultsByCorrespondence(allMatched, translateResult.text);
+      onResults(filterResults(sortSearchResultsByRelevance(transCorr, translateResult.text).slice(0, pageSize)));
     } catch (err) {
       if (__DEV__) console.warn('[Search] translation phase failed:', err instanceof Error ? err.message : err);
     }
@@ -857,7 +1096,8 @@ export async function searchFoodsNextPage(
   if (!query.trim() || page < 2) return;
 
   try {
-    const results = await searchFoodsUSDA(query, pageSize, page, undefined, [...USDA_DATA_TYPES]);
+    const dataTypes = getUSDADataTypesForQuery(query);
+    const results = await searchFoodsUSDA(query, pageSize, page, undefined, [...dataTypes]);
     const filtered = results.filter((f) => nameMatchesQuery(f, query));
     const byFdcId = new Set<number>();
     const byContent = new Set<string>();
@@ -869,7 +1109,8 @@ export async function searchFoodsNextPage(
       byContent.add(cKey);
       return true;
     });
-    onResults(filterResults(sortVerifiedFirst(deduped)));
+    const dedupedCorr = filterSearchResultsByCorrespondence(deduped, query);
+    onResults(filterResults(sortSearchResultsByRelevance(dedupedCorr, query)));
   } catch (err) {
     if (__DEV__) console.warn('[Search] next page failed:', err instanceof Error ? err.message : err);
     onResults([]);
