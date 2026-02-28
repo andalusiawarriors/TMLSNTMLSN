@@ -1,0 +1,30 @@
+---
+description: Tab bar and selection pill fill must stay transparent (max 10% opacity); outline is 1px and the outline's colour is a gradient/blend.
+alwaysApply: true
+---
+
+# Nav / selection pill — transparent fill + 1px outline (outline colour = gradient)
+
+Tab bar (navigation bar) and selection pill: **fill** stays transparent (Figma-style glass). **Outline** = a visible 1px stroke around the edge; the **outline’s colour** is a gradient or blend (not a flat colour). The gradient/blend applies to the outline only, not to the fill.
+
+## Rules
+
+- **Fill:** No fill at all times, no matter what is requested. Pills have **no fill** — transparent only (no solid fill, no gradient fill). Any depth tints (e.g. top/bottom) must stay at or below 10% opacity and are optional; base is always transparent.
+- **Outline (stroke):** A **1px outline** around the pills. The **colour of that outline** must be a **gradient or blend** (not a flat single colour). Implemented as a gradient ring (full-size layer, fill inset 1px) so the 1px visible edge has a gradient colour.
+- Layout, corner radius, animation, and structure must not change when touching these styles; only color/opacity values may be updated to stay within this rule.
+
+## Where this applies
+
+- **Layer 1:** Navigation bar background in `app/(tabs)/_layout.tsx` (outline ring + inset fill).
+- **Layer 2:** Sliding selection pill in `app/(tabs)/_layout.tsx` (outline ring + inset fill).
+
+## Allowed
+
+- Transparent or very low-opacity fill (≤10% for any tint). Fill is not a gradient.
+- 1px outline whose **colour** is a gradient/blend (so the outline is visible and not a flat colour).
+
+## Not allowed
+
+- Any fill on the pills (pills = no fill at all times).
+- Gradient on the fill (gradient applies to the outline’s colour only).
+- Flat single-colour outline (the outline’s colour must be a gradient/blend).

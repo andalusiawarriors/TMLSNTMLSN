@@ -28,6 +28,8 @@
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none)* | — | — | — | — |
+*Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
+*Just finished: Add Meal UI artist fix — BackButton asModal prop for 54px placement; Button gradient variant (FAB style); TMLSN label smaller than title (11px vs 20px); removed Cancel buttons; calories showcase (dataValue font, larger); meal type chip no blue; unit/amount controls (tbsp/tsp/cup/100g/1g + amount); main + obh synced (nutrition.tsx, search-food.tsx, BackButton, Button).*
 *Just finished: Add-meal pop-up ingredient title visible — removed style={StyleSheet.absoluteFill} from LinearGradient in MaskedView for Top 100 and Verified title in both add-meal blocks (Food DB overlay + Meal Form modal); gradient now sizes to text so title shows. Main + obh nutrition.tsx.*
 *Just finished: List Food match fix v3 — exact-preload only in tryFirstMatchQuery (getPreloadedResultsExact); pickBestForListFood prefers zero contradiction then min penalty; sourdough vs any non-sourdough bread, chicken breast vs non-breast penalty; scoreResult breast-in-name +50, fortified milk (added+vitamin) −50; main + obh synced.*
 *Just finished: Branded Top 100 gold gradient + tick — search cards: branded+Top100 = brand then gold gradient + gold tick; branded+Foundation = quicksilver gradient + tick; branded+neither = plain name; removed " · X cal" and "X cal/100g" subtitle; nutrition only in macros row. Main + obh: search-food.tsx, nutrition.tsx.*
@@ -62,6 +64,8 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/UnitWheelPicker.tsx`, `package.json` (main + obh) – Add Meal popup redesign: calories showcase, P/C/F card, unit wheel, meal type at bottom
+- `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/BackButton.tsx`, `components/Button.tsx` (main + obh) – Add Meal UI artist fix: back 54px, gradient Add Meal button, TMLSN label size, unit/amount controls
 - `app/(tabs)/workout/index.tsx` (main + obh), `components/explore/ExploreProfileModal.tsx` (main + obh) – Notifications & profile revamp: modal-level back row at 54px + BackButton style override (position relative 0,0); notifications Instagram layout (Today/This week/Earlier, avatar + text + time + optional thumb per row); card height + flex scroll to fix clipping; profile BackButton override, scrollContent alignItems center, inner width 100%, grid width 100%; synced to obh
 - `app/(tabs)/workout/index.tsx` (main + obh), `components/explore/ExploreProfileModal.tsx` (main + obh) – Notifications + Explore profile polish: back at 54px in both; notifications card top: 54, back row, scroll content padding; Explore profile absolute back row, paddingTop 54+48, centered stats (statsRowWrap + gap), spacing
 - `app/(tabs)/workout/index.tsx` (main), `.cursor/worktrees/tmlsn-app_2/obh/app/(tabs)/workout/index.tsx` (obh) – Explore feed fixes: no title, header 54px from top + absolute overlay, Instagram-style post cards (media first), FlatList full screen, Explore profile modal (avatar/followers/posts grid); profile icon opens ExploreProfileModal only
