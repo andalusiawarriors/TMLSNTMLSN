@@ -5,9 +5,8 @@
 // ============================================================
 
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { PillSegmentedControl } from '../PillSegmentedControl';
-import { Colors, Glass } from '../../constants/theme';
+import { View, StyleSheet } from 'react-native';
+import { LiquidGlassSegmented } from '../ui/liquidGlass';
 import type { HeatmapPeriod, CalendarMetric } from '../../utils/dateBins';
 
 export type HeatmapView = 'Calendar' | 'Body';
@@ -38,67 +37,33 @@ export function HeatmapControls({
 }: HeatmapControlsProps) {
   return (
     <View style={styles.container}>
-      <PillSegmentedControl
+      <LiquidGlassSegmented
+        options={[
+          { key: 'Calendar', label: 'Calendar' },
+          { key: 'Body', label: 'Body' },
+        ]}
         value={view}
-        onValueChange={(v) => onViewChange(v as HeatmapView)}
-        segments={['Calendar', 'Body']}
+        onChange={(k) => onViewChange(k as HeatmapView)}
+        width={200}
       />
 
-      <View style={styles.periodRow}>
-        {PERIODS.map((p) => {
-          const active = period === p.key;
-          return (
-            <Pressable
-              key={p.key}
-              style={[styles.periodPill, active && styles.periodPillActive]}
-              onPress={() => onPeriodChange(p.key)}
-            >
-              <Text style={[styles.periodLabel, active && styles.periodLabelActive]}>
-                {p.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <LiquidGlassSegmented
+        options={PERIODS.map(p => ({ key: p.key, label: p.label }))}
+        value={period}
+        onChange={(k) => onPeriodChange(k as HeatmapPeriod)}
+      />
 
       {view === 'Calendar' && (
-        <View style={styles.subRow}>
-          <SmallToggle
-            options={['Workouts', 'Volume']}
-            value={metric === 'workouts' ? 'Workouts' : 'Volume'}
-            onChange={(v) => onMetricChange(v === 'Workouts' ? 'workouts' : 'volume')}
-          />
-        </View>
+        <LiquidGlassSegmented
+          options={[
+            { key: 'workouts', label: 'Workouts' },
+            { key: 'volume', label: 'Volume' },
+          ]}
+          value={metric}
+          onChange={(k) => onMetricChange(k as CalendarMetric)}
+          width={180}
+        />
       )}
-    </View>
-  );
-}
-
-function SmallToggle({
-  options,
-  value,
-  onChange,
-}: {
-  options: [string, string];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <View style={styles.smallToggle}>
-      {options.map((opt) => {
-        const active = value === opt;
-        return (
-          <Pressable
-            key={opt}
-            style={[styles.smallToggleBtn, active && styles.smallToggleBtnActive]}
-            onPress={() => onChange(opt)}
-          >
-            <Text style={[styles.smallToggleLabel, active && styles.smallToggleLabelActive]}>
-              {opt}
-            </Text>
-          </Pressable>
-        );
-      })}
     </View>
   );
 }
@@ -107,62 +72,5 @@ const styles = StyleSheet.create({
   container: {
     gap: 12,
     marginBottom: 8,
-  },
-  periodRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  periodPill: {
-    flex: 1,
-    height: 32,
-    borderRadius: Glass.radius.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Glass.fill,
-    borderWidth: Glass.borderWidth,
-    borderColor: Glass.border,
-  },
-  periodPillActive: {
-    backgroundColor: Glass.fillSelected,
-    borderColor: Glass.borderSelected,
-  },
-  periodLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Glass.textSecondary,
-    letterSpacing: -0.2,
-  },
-  periodLabelActive: {
-    fontWeight: '600',
-    color: Glass.textPrimary,
-  },
-  subRow: {
-    flexDirection: 'row',
-  },
-  smallToggle: {
-    flexDirection: 'row',
-    backgroundColor: Glass.fill,
-    borderRadius: Glass.radius.micro,
-    borderWidth: Glass.borderWidth,
-    borderColor: Glass.border,
-    padding: 2,
-    gap: 2,
-  },
-  smallToggleBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: Glass.radius.micro - 2,
-  },
-  smallToggleBtnActive: {
-    backgroundColor: Glass.fillSelected,
-  },
-  smallToggleLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Glass.textSecondary,
-  },
-  smallToggleLabelActive: {
-    color: Glass.textPrimary,
-    fontWeight: '600',
   },
 });

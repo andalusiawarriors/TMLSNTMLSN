@@ -28,6 +28,7 @@
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
 | *(none — merged)* | Person 1 (nutrition) + Person 2 (workout) work merged | — | — | Feb 26 2026 |
+*Just finished: StickyGlassHeader + Progress Graph wiring — StickyGlassHeader.tsx (blur+gradient on scroll), progress-graph.tsx uses Animated.ScrollView + StickyGlassHeader (title, pills sticky; glass effect ramps 0→0.92 opacity as scrollY 0→140).*
 *Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
 *Just finished: Add Meal UI artist fix — BackButton asModal prop for 54px placement; Button gradient variant (FAB style); TMLSN label smaller than title (11px vs 20px); removed Cancel buttons; calories showcase (dataValue font, larger); meal type chip no blue; unit/amount controls (tbsp/tsp/cup/100g/1g + amount); main + obh synced (nutrition.tsx, search-food.tsx, BackButton, Button).*
 *Just finished (Person 2): Progress graph liquid glass UI, sticky pills, whole-number formatting, animations.*
@@ -66,6 +67,7 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `components/ui/StickyGlassHeader.tsx`, `app/progress-graph.tsx` – Sticky filter header (Stoic-style): liquid glass on scroll, pills sticky, Animated.ScrollView
 - `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/UnitWheelPicker.tsx`, `package.json` (main + obh) – Add Meal popup redesign: calories showcase, P/C/F card, unit wheel, meal type at bottom
 - `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/BackButton.tsx`, `components/Button.tsx` (main + obh) – Add Meal UI artist fix: back 54px, gradient Add Meal button, TMLSN label size, unit/amount controls
 - `app/(tabs)/workout/index.tsx` (main + obh), `components/explore/ExploreProfileModal.tsx` (main + obh) – Notifications & profile revamp: modal-level back row at 54px + BackButton style override (position relative 0,0); notifications Instagram layout (Today/This week/Earlier, avatar + text + time + optional thumb per row); card height + flex scroll to fix clipping; profile BackButton override, scrollContent alignItems center, inner width 100%, grid width 100%; synced to obh

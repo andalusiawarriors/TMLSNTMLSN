@@ -32,6 +32,15 @@ import { resolveExerciseDbIdFromName } from './workoutMuscles';
 // workout_sets column for set ordering (DB may use set_number, set_order, order, etc.)
 const SET_ORDER_COLUMN = 'set_number';
 
+/** Generate a UUID v4 for Supabase columns that expect UUID type. */
+function generateUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // --- User Settings ---
 
 export async function supabaseGetUserSettings(userId: string): Promise<UserSettings> {
@@ -335,7 +344,7 @@ export async function supabaseSaveSavedFood(
     }
   } else {
     const newFood: SavedFood = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      id: generateUuid(),
       name: food.name,
       brand: food.brand,
       calories: food.calories,

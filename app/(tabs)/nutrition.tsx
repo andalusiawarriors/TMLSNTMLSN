@@ -84,7 +84,8 @@ import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
-import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
+import { LiquidGlassSegmented } from '../../components/ui/liquidGlass';
+type SegmentValue = 'Nutrition' | 'Fitness';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
@@ -1743,7 +1744,12 @@ export default function NutritionScreen({
               <View style={[styles.dot, fitnessCardPage === 1 ? styles.dotActive : undefined]} />
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
+              <LiquidGlassSegmented
+                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
+                value={homeSegment}
+                onChange={(k) => setHomeSegment(k as SegmentValue)}
+                width={160}
+              />
             </View>
             {/* Recently uploaded – below toggle */}
             <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
@@ -1886,7 +1892,12 @@ export default function NutritionScreen({
               </Pressable>
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
+              <LiquidGlassSegmented
+                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
+                value={homeSegment}
+                onChange={(k) => setHomeSegment(k as SegmentValue)}
+                width={160}
+              />
             </View>
             {/* Recently uploaded – below toggle */}
             <View>

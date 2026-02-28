@@ -22,18 +22,27 @@ import Animated, {
   withDelay,
   withTiming,
   withSpring,
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedScrollHandler,
+  interpolate,
+  runOnJS,
   Easing,
   FadeIn,
   FadeOut,
   FadeInDown,
   Layout,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { format, startOfDay, getYear, getMonth, startOfMonth, endOfMonth } from 'date-fns';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
-import { LiquidGlassPillGroup, ScrubPill } from '../components/ui/LiquidGlassPillGroup';
+import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
+import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
+import { InteractiveGlassWrapper } from '../components/ui/InteractiveGlassWrapper';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { KG_PER_LB } from '../utils/units';
@@ -50,7 +59,7 @@ const TILE_SIZE = Math.floor((SW - OUTER_PAD * 2 - TILE_GAP) / 2);
 
 // Chart — shorter (~26% of screen height)
 const CHART_HEIGHT  = Math.max(160, Math.floor(SH * 0.26));
-const Y_AXIS_W      = 46;
+const Y_AXIS_W      = 54;
 const BAR_GAP       = 4;
 const WEEK_GAP      = 8;
 const MIN_BAR_H     = 6;
@@ -64,13 +73,16 @@ const DEFAULT_DUR_MAX_H = 3;
 // width available inside the chart glass section for bars
 const CHART_AREA_W = SW - OUTER_PAD * 2 - SECTION_PAD * 2 - Y_AXIS_W;
 
-// Controls layout — Month/Year/All longer, leaves space for Feb 2026 pill on right
+// Controls layout
+const BACK_BTN_W      = 38;
+const TITLE_ROW_GAP   = 8;
 const CONTROLS_AVAIL_W = SW - OUTER_PAD * 2;
+const TOP_ROW_AVAIL_W = CONTROLS_AVAIL_W - BACK_BTN_W - TITLE_ROW_GAP;
 const SCRUB_PILL_W    = 130;
-const ROW_GAP         = 12;
-const RANGE_PILL_W    = CONTROLS_AVAIL_W - SCRUB_PILL_W - ROW_GAP;  // when month/year
-const RANGE_PILL_W_ALL = CONTROLS_AVAIL_W;                           // when All
-const METRIC_PILL_W   = 216;  // shorter than range pill
+const ROW_GAP         = 8;
+const RANGE_PILL_W    = TOP_ROW_AVAIL_W - SCRUB_PILL_W - ROW_GAP;   // when month/year
+const RANGE_PILL_W_ALL = TOP_ROW_AVAIL_W;                            // when All
+const METRIC_PILL_W   = 216;
 
 
 // ── Color tokens ───────────────────────────────────────────────
@@ -147,12 +159,12 @@ function aggregateByDay(sessions: WorkoutSession[]): DayData[] {
   }));
 }
 
-// ── Bar grow-up animation — springy with slight overshoot ──────
+// ── Bar grow-up animation — gentle spring, minimal overshoot ────
 function barGrowUp(delayMs: number) {
   return (values: { targetHeight: number; targetOriginY: number }) => {
     'worklet';
     const { targetHeight, targetOriginY } = values;
-    const springCfg = { damping: 14, stiffness: 260, mass: 0.6 };
+    const springCfg = { damping: 22, stiffness: 220, mass: 0.7 };
     return {
       initialValues: { height: 0, originY: targetOriginY + targetHeight },
       animations: {
@@ -190,7 +202,7 @@ function DropdownModal({
       <View style={[StyleSheet.absoluteFill, dd.scrim]} pointerEvents="none" />
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <Animated.View
-        entering={FadeInDown.duration(280).springify().damping(18).stiffness(300)}
+        entering={FadeInDown.duration(300).springify().damping(24).stiffness(240)}
         style={[dd.card, { top, left, width }]}
       >
         <BlurView intensity={28} tint="dark" style={[StyleSheet.absoluteFillObject, { borderRadius: 20 }]} />
@@ -430,6 +442,15 @@ export default function ProgressGraphScreen() {
   const [selDay,       setSelDay]       = useState<DayData | null>(null);
   const [selMonthData, setSelMonthData] = useState<MonthData | null>(null);
   const [selYearData,  setSelYearData]  = useState<YearData | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(180);
+
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      'worklet';
+      scrollY.value = event.contentOffset.y;
+    },
+  });
 
   // Refs to avoid stale closures in chart PanResponder
   const selMonthRef = useRef(currentMonth);
@@ -600,9 +621,7 @@ export default function ProgressGraphScreen() {
     ? (isAllView ? Math.min(barWY, MAX_BAR_W_ALL) : barWY)
     : barW;
   const barsBlockW = isAllView || isYearView
-    ? (isAllView
-        ? Math.min(nY * effBarW + (nY - 1) * BAR_GAP, CHART_AREA_W)
-        : nY * effBarW + (nY - 1) * BAR_GAP)
+    ? nY * effBarW + (nY - 1) * BAR_GAP
     : CHART_AREA_W;
 
   const yUnit  = metric === 'duration' ? 'h' : metric === 'volume' ? weightUnit : 'rps';
@@ -649,22 +668,39 @@ export default function ProgressGraphScreen() {
     : m.reps,
   [metric, weightUnit]);
 
+  // ── Session count for current range (actual workout sessions) ──
+  const sessionCount = useMemo(() => {
+    const complete = sessions.filter(s => getSessionDateKey(s) != null && s.isComplete === true);
+    if (isAllView) {
+      if (selYearData) {
+        return complete.filter(s => getYear(parseDate(getSessionDateKey(s)!)) === selYearData.year).length;
+      }
+      return complete.length;
+    }
+    if (isYearView) {
+      return complete.filter(s => getYear(parseDate(getSessionDateKey(s)!)) === selYear).length;
+    }
+    const rsk = format(startOfMonth(new Date(selYear, selMonth, 1)), 'yyyy-MM-dd');
+    const rek = format(endOfMonth(new Date(selYear, selMonth, 1)), 'yyyy-MM-dd');
+    return complete.filter(s => { const k = getSessionDateKey(s)!; return k >= rsk && k <= rek; }).length;
+  }, [sessions, isAllView, isYearView, selYear, selMonth, selYearData]);
+
   // ── Summary stats ──────────────────────────────────────────
   const summary = useMemo(() => {
-    let count = 0, total = 0, best = 0, bestLbl = '—';
+    let total = 0, best = 0, bestLbl = '—';
     if (isAllView) {
-      yearlyData.forEach(y => { const v = getValY(y); if (v > 0) count++; total += v; if (v > best) { best = v; bestLbl = String(y.year); } });
+      yearlyData.forEach(y => { const v = getValY(y); total += v; if (v > best) { best = v; bestLbl = String(y.year); } });
     } else if (isYearView) {
-      monthlyData.forEach(m => { const v = getValM(m); if (v > 0) count++; total += v; if (v > best) { best = v; bestLbl = m.monthName; } });
+      monthlyData.forEach(m => { const v = getValM(m); total += v; if (v > best) { best = v; bestLbl = m.monthName; } });
     } else {
-      dayDataInRange.forEach(d => { if (d.data > 0) count++; total += d.data; if (d.data > best) { best = d.data; bestLbl = format(d.date, 'd MMM'); } });
+      dayDataInRange.forEach(d => { total += d.data; if (d.data > best) { best = d.data; bestLbl = format(d.date, 'd MMM'); } });
     }
     const fTotal = metric === 'duration' ? fmtDur(total * 60) : metric === 'volume' ? fmtVol(total, weightUnit) : `${Math.round(total)}`;
     const fBest  = best > 0 ? (metric === 'duration' ? fmtDur(best * 60) : metric === 'volume' ? fmtVol(best, weightUnit) : `${Math.round(best)}`) : '—';
-    const avg    = count > 0 ? total / count : 0;
+    const avg    = sessionCount > 0 ? total / sessionCount : 0;
     const fAvg   = avg > 0 ? (metric === 'duration' ? fmtDur(avg * 60) : metric === 'volume' ? fmtVol(avg, weightUnit) : `${Math.round(avg)}`) : '—';
-    return { count: String(count), fTotal, fBest, bestLbl, fAvg };
-  }, [dayDataInRange, monthlyData, yearlyData, isAllView, isYearView, metric, weightUnit, getValY, getValM]);
+    return { count: String(sessionCount), fTotal, fBest, bestLbl, fAvg };
+  }, [dayDataInRange, monthlyData, yearlyData, sessionCount, isAllView, isYearView, metric, weightUnit, getValY, getValM]);
 
   const hasData = useMemo(() => {
     if (isAllView)  return yearlyData.some(y => getValY(y) > 0);
@@ -714,130 +750,120 @@ export default function ProgressGraphScreen() {
     },
   };
 
+  const backButton = (
+    <Pressable
+      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
+      style={({ pressed }) => [p.backChip, pressed && { opacity: 0.6, transform: [{ scale: 0.92 }] }]}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+    >
+      <View style={p.backChipInner}>
+        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(47,48,49,0.40)' }]} />
+        <LinearGradient
+          colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.03)', 'transparent']}
+          start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <Ionicons name="chevron-back" size={20} color={C_TEXT} style={{ zIndex: 2 }} />
+      </View>
+    </Pressable>
+  );
+
   // ── Render ─────────────────────────────────────────────────
   return (
     <View style={p.root}>
       <HomeGradientBackground />
 
-      {/* ── Header ── */}
-      <View style={[p.header, { paddingTop: insets.top + 14 }]}>
-        <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.back(); }}
-          style={({ pressed }) => [p.backChip, pressed && p.pressed]}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <View style={p.backChipInner}>
-            <BlurView intensity={26} tint="dark" style={StyleSheet.absoluteFillObject} />
-            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(47,48,49,0.28)', borderRadius: 38 }]} />
-            <LinearGradient
-              colors={['rgba(255,255,255,0.26)', 'rgba(255,255,255,0.07)', 'transparent']}
-              start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
-              style={StyleSheet.absoluteFillObject}
-              pointerEvents="none"
-            />
-            <LinearGradient
-              colors={['rgba(255,255,255,0.30)', 'transparent']}
-              start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.25 }}
-              style={StyleSheet.absoluteFillObject}
-              pointerEvents="none"
-            />
-            <Text style={p.backIcon}>‹</Text>
+      <StickyGlassHeader
+        title=""
+        leftSlot={backButton}
+        rightSlot={
+          <View style={p.controlsRow}>
+            <View>
+              <LiquidGlassSegmented
+                options={[
+                  { key: 'month', label: 'Month' },
+                  { key: 'year',  label: 'Year' },
+                  { key: 'all',   label: 'All' },
+                ]}
+                value={timeRange}
+                width={timeRange === 'all' ? RANGE_PILL_W_ALL : RANGE_PILL_W}
+                onChange={(k) => {
+                  setTimeRange(k as TimeRange);
+                  setSelDay(null); setSelMonthData(null); setSelYearData(null);
+                }}
+              />
+            </View>
+            {timeRange === 'month' && (
+              <View ref={monthPillRef} collapsable={false}>
+                <LiquidGlassPill
+                  label={`${MONTH_NAMES[selMonth]} ${selYear}`}
+                  scrubEnabled={false}
+                  chevron
+                  onPress={() => {
+                    monthPillRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+                      setDropLayout({ x, y, width: w, height: h });
+                      setDropOpen('month');
+                    });
+                  }}
+                />
+              </View>
+            )}
+            {timeRange === 'year' && (
+              <View ref={yearPillRef} collapsable={false}>
+                <LiquidGlassPill
+                  label={String(selYear)}
+                  scrubEnabled={false}
+                  chevron
+                  onPress={() => {
+                    yearPillRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
+                      setDropLayout({ x, y, width: w, height: h });
+                      setDropOpen('year');
+                    });
+                  }}
+                />
+              </View>
+            )}
           </View>
-        </Pressable>
-        <View style={p.titleBlock}>
-          <Text style={p.title}>graph.</Text>
-          <Animated.Text key={headerSubtitle} entering={FadeIn.duration(200)} style={p.headerSub}>{headerSubtitle}</Animated.Text>
-        </View>
-        <View style={p.hSpacer} />
-      </View>
-
-      {/* ── Sticky controls (pills) — stay visible while scrolling ── */}
-      <Animated.View layout={Layout.springify().damping(20).stiffness(260)} style={p.controlsGroup}>
-
-        {/* 1. Row: Month/Year/All (longer) + Feb 2026 or 2026 pill (right) */}
-        <Animated.View layout={Layout.springify().damping(20).stiffness(260)} style={p.controlsRow}>
-          <Animated.View layout={Layout.springify().damping(20).stiffness(260)}>
-            <LiquidGlassPillGroup
+        }
+        scrollY={scrollY}
+        onLayout={setHeaderHeight}
+      >
+        <View style={p.titleMetricRow}>
+          <View>
+            <Text style={p.sectionTitle}>progress.</Text>
+            <Text style={p.sectionSub}>{headerSubtitle}</Text>
+          </View>
+          <View>
+            <LiquidGlassSegmented
               options={[
-                { key: 'month', label: 'Month' },
-                { key: 'year',  label: 'Year' },
-                { key: 'all',   label: 'All' },
+                { key: 'duration', label: 'Duration' },
+                { key: 'volume',   label: 'Volume' },
+                { key: 'reps',     label: 'Reps' },
               ]}
-              value={timeRange}
-              width={timeRange === 'all' ? RANGE_PILL_W_ALL : RANGE_PILL_W}
-              style={{ alignSelf: 'center' }}
+              value={metric}
+              width={METRIC_PILL_W}
               onChange={(k) => {
-                setTimeRange(k as TimeRange);
+                setMetric(k as Metric);
                 setSelDay(null); setSelMonthData(null); setSelYearData(null);
               }}
             />
-          </Animated.View>
-          {timeRange === 'month' && (
-            <Animated.View
-              ref={monthPillRef}
-              collapsable={false}
-              entering={FadeIn.springify().damping(18).stiffness(300)}
-              exiting={FadeOut.duration(180)}
-              layout={Layout.springify().damping(20).stiffness(260)}
-            >
-              <ScrubPill
-                label={`${MONTH_NAMES[selMonth]} ${selYear}`}
-                scrubEnabled={false}
-                onTap={() => {
-                  monthPillRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-                    setDropLayout({ x, y, width: w, height: h });
-                    setDropOpen('month');
-                  });
-                }}
-              />
-            </Animated.View>
-          )}
-          {timeRange === 'year' && (
-            <Animated.View
-              ref={yearPillRef}
-              collapsable={false}
-              entering={FadeIn.springify().damping(18).stiffness(300)}
-              exiting={FadeOut.duration(180)}
-              layout={Layout.springify().damping(20).stiffness(260)}
-            >
-              <ScrubPill
-                label={String(selYear)}
-                scrubEnabled={false}
-                onTap={() => {
-                  yearPillRef.current?.measureInWindow((x: number, y: number, w: number, h: number) => {
-                    setDropLayout({ x, y, width: w, height: h });
-                    setDropOpen('year');
-                  });
-                }}
-              />
-            </Animated.View>
-          )}
-        </Animated.View>
+          </View>
+        </View>
+      </StickyGlassHeader>
 
-        {/* 2. Metric: Duration / Volume / Reps — shorter, centred */}
-        <Animated.View layout={Layout.springify().damping(20).stiffness(260)}>
-          <LiquidGlassPillGroup
-            options={[
-              { key: 'duration', label: 'Duration' },
-              { key: 'volume',   label: 'Volume' },
-              { key: 'reps',     label: 'Reps' },
-            ]}
-            value={metric}
-            width={METRIC_PILL_W}
-            style={{ alignSelf: 'center' }}
-            onChange={(k) => {
-              setMetric(k as Metric);
-              setSelDay(null); setSelMonthData(null); setSelYearData(null);
-            }}
-          />
-        </Animated.View>
-      </Animated.View>
-
-      {/* ── Scrollable content ── */}
-      <ScrollView
+      <Animated.ScrollView
         style={p.scroll}
-        contentContainerStyle={[p.scrollContent, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[
+          p.scrollContent,
+          { paddingTop: headerHeight + 8, paddingBottom: insets.bottom + 120 },
+        ]}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
       >
         {/* ── Dropdowns ── */}
         {dropOpen === 'month' && (
@@ -888,38 +914,56 @@ export default function ProgressGraphScreen() {
         )}
 
         {/* ── 4. Stat tiles (2×2 grid, no outer card) ── */}
-        <Animated.View layout={Layout.springify().damping(22).stiffness(240)} style={p.tileGrid}>
-          <Animated.View entering={FadeInDown.delay(0).duration(320).springify().damping(18)} layout={Layout.springify()}>
-            <StatSquareTile label="sessions" value={summary.count} />
+        <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
+          <Animated.View entering={FadeInDown.delay(0).duration(360).springify().damping(24)} layout={Layout.springify()}>
+            <View style={p.tileShadow}>
+              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+                <StatSquareTile label="sessions" value={summary.count} />
+              </InteractiveGlassWrapper>
+            </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(50).duration(320).springify().damping(18)} layout={Layout.springify()}>
-            <StatSquareTile
-              label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
-              value={summary.fTotal}
-            />
+          <Animated.View entering={FadeInDown.delay(40).duration(360).springify().damping(24)} layout={Layout.springify()}>
+            <View style={p.tileShadow}>
+              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+                <StatSquareTile
+                  label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
+                  value={summary.fTotal}
+                />
+              </InteractiveGlassWrapper>
+            </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(100).duration(320).springify().damping(18)} layout={Layout.springify()}>
-            <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} />
+          <Animated.View entering={FadeInDown.delay(80).duration(360).springify().damping(24)} layout={Layout.springify()}>
+            <View style={p.tileShadow}>
+              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+                <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} />
+              </InteractiveGlassWrapper>
+            </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(150).duration(320).springify().damping(18)} layout={Layout.springify()}>
-            <StatSquareTile label="avg / session" value={summary.fAvg} />
+          <Animated.View entering={FadeInDown.delay(120).duration(360).springify().damping(24)} layout={Layout.springify()}>
+            <View style={p.tileShadow}>
+              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+                <StatSquareTile label="avg / session" value={summary.fAvg} />
+              </InteractiveGlassWrapper>
+            </View>
           </Animated.View>
         </Animated.View>
 
-        {/* ── 5. Chart (glass card, reduced height) ── */}
-        <Animated.View entering={FadeInDown.delay(200).duration(400).springify().damping(18)} layout={Layout.springify().damping(22).stiffness(240)}>
+        {/* ── 5. Chart (glass card) — spotlight fits widget via fitContent ── */}
+        <Animated.View entering={FadeInDown.delay(160).duration(400).springify().damping(24)} layout={Layout.springify().damping(26).stiffness(200)}>
+        <View style={p.chartShadow}>
+        <InteractiveGlassWrapper fitContent borderRadius={38}>
         <GlassSection>
           {/* Tooltip row */}
           <View style={p.tooltipRow}>
             {selDisplay != null ? (
               <Animated.View
                 key={`tip-${selDisplay.lbl}-${selDisplay.val}`}
-                entering={FadeInDown.duration(240).springify().damping(16).stiffness(320)}
+                entering={FadeInDown.duration(260).springify().damping(22).stiffness(260)}
                 exiting={FadeOut.duration(120)}
                 style={p.tooltipChip}
               >
-                <Text style={p.tooltipVal}>{selDisplay.val}</Text>
-                <Text style={p.tooltipLbl}>{selDisplay.lbl}</Text>
+                <Text style={p.tooltipVal}>{String(selDisplay.val ?? '')}</Text>
+                <Text style={p.tooltipLbl}>{String(selDisplay.lbl ?? '')}</Text>
               </Animated.View>
             ) : (
               <View style={{ height: 36 }} />
@@ -927,7 +971,7 @@ export default function ProgressGraphScreen() {
           </View>
 
           {!hasData ? (
-            <View style={[p.emptyState, { height: CHART_HEIGHT }]}>
+            <View style={[p.emptyState, { minHeight: CHART_HEIGHT + 32 }]}>
               <Text style={p.emptyTitle}>No workouts yet.</Text>
               <Text style={p.emptySub}>Finish one workout to populate this graph.</Text>
               {/* Glass-prominent CTA — bright fill, dark text, specular rim */}
@@ -967,8 +1011,17 @@ export default function ProgressGraphScreen() {
               </Pressable>
             </View>
           ) : (
-            <View style={{ overflow: 'hidden' }} {...chartPan.panHandlers}>
-              <View style={p.chartInner}>
+            <View
+              style={[p.chartCentered, isAllView && p.chartLeft]}
+              {...(!isAllView ? chartPan.panHandlers : {})}
+            >
+              {isAllView ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingRight: SECTION_PAD }}
+                >
+                  <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW }]}>
                 {/* Y axis */}
                 <View>
                   <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
@@ -984,8 +1037,8 @@ export default function ProgressGraphScreen() {
                   <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
                 </View>
 
-                {/* Bars + x-axis */}
-                <View style={{ flexDirection: 'column' }}>
+                {/* Bars + x-axis — centered when narrower than chart area */}
+                <View style={p.chartBarsColumn}>
                   <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
                     {yTicks.map((_, i) => (
                       <View key={i} style={{
@@ -1068,18 +1121,108 @@ export default function ProgressGraphScreen() {
                   <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
                   <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
                     {xSegs.map((seg, i) => (
-                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center' }}>
-                        <Text style={p.xLbl}>{seg.label}</Text>
+                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
                       </View>
                     ))}
                   </View>
                 </View>
               </View>
+                </ScrollView>
+              ) : (
+                <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW, marginLeft: -20 }]}>
+                {/* Y axis */}
+                <View>
+                  <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
+                    <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
+                      {yTicks.map((v, i) => (
+                        <Text key={i} style={p.yLbl}>
+                          {metric === 'duration' ? `${v.toFixed(1)}${yUnit}` : `${fmtYAxis(v)} ${yUnit}`}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={{ width: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  </View>
+                  <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
+                </View>
+
+                {/* Bars + x-axis */}
+                <View style={p.chartBarsColumn}>
+                  <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
+                    {yTicks.map((_, i) => (
+                      <View key={i} style={{
+                        position: 'absolute', top: BAR_AREA_H * i / (yTicks.length - 1),
+                        left: 0, width: barsBlockW, height: 1, backgroundColor: C_GRID,
+                      }} />
+                    ))}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_AREA_H }}>
+                      {isYearView && monthlyData.length === 12 ? (
+                        monthlyData.map((md, i) => {
+                          const v  = getValM(md);
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selMonthData?.month === md.month;
+                          const has = selMonthData != null;
+                          return (
+                            <Pressable key={`${md.month}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
+                              style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * 30)} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      ) : (
+                        dayDataInRange.map((pt, i) => {
+                          const v  = pt.data;
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selDay != null && isSameDay(pt.date, selDay.date);
+                          const has = selDay != null;
+                          const mr  = i < dayDataInRange.length - 1 ? BAR_GAP + ((i+1) % 7 === 0 ? WEEK_GAP : 0) : 0;
+                          return (
+                            <Pressable key={`${pt.date.getTime()}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
+                              style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * 20)} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
+                    {xSegs.map((seg, i) => (
+                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+              )}
             </View>
           )}
         </GlassSection>
+        </InteractiveGlassWrapper>
+        </View>
         </Animated.View>
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
@@ -1089,10 +1232,8 @@ const p = StyleSheet.create({
   root:   { flex: 1, backgroundColor: Colors.primaryDark },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: OUTER_PAD, paddingBottom: 12, zIndex: 2 },
 
-  backChip:      { borderRadius: 38, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.26, shadowRadius: 10, elevation: 6 },
-  pressed:       { opacity: 0.65 },
-  backChipInner: { width: 38, height: 38, borderRadius: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C_BORDER_SEL, overflow: 'hidden', zIndex: 1 },
-  backIcon:      { fontSize: 24, color: C_TEXT, fontWeight: '400', lineHeight: 28, marginTop: -2, zIndex: 2 },
+  backChip:      { borderRadius: 20, overflow: 'hidden' },
+  backChipInner: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(198,198,198,0.18)', overflow: 'hidden' },
 
   titleBlock: { flex: 1, alignItems: 'center' },
   title:      { fontSize: 18, fontWeight: '600', letterSpacing: -0.2, color: 'rgba(198,198,198,0.92)' },
@@ -1104,7 +1245,27 @@ const p = StyleSheet.create({
 
   // Controls group: metric + range + sub-selector — centred rows
   controlsGroup: { gap: 10, alignItems: 'center', paddingHorizontal: OUTER_PAD, paddingBottom: 10, zIndex: 1 },
-  controlsRow:   { flexDirection: 'row', alignItems: 'center', gap: ROW_GAP },
+  controlsRow:   { flexDirection: 'row', alignItems: 'center', gap: ROW_GAP, alignSelf: 'flex-end' },
+
+  titleMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    marginTop: 2,
+  },
+  sectionTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    color: 'rgba(198,198,198,0.92)',
+  },
+  sectionSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(198,198,198,0.50)',
+    marginTop: 2,
+  },
 
   // 2×2 stat tile grid
   tileGrid: {
@@ -1113,12 +1274,35 @@ const p = StyleSheet.create({
     gap: TILE_GAP,
   },
 
+  tileShadow: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: 38,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 22,
+    elevation: 12,
+  },
+
+  chartShadow: {
+    borderRadius: 38,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 22,
+    elevation: 12,
+  },
+
   tooltipRow:  { minHeight: 42, justifyContent: 'center', marginBottom: 6 },
   tooltipChip: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(47,48,49,0.55)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(198,198,198,0.28)', paddingVertical: 7, paddingHorizontal: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 5 },
   tooltipVal:  { fontSize: 16, fontWeight: '600', color: C_TEXT, letterSpacing: -0.2 },
   tooltipLbl:  { fontSize: 13, fontWeight: '500', color: C_TEXT_DIM },
 
+  chartCentered: { alignItems: 'center', overflow: 'hidden', paddingLeft: 8 },
+  chartLeft: { alignItems: 'flex-start', overflow: 'visible' },
   chartInner: { flexDirection: 'row', alignItems: 'flex-start' },
+  chartBarsColumn: { flexDirection: 'column' },
 
   yLbl: { fontSize: 10, fontWeight: '500', color: C_AXIS_LBL },
   xLbl: { fontSize: 10, fontWeight: '500', color: C_AXIS_LBL, textAlign: 'center' },
