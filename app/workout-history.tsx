@@ -15,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
+import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
 export default function WorkoutHistoryScreen() {
     const router = useRouter();
@@ -55,8 +56,10 @@ export default function WorkoutHistoryScreen() {
                     styles.card,
                     {
                         backgroundColor: pressed
-                            ? colors.primaryLight + '12'
+                            ? colors.primaryLight + '14'
                             : colors.primaryLight + '08',
+                        borderWidth: 1,
+                        borderColor: colors.primaryLight + '10',
                     },
                 ]}
                 onPress={() =>
@@ -103,8 +106,9 @@ export default function WorkoutHistoryScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+            <HomeGradientBackground />
             {/* TOP BAR */}
-            <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+            <View style={[styles.header, { paddingTop: insets.top + 8, zIndex: 2 }]}>
                 <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
                     <CaretLeft size={24} color={colors.primaryLight} />
                 </Pressable>
@@ -113,11 +117,12 @@ export default function WorkoutHistoryScreen() {
 
             {loading ? (
                 <ActivityIndicator
-                    style={styles.loader}
+                    style={[styles.loader, { zIndex: 2 }]}
                     color={colors.primaryLight + '80'}
                 />
             ) : (
                 <FlatList
+                    style={{ zIndex: 2 }}
                     data={sessions}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}

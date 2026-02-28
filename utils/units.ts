@@ -64,10 +64,9 @@ export function parseNumericInput(
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Format weight for display: 0 or 1 decimal as appropriate. */
+/** Format weight for display: nearest whole number. */
 export function formatWeightDisplay(value: number, unit: WeightUnit): string {
-  const rounded = value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
-  return rounded % 1 === 0 ? String(rounded) : rounded.toFixed(1);
+  return String(Math.round(value));
 }
 
 /** Format fluid for display: ml = integer, oz = 1 decimal. */

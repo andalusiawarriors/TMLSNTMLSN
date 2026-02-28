@@ -36,7 +36,7 @@ function ExerciseChart({ exercise, tab }: { exercise: Exercise; tab: 'volume' | 
   const { pathD, areaD, getX, getY } = buildChartPaths(data);
   const gradId = `g_${exercise.id}_${tab}`;
   const colW = data.length > 1 ? INNER_W / (data.length - 1) : INNER_W;
-  const fmt = (v: number) => tab === 'volume' ? (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`) : `${v}`;
+  const fmt = (v: number) => tab === 'volume' ? (v >= 1000 ? `${Math.round(v / 1000)}k` : `${Math.round(v)}`) : `${Math.round(v)}`;
 
   const labelLayout = (i: number) => {
     const cx = getX(i), half = colW / 2;

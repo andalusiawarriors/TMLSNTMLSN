@@ -259,30 +259,35 @@ type LabelDef = {
 
 const FRONT_LABELS: LabelDef[] = [
   // LEFT SIDE (anchor="end") — viewer's left → figure's right arm side
-  { text: 'Trapezius',         textX: 118, textY: 195, dotX: 278, dotY: 198, anchor: 'end' },
-  { text: 'Pectoralis Major',  textX: 118, textY: 278, dotX: 248, dotY: 282, anchor: 'end' },
-  { text: 'Anterior Deltoid',  textX: 118, textY: 308, dotX: 185, dotY: 302, anchor: 'end' },
-  { text: 'Biceps Brachii',    textX: 118, textY: 365, dotX: 185, dotY: 372, anchor: 'end' },
-  { text: 'Brachioradialis',   textX: 118, textY: 450, dotX: 163, dotY: 462, anchor: 'end' },
+  { text: 'Trapezius',           textX: 118, textY: 195, dotX: 278, dotY: 198, anchor: 'end' },
+  { text: 'Pectoralis Major',   textX: 118, textY: 278, dotX: 248, dotY: 282, anchor: 'end' },
+  { text: 'Anterior Deltoid',    textX: 118, textY: 308, dotX: 185, dotY: 302, anchor: 'end' },
+  { text: 'Biceps Brachii',      textX: 118, textY: 365, dotX: 185, dotY: 372, anchor: 'end' },
+  { text: 'Brachioradialis',     textX: 118, textY: 450, dotX: 163, dotY: 462, anchor: 'end' },
+  { text: 'Serratus Anterior',  textX: 118, textY: 340, dotX: 240, dotY: 335, anchor: 'end' },
   // RIGHT SIDE (anchor="start") — viewer's right → figure's left side
-  { text: 'Rectus Abdominis',  textX: 548, textY: 425, dotX: 348, dotY: 452, anchor: 'start' },
-  { text: 'External Oblique',  textX: 548, textY: 485, dotX: 400, dotY: 456, anchor: 'start' },
-  { text: 'Rectus Femoris',    textX: 548, textY: 730, dotX: 393, dotY: 738, anchor: 'start' },
-  { text: 'Tibialis Anterior', textX: 548, textY: 1062, dotX: 398, dotY: 1068, anchor: 'start' },
+  { text: 'Rectus Abdominis',    textX: 548, textY: 425, dotX: 348, dotY: 452, anchor: 'start' },
+  { text: 'External Oblique',    textX: 548, textY: 485, dotX: 400, dotY: 456, anchor: 'start' },
+  { text: 'Quadriceps',          textX: 548, textY: 680, dotX: 380, dotY: 700, anchor: 'start' },
+  { text: 'Rectus Femoris',      textX: 548, textY: 730, dotX: 393, dotY: 738, anchor: 'start' },
+  { text: 'Tibialis Anterior',   textX: 548, textY: 1062, dotX: 398, dotY: 1068, anchor: 'start' },
+  { text: 'Gastrocnemius',       textX: 548, textY: 1000, dotX: 380, dotY: 1005, anchor: 'start' },
 ];
 
 const BACK_LABELS: LabelDef[] = [
   // LEFT SIDE
-  { text: 'Trapezius',          textX: 118, textY: 232, dotX: 298, dotY: 248, anchor: 'end' },
-  { text: 'Post. Deltoid',      textX: 118, textY: 278, dotX: 208, dotY: 278, anchor: 'end' },
-  { text: 'Triceps Brachii',    textX: 118, textY: 390, dotX: 188, dotY: 395, anchor: 'end' },
-  { text: 'Ext. Carpi Rad.',    textX: 118, textY: 455, dotX: 163, dotY: 456, anchor: 'end' },
-  { text: 'Biceps Femoris',     textX: 118, textY: 765, dotX: 272, dotY: 768, anchor: 'end' },
-  { text: 'Gastrocnemius',      textX: 118, textY: 990, dotX: 268, dotY: 993, anchor: 'end' },
+  { text: 'Trapezius',             textX: 118, textY: 232, dotX: 298, dotY: 248, anchor: 'end' },
+  { text: 'Posterior Deltoid',     textX: 118, textY: 278, dotX: 208, dotY: 278, anchor: 'end' },
+  { text: 'Triceps Brachii',       textX: 118, textY: 390, dotX: 188, dotY: 395, anchor: 'end' },
+  { text: 'Extensor Carpi Radialis', textX: 118, textY: 455, dotX: 163, dotY: 456, anchor: 'end' },
+  { text: 'Biceps Femoris',        textX: 118, textY: 765, dotX: 272, dotY: 768, anchor: 'end' },
+  { text: 'Gastrocnemius',         textX: 118, textY: 990, dotX: 268, dotY: 993, anchor: 'end' },
+  { text: 'Soleus',               textX: 118, textY: 1050, dotX: 280, dotY: 1055, anchor: 'end' },
   // RIGHT SIDE
-  { text: 'Latissimus Dorsi',   textX: 548, textY: 432, dotX: 422, dotY: 432, anchor: 'start' },
-  { text: 'Erector Spinae',     textX: 548, textY: 518, dotX: 360, dotY: 520, anchor: 'start' },
-  { text: 'Gluteus Maximus',    textX: 548, textY: 612, dotX: 392, dotY: 615, anchor: 'start' },
+  { text: 'Latissimus Dorsi',      textX: 548, textY: 432, dotX: 422, dotY: 432, anchor: 'start' },
+  { text: 'Erector Spinae',        textX: 548, textY: 518, dotX: 360, dotY: 520, anchor: 'start' },
+  { text: 'Gluteus Maximus',       textX: 548, textY: 612, dotX: 392, dotY: 615, anchor: 'start' },
+  { text: 'Rhomboids',            textX: 548, textY: 280, dotX: 400, dotY: 290, anchor: 'start' },
 ];
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -367,7 +372,7 @@ export function BodyAnatomySvg({
           )
         )}
       </G>
-      {/* Technical muscle name labels with callout lines */}
+      {/* Technical muscle name labels — premium callout style (C6C6C6 / 2F3031) */}
       {showLabels && (
         <G>
           {currentLabels.map((label, i) => (
@@ -377,22 +382,22 @@ export function BodyAnatomySvg({
                 y1={label.dotY}
                 x2={label.textX}
                 y2={label.textY}
-                stroke={Colors.primaryLight + '55'}
-                strokeWidth={1.8}
+                stroke={Colors.primaryLight + '70'}
+                strokeWidth={2}
                 strokeLinecap="round"
               />
               <Circle
                 cx={label.dotX}
                 cy={label.dotY}
-                r={6}
-                fill={Colors.primaryLight + '90'}
+                r={5}
+                fill={Colors.primaryLight + 'B0'}
               />
               <SvgText
-                x={label.textX + (label.anchor === 'start' ? 6 : -6)}
-                y={label.textY + 7}
-                fontSize={22}
-                fontWeight="400"
-                fill={Colors.primaryLight + 'CC'}
+                x={label.textX + (label.anchor === 'start' ? 8 : -8)}
+                y={label.textY + 8}
+                fontSize={24}
+                fontWeight="500"
+                fill={Colors.primaryLight}
                 textAnchor={label.anchor}
               >
                 {label.text}

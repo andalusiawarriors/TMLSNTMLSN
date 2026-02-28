@@ -25,6 +25,7 @@ import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
+import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -225,8 +226,9 @@ export default function WorkoutSaveScreen() {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
+        <HomeGradientBackground />
         <KeyboardAvoidingView
-          style={{ flex: 1 }}
+          style={{ flex: 1, zIndex: 2 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {/* TOP BAR */}

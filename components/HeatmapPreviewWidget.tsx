@@ -19,7 +19,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
-import { BodyAnatomySvg } from './BodyAnatomySvg';
+import { DetailedBodyHeatmap } from './DetailedBodyHeatmap';
 import { Colors, Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
 import { getUserSettings } from '../utils/storage';
 
@@ -105,30 +105,28 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Slide 1: Front view — body only, enclosed by widget */}
+        {/* Slide 1: Front view */}
         <View style={styles.slide}>
-          <BodyAnatomySvg
-            variant="front"
+          <DetailedBodyHeatmap
             heatmapData={heatmapData}
             selectedDay={todayDayOfWeek}
             maxVolume={maxVolumeForDay}
-            pressedMuscleGroup={null}
-            width={BODY_WIDTH}
-            height={BODY_HEIGHT}
+            variant="front"
             gender={gender}
+            width={BODY_WIDTH}
+            showCard={false}
           />
         </View>
         {/* Slide 2: Back view */}
         <View style={styles.slide}>
-          <BodyAnatomySvg
-            variant="back"
+          <DetailedBodyHeatmap
             heatmapData={heatmapData}
             selectedDay={todayDayOfWeek}
             maxVolume={maxVolumeForDay}
-            pressedMuscleGroup={null}
-            width={BODY_WIDTH}
-            height={BODY_HEIGHT}
+            variant="back"
             gender={gender}
+            width={BODY_WIDTH}
+            showCard={false}
           />
         </View>
       </ScrollView>
@@ -286,28 +284,26 @@ export function HeatmapPreviewWidgetSideBySide({
       <Text style={styles.sideBySideTitle}>muscles hit · last 7 days</Text>
       <View style={styles.sideBySideRow}>
         <View style={styles.sideBySideCell}>
-          <BodyAnatomySvg
-            variant="front"
+          <DetailedBodyHeatmap
             heatmapData={weekAggregate}
             selectedDay={0}
             maxVolume={maxVolume}
-            pressedMuscleGroup={null}
-            width={bodyWidth}
-            height={bodyHeight}
+            variant="front"
             gender={gender}
+            width={bodyWidth}
+            showCard={false}
           />
           <Text style={styles.sideBySideLabel}>front</Text>
         </View>
         <View style={[styles.sideBySideCell, { marginLeft: gap }]}>
-          <BodyAnatomySvg
-            variant="back"
+          <DetailedBodyHeatmap
             heatmapData={weekAggregate}
             selectedDay={0}
             maxVolume={maxVolume}
-            pressedMuscleGroup={null}
-            width={bodyWidth}
-            height={bodyHeight}
+            variant="back"
             gender={gender}
+            width={bodyWidth}
+            showCard={false}
           />
           <Text style={styles.sideBySideLabel}>back</Text>
         </View>

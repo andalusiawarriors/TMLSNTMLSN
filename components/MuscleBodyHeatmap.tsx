@@ -11,31 +11,25 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
-  ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
   interpolate,
   Extrapolation,
 } from 'react-native-reanimated';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
-import { getWeekStart, DAY_NAMES, MUSCLE_GROUP_DISPLAY_NAMES } from '../utils/weeklyMuscleTracker';
+import { DAY_NAMES, MUSCLE_GROUP_DISPLAY_NAMES } from '../utils/weeklyMuscleTracker';
 import type { MuscleGroup } from '../utils/exerciseDb/types';
 import { Colors, Spacing, BorderRadius } from '../constants/theme';
-import { BodyAnatomySvg } from './BodyAnatomySvg';
+import { DetailedBodyHeatmap } from './DetailedBodyHeatmap';
 import { getUserSettings } from '../utils/storage';
 
 const SCREEN_W = Dimensions.get('window').width;
 const BODY_PANEL_W = SCREEN_W - Spacing.md * 2;
-// Body aspect ratio ~1:1.83 (660:1206). Give enough height so labels show cleanly.
-const BODY_H = Math.round(BODY_PANEL_W * 1.55);
 
-const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 const UPPER_MUSCLES: MuscleGroup[] = [
   'chest', 'upper_back', 'lats', 'lower_back', 'traps',
@@ -47,7 +41,6 @@ const LOWER_MUSCLES: MuscleGroup[] = [
   'quads', 'hamstrings', 'glutes', 'adductors', 'calves', 'hip_flexors',
 ];
 
-// Technical names shown in the muscle list (maps group key → Latin name)
 const TECHNICAL_NAMES: Partial<Record<MuscleGroup, string>> = {
   chest:       'Pectoralis Major',
   upper_back:  'Rhomboids / Mid-Trap',
@@ -75,20 +68,21 @@ function AnimatedTabIndicator({ activeIndex }: { activeIndex: number }) {
   useEffect(() => {
     x.value = withSpring(activeIndex, { damping: 18, stiffness: 200 });
   }, [activeIndex]);
+  const halfW = (BODY_PANEL_W - 8) / 2;
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(x.value, [0, 1], [0, BODY_PANEL_W / 2], Extrapolation.CLAMP) }],
+    transform: [{ translateX: interpolate(x.value, [0, 1], [0, halfW], Extrapolation.CLAMP) }],
   }));
   return (
     <Animated.View
       style={[
         {
           position: 'absolute',
-          bottom: 0,
-          left: 0,
-          width: BODY_PANEL_W / 2,
-          height: 2,
-          borderRadius: 1,
-          backgroundColor: Colors.primaryLight,
+          top: 2,
+          left: 2,
+          width: halfW,
+          height: 32,
+          borderRadius: 14,
+          backgroundColor: Colors.primaryLight + '18',
         },
         style,
       ]}
@@ -98,10 +92,26 @@ function AnimatedTabIndicator({ activeIndex }: { activeIndex: number }) {
 
 interface MuscleBodyHeatmapProps {
   heatmapData: HeatmapData[];
+  period?: 'week' | 'month' | 'year' | 'all';
+  externalGender?: 'male' | 'female';
 }
 
-export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
-  const weekStart = useMemo(() => getWeekStart(), []);
+function getWeekStartForOffset(offsetWeeks: number): Date {
+  const d = new Date();
+  const day = d.getDay();
+  const monOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + monOffset);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() + offsetWeeks * 7);
+  return monday;
+}
+
+export function MuscleBodyHeatmap({ heatmapData, period = 'week', externalGender }: MuscleBodyHeatmapProps) {
+  const showWeekNav = period === 'week';
+
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekStart = useMemo(() => getWeekStartForOffset(weekOffset), [weekOffset]);
   const weekDates = useMemo(() => {
     return DAY_NAMES.map((_, i) => {
       const d = new Date(weekStart);
@@ -124,25 +134,47 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
   const [gender, setGender] = useState<'male' | 'female'>('male');
 
   useEffect(() => {
-    getUserSettings().then((s) => {
-      if (s.bodyMapGender) setGender(s.bodyMapGender);
-    });
-  }, []);
+    if (externalGender) {
+      setGender(externalGender);
+    } else {
+      getUserSettings().then((s) => {
+        if (s.bodyMapGender) setGender(s.bodyMapGender);
+      });
+    }
+  }, [externalGender]);
 
   useEffect(() => {
     setPressedMuscleGroup(null);
   }, [selectedDay]);
 
   const maxVolumeForDay = useMemo(() => {
-    return Math.max(1, ...heatmapData.map((h) => h.byDay[selectedDay] ?? 0));
-  }, [heatmapData, selectedDay]);
+    if (showWeekNav) {
+      return Math.max(1, ...heatmapData.map((h) => h.byDay[selectedDay] ?? 0));
+    }
+    return Math.max(1, ...heatmapData.map((h) => h.totalSets));
+  }, [heatmapData, selectedDay, showWeekNav]);
+
+  const weekLabel = useMemo(() => {
+    if (weekOffset === 0) return 'This week';
+    if (weekOffset === -1) return 'Last week';
+    if (weekOffset < -1) return `${Math.abs(weekOffset)} weeks ago`;
+    return `In ${weekOffset} week${weekOffset === 1 ? '' : 's'}`;
+  }, [weekOffset]);
 
   const weekRangeText = useMemo(() => {
     const start = weekDates[0];
     const end = weekDates[6];
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    return `${start.getDate()} – ${end.getDate()} ${months[start.getMonth()]} ${start.getFullYear()}`;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    if (start.getMonth() === end.getMonth()) {
+      return `${start.getDate()} – ${end.getDate()} ${months[start.getMonth()]}`;
+    }
+    return `${start.getDate()} ${months[start.getMonth()]} – ${end.getDate()} ${months[end.getMonth()]}`;
   }, [weekDates]);
+
+  const isToday = useCallback((dayIndex: number) => {
+    if (weekOffset !== 0) return false;
+    return dayIndex === todayDayOfWeek;
+  }, [weekOffset, todayDayOfWeek]);
 
   const heatmapByGroup = useMemo(() => {
     const m = new Map<MuscleGroup, HeatmapData>();
@@ -151,415 +183,475 @@ export function MuscleBodyHeatmap({ heatmapData }: MuscleBodyHeatmapProps) {
   }, [heatmapData]);
 
   const muscleListForDay = useMemo(() => {
-    const upper = UPPER_MUSCLES.map((group) => {
+    const getSets = (group: MuscleGroup) => {
       const data = heatmapByGroup.get(group);
-      const sets = data?.byDay[selectedDay] ?? 0;
-      return { group, displayName: MUSCLE_GROUP_DISPLAY_NAMES[group], technicalName: TECHNICAL_NAMES[group] ?? '', sets };
-    });
-    const lower = LOWER_MUSCLES.map((group) => {
-      const data = heatmapByGroup.get(group);
-      const sets = data?.byDay[selectedDay] ?? 0;
-      return { group, displayName: MUSCLE_GROUP_DISPLAY_NAMES[group], technicalName: TECHNICAL_NAMES[group] ?? '', sets };
-    });
+      if (!data) return 0;
+      return showWeekNav ? (data.byDay[selectedDay] ?? 0) : data.totalSets;
+    };
+    const upper = UPPER_MUSCLES.map((group) => ({
+      group,
+      displayName: MUSCLE_GROUP_DISPLAY_NAMES[group],
+      technicalName: TECHNICAL_NAMES[group] ?? '',
+      sets: getSets(group),
+    }));
+    const lower = LOWER_MUSCLES.map((group) => ({
+      group,
+      displayName: MUSCLE_GROUP_DISPLAY_NAMES[group],
+      technicalName: TECHNICAL_NAMES[group] ?? '',
+      sets: getSets(group),
+    }));
     return { upper, lower };
-  }, [heatmapByGroup, selectedDay]);
+  }, [heatmapByGroup, selectedDay, showWeekNav]);
 
   const totalSetsForDay =
     muscleListForDay.upper.reduce((sum, m) => sum + m.sets, 0) +
     muscleListForDay.lower.reduce((sum, m) => sum + m.sets, 0);
 
+  const musclesHit = [...muscleListForDay.upper, ...muscleListForDay.lower].filter(m => m.sets > 0).length;
+
+  const effectiveSelectedDay = showWeekNav ? selectedDay : -1;
+
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>muscle map</Text>
-        <Text style={styles.weekRange}>{weekRangeText}</Text>
-      </View>
-
-      {/* Day selector */}
-      <View style={styles.dayRow}>
-        {DAY_LETTERS.map((letter, i) => {
-          const d = weekDates[i];
-          const setsForDay = heatmapData.reduce((sum, h) => sum + (h.byDay[i] || 0), 0);
-          const isSelected = selectedDay === i;
-          return (
-            <Pressable
-              key={i}
-              style={styles.dayCell}
-              onPress={() => setSelectedDay(i)}
-            >
-              <View style={[styles.dayButton, isSelected && styles.dayButtonSelected]}>
-                <Text style={[styles.dayLetter, isSelected && styles.dayLetterSelected]}>
-                  {letter}
-                </Text>
-                <Text style={[styles.dayDate, isSelected && styles.dayLetterSelected]}>
-                  {d.getDate()}
-                </Text>
-              </View>
-              {setsForDay > 0 && !isSelected && <View style={styles.activityDot} />}
+      {showWeekNav && (
+        <>
+          {/* Week nav */}
+          <View style={styles.weekNav}>
+            <Pressable onPress={() => setWeekOffset((o) => o - 1)} hitSlop={12} style={styles.chevronBtn}>
+              <Text style={styles.chevron}>‹</Text>
             </Pressable>
-          );
-        })}
-      </View>
+            <View style={styles.weekCenter}>
+              <Text style={styles.weekLabel}>{weekLabel}</Text>
+              <Text style={styles.weekRange}>{weekRangeText}</Text>
+            </View>
+            <Pressable
+              onPress={() => setWeekOffset((o) => Math.min(0, o + 1))}
+              hitSlop={12}
+              style={styles.chevronBtn}
+              disabled={weekOffset === 0}
+            >
+              <Text style={[styles.chevron, weekOffset === 0 && styles.chevronDisabled]}>›</Text>
+            </Pressable>
+          </View>
 
-      {/* Front / Back toggle tabs */}
-      <View style={styles.tabBar}>
-        <Pressable style={styles.tabButton} onPress={() => setActiveView('front')}>
-          <Text style={[styles.tabLabel, activeView === 'front' && styles.tabLabelActive]}>
-            FRONT
-          </Text>
-        </Pressable>
-        <Pressable style={styles.tabButton} onPress={() => setActiveView('back')}>
-          <Text style={[styles.tabLabel, activeView === 'back' && styles.tabLabelActive]}>
-            BACK
-          </Text>
-        </Pressable>
+          {/* Day strip */}
+          <View style={styles.dayRow}>
+            {DAY_SHORT.map((letter, i) => {
+              const d = weekDates[i];
+              const setsForDay = heatmapData.reduce((sum, h) => sum + (h.byDay[i] || 0), 0);
+              const isSelected = selectedDay === i;
+              const today = isToday(i);
+              return (
+                <Pressable key={i} style={styles.dayCell} onPress={() => setSelectedDay(i)}>
+                  <Text style={[styles.dayLetter, isSelected && styles.dayLetterActive]}>{letter}</Text>
+                  <View style={[
+                    styles.dayCircle,
+                    isSelected && styles.dayCircleSelected,
+                    today && !isSelected && styles.dayCircleToday,
+                  ]}>
+                    <Text style={[
+                      styles.dayNum,
+                      isSelected && styles.dayNumSelected,
+                    ]}>
+                      {d.getDate()}
+                    </Text>
+                  </View>
+                  {setsForDay > 0 && !isSelected && <View style={styles.activityDot} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {/* Front / Back toggle */}
+      <View style={styles.toggleBar}>
         <AnimatedTabIndicator activeIndex={activeView === 'front' ? 0 : 1} />
+        <Pressable style={styles.toggleBtn} onPress={() => setActiveView('front')}>
+          <Text style={[styles.toggleLabel, activeView === 'front' && styles.toggleLabelActive]}>Front</Text>
+        </Pressable>
+        <Pressable style={styles.toggleBtn} onPress={() => setActiveView('back')}>
+          <Text style={[styles.toggleLabel, activeView === 'back' && styles.toggleLabelActive]}>Back</Text>
+        </Pressable>
       </View>
 
-      {/* Body anatomy — full width with labels */}
-      <View style={styles.bodyContainer}>
-        <BodyAnatomySvg
-          variant={activeView}
+      {/* Body anatomy */}
+      <View style={styles.bodySection}>
+        <DetailedBodyHeatmap
           heatmapData={heatmapData}
-          selectedDay={selectedDay}
+          selectedDay={effectiveSelectedDay}
           maxVolume={maxVolumeForDay}
-          pressedMuscleGroup={pressedMuscleGroup}
-          width={BODY_PANEL_W}
-          height={BODY_H}
-          showLabels
+          variant={activeView}
           gender={gender}
+          width={BODY_PANEL_W - 16}
+          pressedMuscleGroup={pressedMuscleGroup}
+          onMusclePress={setPressedMuscleGroup}
+          showCard={true}
         />
       </View>
 
-      {/* Stats summary */}
+      {/* Stats pills */}
       <View style={styles.statsRow}>
         <View style={styles.statPill}>
-          <Text style={styles.statValue}>{totalSetsForDay}</Text>
-          <Text style={styles.statLabel}>total sets</Text>
+          <Text style={styles.statNum}>{totalSetsForDay}</Text>
+          <Text style={styles.statText}>sets</Text>
         </View>
         <View style={styles.statPill}>
-          <Text style={styles.statValue}>
-            {[...muscleListForDay.upper, ...muscleListForDay.lower].filter(m => m.sets > 0).length}
-          </Text>
-          <Text style={styles.statLabel}>muscles hit</Text>
+          <Text style={styles.statNum}>{musclesHit}</Text>
+          <Text style={styles.statText}>muscles</Text>
         </View>
       </View>
 
-      {/* Muscle list */}
-      <View style={styles.muscleList}>
-        <View style={styles.muscleListHeader}>
-          <Text style={styles.muscleListHeaderText}>Muscle</Text>
-          <Text style={styles.muscleListHeaderText}>Sets</Text>
-        </View>
-
-        {/* Total row */}
+      {/* Muscle breakdown */}
+      <View style={styles.muscleSection}>
+        {/* Upper */}
         <Pressable
-          style={({ pressed }) => [styles.muscleListRow, pressed && styles.muscleListRowPressed]}
-          onPress={() => setPressedMuscleGroup(null)}
-        >
-          <Text style={styles.muscleListName}>All Muscles</Text>
-          <Text style={styles.muscleListSets}>{totalSetsForDay}</Text>
-        </Pressable>
-
-        {/* Upper section */}
-        <Pressable
-          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed]}
           onPress={() => setUpperExpanded(e => !e)}
         >
-          <Text style={styles.dropdownChevron}>{upperExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownLabel}>Upper Body</Text>
-          <Text style={styles.dropdownSets}>
-            {muscleListForDay.upper.reduce((s, m) => s + m.sets, 0)}
+          <Text style={styles.sectionChevron}>{upperExpanded ? '▾' : '▸'}</Text>
+          <Text style={styles.sectionTitle}>Upper Body</Text>
+          <Text style={styles.sectionCount}>
+            {muscleListForDay.upper.reduce((s, m) => s + m.sets, 0)} sets
           </Text>
         </Pressable>
         {upperExpanded && muscleListForDay.upper.map((m) => (
-          <Pressable
+          <MuscleRow
             key={m.group}
-            style={({ pressed }) => [
-              styles.muscleListRow,
-              (pressed || pressedMuscleGroup === m.group) && styles.muscleListRowPressed,
-            ]}
+            displayName={m.displayName}
+            technicalName={m.technicalName}
+            sets={m.sets}
+            maxSets={maxVolumeForDay}
+            isSelected={pressedMuscleGroup === m.group}
             onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
-          >
-            <View style={styles.muscleNameColumn}>
-              <Text style={[styles.muscleListName, pressedMuscleGroup === m.group && styles.muscleListNameSelected]}>
-                {m.displayName}
-              </Text>
-              {m.technicalName ? (
-                <Text style={styles.muscleTechName}>{m.technicalName}</Text>
-              ) : null}
-            </View>
-            <Text style={[styles.muscleListSets, pressedMuscleGroup === m.group && styles.muscleListSetsSelected]}>
-              {m.sets}
-            </Text>
-          </Pressable>
+          />
         ))}
 
-        {/* Lower section */}
+        {/* Lower */}
         <Pressable
-          style={({ pressed }) => [styles.dropdownHeader, pressed && styles.dropdownHeaderPressed]}
+          style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed, { marginTop: 8 }]}
           onPress={() => setLowerExpanded(e => !e)}
         >
-          <Text style={styles.dropdownChevron}>{lowerExpanded ? '▼' : '▶'}</Text>
-          <Text style={styles.dropdownLabel}>Lower Body</Text>
-          <Text style={styles.dropdownSets}>
-            {muscleListForDay.lower.reduce((s, m) => s + m.sets, 0)}
+          <Text style={styles.sectionChevron}>{lowerExpanded ? '▾' : '▸'}</Text>
+          <Text style={styles.sectionTitle}>Lower Body</Text>
+          <Text style={styles.sectionCount}>
+            {muscleListForDay.lower.reduce((s, m) => s + m.sets, 0)} sets
           </Text>
         </Pressable>
         {lowerExpanded && muscleListForDay.lower.map((m) => (
-          <Pressable
+          <MuscleRow
             key={m.group}
-            style={({ pressed }) => [
-              styles.muscleListRow,
-              (pressed || pressedMuscleGroup === m.group) && styles.muscleListRowPressed,
-            ]}
+            displayName={m.displayName}
+            technicalName={m.technicalName}
+            sets={m.sets}
+            maxSets={maxVolumeForDay}
+            isSelected={pressedMuscleGroup === m.group}
             onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
-          >
-            <View style={styles.muscleNameColumn}>
-              <Text style={[styles.muscleListName, pressedMuscleGroup === m.group && styles.muscleListNameSelected]}>
-                {m.displayName}
-              </Text>
-              {m.technicalName ? (
-                <Text style={styles.muscleTechName}>{m.technicalName}</Text>
-              ) : null}
-            </View>
-            <Text style={[styles.muscleListSets, pressedMuscleGroup === m.group && styles.muscleListSetsSelected]}>
-              {m.sets}
-            </Text>
-          </Pressable>
+          />
         ))}
       </View>
     </View>
   );
 }
 
+interface MuscleRowProps {
+  displayName: string;
+  technicalName: string;
+  sets: number;
+  maxSets: number;
+  isSelected: boolean;
+  onPress: () => void;
+}
+
+function MuscleRow({ displayName, technicalName, sets, maxSets, isSelected, onPress }: MuscleRowProps) {
+  const barWidth = sets > 0 ? Math.max(8, (sets / Math.max(maxSets, 1)) * 100) : 0;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.muscleRow,
+        (pressed || isSelected) && styles.muscleRowActive,
+      ]}
+      onPress={onPress}
+    >
+      <View style={styles.muscleInfo}>
+        <Text style={[styles.muscleName, isSelected && styles.muscleNameSelected]}>
+          {displayName}
+        </Text>
+        {technicalName ? (
+          <Text style={styles.muscleTech}>{technicalName}</Text>
+        ) : null}
+      </View>
+      <View style={styles.muscleRight}>
+        {sets > 0 && (
+          <View style={styles.barTrack}>
+            <View style={[styles.barFill, { width: `${barWidth}%` }]} />
+          </View>
+        )}
+        <Text style={[styles.muscleSets, isSelected && styles.muscleSetsSelected]}>
+          {sets}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.xs,
   },
 
-  // Header
-  header: {
+  // Week nav
+  weekNav: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginBottom: Spacing.md,
+    marginBottom: 14,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+  chevronBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.primaryLight + '0A',
+  },
+  chevron: {
+    fontSize: 22,
+    fontWeight: '500',
     color: Colors.primaryLight,
+    marginTop: -2,
+  },
+  chevronDisabled: {
+    color: Colors.primaryLight + '30',
+  },
+  weekCenter: {
+    alignItems: 'center',
+  },
+  weekLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+    letterSpacing: -0.3,
   },
   weekRange: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '400',
-    color: Colors.primaryLight + '80',
-    letterSpacing: 0.2,
+    color: Colors.primaryLight + '70',
+    marginTop: 1,
   },
 
-  // Day selector
+  // Day strip
   dayRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: Spacing.md,
-    gap: 4,
+    marginBottom: 16,
+    paddingHorizontal: 2,
   },
   dayCell: {
     flex: 1,
     alignItems: 'center',
-  },
-  dayButton: {
-    width: 36,
-    height: 44,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primaryLight + '12',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayButtonSelected: {
-    backgroundColor: Colors.primaryLight,
+    gap: 4,
   },
   dayLetter: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.primaryLight,
-    letterSpacing: 0.3,
-  },
-  dayLetterSelected: {
-    color: Colors.primaryDark,
-  },
-  dayDate: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  dayLetterActive: {
     color: Colors.primaryLight,
-    marginTop: 2,
+  },
+  dayCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  dayCircleSelected: {
+    backgroundColor: Colors.primaryLight,
+  },
+  dayCircleToday: {
+    borderWidth: 1.5,
+    borderColor: Colors.primaryLight + '40',
+  },
+  dayNum: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primaryLight + '90',
+  },
+  dayNumSelected: {
+    color: Colors.primaryDark,
   },
   activityDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.primaryLight,
-    marginTop: 4,
+    backgroundColor: Colors.primaryLight + '60',
   },
 
-  // Front / Back toggle
-  tabBar: {
+  // Toggle
+  toggleBar: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '20',
-    marginBottom: Spacing.md,
+    backgroundColor: Colors.primaryLight + '0A',
+    borderRadius: 16,
+    height: 36,
+    marginBottom: 16,
     position: 'relative',
+    padding: 2,
   },
-  tabButton: {
+  toggleBtn: {
     flex: 1,
     alignItems: 'center',
-    paddingBottom: 10,
-    paddingTop: 4,
+    justifyContent: 'center',
+    zIndex: 1,
   },
-  tabLabel: {
-    fontSize: 11,
+  toggleLabel: {
+    fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 1.5,
-    color: Colors.primaryLight + '55',
+    color: Colors.primaryLight + '50',
+    letterSpacing: 0.3,
   },
-  tabLabelActive: {
+  toggleLabelActive: {
     color: Colors.primaryLight,
   },
 
   // Body
-  bodyContainer: {
+  bodySection: {
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    marginBottom: 16,
   },
 
-  // Stats row
+  // Stats
   statsRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
+    gap: 10,
+    marginBottom: 20,
   },
   statPill: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.primaryLight + '0A',
-    borderRadius: BorderRadius.md,
+    alignItems: 'baseline',
+    gap: 6,
+    backgroundColor: Colors.primaryLight + '08',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '18',
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.md,
+    borderColor: Colors.primaryLight + '12',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  statValue: {
-    fontSize: 20,
+  statNum: {
+    fontSize: 22,
     fontWeight: '700',
     color: Colors.primaryLight,
     letterSpacing: -0.5,
   },
-  statLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.primaryLight + '80',
-    letterSpacing: 0.2,
-  },
-
-  // Muscle list
-  muscleList: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.primaryLight + '20',
-    paddingTop: Spacing.sm,
-  },
-  muscleListHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    paddingHorizontal: Spacing.sm,
-    marginBottom: 4,
-  },
-  muscleListHeaderText: {
-    fontSize: 11,
+  statText: {
+    fontSize: 12,
     fontWeight: '500',
     color: Colors.primaryLight + '60',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
   },
-  dropdownHeader: {
+
+  // Muscle section
+  muscleSection: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.primaryLight + '12',
+    paddingTop: 12,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    marginTop: 6,
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.primaryLight + '06',
+    borderRadius: 10,
   },
-  dropdownHeaderPressed: {
-    backgroundColor: Colors.primaryLight + '15',
+  sectionHeaderPressed: {
+    backgroundColor: Colors.primaryLight + '12',
   },
-  dropdownChevron: {
-    fontSize: 9,
-    color: Colors.primaryLight + '80',
+  sectionChevron: {
+    fontSize: 12,
+    color: Colors.primaryLight + '60',
     marginRight: 8,
-    width: 12,
+    width: 14,
   },
-  dropdownLabel: {
+  sectionTitle: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: Colors.primaryLight + 'CC',
+    color: Colors.primaryLight + 'B0',
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  dropdownSets: {
+  sectionCount: {
     fontSize: 12,
-    fontWeight: '600',
-    color: Colors.primaryLight + '80',
+    fontWeight: '500',
+    color: Colors.primaryLight + '60',
   },
-  muscleListRow: {
+
+  // Muscle rows
+  muscleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight + '10',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.primaryLight + '0C',
   },
-  muscleListRowPressed: {
-    backgroundColor: Colors.primaryLight + '18',
-    borderRadius: 8,
+  muscleRowActive: {
+    backgroundColor: Colors.primaryLight + '12',
+    borderRadius: 10,
+    borderBottomColor: 'transparent',
   },
-  muscleNameColumn: {
+  muscleInfo: {
     flex: 1,
     gap: 1,
   },
-  muscleListName: {
+  muscleName: {
     fontSize: 14,
     fontWeight: '500',
     color: Colors.primaryLight,
     letterSpacing: -0.2,
   },
-  muscleTechName: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: Colors.primaryLight + '55',
-    letterSpacing: 0.1,
-  },
-  muscleListSets: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primaryLight,
-    minWidth: 28,
-    textAlign: 'right',
-  },
-  muscleListNameSelected: {
+  muscleNameSelected: {
     color: Colors.white,
     fontWeight: '600',
   },
-  muscleListSetsSelected: {
+  muscleTech: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: Colors.primaryLight + '55',
+    fontStyle: 'italic',
+  },
+  muscleRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  barTrack: {
+    width: 48,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: Colors.primaryLight + '12',
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 1.5,
+    backgroundColor: Colors.primaryLight + '80',
+  },
+  muscleSets: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primaryLight + '90',
+    minWidth: 24,
+    textAlign: 'right',
+  },
+  muscleSetsSelected: {
     color: Colors.white,
   },
 });
