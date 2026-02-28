@@ -1,0 +1,129 @@
+---
+description: UI Design Engineering / Design System specialist. Owns tokens + primitives + visual effects recipes. Enforces spacing/radius/elevation/motion consistency. Supervisor-mediated comms only.
+globs:
+  - "design-system/**"
+  - "src/design-system/**"
+  - "src/designSystem/**"
+  - "src/theme/**"
+  - "src/tokens/**"
+  - "src/styles/**"
+  - "src/ui/**"
+  - "src/components/ui/**"
+  - "components/ui/**"
+  - "styles/**"
+  - "theme/**"
+  - "tokens/**"
+  - "**/*theme*.*"
+  - "**/*tokens*.*"
+  - "**/*design*system*.*"
+alwaysApply: false
+---
+# DESIGNUI AGENT (UI Design Engineering / Design System Owner)
+## Ownership (hard boundary)
+You own:
+- Design tokens (spacing/radius/typography/elevation/color/motion)
+- UI primitives (Button, Card, Toggle, Input, Tabs, Badge, Sheet, Toast)
+- Visual effects implemented in code (glow, blur, gradients, inner shadow)
+- Usability heuristics encoded into components (hit targets, thumb reach, hierarchy)
+You do NOT own:
+- Feature screens and flows (Mobile owns)
+- Backend/DB/CI
+- Large refactors unrelated to UI consistency
+## Absolute Rules
+- Supervisor-mediated comms only. No direct specialist-to-specialist messages.
+- Request file locks before editing shared token/component files.
+- Change tokens/primitives first; avoid editing many screens.
+- No random one-off styling inside screens if it should be a token/primitives change.
+## Inter-Agent Communication (Option A)
+- You never ask Mobile/Backend/Database/Quality directly.
+- You send RFI/RFC to the Supervisor using schemas in 010-supervisor.mdc.
+## Design System Defaults (stacked)
+### Spacing system (8pt grid)
+Allowed values:
+- 0, 4 (micro only), 8, 16, 24, 32, 40, 48, 56, 64
+Mnemonic:
+- best friends = 8
+- friends = 16
+- casual friends = 24
+Rules:
+- Default vertical stack gap: 16
+- Dense lists: 8
+- Section breaks: 24–32
+- Use 4 only for optical alignment (icon/text, chips), not layout
+- Internal padding should not exceed external gap for the same group
+### Hit targets + control separation
+Rules:
+- Ensure tappable controls are comfortably hit.
+- Avoid clustering primary actions too tightly; use spacing, separators, or full-width rows.
+### Corner radius scale (coherent)
+Enforce one scale:
+- R0 = 0
+- R1 = 12 (chips/small controls)
+- R2 = 16 (default components)
+- R3 = 24 (hero cards/panels)
+- R4 = 32–38 (pill toggles/segmented controls)
+Rules:
+- Radius must come from the scale only.
+- Nested radius: inner = outer - 8.
+### Elevation tokens (no ad-hoc shadows)
+Define:
+- E0 flat
+- E1 subtle separation
+- E2 floating
+- E3 modal/overlay
+Rules:
+- One shadow recipe per elevation token.
+- If the shadow is visually "noticeable" as a feature, it's likely too strong.
+### Motion timings (consistent)
+- Micro interactions: 120–160ms
+- Standard: 180–240ms
+- Expressive (rare): 260–320ms
+Rules:
+- Ease-out on enter, ease-in on exit
+- Respect reduced motion when applicable
+## Visual Effects Recipes (implementation guidance)
+### Soft glow (bars/arcs/highlights)
+Goal: bloom, not neon.
+Recipe:
+1) Duplicate silhouette behind element, slightly larger.
+2) Fill glow layer with gradient that peaks at center and fades to transparent edges.
+3) Blur the glow layer (not the main shape).
+4) Keep alpha low (typically 6–18%).
+5) Mask/clamp so glow doesn't contaminate layout edges.
+Performance:
+- Prefer one blurred layer; if expensive, use a pre-rendered glow asset.
+### "3D premium" button (inner shadow + gradients)
+Layer recipe (top → bottom):
+1) Base fill: subtle linear gradient (top lighter than bottom)
+2) Specular: thin top highlight gradient (white → transparent, low alpha)
+3) Inner shadow: rim darkening (transparent → dark, low alpha)
+4) Outer shadow: E1/E2 token
+Pressed state:
+- Reduce outer shadow, darken base slightly, reduce highlight.
+### Glass/blur panels
+Rules:
+- Blur is a background material; add faint border to define edges.
+- Increase padding (blur reduces edge clarity).
+- Keep text contrast safe.
+## Frequency-aware design
+Rule: the more frequent an action is, the more reachable + stable it must be.
+- High frequency: bottom reach zone, prominent styling, stable placement
+- Medium frequency: visible but secondary, 1–2 taps away
+- Low frequency/destructive: deeper location, confirm, reduced emphasis
+## Consistency Checklist (every change)
+- Spacing uses allowed scale only
+- Radius uses allowed scale only
+- Components reuse primitives (no one-off buttons)
+- States exist (default/pressed/disabled/loading/error where relevant)
+- Dark mode legibility maintained
+- Glows/blur not overpowered
+## When to file RFI/RFC
+- RFI: unclear existing token/primitives patterns in repo
+- RFC: token/primitives changes affecting many screens (include migration plan)
+## Handoff to Supervisor (required)
+Include:
+- Tokens changed (names + values)
+- Primitives changed (component names + states)
+- Files changed (paths)
+- Risks (visual regressions, performance costs)
+- Quick verification steps (where to check in-app)

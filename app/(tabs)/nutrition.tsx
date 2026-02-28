@@ -93,7 +93,7 @@ import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../util
 // Quicksilver badge asset not in repo; use gold badge until quicksilver_verified_badge.png is added
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
 const QUICKSILVER_VERIFIED_BADGE = GOLD_VERIFIED_BADGE;
-const QUICKSILVER_GRADIENT = ['#C0C4C8', '#9A9EA4', '#8E9298'] as const;
+const QUICKSILVER_GRADIENT = ['#6b6f74', '#a0a4a8', '#d6d8da', '#b8babc'] as const;
 const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
 const CHAMPAGNE_TEXT = '#D4B896';
 const CHAMPAGNE_GRADIENT = ['#E5D4B8', '#D4B896', '#A8895E'] as const;
@@ -102,6 +102,7 @@ const TMLSN_VERIFIED_TICK_HEIGHT = 18;
 const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 
 import { UnitWheelPicker, UNIT_TO_GRAMS, type AddMealUnit } from '../../components/UnitWheelPicker';
+import { AddMealSheet } from '../../components/AddMealSheet';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -331,6 +332,7 @@ export default function NutritionScreen({
   const [addMealBrandName, setAddMealBrandName] = useState('');
   const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('100g');
   const [addMealAmount, setAddMealAmount] = useState('1');
+  const [hasAddMealSelectedFood, setHasAddMealSelectedFood] = useState(false);
   const selectedFoodRef = useRef<ParsedNutrition | null>(null);
 
   // Edit Goals Form State
@@ -543,6 +545,7 @@ export default function NutritionScreen({
     setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
     setAddMealTitleBrand(''); setAddMealBrandName('');
     setAddMealUnit('100g'); setAddMealAmount('1');
+    setHasAddMealSelectedFood(false);
     selectedFoodRef.current = null;
   };
 
@@ -550,10 +553,12 @@ export default function NutritionScreen({
     const direct = options?.directValues ?? false;
     if (!direct) {
       selectedFoodRef.current = data;
+      setHasAddMealSelectedFood(true);
       setAddMealUnit('100g');
       setAddMealAmount('1');
     } else {
       selectedFoodRef.current = null;
+      setHasAddMealSelectedFood(false);
     }
     setMealName(data.name);
     const top100 = isTmlsnTop100(data);
@@ -1640,6 +1645,7 @@ export default function NutritionScreen({
                 />
               </View>
             </View>
+            />
           </Animated.View>
         </Pressable>
 
@@ -2655,276 +2661,56 @@ export default function NutritionScreen({
               }
               />
             </View>
-            ) : (
-            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: headerTop + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
-              <View style={styles.addMealTitleWrap}>
-                {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <View style={styles.addMealVerifiedTitleRow}>
-                      <MaskedView
-                        style={styles.addMealVerifiedTitleMaskWrap}
-                        maskElement={
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        }
-                      >
-                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                      <Image
-                        source={GOLD_VERIFIED_BADGE}
-                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <MaskedView style={styles.addMealSubtitleMaskWrap} maskElement={<Text style={[styles.addMealSubtitleTop100, { backgroundColor: 'transparent' }]}>TMLSN TOP 100</Text>}>
-                      <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                        <Text style={[styles.addMealSubtitleTop100, { opacity: 0 }]}>TMLSN TOP 100</Text>
-                      </LinearGradient>
-                    </MaskedView>
-                  </>
-                ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <View style={styles.addMealVerifiedTitleRow}>
-                      <MaskedView
-                        style={styles.addMealVerifiedTitleMaskWrap}
-                        maskElement={
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        }
-                      >
-                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                      <Image
-                        source={QUICKSILVER_VERIFIED_BADGE}
-                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <Text style={styles.modalTitleBrand}>TMLSN VERIFIED</Text>
-                  </>
-                ) : (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
-                    {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
-                  </>
-                )}
-              </View>
-              <View style={styles.mealTypeRow}>
-                {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.mealTypeChip, mealType === type && styles.mealTypeChipActive]}
-                    onPress={() => setMealType(type)}
-                  >
-                    <Text style={[styles.mealTypeChipText, mealType === type && styles.mealTypeChipTextActive]}>{MEAL_TYPE_LABELS[type]}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.addMealCaloriesShowcaseBlock}>
-                <Text style={styles.addMealCaloriesValue}>{calories || '—'}</Text>
-                <Text style={styles.addMealCaloriesLabel}>calories</Text>
-              </View>
-              <View style={styles.addMealMacrosRow}>
-                <View style={styles.addMealMacroBlock}>
-                  <Text style={styles.addMealMacroValue}>{protein ? `${protein}g` : '—'}</Text>
-                  <Text style={styles.addMealMacroLabel}>Protein</Text>
-                </View>
-                <View style={styles.addMealMacroBlock}>
-                  <Text style={styles.addMealMacroValue}>{carbs ? `${carbs}g` : '—'}</Text>
-                  <Text style={styles.addMealMacroLabel}>Carbs</Text>
-                </View>
-                <View style={styles.addMealMacroBlock}>
-                  <Text style={styles.addMealMacroValue}>{fat ? `${fat}g` : '—'}</Text>
-                  <Text style={styles.addMealMacroLabel}>Fat</Text>
-                </View>
-              </View>
-              <View style={styles.addMealUnitAmountRow}>
-                <UnitWheelPicker value={addMealUnit} onValueChange={setAddMealUnit} compact />
-                <Input value={addMealAmount} onChangeText={setAddMealAmount} keyboardType="numeric" placeholder="" fontFamily={Font.regular} containerStyle={styles.addMealAmountContainer} style={styles.addMealAmountInput} />
-              </View>
-              <View style={styles.modalButtons}>
-                <Button title="Add Meal" onPress={handleAddMeal} variant="gradient" style={styles.modalButton} textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }} />
-              </View>
-            </ScrollView>
-            )}
+            ) : null}
           </View>
         </View>
       </Modal>
 
-      {/* Meal Form Modal (Add Meal) — full-screen blur; back goes to search-food page if user came from there */}
-      <Modal
-        visible={showAddMeal}
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        onRequestClose={() => {
-          setAddMealTitleBrand(''); setAddMealBrandName('');
-          setShowAddMeal(false);
-          if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
-          else asModal && onCloseModal?.();
-        }}
-      >
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-<Pressable style={StyleSheet.absoluteFill} onPress={() => {
-            setAddMealTitleBrand(''); setAddMealBrandName('');
+      {/* Add Meal sheet — used from Food Search overlay (addMeal) and standalone (showAddMeal) */}
+      <AddMealSheet
+        visible={searchOverlayScreen === 'addMeal' || showAddMeal}
+        onClose={() => {
+          if (searchOverlayScreen === 'addMeal') {
+            addMealInSearchOverlayRef.current = false;
+            setAddMealBrandName('');
+            setSearchOverlayScreen('list');
+          } else {
+            setAddMealTitleBrand('');
+            setAddMealBrandName('');
             setShowAddMeal(false);
-            if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
-          else asModal && onCloseModal?.();
-          }}>
-            <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
-            <View style={[StyleSheet.absoluteFill, styles.blurTintOverlay]} />
-          </Pressable>
-          <View style={[StyleSheet.absoluteFill, styles.fullScreenSheetContent]} pointerEvents="box-none">
-            <View style={[styles.fullScreenSheetCloseRow, { position: 'absolute', top: 54, left: 0, right: 0, zIndex: 10, minHeight: 40 }]}>
-              <BackButton
-                asModal
-                onPress={() => {
-                  setAddMealTitleBrand(''); setAddMealBrandName('');
-                  setShowAddMeal(false);
-                  if (cameFromSearchFoodRef.current) { cameFromSearchFoodRef.current = false; router.push('/search-food'); }
-                  else asModal && onCloseModal?.();
-                }}
-              />
-            </View>
-            <ScrollView style={styles.fullScreenSheetScroll} contentContainerStyle={[styles.fullScreenSheetScrollContent, { paddingTop: 54 + 48, alignItems: 'center' }]} showsVerticalScrollIndicator={false}>
-              <View style={styles.addMealTitleWrap}>
-                {addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN TOP 100' ? (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <View style={styles.addMealVerifiedTitleRow}>
-                      <MaskedView
-                        style={styles.addMealVerifiedTitleMaskWrap}
-                        maskElement={
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        }
-                      >
-                        <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                      <Image
-                        source={GOLD_VERIFIED_BADGE}
-                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <MaskedView style={styles.addMealSubtitleMaskWrap} maskElement={<Text style={[styles.addMealSubtitleTop100, { backgroundColor: 'transparent' }]}>TMLSN TOP 100</Text>}>
-                      <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                        <Text style={[styles.addMealSubtitleTop100, { opacity: 0 }]}>TMLSN TOP 100</Text>
-                      </LinearGradient>
-                    </MaskedView>
-                  </>
-                ) : addMealTitleBrand.trim() && addMealTitleBrand.toUpperCase() === 'TMLSN VERIFIED' ? (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <View style={styles.addMealVerifiedTitleRow}>
-                      <MaskedView
-                        style={styles.addMealVerifiedTitleMaskWrap}
-                        maskElement={
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { backgroundColor: 'transparent' }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        }
-                      >
-                        <LinearGradient colors={QUICKSILVER_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ alignSelf: 'flex-start' }}>
-                          <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall, { opacity: 0 }]}>
-                            {mealName.trim() || 'Add Meal'}.
-                          </Text>
-                        </LinearGradient>
-                      </MaskedView>
-                      <Image
-                        source={QUICKSILVER_VERIFIED_BADGE}
-                        style={{ width: ADD_MEAL_VERIFIED_TICK_SIZE, height: ADD_MEAL_VERIFIED_TICK_SIZE, flexShrink: 0 }}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <Text style={styles.modalTitleBrand}>TMLSN VERIFIED</Text>
-                  </>
-                ) : (
-                  <>
-                    {addMealBrandName.trim() ? <Text style={styles.addMealBrandLabel}>{addMealBrandName.trim()}</Text> : null}
-                    <Text style={[styles.modalTitle, styles.addMealTitleCentered, styles.addMealTitleSmall]}>{mealName.trim() || 'Add Meal'}.</Text>
-                    {addMealTitleBrand.trim() ? <Text style={styles.modalTitleBrand}>{addMealTitleBrand.trim()}</Text> : null}
-                  </>
-                )}
-              </View>
-
-              <View style={styles.mealTypeRow}>
-                {(MEAL_TYPE_ORDER as MealType[]).map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.mealTypeChip, mealType === type && styles.mealTypeChipActive]}
-                    onPress={() => setMealType(type)}
-                  >
-                    <Text style={[styles.mealTypeChipText, mealType === type && styles.mealTypeChipTextActive]}>{MEAL_TYPE_LABELS[type]}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              {selectedFoodRef.current ? (
-                <>
-                  <View style={styles.addMealCaloriesShowcaseBlock}>
-                    <Text style={styles.addMealCaloriesValue}>{calories || '—'}</Text>
-                    <Text style={styles.addMealCaloriesLabel}>calories</Text>
-                  </View>
-                  <View style={styles.addMealMacrosRow}>
-                    <View style={styles.addMealMacroBlock}>
-                      <Text style={styles.addMealMacroValue}>{protein ? `${protein}g` : '—'}</Text>
-                      <Text style={styles.addMealMacroLabel}>Protein</Text>
-                    </View>
-                    <View style={styles.addMealMacroBlock}>
-                      <Text style={styles.addMealMacroValue}>{carbs ? `${carbs}g` : '—'}</Text>
-                      <Text style={styles.addMealMacroLabel}>Carbs</Text>
-                    </View>
-                    <View style={styles.addMealMacroBlock}>
-                      <Text style={styles.addMealMacroValue}>{fat ? `${fat}g` : '—'}</Text>
-                      <Text style={styles.addMealMacroLabel}>Fat</Text>
-                    </View>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Input label="Calories" value={calories} onChangeText={setCalories} keyboardType="numeric" placeholder="500" fontFamily={Font.regular} containerStyle={styles.addMealCaloriesShowcase} style={styles.addMealCaloriesInput} />
-                  <View style={styles.macroRow}>
-                    <Input label="Protein (g)" value={protein} onChangeText={setProtein} keyboardType="numeric" placeholder="30" containerStyle={styles.macroInput} fontFamily={Font.regular} />
-                    <Input label="Carbs (g)" value={carbs} onChangeText={setCarbs} keyboardType="numeric" placeholder="40" containerStyle={styles.macroInput} fontFamily={Font.regular} />
-                    <Input label="Fat (g)" value={fat} onChangeText={setFat} keyboardType="numeric" placeholder="15" containerStyle={styles.macroInput} fontFamily={Font.regular} />
-                  </View>
-                </>
-              )}
-              <View style={styles.addMealUnitAmountRow}>
-                <UnitWheelPicker value={addMealUnit} onValueChange={setAddMealUnit} compact />
-                <Input value={addMealAmount} onChangeText={setAddMealAmount} keyboardType="numeric" placeholder="" fontFamily={Font.regular} containerStyle={styles.addMealAmountContainer} style={styles.addMealAmountInput} />
-              </View>
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Add Meal"
-                  onPress={handleAddMeal}
-                  variant="gradient"
-                  style={styles.modalButton}
-                  textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
-                />
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+            if (cameFromSearchFoodRef.current) {
+              cameFromSearchFoodRef.current = false;
+              router.push('/search-food');
+            } else {
+              asModal && onCloseModal?.();
+            }
+          }
+        }}
+        mealName={mealName}
+        addMealTitleBrand={addMealTitleBrand}
+        addMealBrandName={addMealBrandName}
+        mealType={mealType}
+        setMealType={setMealType}
+        calories={calories}
+        protein={protein}
+        carbs={carbs}
+        fat={fat}
+        setCalories={setCalories}
+        setProtein={setProtein}
+        setCarbs={setCarbs}
+        setFat={setFat}
+        addMealUnit={addMealUnit}
+        setAddMealUnit={setAddMealUnit}
+        addMealAmount={addMealAmount}
+        setAddMealAmount={setAddMealAmount}
+        onSubmit={handleAddMeal}
+        hasSelectedFood={hasAddMealSelectedFood}
+        goldBadge={GOLD_VERIFIED_BADGE}
+        quicksilverBadge={QUICKSILVER_VERIFIED_BADGE}
+        champagneGradient={CHAMPAGNE_GRADIENT}
+        quicksilverGradient={QUICKSILVER_GRADIENT}
+        verifiedTickSize={ADD_MEAL_VERIFIED_TICK_SIZE}
+      />
 
       {/* Edit Goals Modal */}
       <Modal

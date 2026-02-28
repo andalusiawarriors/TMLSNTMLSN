@@ -1,0 +1,33 @@
+---
+description: Lock food search behaviour; no changes without explicit user request for that one change.
+alwaysApply: true
+---
+
+# Search behaviour — locked
+
+**Food search behaviour is locked.** It must not be changed unless the user explicitly asks for a specific change to it. This avoids accidental changes when working on other areas.
+
+## What is locked (search behaviour)
+
+- **Search screen:** `app/search-food.tsx` — UI, flow, list behaviour, TMLSN Basics badge, history tabs, runSearch/loadMore, any search-specific styling or layout.
+- **Search API & logic:** `utils/foodApi.ts` — `searchFoodsProgressive`, `searchFoodsNextPage`, `preloadCommonSearches`, `sortBasicsFirst`, `searchFoodsUSDA` (including `dataType`/Foundation), `getPreloadedResults`, preload cache, merge/dedup order, any condition that determines “TMLSN Basics” or Foundation-only behaviour.
+- **In-nutrition search modal:** In `app/(tabs)/nutrition.tsx`, only the **Food Database Search modal** and the code that directly drives it: state/handlers for `showFoodSearch`, `foodSearchQuery`, `foodSearchResults`, `handleFoodSearch`, `loadMoreFoodSearch`, the modal’s content (search input, result list, TMLSN Basics badge), and any logic that opens/closes this modal (e.g. `handleChoiceFoodDatabase`).
+
+## Rules
+
+1. **Do not modify** any of the above unless the user’s request clearly and specifically asks to change something in search (e.g. “change the search debounce”, “only show Foundation in search”, “move the back button on the search modal”).
+2. **When the user does request a specific search change:** change only that one thing. Do not refactor, “improve”, or alter other search behaviour without explicit user authorization.
+3. **If a task would touch search behaviour** but the user did not explicitly ask for a search change (e.g. a global style or layout change that would affect `search-food.tsx` or the search modal), **stop and notify the user** that the change would affect locked search behaviour and ask for authorization before proceeding.
+4. **No “drive-by” edits:** do not fix, tidy, or “align” search code while editing other files unless the user asked for that search change.
+
+## Allowed without touching locked behaviour
+
+- Editing other parts of `app/(tabs)/nutrition.tsx` (e.g. cards, goals, Saved Foods modal, Add Meal modal) when the change does not affect the Food Database Search modal or its behaviour.
+- Editing `utils/foodApi.ts` for non-search API (e.g. barcode, single-food fetch) when the change does not affect search, preload, sort, or Foundation logic.
+- Bug fixes or features that the user explicitly describes as a change to search (then apply rule 2: only that one change).
+
+## Summary
+
+- **Locked:** search screen, search API/preload/sort/Foundation logic, in-nutrition Food Database Search modal and its behaviour.
+- **Change only when:** the user explicitly requests a specific change to one of those.
+- **Then:** change only that one thing; do not alter other search behaviour without prior notification or authorization.

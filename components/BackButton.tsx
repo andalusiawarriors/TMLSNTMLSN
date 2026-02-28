@@ -32,9 +32,11 @@ const ICON_COLOR = '#C6C6C6';
 type BackButtonProps = {
   onPress?: () => void;
   style?: ViewStyle;
+  /** When true, positions for modal context: left at Spacing.lg, top 0 (row provides top: 54). */
+  asModal?: boolean;
 };
 
-export function BackButton({ onPress, style }: BackButtonProps) {
+export function BackButton({ onPress, style, asModal }: BackButtonProps) {
   const router = useRouter();
   const scale = useSharedValue(1);
 
@@ -58,8 +60,9 @@ export function BackButton({ onPress, style }: BackButtonProps) {
     scale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) });
   };
 
-  const left = getCalorieCardLeft();
-  const containerStyle = [styles.container, { top: TOP_LEFT_PILL_TOP, left }, style];
+  const left = asModal ? Spacing.lg : getCalorieCardLeft();
+  const top = asModal ? 0 : TOP_LEFT_PILL_TOP;
+  const containerStyle = [styles.container, { top, left }, style];
 
   return (
     <Pressable
