@@ -37,7 +37,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
-import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from './UnitWheelPicker';
+import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from '../utils/unitGrams';
 import * as Theme from '../constants/theme';
 import type { MealType } from '../types';
 import type { ParsedNutrition } from '../utils/foodApi';

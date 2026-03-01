@@ -1,4 +1,5 @@
-// URL polyfill loaded in index.js (native only); no-op on web
+import 'react-native-url-polyfill/auto';
+
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
@@ -37,7 +38,7 @@ function RootLayoutInner() {
           headerStyle: { backgroundColor: colors.primaryDark },
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '600' },
-          contentStyle: { backgroundColor: colors.primaryDark },
+          contentStyle: { backgroundColor: colors.black },
         }}
       >
         <Stack.Screen
@@ -110,30 +111,6 @@ function RootLayoutInner() {
             headerTintColor: colors.primaryLight,
           }}
         />
-        <Stack.Screen
-          name="workout-save"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
-        <Stack.Screen
-          name="workout-history"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
-        <Stack.Screen
-          name="workout-detail"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
-        <Stack.Screen
-          name="progress-graph"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
-        <Stack.Screen
-          name="progress-heatmap"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
-        <Stack.Screen
-          name="strength-muscles"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
-        />
       </Stack>
       {/* Active workout pill at root — visible above modals and overlay */}
       <ActiveWorkoutPill />
@@ -163,6 +140,16 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    if (__DEV__) {
+      try {
+        const { closeMenu, hideMenu } = require('expo-dev-menu');
+        closeMenu();
+        hideMenu();
+      } catch (_) {}
+    }
+  }, []);
 
   if (!fontsLoaded) return null;
 

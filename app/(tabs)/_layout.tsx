@@ -20,7 +20,7 @@ import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
-import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon } from 'phosphor-react-native';
+import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
 
@@ -112,14 +112,10 @@ const getTabMeta = (iconTint: string): Record<string, { label: string; icon: Rea
     ),
   },
   '(profile)': {
-    label: 'progress.',
+    label: 'profile.',
     tabIndex: 4,
     icon: (
-      <Image
-        source={require('../../assets/profile-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE, height: ICON_BOX_SIZE, tintColor: iconTint }}
-        resizeMode="contain"
-      />
+      <UserCircle size={ICON_BOX_SIZE} color={iconTint} weight="regular" />
     ),
   },
 });

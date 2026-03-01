@@ -66,6 +66,16 @@ export interface FoodNutrient {
   unitName: string;
 }
 
+export interface USDAFoodMeasure {
+  disseminationText?: string;
+  gramWeight?: number;
+  id?: number;
+  modifier?: string;
+  rank?: number;
+  measureUnitAbbreviation?: string;
+  measureUnitName?: string;
+}
+
 export interface USDAFoodItem {
   fdcId: number;
   description: string;
@@ -74,6 +84,8 @@ export interface USDAFoodItem {
   gtinUpc?: string;
   servingSize?: number;
   servingSizeUnit?: string;
+  householdServingFullText?: string;
+  foodMeasures?: USDAFoodMeasure[];
   foodNutrients: FoodNutrient[];
   dataType: string;
 }
@@ -81,6 +93,11 @@ export interface USDAFoodItem {
 export interface FoodSearchResult {
   totalHits: number;
   foods: USDAFoodItem[];
+}
+
+export interface FoodPortion {
+  label: string;
+  gramWeight: number;
 }
 
 /** Parsed macros ready for the meal form */
@@ -106,6 +123,8 @@ export interface ParsedNutrition {
   sodium?: number;
   fiber?: number;
   sugars?: number;
+  starch?: number;
+  addedSugars?: number;
   calcium?: number;
   iron?: number;
   potassium?: number;
@@ -126,6 +145,7 @@ export interface ParsedNutrition {
   vitaminB6?: number;
   folate?: number;
   vitaminB12?: number;
+  portions?: FoodPortion[];
 }
 
 /** TMLSN TOP 100: ingredients that get gold styling when the product is primarily that ingredient (not a composite meal). */
@@ -218,6 +238,10 @@ interface OFFNutriments {
   fiber?: number;
   sugars_100g?: number;
   sugars?: number;
+  starch_100g?: number;
+  starch?: number;
+  'sugars-added_100g'?: number;
+  'sugars-added'?: number;
   calcium_100g?: number;
   calcium?: number;
   iron_100g?: number;
@@ -327,6 +351,15 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
 
   const name = rawName.toLowerCase();
 
+  const portions: FoodPortion[] = [];
+  if (p.serving_quantity && p.serving_quantity > 0) {
+    const servGrams = p.serving_quantity;
+    const sLabel = p.serving_size
+      ? p.serving_size.toLowerCase()
+      : `1 serving (${Math.round(servGrams)}g)`;
+    portions.push({ label: sLabel, gramWeight: servGrams });
+  }
+
   return {
     name,
     brand: rawBrand.toLowerCase(),
@@ -345,6 +378,8 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
     sodium: Math.round(n.sodium_100g ?? n.sodium ?? 0),
     fiber: Math.round((n.fiber_100g ?? n.fiber ?? 0) * 10) / 10,
     sugars: Math.round((n.sugars_100g ?? n.sugars ?? 0) * 10) / 10,
+    starch: Math.round((n.starch_100g ?? n.starch ?? 0) * 10) / 10,
+    addedSugars: Math.round((n['sugars-added_100g'] ?? n['sugars-added'] ?? 0) * 10) / 10,
     calcium: Math.round(n.calcium_100g ?? n.calcium ?? 0),
     iron: Math.round((n.iron_100g ?? n.iron ?? 0) * 10) / 10,
     potassium: Math.round(n.potassium_100g ?? n.potassium ?? 0),
@@ -365,6 +400,7 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
     vitaminB6: Math.round((n['vitamin-b6_100g'] ?? n['vitamin-b6'] ?? 0) * 100) / 100,
     folate: Math.round(n['vitamin-b9_100g'] ?? n['vitamin-b9'] ?? 0),
     vitaminB12: Math.round((n['vitamin-b12_100g'] ?? n['vitamin-b12'] ?? 0) * 100) / 100,
+    portions: portions.length > 0 ? portions : undefined,
   };
 }
 
@@ -410,7 +446,7 @@ function extractBrandFromDescription(description: string): { brand: string; clea
 type NutrientKey =
   | 'calories' | 'protein' | 'carbs' | 'fat'
   | 'saturatedFat' | 'transFat' | 'monounsaturatedFat' | 'polyunsaturatedFat'
-  | 'cholesterol' | 'sodium' | 'fiber' | 'sugars'
+  | 'cholesterol' | 'sodium' | 'fiber' | 'sugars' | 'starch' | 'addedSugars'
   | 'calcium' | 'iron' | 'potassium' | 'magnesium' | 'phosphorus' | 'zinc' | 'copper' | 'manganese' | 'selenium'
   | 'vitaminA' | 'vitaminC' | 'vitaminD' | 'vitaminE' | 'vitaminK'
   | 'thiamin' | 'riboflavin' | 'niacin' | 'vitaminB6' | 'folate' | 'vitaminB12';
@@ -436,6 +472,9 @@ const NUTRIENT_MAP: Record<string, NutrientKey> = {
   '1079': 'fiber',
   '269': 'sugars',
   '2000': 'sugars',
+  '209': 'starch',
+  '1009': 'starch',
+  '539': 'addedSugars',
   '301': 'calcium',
   '1087': 'calcium',
   '303': 'iron',
@@ -512,7 +551,7 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
   const raw: Record<NutrientKey, number> = {
     calories: 0, protein: 0, carbs: 0, fat: 0,
     saturatedFat: 0, transFat: 0, monounsaturatedFat: 0, polyunsaturatedFat: 0,
-    cholesterol: 0, sodium: 0, fiber: 0, sugars: 0,
+    cholesterol: 0, sodium: 0, fiber: 0, sugars: 0, starch: 0, addedSugars: 0,
     calcium: 0, iron: 0, potassium: 0, magnesium: 0, phosphorus: 0, zinc: 0, copper: 0, manganese: 0, selenium: 0,
     vitaminA: 0, vitaminC: 0, vitaminD: 0, vitaminE: 0, vitaminK: 0,
     thiamin: 0, riboflavin: 0, niacin: 0, vitaminB6: 0, folate: 0, vitaminB12: 0,
@@ -571,6 +610,23 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
 
   const name = rawName.toLowerCase();
 
+  const portions: FoodPortion[] = [];
+  if (food.foodMeasures?.length) {
+    for (const m of food.foodMeasures) {
+      if (m.gramWeight && m.gramWeight > 0 && m.disseminationText) {
+        portions.push({ label: m.disseminationText.toLowerCase(), gramWeight: m.gramWeight });
+      }
+    }
+  }
+  if (food.dataType === 'Branded' && servingGrams && servingGrams > 0) {
+    const sLabel = food.householdServingFullText
+      ? food.householdServingFullText.toLowerCase()
+      : `1 serving (${Math.round(servingGrams)}g)`;
+    if (!portions.some(p => Math.abs(p.gramWeight - servingGrams!) < 1)) {
+      portions.push({ label: sLabel, gramWeight: servingGrams });
+    }
+  }
+
   return {
     name,
     brand: rawBrand.toLowerCase(),
@@ -592,6 +648,8 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     sodium: Math.round(raw.sodium * scale),
     fiber: Math.round(raw.fiber * scale * 10) / 10,
     sugars: Math.round(raw.sugars * scale * 10) / 10,
+    starch: Math.round(raw.starch * scale * 10) / 10,
+    addedSugars: Math.round(raw.addedSugars * scale * 10) / 10,
     calcium: Math.round(raw.calcium * scale),
     iron: Math.round(raw.iron * scale * 10) / 10,
     potassium: Math.round(raw.potassium * scale),
@@ -612,6 +670,7 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
     vitaminB6: Math.round(raw.vitaminB6 * scale * 100) / 100,
     folate: Math.round(raw.folate * scale),
     vitaminB12: Math.round(raw.vitaminB12 * scale * 100) / 100,
+    portions: portions.length > 0 ? portions : undefined,
   };
 }
 
@@ -957,6 +1016,13 @@ export async function searchByBarcode(barcode: string): Promise<ParsedNutrition 
   const off = await searchByBarcodeOFF(barcode);
   const result = off ?? (await searchByBarcodeUSDA(barcode));
   return filterSingleFood(result);
+}
+
+/** Promise-based search for the standalone search screen. Wraps searchFoodsProgressive. */
+export async function searchFoods(query: string, signal?: AbortSignal): Promise<ParsedNutrition[]> {
+  return new Promise((resolve, reject) => {
+    searchFoodsProgressive(query, (list) => resolve(list), 25, signal).catch(reject);
+  });
 }
 
 export async function searchFoodsProgressive(

@@ -13,20 +13,25 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
+import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, type AddMealUnit } from '../utils/unitGrams';
 
-// Units: tbsp, tsp, cup, 2 cups, half cup, 100g, 1g
-export const ADD_MEAL_UNITS = ['tbsp', 'tsp', 'cup', '2cup', 'halfCup', '100g', '1g'] as const;
-export type AddMealUnit = (typeof ADD_MEAL_UNITS)[number];
+export { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from '../utils/unitGrams';
 
-export const UNIT_TO_GRAMS: Record<AddMealUnit, number> = {
-  tbsp: 15,
-  tsp: 5,
-  cup: 240,
-  '2cup': 480,
-  halfCup: 120,
-  '100g': 100,
-  '1g': 1,
-};
+import type { ParsedNutrition } from '../utils/foodApi';
+
+/**
+ * Choose the best default unit and amount when a food is first selected.
+ * Priority: whole-item USDA portion (e.g. "1 medium") > liquid (100ml) > 100g.
+ */
+export function getSmartDefaultUnit(food: ParsedNutrition): { unit: string; amount: string } {
+  const portions = food.portions ?? [];
+  const wholeItem = portions.find(p =>
+    /^1\s+(medium|large|small|extra\s+large|whole|unit|piece|serving|bar|packet|bottle|can|slice|scoop)\b/i.test(p.label)
+  );
+  if (wholeItem) return { unit: wholeItem.label, amount: '1' };
+  if (food.unit === 'ml') return { unit: '100ml', amount: '1' };
+  return { unit: '100g', amount: '1' };
+}
 
 function unitLabel(u: AddMealUnit): string {
   const labels: Record<AddMealUnit, string> = {

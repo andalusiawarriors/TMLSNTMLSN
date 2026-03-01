@@ -54,7 +54,7 @@ import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { PencilSimpleLine } from 'phosphor-react-native';
+import { PencilSimpleLine, MagnifyingGlass as MagnifyingGlassIcon, Camera as CameraIcon } from 'phosphor-react-native';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
@@ -65,7 +65,6 @@ import {
   getNutritionLogByDate,
   getNutritionLogs,
   saveNutritionLog,
-  clearAllNutritionLogs,
   getUserSettings,
   saveUserSettings,
   getSavedFoods,
@@ -84,16 +83,16 @@ import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
-import { LiquidGlassSegmented } from '../../components/ui/liquidGlass';
-type SegmentValue = 'Nutrition' | 'Fitness';
+import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
+import { ProgressHub } from '../../components/ProgressHub';
+import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
-// Quicksilver badge asset not in repo; use gold badge until quicksilver_verified_badge.png is added
+const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
-const QUICKSILVER_VERIFIED_BADGE = GOLD_VERIFIED_BADGE;
 const QUICKSILVER_GRADIENT = ['#6b6f74', '#a0a4a8', '#d6d8da', '#b8babc'] as const;
 const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
 const CHAMPAGNE_TEXT = '#D4B896';
@@ -102,7 +101,7 @@ const TMLSN_VERIFIED_TICK_HEIGHT = 18;
 /** Tick size next to add-meal title (gradient + badge row). */
 const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 
-import { UnitWheelPicker, UNIT_TO_GRAMS, type AddMealUnit } from '../../components/UnitWheelPicker';
+import { UnitWheelPicker, UNIT_TO_GRAMS, resolveGrams, getSmartDefaultUnit, type AddMealUnit } from '../../components/UnitWheelPicker';
 import { AddMealSheet } from '../../components/AddMealSheet';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
@@ -167,6 +166,7 @@ export default function NutritionScreen({
   const [weeklyHeatmap, setWeeklyHeatmap] = useState<ReturnType<typeof calculateHeatmap>>([]);
   const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
+  const [homeTab, setHomeTab] = useState<'calories' | 'progress' | 'fitness'>('calories');
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -331,9 +331,10 @@ export default function NutritionScreen({
   const [mealImage, setMealImage] = useState<string | undefined>();
   const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
   const [addMealBrandName, setAddMealBrandName] = useState('');
-  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('100g');
+  const [addMealUnit, setAddMealUnit] = useState<string>('100g');
   const [addMealAmount, setAddMealAmount] = useState('1');
   const [hasAddMealSelectedFood, setHasAddMealSelectedFood] = useState(false);
+  const [selectedFoodForSheet, setSelectedFoodForSheet] = useState<ParsedNutrition | null>(null);
   const selectedFoodRef = useRef<ParsedNutrition | null>(null);
 
   // Edit Goals Form State
@@ -388,18 +389,6 @@ export default function NutritionScreen({
 
   const loadDataRef = useRef(loadData);
   loadDataRef.current = loadData;
-  // One-time clear of all food logs (remove this block after use)
-  const clearLogsOnceRef = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (!clearLogsOnceRef.current) {
-        clearLogsOnceRef.current = true;
-        clearAllNutritionLogs()
-          .then(() => loadDataRef.current())
-          .catch((e) => console.warn('[Nutrition] clear logs once:', e));
-      }
-    }, [])
-  );
   // Only run entrance animations when the tab actually gains focus, not when viewingDate changes.
   // (useFocusEffect re-runs when its callback identity changes; loadData changes with viewingDate, so we use a ref to keep the callback stable.)
   useFocusEffect(
@@ -547,6 +536,7 @@ export default function NutritionScreen({
     setAddMealTitleBrand(''); setAddMealBrandName('');
     setAddMealUnit('100g'); setAddMealAmount('1');
     setHasAddMealSelectedFood(false);
+    setSelectedFoodForSheet(null);
     selectedFoodRef.current = null;
   };
 
@@ -554,29 +544,34 @@ export default function NutritionScreen({
     const direct = options?.directValues ?? false;
     if (!direct) {
       selectedFoodRef.current = data;
+      setSelectedFoodForSheet(data);
       setHasAddMealSelectedFood(true);
-      setAddMealUnit('100g');
-      setAddMealAmount('1');
-    } else {
-      selectedFoodRef.current = null;
-      setHasAddMealSelectedFood(false);
-    }
-    setMealName(data.name);
-    const top100 = isTmlsnTop100(data);
-    const isTmlsnVerified = isFoundationVerified(data);
-    setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
-    setAddMealBrandName(data.brand || '');
-    if (direct) {
-      setCalories(String(data.calories ?? ''));
-      setProtein(String(data.protein ?? ''));
-      setCarbs(String(data.carbs ?? ''));
-      setFat(String(data.fat ?? ''));
-    } else {
-      const factor = UNIT_TO_GRAMS['100g'] / 100;
+      const { unit: smartUnit, amount: smartAmount } = getSmartDefaultUnit(data);
+      setAddMealUnit(smartUnit);
+      setAddMealAmount(smartAmount);
+      setMealName(data.name);
+      const top100 = isTmlsnTop100(data);
+      const isTmlsnVerified = isFoundationVerified(data);
+      setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
+      setAddMealBrandName(data.brand || '');
+      const factor = (parseFloat(smartAmount) || 1) * resolveGrams(smartUnit, data.portions) / 100;
       setCalories(String(Math.round((data.calories || 0) * factor)));
       setProtein(String(Math.round((data.protein || 0) * factor)));
       setCarbs(String(Math.round((data.carbs || 0) * factor)));
       setFat(String(Math.round((data.fat || 0) * factor)));
+    } else {
+      selectedFoodRef.current = null;
+      setSelectedFoodForSheet(null);
+      setHasAddMealSelectedFood(false);
+      setMealName(data.name);
+      const top100 = isTmlsnTop100(data);
+      const isTmlsnVerified = isFoundationVerified(data);
+      setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (data.brand || ''));
+      setAddMealBrandName(data.brand || '');
+      setCalories(String(data.calories ?? ''));
+      setProtein(String(data.protein ?? ''));
+      setCarbs(String(data.carbs ?? ''));
+      setFat(String(data.fat ?? ''));
     }
   };
 
@@ -586,7 +581,7 @@ export default function NutritionScreen({
     if (!food) return;
     const amt = parseFloat(addMealAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
-    const grams = amt * UNIT_TO_GRAMS[addMealUnit];
+    const grams = amt * resolveGrams(addMealUnit, food.portions);
     const scale = grams / 100;
     setCalories(String(Math.round((food.calories || 0) * scale)));
     setProtein(String(Math.round((food.protein || 0) * scale)));
@@ -1142,26 +1137,6 @@ export default function NutritionScreen({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleClearAllFoodLogs = useCallback(() => {
-    Alert.alert(
-      'Delete all food logs?',
-      'This will remove every day\'s food log. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete all',
-          style: 'destructive',
-          onPress: async () => {
-            await clearAllNutritionLogs();
-            setTodayLog(null);
-            loadData();
-            setShowEditGoals(false);
-          },
-        },
-      ]
-    );
-  }, [loadData]);
-
   const MEAL_TYPE_LABELS: Record<MealType, string> = {
     breakfast: 'Breakfast',
     lunch: 'Lunch',
@@ -1442,7 +1417,7 @@ export default function NutritionScreen({
   });
 
   const insets = useSafeAreaInsets();
-  const headerTop = 54;
+  const headerTop = insets.top + 81;
   const headerMeasureRef = useRef<View>(null);
   const onHeaderLayout = useCallback(() => {
     headerMeasureRef.current?.measureInWindow(() => {});
@@ -1469,20 +1444,14 @@ export default function NutritionScreen({
       {!asModal && (
       <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Background: picture + bottom gradient to black only */}
-        <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-          <ImageBackground
-            source={require('../../assets/home-background.png')}
-            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, position: 'absolute', top: 0, left: 0 }}
-            resizeMode="cover"
-          >
-            <LinearGradient
-              colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-              locations={[0, 0.2, 0.35, 0.45, 0.65]}
-              style={StyleSheet.absoluteFill}
-            />
-          </ImageBackground>
-        </View>
+        {/* Background: vertical gradient */}
+        <LinearGradient
+          colors={['#2F3031', '#1A1A1A']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
+          pointerEvents="none"
+        />
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
           style={[styles.flywheelOverlay, { top: headerTop + 12 }]}
@@ -1513,149 +1482,15 @@ export default function NutritionScreen({
           { paddingTop: headerTop + 40 },
         ]}
       >
-        {/* Top-left pill — fire streak (circle, 0 superimposed on fire) */}
-        <Pressable
+        {/* Date row — 81px below notch, centered full width */}
+        <View
           ref={headerMeasureRef}
           onLayout={onHeaderLayout}
           style={{
             position: 'absolute',
             top: headerTop,
-            left: calorieCardLeft,
-            zIndex: 10,
-            width: HEADER_PILL_SIZE,
-            height: HEADER_PILL_SIZE,
-          }}
-          onPressIn={() => { streakPillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPressOut={() => { streakPillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPress={() => setFireStreakPopupVisible(true)}
-        >
-          <Animated.View style={[{ width: HEADER_PILL_SIZE, height: HEADER_PILL_SIZE }, streakPillScaleStyle]}>
-            <View
-              style={{
-                width: HEADER_PILL_SIZE,
-                height: HEADER_PILL_SIZE,
-                borderRadius: HEADER_PILL_RADIUS,
-                overflow: 'hidden',
-              }}
-            >
-              <LinearGradient
-                colors={['#4E4F50', '#4A4B4C']}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: HEADER_PILL_RADIUS }}
-              />
-              <LinearGradient
-                colors={['#363738', '#2E2F30']}
-                style={{
-                  position: 'absolute',
-                  top: 1,
-                  left: 1,
-                  right: 1,
-                  bottom: 1,
-                  borderRadius: HEADER_PILL_RADIUS - 1,
-                }}
-              />
-              {/* Fire centered (3–4% bigger), 0 superimposed slightly lower */}
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Image
-                  source={require('../../assets/firestreakhomepage.png')}
-                  style={{ width: 23, height: 23 }}
-                  resizeMode="contain"
-                />
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: '#ffffff',
-                      letterSpacing: 14 * -0.03,
-                      transform: [{ translateY: 2 }],
-                    }}
-                  >
-                    0
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </Animated.View>
-        </Pressable>
-
-        {/* Top-right circle — profile */}
-        <Pressable
-          style={{
-            position: 'absolute',
-            top: headerTop,
-            right: calorieCardLeft,
-            zIndex: 10,
-            width: TOP_RIGHT_CIRCLE_SIZE,
-            height: TOP_RIGHT_CIRCLE_SIZE,
-          }}
-          onPressIn={() => { profilePillScale.value = withTiming(0.99, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPressOut={() => { profilePillScale.value = withTiming(1, { duration: 100, easing: Easing.out(Easing.cubic) }); }}
-          onPress={() => emitProfileSheetState(true)}
-        >
-          <Animated.View style={[{ width: TOP_RIGHT_CIRCLE_SIZE, height: TOP_RIGHT_CIRCLE_SIZE }, profilePillScaleStyle]}>
-            <View
-              style={{
-                width: TOP_RIGHT_CIRCLE_SIZE,
-                height: TOP_RIGHT_CIRCLE_SIZE,
-                borderRadius: TOP_RIGHT_CIRCLE_RADIUS,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Border gradient (same as bottom pill) */}
-              <LinearGradient
-                colors={['#4E4F50', '#4A4B4C']}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: TOP_RIGHT_CIRCLE_RADIUS }}
-              />
-              {/* Fill gradient */}
-              <LinearGradient
-                colors={['#363738', '#2E2F30']}
-                style={{
-                  position: 'absolute',
-                  top: 1,
-                  left: 1,
-                  right: 1,
-                  bottom: 1,
-                  borderRadius: TOP_RIGHT_CIRCLE_RADIUS - 1,
-                }}
-              />
-              <View
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Image
-                  source={require('../../assets/profile-top-icon.png')}
-                  style={{ width: TOP_RIGHT_CIRCLE_SIZE - 8, height: TOP_RIGHT_CIRCLE_SIZE - 8 }}
-                  resizeMode="contain"
-                />
-              </View>
-            </View>
-          </Animated.View>
-        </Pressable>
-
-        {/* Date row — arrows 10px from date, centered */}
-        <View
-          style={{
-            position: 'absolute',
-            top: headerTop,
-            left: calorieCardLeft + HEADER_PILL_SIZE + PILL_TO_DATE_GAP,
-            right: calorieCardLeft + TOP_RIGHT_CIRCLE_SIZE + PILL_TO_DATE_GAP,
+            left: 0,
+            right: 0,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1677,265 +1512,269 @@ export default function NutritionScreen({
             <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
           </Pressable>
         </View>
-        <AnimatedFadeInUp
-          delay={40}
-          duration={200}
-          trigger={animTrigger}
+
+        {/* ═══ TOP TABS: gradient bar (behind everything) ═══ */}
+        <View
           style={{
-            marginTop: Spacing.lg,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.08,
-            shadowRadius: 6,
-            ...(Platform.OS === 'android' && { elevation: 2 }),
+            position: 'absolute',
+            top: insets.top + 70,
+            left: 0,
+            right: 0,
+            height: 37,
+            zIndex: 1,
           }}
+          pointerEvents="none"
         >
-        {/* Fitness: heatmap only. Nutrition: scrollable carousel + Recently uploaded. Animated transition on segment change. */}
-        {homeSegment === 'Fitness' ? (
-          <Animated.View
-            key="fitness-segment"
-            entering={SlideInRight.withInitialValues({ transform: [{ translateX: 24 }] }).springify().damping(200).stiffness(3000)}
-            exiting={FadeOut.duration(50)}
-            style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}
-          >
-            <Animated.View style={cardSlideStyle}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onScroll={handleFitnessCarouselScroll}
-              scrollEventThrottle={16}
-              style={{ width: CAROUSEL_WIDTH }}
-              contentContainerStyle={{ width: CAROUSEL_WIDTH * 2 }}
-              nestedScrollEnabled
-              directionalLockEnabled
-            >
-              {/* Fitness page 0: heatmap — isolated (no card wrapper) */}
-              <View style={{ width: CAROUSEL_WIDTH, marginBottom: Spacing.sm }}>
-                {hasHeatmapSetRecords ? (
-                  <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
-                ) : (
-                  <View style={styles.heatmapEmptyState}>
-                    <Text style={styles.heatmapEmptyText}>No workout data for this week</Text>
-                  </View>
-                )}
+          <LinearGradient
+            colors={['rgba(114,114,114,0.25)', 'rgba(47,48,49,0.25)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </View>
+
+        {/* ═══ TOP TABS: icons + labels + indicator pill ═══ */}
+        {(() => {
+          const GRAD_TOP = insets.top + 70;
+          const TAB_KEYS = ['calories', 'progress', 'fitness'] as const;
+          const TAB_LABELS = ['calories.', 'progress.', 'fitness.'];
+          const TAB_ICONS = [
+            require('../../assets/tab-icon-calories.png'),
+            require('../../assets/tab-icon-progress.png'),
+            require('../../assets/tab-icon-fitness.png'),
+          ];
+          const INDICATOR_W = 37;
+          const INDICATOR_FULL_H = 8;
+          const INDICATOR_R = 31;
+          const EDGE_PAD = 77;
+          const indicatorPositions = [
+            EDGE_PAD,
+            (SCREEN_WIDTH - INDICATOR_W) / 2,
+            SCREEN_WIDTH - EDGE_PAD - INDICATOR_W,
+          ];
+          const TAB_ICON_SIZE = 52;
+          const LABEL_FONT = 14;
+          const ICON_AREA_H = TAB_ICON_SIZE + LABEL_FONT + 10;
+
+          return (
+            <>
+              {/* Icons + labels — sit ABOVE the gradient rectangle as tab buttons */}
+              <View style={{ position: 'absolute', top: GRAD_TOP - ICON_AREA_H, left: 0, right: 0, height: ICON_AREA_H, zIndex: 10 }} pointerEvents="box-none">
+                {TAB_KEYS.map((key, i) => {
+                  const isSelected = homeTab === key;
+                  const centerX = indicatorPositions[i] + INDICATOR_W / 2;
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setHomeTab(key); }}
+                      style={{
+                        position: 'absolute',
+                        left: centerX - 50,
+                        width: 100,
+                        top: 0,
+                        bottom: 0,
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingBottom: 14,
+                        opacity: isSelected ? 1 : 0.55,
+                      }}
+                    >
+                      <Image
+                        source={TAB_ICONS[i]}
+                        style={{ width: TAB_ICON_SIZE, height: TAB_ICON_SIZE, marginBottom: 2 }}
+                        resizeMode="contain"
+                      />
+                      <Text style={{
+                        fontSize: LABEL_FONT,
+                        fontWeight: isSelected ? '700' : '600',
+                        color: isSelected ? '#FFFFFF' : '#C6C6C6',
+                        letterSpacing: -0.2,
+                      }}>
+                        {TAB_LABELS[i]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              {/* Fitness page 1: steps card only */}
-              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center' }}>
-                <Card
-                  gradientFill
-                  style={[styles.caloriesLeftCard, { width: CALORIES_CARD_WIDTH, height: CALORIES_CARD_HEIGHT, borderRadius: CALORIES_CARD_RADIUS }]}
-                >
-                  <View style={styles.caloriesLeftContent}>
-                    <View style={styles.caloriesLeftTextWrap}>
-                      <Text style={styles.caloriesLeftValue}>—</Text>
-                      <Text style={styles.caloriesLeftLabel}>steps today</Text>
-                    </View>
-                    <View style={[styles.mainCardRing, { width: MAIN_CARD_RING_SIZE, height: MAIN_CARD_RING_SIZE, borderRadius: MAIN_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]}>
-                      <Text style={styles.stepRingValue}>—</Text>
-                    </View>
+
+              {/* Indicator pill — 37 wide x 4 tall, split horizontally:
+                  only the top half is visible (rounded top, flat bottom cut on the gradient border).
+                  Achieved by rendering the full 4px-tall pill and clipping the bottom 2px with overflow:hidden. */}
+              {(() => {
+                const selIdx = TAB_KEYS.indexOf(homeTab);
+                const x = indicatorPositions[selIdx];
+                return (
+                  <View style={{
+                    position: 'absolute',
+                    top: GRAD_TOP - INDICATOR_FULL_H / 2,
+                    left: x,
+                    width: INDICATOR_W,
+                    height: INDICATOR_FULL_H / 2,
+                    overflow: 'hidden',
+                    zIndex: 11,
+                  }}>
+                    <View style={{
+                      width: INDICATOR_W,
+                      height: INDICATOR_FULL_H,
+                      backgroundColor: '#C6C6C6',
+                      borderRadius: INDICATOR_R,
+                    }} />
                   </View>
-                </Card>
-              </View>
-            </ScrollView>
-            <View style={styles.paginationDots}>
-              <View style={[styles.dot, fitnessCardPage === 0 ? styles.dotActive : undefined]} />
-              <View style={[styles.dot, fitnessCardPage === 1 ? styles.dotActive : undefined]} />
-            </View>
-            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <LiquidGlassSegmented
-                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
-                value={homeSegment}
-                onChange={(k) => setHomeSegment(k as SegmentValue)}
-                width={160}
-              />
-            </View>
-            {/* Recently uploaded – below toggle */}
-            <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
-            <Card
-              gradientFill
-              style={[
-                styles.caloriesLeftCard,
-                styles.recentlyUploadedCard,
-                { width: CALORIES_CARD_WIDTH, minHeight: CARD_UNIFIED_HEIGHT, borderRadius: CALORIES_CARD_RADIUS, alignSelf: 'center' },
-              ]}
-            >
-              {!todayLog?.meals?.filter((m) => !/juice/i.test(m.name)).length ? (
-                <Text style={styles.recentlyUploadedPlaceholder}>tap + to add a workout</Text>
-              ) : (
-                <View style={styles.recentlyUploadedList}>
-                  {todayLog.meals.filter((m) => !/juice/i.test(m.name)).map((meal) => (
-                    <View key={meal.id} style={styles.recentlyUploadedMealRow}>
-                      <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
-                      <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </Card>
-            </Animated.View>
-          </Animated.View>
-        ) : (
-          <Animated.View
-            key="nutrition-segment"
-            entering={SlideInLeft.withInitialValues({ transform: [{ translateX: -2 }] }).springify().damping(200).stiffness(3000)}
-            exiting={FadeOut.duration(50)}
-          >
-          <Animated.View style={cardSlideStyle}>
-          <View style={{ position: 'relative' }}>
-            <View>
-        {(
+                );
+              })()}
+            </>
+          );
+        })()}
+
+        {/* ═══ TAB CONTENT ═══ */}
+        <View style={{ marginTop: insets.top + 70 + 37 + 12 - (headerTop + 40) + Spacing.lg }}>
+        {homeTab === 'calories' ? (
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
             const log = viewingDateLog;
+            const RING_SIZE = 228;
+            const RING_STROKE = 11;
+            const MACRO_RING_SIZE = 41;
+            const MACRO_RING_STROKE = 3;
             return (
-          <View style={{ width: CAROUSEL_WIDTH }}>
-            <ScrollView
-              ref={nutritionScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onScroll={handleNutritionCarouselScroll}
-              scrollEventThrottle={16}
-              style={{ width: CAROUSEL_WIDTH }}
-              contentContainerStyle={{ width: CAROUSEL_WIDTH * 2 }}
-              nestedScrollEnabled
-              directionalLockEnabled
-            >
-              {/* Nutrition page 0: NutritionHero (calories arc + macro bars) — padding so arc glow is not clipped */}
-              <View style={{ width: CAROUSEL_WIDTH, alignItems: 'center', paddingVertical: 14, overflow: 'visible' }}>
-                <NutritionHero
-                  data={{
-                    calories: { current: log.calories, goal: goals.calories },
-                    protein: { current: log.protein, goal: goals.protein },
-                    carbs: { current: log.carbs, goal: goals.carbs },
-                    fat: { current: log.fat, goal: goals.fat },
-                  }}
-                />
-              </View>
-              {/* Nutrition page 1: electrolytes + health score (bare, no card) */}
-              <View style={{ width: CAROUSEL_WIDTH }}>
-                <Animated.View style={[styles.threeCardsRow, cardScaleStyle]}>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
-                          isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>sodium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>sodium eaten</Text></Animated.View>
+              <View style={{ alignItems: 'center' }}>
+                {/* Dashed calorie ring — SVG is the background, content overlaid on top */}
+                <View style={{ width: RING_SIZE, height: RING_SIZE, marginTop: 24 }}>
+                  {/* SVG ring as absolute background */}
+                  <Svg width={RING_SIZE} height={RING_SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                    <Defs>
+                      <SvgRadialGradient id="ringGrad" cx="50%" cy="0%" rx="50%" ry="100%">
+                        <SvgStop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
+                        <SvgStop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
+                      </SvgRadialGradient>
+                    </Defs>
+                    <SvgCircle
+                      cx={RING_SIZE / 2}
+                      cy={RING_SIZE / 2}
+                      r={(RING_SIZE - RING_STROKE) / 2}
+                      fill="none"
+                      stroke="url(#ringGrad)"
+                      strokeWidth={RING_STROKE}
+                      strokeDasharray="2 4"
+                      strokeLinecap="butt"
+                      strokeMiterlimit={28.96}
+                    />
+                  </Svg>
+                  {/* Content inside the ring — fills the 228x228 area, centered */}
+                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 38, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>
+                      {log.calories}
+                    </Text>
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: '#C6C6C6', marginTop: -2 }}>
+                      calories
+                    </Text>
+                    {/* Macro rings */}
+                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, alignItems: 'center' }}>
+                      {[
+                        { value: log.protein, label: 'protein' },
+                        { value: log.carbs, label: 'carb' },
+                        { value: log.fat, label: 'fat' },
+                      ].map((m) => (
+                        <View key={m.label} style={{ alignItems: 'center' }}>
+                          <View style={{
+                            width: MACRO_RING_SIZE,
+                            height: MACRO_RING_SIZE,
+                            borderRadius: MACRO_RING_SIZE / 2,
+                            borderWidth: MACRO_RING_STROKE,
+                            borderColor: 'rgba(198,198,198,0.35)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#C6C6C6' }}>
+                              {m.value}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>
+                            {m.label}
+                          </Text>
                         </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
+                      ))}
                     </View>
+                  </View>
+                </View>
+
+                {/* "Log your food" search bar + camera */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 32 }}>
+                  <Pressable
+                    onPress={handleChoiceFoodDatabase}
+                    style={{
+                      width: 291,
+                      height: 53,
+                      borderRadius: 28,
+                      backgroundColor: '#2F3031',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      shadowColor: '#505050',
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 1,
+                      shadowRadius: 15.8,
+                      elevation: 8,
+                    }}
+                  >
+                    <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
+                    <Text style={{ fontSize: 15, fontWeight: '500', color: '#C6C6C6' }}>log your food.</Text>
                   </Pressable>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
-                          isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>potassium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>potassium eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
-                    </View>
-                  </Pressable>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOut}>
-                    <View style={{ width: MACRO_CARD_WIDTH, height: MACRO_CARD_HEIGHT, flex: 0, paddingTop: 17.5, paddingBottom: 17.5, paddingHorizontal: 11, justifyContent: 'space-between', alignItems: 'stretch' }}>
-                      <View style={styles.macroLeftTextWrap}>
-                        <BlurRollNumber leftValue={'\u2014mg'} eatenValue={'0'} eatenSuffix={'/\u2014mg'}
-                          isEaten={isEaten} trigger={rollTrigger}
-                          textStyle={styles.macroLeftValue} suffixStyle={styles.macroEatenGoal} height={20} />
-                        <View style={styles.macroLabelRow}>
-                          <Animated.View style={leftLabelStyle}><Text style={styles.macroLeftLabel}>magnesium left</Text></Animated.View>
-                          <Animated.View style={[eatenLabelStyle, { position: 'absolute', top: 0, left: 0 }]}><Text style={styles.macroEatenLabel}>magnesium eaten</Text></Animated.View>
-                        </View>
-                      </View>
-                      <View style={[styles.smallCardRing, { width: SMALL_CARD_RING_SIZE, height: SMALL_CARD_RING_SIZE, borderRadius: SMALL_CARD_RING_SIZE / 2, justifyContent: 'center', alignItems: 'center' }]} />
-                    </View>
-                  </Pressable>
-                </Animated.View>
-                <View style={{ marginTop: Spacing.sm }}>
-                  <Pressable onPressIn={onCardPressIn} onPressOut={onCardPressOutScaleOnly}>
-                    <Animated.View style={[cardScaleStyle, { width: CALORIES_CARD_WIDTH, alignSelf: 'center', position: 'relative', ...styles.healthScoreCard }]}>
-                      <Text style={styles.healthScoreTitle}>health score</Text>
-                      {(!viewingDateLog.meals?.length) && (
-                        <View style={styles.healthScoreNaWrap} pointerEvents="none">
-                          <Text style={styles.healthScoreNa} numberOfLines={1}>N/A</Text>
-                        </View>
-                      )}
-                      <View style={styles.healthScoreBarTrack}>
-                        <View style={styles.healthScoreBarFill} />
-                      </View>
-                    </Animated.View>
+                  <Pressable
+                    onPress={() => { setCameraMode('ai'); setShowCamera(true); }}
+                    style={{
+                      width: 53,
+                      height: 53,
+                      borderRadius: 53 / 2,
+                      backgroundColor: '#2F3031',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginLeft: 12,
+                      shadowColor: '#505050',
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 1,
+                      shadowRadius: 15.8,
+                      elevation: 8,
+                    }}
+                  >
+                    <CameraIcon size={22} color="#C6C6C6" weight="regular" />
                   </Pressable>
                 </View>
+
+                {/* Recently uploaded */}
+                <View style={{ width: CAROUSEL_WIDTH, marginTop: 24 }}>
+                  <Text style={[styles.recentlyUploadedTitle, { textTransform: 'lowercase' }]}>recently uploaded</Text>
+                  {!viewingDateLog.meals?.length ? (
+                    <Text style={[styles.recentlyUploadedPlaceholder, { textAlign: 'left', marginTop: 4 }]}>tap "log your food" to add your first meal.</Text>
+                  ) : (
+                    <View style={styles.recentlyUploadedList}>
+                      {viewingDateLog.meals.map((meal: Meal) => (
+                        <View key={meal.id} style={styles.recentlyUploadedMealRow}>
+                          <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
+                          <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
               </View>
-            </ScrollView>
-          </View>
             );
           })()
-        )}
-
-            {/* Nutrition carousel dots — macros | electrolytes+health score */}
-            <View style={[styles.paginationDots, { marginBottom: Spacing.xs }]}>
-              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(0); }} style={{ padding: 12, margin: -12 }}>
-                <View style={[styles.dot, nutritionPage === 0 ? styles.dotActive : undefined]} />
-              </Pressable>
-              <Pressable onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setNutritionPage(1); }} style={{ padding: 12, margin: -12 }}>
-                <View style={[styles.dot, nutritionPage === 1 ? styles.dotActive : undefined]} />
-              </Pressable>
-            </View>
-            <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <LiquidGlassSegmented
-                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
-                value={homeSegment}
-                onChange={(k) => setHomeSegment(k as SegmentValue)}
-                width={160}
-              />
-            </View>
-            {/* Recently uploaded – below toggle */}
-            <View>
-              <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
-              <Card
-                gradientFill
-                style={[
-                  styles.caloriesLeftCard,
-                  styles.recentlyUploadedCard,
-                  {
-                    width: CALORIES_CARD_WIDTH,
-                    minHeight: CARD_UNIFIED_HEIGHT,
-                    borderRadius: CALORIES_CARD_RADIUS,
-                    alignSelf: 'center',
-                  },
-                ]}
-              >
-                {!viewingDateLog.meals?.length ? (
-                  <Text style={styles.recentlyUploadedPlaceholder}>tap + to add your first meal of the day.</Text>
-                ) : (
-                  <View style={styles.recentlyUploadedList}>
-                    {viewingDateLog.meals.map((meal: Meal) => (
-                      <View key={meal.id} style={styles.recentlyUploadedMealRow}>
-                        <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
-                        <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </Card>
-            </View>
+        ) : homeTab === 'progress' ? (
+          <ProgressHub />
+        ) : (
+          <View style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}>
+            {hasHeatmapSetRecords ? (
+              <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
+            ) : (
+              <View style={styles.heatmapEmptyState}>
+                <Text style={styles.heatmapEmptyText}>No workout data for this week</Text>
+              </View>
+            )}
           </View>
-
-            {/* Blur overlay hidden — was blocking background image on some platforms; blur-to-focus disabled */}
-          </View>
-          </Animated.View>
-        </Animated.View>
         )}
-        </AnimatedFadeInUp>
+        </View>
       </ScrollView>
       </RNAnimated.View>
 
@@ -2720,6 +2559,8 @@ export default function NutritionScreen({
         champagneGradient={CHAMPAGNE_GRADIENT}
         quicksilverGradient={QUICKSILVER_GRADIENT}
         verifiedTickSize={ADD_MEAL_VERIFIED_TICK_SIZE}
+        userVolumeUnit={settings?.volumeUnit}
+        selectedFood={selectedFoodForSheet}
       />
 
       {/* Edit Goals Modal */}
@@ -2787,9 +2628,6 @@ export default function NutritionScreen({
                 textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
-            <Pressable onPress={handleClearAllFoodLogs} style={{ marginTop: Spacing.md, paddingVertical: Spacing.sm }}>
-              <Text style={{ fontSize: 14, color: Colors.primaryLight + '99' }}>Clear all food logs</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>
