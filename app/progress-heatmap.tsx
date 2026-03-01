@@ -10,6 +10,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Spacing, Colors, Glass } from '../constants/theme';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import TiltPressable from '../components/TiltPressable';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassPill } from '../components/ui/GlassPill';
 import { CalendarHeatmap } from '../components/heatmaps/CalendarHeatmap';
@@ -58,7 +59,8 @@ export default function ProgressHeatmapScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <GlassCard style={styles.card}>
+        <TiltPressable borderRadius={38} style={{ alignSelf: 'stretch' }}>
+          <GlassCard style={styles.card}>
           {/* Period + metric pills */}
           <View style={styles.heatControls}>
             <View style={styles.heatPillRow}>
@@ -106,6 +108,7 @@ export default function ProgressHeatmapScreen() {
             )}
           </View>
         </GlassCard>
+        </TiltPressable>
       </ScrollView>
     </View>
   );

@@ -1531,7 +1531,11 @@ export default function NutritionScreen({
         }
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: headerTop + 40 },
+          {
+            paddingTop: headerTop + 40,
+            paddingBottom: 76 + insets.bottom + 16,
+            overflow: 'visible' as const,
+          },
         ]}
       >
         {/* Date row — 81px below notch, centered full width */}
@@ -1666,7 +1670,7 @@ export default function NutritionScreen({
         })()}
 
         {/* ═══ TAB CONTENT ═══ */}
-        <View style={{ marginTop: insets.top + 36 + 37 - (headerTop + 40) }}>
+        <View style={{ marginTop: insets.top + 36 + 37 - (headerTop + 40), overflow: 'visible' as const }}>
         {homeTab === 'calories' ? (
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
@@ -1816,7 +1820,9 @@ export default function NutritionScreen({
             );
           })()
         ) : homeTab === 'progress' ? (
-          <ProgressHub />
+          <View style={{ overflow: 'visible' as const }}>
+            <ProgressHub />
+          </View>
         ) : (
           <View style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}>
             {hasHeatmapSetRecords ? (
@@ -2866,6 +2872,7 @@ const styles = StyleSheet.create({
     zIndex: 1, // behind scroll content so logo is always on top
   },
   scrollViewLayer: {
+    flex: 1,
     zIndex: 2,
     backgroundColor: 'transparent',
   },

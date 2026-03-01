@@ -44,7 +44,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
-import { InteractiveGlassWrapper } from '../components/ui/InteractiveGlassWrapper';
+import TiltPressable from '../components/TiltPressable';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
@@ -971,44 +971,43 @@ export default function ProgressGraphScreen() {
         {/* ── 4. Stat tiles (2×2 grid, no outer card) ── */}
         <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
           <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="sessions" value={summary.count} enterDelay={0} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
           <Animated.View entering={FadeInDown.delay(ANIM.stagger).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile
                   label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
                   value={summary.fTotal}
                   enterDelay={ANIM.stagger}
                   animationTrigger={statFocusKey}
                 />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
           <Animated.View entering={FadeInDown.delay(ANIM.stagger * 2).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} enterDelay={ANIM.stagger * 2} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
           <Animated.View entering={FadeInDown.delay(ANIM.stagger * 3).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="avg / session" value={summary.fAvg} enterDelay={ANIM.stagger * 3} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
         </Animated.View>
 
         {/* ── 5. Chart (glass card) — spotlight fits widget via fitContent ── */}
         <Animated.View entering={FadeInDown.delay(ANIM.stagger * 4).duration(ANIM.duration + 40).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
-        <View style={p.chartShadow}>
-        <InteractiveGlassWrapper fitContent borderRadius={38}>
+        <View style={p.chartShadowWrap}>
         <GlassSection>
           {/* Tooltip row */}
           <View style={p.tooltipRow}>
@@ -1276,7 +1275,6 @@ export default function ProgressGraphScreen() {
             </View>
           )}
         </GlassSection>
-        </InteractiveGlassWrapper>
         </View>
         </Animated.View>
       </Animated.ScrollView>
@@ -1335,10 +1333,13 @@ const p = StyleSheet.create({
     gap: TILE_GAP,
   },
 
-  tileShadow: {
+  tileWrap: {
     width: TILE_SIZE,
     height: TILE_SIZE,
     borderRadius: 38,
+    overflow: 'visible' as const,
+  },
+  tileShadowStyle: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34,
@@ -1346,7 +1347,7 @@ const p = StyleSheet.create({
     elevation: 12,
   },
 
-  chartShadow: {
+  chartShadowWrap: {
     borderRadius: 38,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },

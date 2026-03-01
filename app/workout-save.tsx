@@ -23,7 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
-import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { getWorkoutSessions, getUserSettings, updateWorkoutSessionName } from '../utils/storage';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
@@ -54,6 +54,9 @@ export default function WorkoutSaveScreen() {
       const found = sessions.find((s: any) => s.id === sessionId);
       setSession(found || null);
       setWeightUnit(settings.weightUnit);
+      if (found?.name && found.name !== 'Workout') {
+        setTitle(found.name);
+      }
     }
     if (sessionId) loadSession();
   }, [sessionId]);
@@ -134,6 +137,9 @@ export default function WorkoutSaveScreen() {
     setUploadError(null);
 
     try {
+      if (title.trim()) {
+        await updateWorkoutSessionName(sessionId, title.trim());
+      }
       const {
         data: { user },
       } = await supabase.auth.getUser();
