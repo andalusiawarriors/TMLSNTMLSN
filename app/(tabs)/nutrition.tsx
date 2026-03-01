@@ -22,10 +22,11 @@ import {
   RefreshControl,
   Animated as RNAnimated,
   InteractionManager,
+  Keyboard,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
-import { onCardSelect, emitStreakPopupState, emitProfileSheetState } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import Animated, {
   useSharedValue,
@@ -54,7 +55,7 @@ import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { PencilSimpleLine, MagnifyingGlass as MagnifyingGlassIcon, Camera as CameraIcon } from 'phosphor-react-native';
+import { PencilSimpleLine, MagnifyingGlass as MagnifyingGlassIcon, Camera as CameraIcon, XCircle as XCircleIcon, X as XIcon } from 'phosphor-react-native';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
@@ -84,10 +85,11 @@ import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
 import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
+import { useAnimatedRingNumber } from '../../hooks/useAnimatedRingNumber';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { ProgressHub } from '../../components/ProgressHub';
-import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle } from 'react-native-svg';
+import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
@@ -103,6 +105,7 @@ const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 
 import { UnitWheelPicker, UNIT_TO_GRAMS, resolveGrams, getSmartDefaultUnit, type AddMealUnit } from '../../components/UnitWheelPicker';
 import { AddMealSheet } from '../../components/AddMealSheet';
+import { FoodResultRow } from '../../components/FoodResultRow';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -170,6 +173,10 @@ export default function NutritionScreen({
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [homeSearchActive, setHomeSearchActive] = useState(false);
+  const homeSearchInputRef = useRef<TextInput>(null);
+  const searchExpandAnim = useRef(new RNAnimated.Value(0)).current;
+  const pendingAddMealAfterHomeSearchRef = useRef(false);
   // Reset page when switching segment
   useEffect(() => {
     setNutritionPage(0);
@@ -193,6 +200,11 @@ export default function NutritionScreen({
         : { calories: 0, protein: 0, carbs: 0, fat: 0, meals: [] as Meal[] },
     [todayLog, viewingDate]
   );
+
+  const animatedCal = useAnimatedRingNumber(viewingDateLog.calories);
+  const animatedProtein = useAnimatedRingNumber(viewingDateLog.protein);
+  const animatedCarbs = useAnimatedRingNumber(viewingDateLog.carbs);
+  const animatedFat = useAnimatedRingNumber(viewingDateLog.fat);
 
   const cardScale = useSharedValue(1);
   const cardScaleStyle = useAnimatedStyle(() => ({
@@ -856,6 +868,42 @@ export default function NutritionScreen({
     setShowFoodSearch(true);
   };
 
+  const activateHomeSearch = () => {
+    setFoodSearchQuery('');
+    setFoodSearchResults([]);
+    setFoodSearchPage(1);
+    setFoodSearchHasMore(true);
+    setSearchOverlayScreen('list');
+    setHomeSearchActive(true);
+    emitHomeSearchState(true);
+    requestAnimationFrame(() => {
+      RNAnimated.timing(searchExpandAnim, {
+        toValue: 1,
+        duration: 340,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }).start();
+      setTimeout(() => homeSearchInputRef.current?.focus(), 350);
+    });
+  };
+
+  const dismissHomeSearch = () => {
+    Keyboard.dismiss();
+    emitHomeSearchState(false);
+    RNAnimated.timing(searchExpandAnim, {
+      toValue: 0,
+      duration: 260,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: false,
+    }).start(() => {
+      setHomeSearchActive(false);
+      setFoodSearchQuery('');
+      setFoodSearchResults([]);
+      setSearchOverlayScreen('list');
+      addMealInSearchOverlayRef.current = false;
+    });
+  };
+
   const handleChoiceScanFood = async (mode: 'ai' | 'barcode' | 'label' = 'ai') => {
     if (!permission?.granted) {
       const result = await requestPermission();
@@ -993,8 +1041,9 @@ export default function NutritionScreen({
   const handleFoodSearch = useCallback((query: string) => {
     setFoodSearchQuery(query);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (!query.trim()) { setFoodSearchResults([]); return; }
+    if (!query.trim()) { setFoodSearchResults([]); setFoodSearchLoading(false); return; }
     setFoodSearchResults([]);
+    setFoodSearchLoading(true);
     setFoodSearchPage(1);
     setFoodSearchHasMore(true);
     setFoodSearchLoadingMore(false);
@@ -1091,6 +1140,9 @@ export default function NutritionScreen({
   const handleSelectFood = (food: ParsedNutrition) => {
     addToFoodHistory(food);
     fillFormFromFood(food);
+    // The home search overlay is a View (not a Modal), so AddMealSheet (Modal) can safely
+    // open on top of it. Keep results + ring visible; just dismiss keyboard and open sheet.
+    if (homeSearchActive) Keyboard.dismiss();
     addMealInSearchOverlayRef.current = true;
     setSearchOverlayScreen('addMeal');
   };
@@ -1417,7 +1469,7 @@ export default function NutritionScreen({
   });
 
   const insets = useSafeAreaInsets();
-  const headerTop = insets.top + 81;
+  const headerTop = insets.top + 47;
   const headerMeasureRef = useRef<View>(null);
   const onHeaderLayout = useCallback(() => {
     headerMeasureRef.current?.measureInWindow(() => {});
@@ -1489,12 +1541,10 @@ export default function NutritionScreen({
           style={{
             position: 'absolute',
             top: headerTop,
-            left: 0,
-            right: 0,
+            left: CONTENT_PADDING,
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
+            gap: 6,
             zIndex: 10,
             height: HEADER_PILL_SIZE,
           }}
@@ -1517,7 +1567,7 @@ export default function NutritionScreen({
         <View
           style={{
             position: 'absolute',
-            top: insets.top + 70,
+            top: insets.top + 36,
             left: 0,
             right: 0,
             height: 37,
@@ -1535,14 +1585,9 @@ export default function NutritionScreen({
 
         {/* ═══ TOP TABS: icons + labels + indicator pill ═══ */}
         {(() => {
-          const GRAD_TOP = insets.top + 70;
+          const GRAD_TOP = insets.top + 36;
           const TAB_KEYS = ['calories', 'progress', 'fitness'] as const;
           const TAB_LABELS = ['calories.', 'progress.', 'fitness.'];
-          const TAB_ICONS = [
-            require('../../assets/tab-icon-calories.png'),
-            require('../../assets/tab-icon-progress.png'),
-            require('../../assets/tab-icon-fitness.png'),
-          ];
           const INDICATOR_W = 37;
           const INDICATOR_FULL_H = 8;
           const INDICATOR_R = 31;
@@ -1552,9 +1597,8 @@ export default function NutritionScreen({
             (SCREEN_WIDTH - INDICATOR_W) / 2,
             SCREEN_WIDTH - EDGE_PAD - INDICATOR_W,
           ];
-          const TAB_ICON_SIZE = 52;
           const LABEL_FONT = 14;
-          const ICON_AREA_H = TAB_ICON_SIZE + LABEL_FONT + 10;
+          const ICON_AREA_H = LABEL_FONT + 16;
 
           return (
             <>
@@ -1579,11 +1623,6 @@ export default function NutritionScreen({
                         opacity: isSelected ? 1 : 0.55,
                       }}
                     >
-                      <Image
-                        source={TAB_ICONS[i]}
-                        style={{ width: TAB_ICON_SIZE, height: TAB_ICON_SIZE, marginBottom: 2 }}
-                        resizeMode="contain"
-                      />
                       <Text style={{
                         fontSize: LABEL_FONT,
                         fontWeight: isSelected ? '700' : '600',
@@ -1627,31 +1666,41 @@ export default function NutritionScreen({
         })()}
 
         {/* ═══ TAB CONTENT ═══ */}
-        <View style={{ marginTop: insets.top + 70 + 37 + 12 - (headerTop + 40) + Spacing.lg }}>
+        <View style={{ marginTop: insets.top + 36 + 37 - (headerTop + 40) }}>
         {homeTab === 'calories' ? (
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
             const log = viewingDateLog;
-            const RING_SIZE = 228;
+            const RING_W = 291;
             const RING_STROKE = 11;
+            const RING_R = (RING_W - RING_STROKE) / 2;
+            const ARC_MID = RING_W / 2;
             const MACRO_RING_SIZE = 41;
             const MACRO_RING_STROKE = 3;
+            const RING_H = ARC_MID + 16;
+            const macros = [
+              { value: animatedProtein, label: 'protein' },
+              { value: animatedCarbs, label: 'carbs' },
+              { value: animatedFat, label: 'fat' },
+            ];
+            const macroPositions = [
+              { left: 47, top: 63 },
+              { left: (RING_W - MACRO_RING_SIZE) / 2, top: 95 },
+              { left: RING_W - 47 - MACRO_RING_SIZE, top: 63 },
+            ];
             return (
               <View style={{ alignItems: 'center' }}>
-                {/* Dashed calorie ring — SVG is the background, content overlaid on top */}
-                <View style={{ width: RING_SIZE, height: RING_SIZE, marginTop: 24 }}>
-                  {/* SVG ring as absolute background */}
-                  <Svg width={RING_SIZE} height={RING_SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                <View style={{ width: RING_W, height: RING_H, marginTop: 4 }}>
+                  {/* Semicircle arc */}
+                  <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
                     <Defs>
-                      <SvgRadialGradient id="ringGrad" cx="50%" cy="0%" rx="50%" ry="100%">
+                      <SvgRadialGradient id="ringGrad" cx="50%" cy="100%" rx="50%" ry="100%">
                         <SvgStop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
                         <SvgStop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
                       </SvgRadialGradient>
                     </Defs>
-                    <SvgCircle
-                      cx={RING_SIZE / 2}
-                      cy={RING_SIZE / 2}
-                      r={(RING_SIZE - RING_STROKE) / 2}
+                    <SvgPath
+                      d={`M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`}
                       fill="none"
                       stroke="url(#ringGrad)"
                       strokeWidth={RING_STROKE}
@@ -1660,93 +1709,98 @@ export default function NutritionScreen({
                       strokeMiterlimit={28.96}
                     />
                   </Svg>
-                  {/* Content inside the ring — fills the 228x228 area, centered */}
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 38, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>
-                      {log.calories}
+
+                  {/* Calorie number + label — upper third of arc */}
+                  <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>
+                      {animatedCal}
                     </Text>
-                    <Text style={{ fontSize: 13, fontWeight: '500', color: '#C6C6C6', marginTop: -2 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>
                       calories
                     </Text>
-                    {/* Macro rings */}
-                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, alignItems: 'center' }}>
-                      {[
-                        { value: log.protein, label: 'protein' },
-                        { value: log.carbs, label: 'carb' },
-                        { value: log.fat, label: 'fat' },
-                      ].map((m) => (
-                        <View key={m.label} style={{ alignItems: 'center' }}>
-                          <View style={{
-                            width: MACRO_RING_SIZE,
-                            height: MACRO_RING_SIZE,
-                            borderRadius: MACRO_RING_SIZE / 2,
-                            borderWidth: MACRO_RING_STROKE,
-                            borderColor: 'rgba(198,198,198,0.35)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}>
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#C6C6C6' }}>
-                              {m.value}
-                            </Text>
-                          </View>
-                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>
-                            {m.label}
-                          </Text>
-                        </View>
-                      ))}
+                  </View>
+
+                  {/* Macro rings — protein left, carbs bottom-center, fat right */}
+                  {macros.map((m, i) => (
+                    <View key={m.label} style={{ position: 'absolute', left: macroPositions[i].left, top: macroPositions[i].top, alignItems: 'center', width: MACRO_RING_SIZE }}>
+                      <View style={{
+                        width: MACRO_RING_SIZE,
+                        height: MACRO_RING_SIZE,
+                        borderRadius: MACRO_RING_SIZE / 2,
+                        borderWidth: MACRO_RING_STROKE,
+                        borderColor: 'rgba(198,198,198,0.35)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>
+                          {m.value}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>
+                        {m.label}
+                      </Text>
                     </View>
+                  ))}
+                </View>
+
+                {/* "Log your food" bar + camera — bar morphs to absorb camera on tap */}
+                <View style={{ alignItems: 'center', marginTop: 16, zIndex: homeSearchActive ? 60 : 0 }}>
+                  {/* Fixed-width container prevents layout reflow during animation */}
+                  <View style={{ width: 291 + 12 + 53, height: 53 }}>
+                    {/* Camera button — fixed position, fades out */}
+                    <RNAnimated.View style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 0,
+                      width: 53,
+                      height: 53,
+                      opacity: searchExpandAnim.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0], extrapolate: 'clamp' }),
+                    }}>
+                      <Pressable
+                        onPress={() => { setCameraMode('ai'); setShowCamera(true); }}
+                        style={{
+                          width: 53, height: 53, borderRadius: 53 / 2, backgroundColor: '#2F3031',
+                          alignItems: 'center', justifyContent: 'center',
+                          shadowColor: '#505050', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 15.8, elevation: 8,
+                        }}
+                      >
+                        <CameraIcon size={22} color="#C6C6C6" weight="regular" />
+                      </Pressable>
+                    </RNAnimated.View>
+                    {/* Search bar — grows from 291 to fill the container */}
+                    <Pressable onPress={homeSearchActive ? undefined : activateHomeSearch} disabled={homeSearchActive} style={{ position: 'absolute', left: 0, top: 0 }}>
+                      <RNAnimated.View style={{
+                        width: searchExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [291, 291 + 12 + 53] }),
+                        height: 53,
+                        borderRadius: 28,
+                        backgroundColor: '#2F3031',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 16,
+                        gap: 8,
+                        shadowColor: '#505050',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 1,
+                        shadowRadius: 15.8,
+                        elevation: 8,
+                      }}>
+                        <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
+                        <Text style={{ flex: 1, fontSize: 15, fontWeight: '500', color: '#C6C6C6', lineHeight: 20 }}>add a food</Text>
+                        <RNAnimated.View style={{ opacity: searchExpandAnim }}>
+                          <Pressable onPress={dismissHomeSearch} hitSlop={10}>
+                            <XIcon size={20} color="#C6C6C6" weight="bold" />
+                          </Pressable>
+                        </RNAnimated.View>
+                      </RNAnimated.View>
+                    </Pressable>
                   </View>
                 </View>
 
-                {/* "Log your food" search bar + camera */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 32 }}>
-                  <Pressable
-                    onPress={handleChoiceFoodDatabase}
-                    style={{
-                      width: 291,
-                      height: 53,
-                      borderRadius: 28,
-                      backgroundColor: '#2F3031',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      shadowColor: '#505050',
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 1,
-                      shadowRadius: 15.8,
-                      elevation: 8,
-                    }}
-                  >
-                    <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
-                    <Text style={{ fontSize: 15, fontWeight: '500', color: '#C6C6C6' }}>log your food.</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => { setCameraMode('ai'); setShowCamera(true); }}
-                    style={{
-                      width: 53,
-                      height: 53,
-                      borderRadius: 53 / 2,
-                      backgroundColor: '#2F3031',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginLeft: 12,
-                      shadowColor: '#505050',
-                      shadowOffset: { width: 0, height: 0 },
-                      shadowOpacity: 1,
-                      shadowRadius: 15.8,
-                      elevation: 8,
-                    }}
-                  >
-                    <CameraIcon size={22} color="#C6C6C6" weight="regular" />
-                  </Pressable>
-                </View>
-
-                {/* Recently uploaded */}
+                {/* Recently uploaded — always visible (behind blur when search active) */}
                 <View style={{ width: CAROUSEL_WIDTH, marginTop: 24 }}>
                   <Text style={[styles.recentlyUploadedTitle, { textTransform: 'lowercase' }]}>recently uploaded</Text>
                   {!viewingDateLog.meals?.length ? (
-                    <Text style={[styles.recentlyUploadedPlaceholder, { textAlign: 'left', marginTop: 4 }]}>tap "log your food" to add your first meal.</Text>
+                    <Text style={[styles.recentlyUploadedPlaceholder, { textAlign: 'left', marginTop: 4 }]}>tap "add a food" to add your first meal.</Text>
                   ) : (
                     <View style={styles.recentlyUploadedList}>
                       {viewingDateLog.meals.map((meal: Meal) => (
@@ -1777,6 +1831,160 @@ export default function NutritionScreen({
         </View>
       </ScrollView>
       </RNAnimated.View>
+
+      {/* ═══ INLINE HOME SEARCH — layer 1: blur only (behind) ═══ */}
+      {homeSearchActive && homeTab === 'calories' && (
+        <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 50, opacity: searchExpandAnim }]} pointerEvents="box-none">
+          <Pressable onPress={dismissHomeSearch} style={StyleSheet.absoluteFill}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]} />
+          </Pressable>
+        </RNAnimated.View>
+      )}
+
+      {/* ═══ INLINE HOME SEARCH — layer 2: ring, bar, results (above blur) ═══ */}
+      {/* Hidden when AddMealSheet is open — sheet renders its own ring; showing both causes number clash */}
+      {homeSearchActive && homeTab === 'calories' && searchOverlayScreen !== 'addMeal' && (
+        <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 51, opacity: searchExpandAnim }]} pointerEvents="box-none">
+          {/* Calorie ring + macros */}
+          {(() => {
+            const RING_W = 291;
+            const RING_STROKE = 11;
+            const RING_R = (RING_W - RING_STROKE) / 2;
+            const ARC_MID = RING_W / 2;
+            const MACRO_RING_SIZE = 41;
+            const MACRO_RING_STROKE = 3;
+            const RING_H = ARC_MID + 16;
+            const macros = [
+              { value: animatedProtein, label: 'protein' },
+              { value: animatedCarbs, label: 'carbs' },
+              { value: animatedFat, label: 'fat' },
+            ];
+            const macroPositions = [
+              { left: 47, top: 63 },
+              { left: (RING_W - MACRO_RING_SIZE) / 2, top: 95 },
+              { left: RING_W - 47 - MACRO_RING_SIZE, top: 63 },
+            ];
+            const RING_TOP = insets.top + 73 + 4;
+            return (
+              <View style={{ position: 'absolute', top: RING_TOP, left: 0, right: 0, alignItems: 'center', zIndex: 1 }} pointerEvents="none">
+                <View style={{ width: RING_W, height: RING_H }}>
+                  <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                    <Defs>
+                      <SvgRadialGradient id="ringGradOverlay" cx="50%" cy="100%" rx="50%" ry="100%">
+                        <SvgStop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
+                        <SvgStop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
+                      </SvgRadialGradient>
+                    </Defs>
+                    <SvgPath
+                      d={`M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`}
+                      fill="none"
+                      stroke="url(#ringGradOverlay)"
+                      strokeWidth={RING_STROKE}
+                      strokeDasharray="2 4"
+                      strokeLinecap="butt"
+                      strokeMiterlimit={28.96}
+                    />
+                  </Svg>
+                  <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>{animatedCal}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>calories</Text>
+                  </View>
+                  {macros.map((m, i) => (
+                    <View key={m.label} style={{ position: 'absolute', left: macroPositions[i].left, top: macroPositions[i].top, alignItems: 'center', width: MACRO_RING_SIZE }}>
+                      <View style={{ width: MACRO_RING_SIZE, height: MACRO_RING_SIZE, borderRadius: MACRO_RING_SIZE / 2, borderWidth: MACRO_RING_STROKE, borderColor: 'rgba(198,198,198,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>{m.value}</Text>
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>{m.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })()}
+          {/* Search bar — left-pinned so width growth doesn't shift content */}
+          <View style={{ position: 'absolute', top: insets.top + 73 + 4 + 162 + 16, left: (SCREEN_WIDTH - (291 + 12 + 53)) / 2 }}>
+            <RNAnimated.View style={{
+              width: searchExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [291, 291 + 12 + 53] }),
+              height: 53,
+              borderRadius: 28,
+              backgroundColor: '#2F3031',
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 16,
+              gap: 8,
+              shadowColor: '#505050',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 1,
+              shadowRadius: 15.8,
+              elevation: 8,
+            }}>
+              <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
+              <TextInput
+                ref={homeSearchInputRef}
+                style={{
+                  flex: 1,
+                  fontSize: 15,
+                  fontWeight: '500',
+                  color: '#FFFFFF',
+                  paddingVertical: 0,
+                  paddingHorizontal: 0,
+                  lineHeight: 20,
+                  ...(Platform.OS === 'android' && { includeFontPadding: false }),
+                }}
+                placeholder="add a food"
+                placeholderTextColor="#C6C6C6"
+                value={foodSearchQuery}
+                onChangeText={handleFoodSearch}
+                returnKeyType="search"
+              />
+              {foodSearchQuery.length > 0 && (
+                <Pressable onPress={() => { setFoodSearchQuery(''); setFoodSearchResults([]); }} hitSlop={8}>
+                  <XCircleIcon size={18} color="#888" weight="fill" />
+                </Pressable>
+              )}
+              <RNAnimated.View style={{ opacity: searchExpandAnim }}>
+                <Pressable onPress={dismissHomeSearch} hitSlop={10}>
+                  <XIcon size={20} color="#C6C6C6" weight="bold" />
+                </Pressable>
+              </RNAnimated.View>
+            </RNAnimated.View>
+          </View>
+          {/* Search results — fills from search bar to bottom of screen */}
+          <View style={{ position: 'absolute', top: insets.top + 73 + 4 + 162 + 16 + 53 + 8, bottom: 0, left: CONTENT_PADDING, right: CONTENT_PADDING }}>
+            {foodSearchLoading && foodSearchResults.length === 0 && (
+              <ActivityIndicator style={{ marginVertical: 16 }} color="#C6C6C6" />
+            )}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={{ flex: 1 }}
+              showsVerticalScrollIndicator={false}
+              onScroll={({ nativeEvent }) => {
+                const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 50) loadMoreFoodSearch();
+              }}
+              scrollEventThrottle={400}
+            >
+              {foodSearchResults.length === 0 && !foodSearchLoading && foodSearchQuery.length > 0 && (
+                <Text style={styles.emptyText}>No results found</Text>
+              )}
+              {foodSearchResults.map((item, i) => (
+                <FoodResultRow key={String(i)} item={item} onPress={handleSelectFood} />
+              ))}
+              {foodSearchResults.length > 0 && !foodSearchLoading && (
+                foodSearchLoadingMore ? (
+                  <ActivityIndicator color="#ffffff" style={{ paddingVertical: 24 }} />
+                ) : foodSearchHasMore ? (
+                  <TouchableOpacity onPress={loadMoreFoodSearch} style={{ paddingVertical: 24, alignItems: 'center' }} activeOpacity={0.6}>
+                    <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>Show more results</Text>
+                  </TouchableOpacity>
+                ) : null
+              )}
+            </ScrollView>
+          </View>
+        </RNAnimated.View>
+      )}
 
       {/* Fire streak full-screen popup — slides in from left when pill is tapped */}
       <Modal
@@ -2561,6 +2769,12 @@ export default function NutritionScreen({
         verifiedTickSize={ADD_MEAL_VERIFIED_TICK_SIZE}
         userVolumeUnit={settings?.volumeUnit}
         selectedFood={selectedFoodForSheet}
+        dayLog={homeSearchActive ? {
+          calories: viewingDateLog.calories,
+          protein:  viewingDateLog.protein,
+          carbs:    viewingDateLog.carbs,
+          fat:      viewingDateLog.fat,
+        } : undefined}
       />
 
       {/* Edit Goals Modal */}
@@ -2987,8 +3201,8 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weights.semiBold,
   },
   emptyText: {
-    fontFamily: Font.regular,
     fontSize: Typography.body,
+    fontWeight: '400',
     color: Colors.primaryLight,
     textAlign: 'center',
     paddingVertical: Spacing.lg,

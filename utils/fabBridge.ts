@@ -124,3 +124,16 @@ export function onClosePopup(fn: VoidCb): VoidCb {
     if (i >= 0) closePopupListeners.splice(i, 1);
   };
 }
+
+// ── Home search active (nutrition → layout, so tab bar hides behind blur) ──
+const homeSearchListeners: BoolCb[] = [];
+export function emitHomeSearchState(active: boolean) {
+  homeSearchListeners.forEach(fn => fn(active));
+}
+export function onHomeSearchState(fn: BoolCb): VoidCb {
+  homeSearchListeners.push(fn);
+  return () => {
+    const i = homeSearchListeners.indexOf(fn);
+    if (i >= 0) homeSearchListeners.splice(i, 1);
+  };
+}

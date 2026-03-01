@@ -36,12 +36,13 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
-import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
+import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
 import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from '../utils/unitGrams';
 import * as Theme from '../constants/theme';
 import type { MealType } from '../types';
 import type { ParsedNutrition } from '../utils/foodApi';
 import * as Haptics from 'expo-haptics';
+import { useAnimatedRingNumber } from '../hooks/useAnimatedRingNumber';
 
 const { Colors, Typography, Spacing, BorderRadius } = Theme;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -354,6 +355,8 @@ export interface AddMealSheetProps {
   verifiedTickSize?: number;
   selectedFood?: ParsedNutrition | null;
   userVolumeUnit?: 'oz' | 'ml';
+  /** When provided, renders a live-preview calorie ring above the sheet */
+  dayLog?: { calories: number; protein: number; carbs: number; fat: number };
 }
 
 export function AddMealSheet({
@@ -385,8 +388,35 @@ export function AddMealSheet({
   verifiedTickSize = 18,
   selectedFood,
   userVolumeUnit,
+  dayLog,
 }: AddMealSheetProps) {
   const insets = useSafeAreaInsets();
+
+  // ── Live-preview ring constants (mirrors overlay in nutrition.tsx) ──
+  const PR_W = 291;
+  const PR_STROKE = 11;
+  const PR_R = (PR_W - PR_STROKE) / 2;
+  const PR_ARC_MID = PR_W / 2;
+  const PR_MACRO_SIZE = 41;
+  const PR_MACRO_STROKE = 3;
+  const PR_H = PR_ARC_MID + 16;
+  const PR_TOP = insets.top + 73 + 4;
+  // Backdrop starts below the ring + a little gap so the ring stays unmasked
+  const BACKDROP_TOP = PR_TOP + PR_H + 8;
+  const previewCaloriesRaw = Math.round((dayLog?.calories ?? 0) + (parseFloat(calories) || 0));
+  const previewProteinRaw  = Math.round((dayLog?.protein  ?? 0) + (parseFloat(protein)  || 0));
+  const previewCarbsRaw    = Math.round((dayLog?.carbs    ?? 0) + (parseFloat(carbs)    || 0));
+  const previewFatRaw      = Math.round((dayLog?.fat      ?? 0) + (parseFloat(fat)      || 0));
+  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw);
+  const previewProtein  = useAnimatedRingNumber(previewProteinRaw);
+  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw);
+  const previewFat      = useAnimatedRingNumber(previewFatRaw);
+  const previewMacros = [
+    { value: previewProtein, label: 'protein', left: 47, top: 63 },
+    { value: previewCarbs,   label: 'carbs',   left: (PR_W - PR_MACRO_SIZE) / 2, top: 95 },
+    { value: previewFat,     label: 'fat',     left: PR_W - 47 - PR_MACRO_SIZE, top: 63 },
+  ];
+
   const translateY = useSharedValue(CLOSED_Y);
   const backdropOpacity = useSharedValue(0);
   const isExpanded = useSharedValue(0);
@@ -691,9 +721,51 @@ export function AddMealSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation}>
+      {/* Backdrop — full-screen blur overlay; ring renders above via higher zIndex */}
       <Animated.View style={[styles.backdrop, backdropAnimStyle]}>
+        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
         <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
       </Animated.View>
+
+      {/* Live-preview calorie ring — sits above backdrop in transparent modal space */}
+      {dayLog && (
+        <Animated.View
+          style={{ position: 'absolute', top: PR_TOP, left: 0, right: 0, alignItems: 'center', zIndex: 20 }}
+          pointerEvents="none"
+        >
+          <View style={{ width: PR_W, height: PR_H }}>
+            <Svg width={PR_W} height={PR_ARC_MID + PR_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+              <Defs>
+                <RadialGradient id="previewRingGrad" cx="50%" cy="100%" rx="50%" ry="100%">
+                  <Stop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
+                  <Stop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
+                </RadialGradient>
+              </Defs>
+              <Path
+                d={`M ${PR_STROKE / 2} ${PR_ARC_MID} A ${PR_R} ${PR_R} 0 0 1 ${PR_W - PR_STROKE / 2} ${PR_ARC_MID}`}
+                fill="none"
+                stroke="url(#previewRingGrad)"
+                strokeWidth={PR_STROKE}
+                strokeDasharray="2 4"
+                strokeLinecap="butt"
+                strokeMiterlimit={28.96}
+              />
+            </Svg>
+            <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
+              <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>{previewCalories}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>calories</Text>
+            </View>
+            {previewMacros.map(m => (
+              <View key={m.label} style={{ position: 'absolute', left: m.left, top: m.top, alignItems: 'center', width: PR_MACRO_SIZE }}>
+                <View style={{ width: PR_MACRO_SIZE, height: PR_MACRO_SIZE, borderRadius: PR_MACRO_SIZE / 2, borderWidth: PR_MACRO_STROKE, borderColor: 'rgba(198,198,198,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>{m.value}</Text>
+                </View>
+                <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>{m.label}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+      )}
 
       <GestureDetector gesture={sheetGesture}>
       <Animated.View style={[styles.sheet, sheetAnimStyle]}>
@@ -954,7 +1026,6 @@ export function AddMealSheet({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
     zIndex: 1,
   },
   sheet: {

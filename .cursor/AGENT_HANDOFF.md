@@ -27,7 +27,7 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *(none — merged)* | Person 1 (nutrition) + Person 2 (workout) work merged | — | — | Feb 26 2026 |
+| *(none — merged)* | Person 1 (nutrition) + Person 2 (workout) work merged | — | — | Mar 2 2026 |
 *Just finished: StickyGlassHeader + Progress Graph wiring — StickyGlassHeader.tsx (blur+gradient on scroll), progress-graph.tsx uses Animated.ScrollView + StickyGlassHeader (title, pills sticky; glass effect ramps 0→0.92 opacity as scrollY 0→140).*
 *Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
 *Just finished: Add Meal UI artist fix — BackButton asModal prop for 54px placement; Button gradient variant (FAB style); TMLSN label smaller than title (11px vs 20px); removed Cancel buttons; calories showcase (dataValue font, larger); meal type chip no blue; unit/amount controls (tbsp/tsp/cup/100g/1g + amount); main + obh synced (nutrition.tsx, search-food.tsx, BackButton, Button).*
@@ -48,6 +48,8 @@
 *Previously: Dedupe search results by USDA fdcId — ParsedNutrition.fdcId, dedupKey usda:fdcId so same food appears once; verified+rest and preload/nextPage dedupe by fdcId; main + obh synced.*
 *Just finished: Quicksilver for all Foundation (not Top 100) — isFoundationVerified() in foodApi; solid QUICKSILVER_TEXT for nutrition on cards so it always shows; main + obh synced.*
 *Just finished: Remove SR Legacy from USDA food API and UI — Foundation + Branded only; Verified = Foundation only; main + obh synced.*
+
+*Just finished: Home search ingredient card fix — pressing a FoodResultRow in the homeSearchActive Modal now closes the search first (pendingAddMealAfterHomeSearchRef), then opens AddMealSheet 320ms later once the first Modal is dismissed, preventing the iOS double-Modal stacking issue. Main + obh: app/(tabs)/nutrition.tsx.*
 
 *Just finished: App sounds — set interruptionMode to mixWithOthers so taps/FAB/popup/card sounds don't pause or duck background music (nutrition.tsx, _layout.tsx, useButtonSound.ts; synced to obh).*
 

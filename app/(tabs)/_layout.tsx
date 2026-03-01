@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup } from '../../utils/fabBridge';
+import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
@@ -308,6 +308,12 @@ export default function TabsLayout() {
     };
   }, [streakShiftX]);
 
+  // Hide tab bar when home search overlay is active so blur covers nav
+  useEffect(() => {
+    const unsub = onHomeSearchState((active) => setHomeSearchActive(active));
+    return unsub;
+  }, []);
+
   // Clamp pill X so rebound never goes outside bar (fill still bounces, display is clamped)
   const pillTranslateXClamped = pillTranslateX.interpolate({
     inputRange: [getTabPillX(0) - 100, getTabPillX(0), getTabPillX(4), getTabPillX(4) + 100],
@@ -391,6 +397,7 @@ export default function TabsLayout() {
   // POPUP STATE (rendered in this component)
   // ══════════════════════════════════════════
   const [showPopup, setShowPopup] = useState(false);
+  const [homeSearchActive, setHomeSearchActive] = useState(false);
 
   // Popup animations (RNAnimated)
   const popupOverlayAnim = useRef(new RNAnimated.Value(0)).current;
@@ -1152,10 +1159,11 @@ export default function TabsLayout() {
             right: 0,
             bottom: 0,
             height: TAB_BAR_HEIGHT,
-            zIndex: 99999,
-            elevation: 99999,
+            zIndex: homeSearchActive ? 0 : 99999,
+            elevation: homeSearchActive ? 0 : 99999,
+            opacity: homeSearchActive ? 0 : 1,
           }}
-          pointerEvents="box-none"
+          pointerEvents={homeSearchActive ? 'none' : 'box-none'}
         >
           {renderTabBar(tabBarProps)}
         </View>
