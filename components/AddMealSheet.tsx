@@ -4,10 +4,11 @@
 // Hierarchy: header → title (one line) → meal type pill → calories + P/C/F → quantity/unit → Add Meal (sticky).
 // ============================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   Modal,
   Pressable,
@@ -18,20 +19,25 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, NativeViewGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
   withTiming,
+  withDelay,
+  withRepeat,
+  withSequence,
+  cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import Svg, { Defs, RadialGradient, Stop, Circle } from 'react-native-svg';
-import { Input } from './Input';
-import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, type AddMealUnit } from './UnitWheelPicker';
+import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from './UnitWheelPicker';
 import * as Theme from '../constants/theme';
 import type { MealType } from '../types';
 import type { ParsedNutrition } from '../utils/foodApi';
@@ -39,8 +45,63 @@ import * as Haptics from 'expo-haptics';
 
 const { Colors, Typography, Spacing, BorderRadius } = Theme;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+const CF_W = 72;
+const CF_MS = 350;
+const CF_BLUR = 8;
+
+function CrossfadeText({ value, textStyle }: { value: string; pillBg?: string; textStyle?: any; style?: any }) {
+  const [slotA, setSlotA] = React.useState(value);
+  const [slotB, setSlotB] = React.useState(value);
+  const progress = useSharedValue(0);
+  const activeSlot = React.useRef<0 | 1>(0);
+  const prevRef = React.useRef(value);
+  const rafId = React.useRef<number>();
+
+  React.useEffect(() => {
+    if (value === prevRef.current) return;
+    prevRef.current = value;
+    cancelAnimation(progress);
+    if (rafId.current != null) cancelAnimationFrame(rafId.current);
+
+    const target: 0 | 1 = activeSlot.current === 0 ? 1 : 0;
+    if (target === 1) setSlotB(value);
+    else setSlotA(value);
+
+    rafId.current = requestAnimationFrame(() => {
+      activeSlot.current = target;
+      progress.value = withTiming(target, {
+        duration: CF_MS,
+        easing: Easing.inOut(Easing.cubic),
+      });
+    });
+  }, [value]);
+
+  React.useEffect(() => () => {
+    if (rafId.current != null) cancelAnimationFrame(rafId.current);
+  }, []);
+
+  const styleA = useAnimatedStyle(() => ({
+    opacity: Math.cos(progress.value * Math.PI / 2),
+  }));
+  const styleB = useAnimatedStyle(() => ({
+    opacity: Math.sin(progress.value * Math.PI / 2),
+  }));
+
+  return (
+    <View style={{ width: CF_W, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.Text style={[textStyle, styleA, { position: 'absolute', textAlign: 'center', width: CF_W }]}>
+        {slotA}
+      </Animated.Text>
+      <Animated.Text style={[textStyle, styleB, { position: 'absolute', textAlign: 'center', width: CF_W }]}>
+        {slotB}
+      </Animated.Text>
+    </View>
+  );
+}
+
 const SHEET_SLOT = Math.round(SCREEN_H * 0.52) - 48;
-const SHEET_H = 290;
+const SHEET_H = 284;
 const MESH_ELLIPSE_SIZE = 800;
 const CLOSED_Y = SHEET_SLOT + 40;
 const OPEN_Y = 0;
@@ -49,6 +110,15 @@ const DISMISS_VELOCITY = 900;
 const SPRING_CFG = { damping: 28, stiffness: 460, mass: 0.4 };
 const CARD_R = 28;
 const CARD_PAD = 24;
+const PILLS_ROW_W = 4 * 72 + 3 * 18; // 342 — total width of the 4 stat pills + gaps
+const PILLS_H_PAD = (SCREEN_W - PILLS_ROW_W) / 2;
+// Food name width: slightly narrower than pill row so text+fade end at fat pill edge (fade visually extends past clip)
+const FOOD_NAME_W = PILLS_ROW_W - 10;
+const MARQUEE_FADE_W = 40;
+const MARQUEE_IDLE_MS = 2000;
+const MARQUEE_SPEED = 28;
+const MARQUEE_PAUSE_AT_END_MS = 1200;  // pause when end of text reaches right edge of fat pill
+const MARQUEE_PAUSE_AT_START_MS = 1800; // pause at start before next cycle
 
 const MEAL_TYPE_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 const MEAL_TYPE_LABELS: Record<MealType, string> = {
@@ -58,17 +128,32 @@ const MEAL_TYPE_LABELS: Record<MealType, string> = {
   snack: 'snack',
 };
 
-function unitDisplayLabel(u: AddMealUnit): string {
-  const labels: Record<AddMealUnit, string> = {
-    tbsp: 'tbsp',
-    tsp: 'tsp',
-    cup: 'cup',
-    '2cup': '2 cups',
-    halfCup: 'half cup',
-    '100g': '100g',
-    '1g': '1g',
-  };
-  return labels[u];
+const STATIC_UNIT_LABELS: Record<AddMealUnit, string> = {
+  tbsp: 'tbsp',
+  tsp: 'tsp',
+  cup: '1 cup',
+  '2cup': '2 cups',
+  halfCup: '½ cup',
+  quarterCup: '¼ cup',
+  '100g': '100g',
+  '1g': '1g',
+  ml: 'ml',
+  '100ml': '100ml',
+  oz: 'oz',
+};
+
+function unitDisplayLabel(u: string): string {
+  if (u in STATIC_UNIT_LABELS) return STATIC_UNIT_LABELS[u as AddMealUnit];
+  return u;
+}
+
+const COMPACT_UNIT_LABELS: Partial<Record<AddMealUnit, string>> = {
+  '2cup': '2 cup',
+};
+
+function unitCompactLabel(u: string): string {
+  if (u in COMPACT_UNIT_LABELS) return COMPACT_UNIT_LABELS[u as AddMealUnit]!;
+  return unitDisplayLabel(u);
 }
 
 /** FDA 2020 %Daily Value reference amounts */
@@ -171,6 +256,10 @@ function buildNutritionRows(
     rows.push({ key: 'fiber', label: 'dietary fiber', value: fmtG(fib), dri: fib > 0 ? driPct(fib, 'fiber') : undefined, indent: true });
     const sug = (food.sugars ?? 0) * scl;
     rows.push({ key: 'sugars', label: 'sugars', value: fmtG(sug), dri: sug > 0 ? driPct(sug, 'sugars') : undefined, indent: true });
+    const st = (food.starch ?? 0) * scl;
+    rows.push({ key: 'starch', label: 'starch', value: fmtG(st), indent: true });
+    const added = (food.addedSugars ?? 0) * scl;
+    rows.push({ key: 'addedSugars', label: 'added sugars', value: fmtG(added), indent: true });
   }
 
   const scaledProt = protBase != null ? protBase * scl : null;
@@ -252,8 +341,8 @@ export interface AddMealSheetProps {
   setProtein?: (s: string) => void;
   setCarbs?: (s: string) => void;
   setFat?: (s: string) => void;
-  addMealUnit: AddMealUnit;
-  setAddMealUnit: (u: AddMealUnit) => void;
+  addMealUnit: string;
+  setAddMealUnit: (u: string) => void;
   addMealAmount: string;
   setAddMealAmount: (s: string) => void;
   onSubmit: () => void;
@@ -264,6 +353,7 @@ export interface AddMealSheetProps {
   quicksilverGradient: readonly string[];
   verifiedTickSize?: number;
   selectedFood?: ParsedNutrition | null;
+  userVolumeUnit?: 'oz' | 'ml';
 }
 
 export function AddMealSheet({
@@ -294,19 +384,36 @@ export function AddMealSheet({
   quicksilverGradient,
   verifiedTickSize = 18,
   selectedFood,
+  userVolumeUnit,
 }: AddMealSheetProps) {
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(CLOSED_Y);
   const backdropOpacity = useSharedValue(0);
   const isExpanded = useSharedValue(0);
   const [scrollEnabled, setScrollEnabled] = useState(false);
+  const scrollOffsetSV = useSharedValue(0);
+  const gestureStartedAtTopSV = useSharedValue(0);
+  const collapsingFromTopSV = useSharedValue(0);
+  const nativeScrollRef = useRef<NativeViewGestureHandler>(null);
+  const quantityInputRef = useRef<TextInput>(null);
   const expandedTranslateYSV = useSharedValue(-(SCREEN_H - SHEET_SLOT - (insets.top || 44) - 10));
 
   useEffect(() => {
     expandedTranslateYSV.value = -(SCREEN_H - SHEET_SLOT - insets.top - 10);
   }, [insets.top, expandedTranslateYSV]);
 
+  useEffect(() => {
+    if (visible) {
+      setUnitDropdownOpen(false);
+      dropdownProgress.value = 0;
+    }
+  }, [visible]);
+
   const closeWithAnimation = () => {
+    if (unitDropdownOpen) {
+      setUnitDropdownOpen(false);
+      dropdownProgress.value = 0;
+    }
     isExpanded.value = 0;
     setScrollEnabled(false);
     backdropOpacity.value = withTiming(0, { duration: 180 });
@@ -315,16 +422,35 @@ export function AddMealSheet({
     });
   };
 
-  const panGesture = Gesture.Pan()
+  // Single gesture covering the entire sheet. In semi-opened state it moves the
+  // whole sheet (card + nutrition area as one block). In expanded state it only
+  // moves the sheet when the touch started at scroll offset 0 and drags down;
+  // all other expanded-state drags fall through to the ScrollView via
+  // simultaneousWithExternalGesture.
+  const sheetGesture = Gesture.Pan()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .simultaneousWithExternalGesture(nativeScrollRef as React.RefObject<React.ComponentType<{}>>)
+    .activeOffsetY([-10, 10])
+    .onBegin(() => {
+      gestureStartedAtTopSV.value = scrollOffsetSV.value <= 2 ? 1 : 0;
+      collapsingFromTopSV.value = 0;
+    })
     .onUpdate((e) => {
       const etY = expandedTranslateYSV.value;
-      if (isExpanded.value === 1) {
-        if (e.translationY > 0) {
-          translateY.value = etY + e.translationY;
-        }
-      } else {
+      if (isExpanded.value === 0) {
+        // Semi-opened: whole sheet moves as one block in any direction
         translateY.value = Math.max(etY, e.translationY);
+      } else if (gestureStartedAtTopSV.value === 1 && e.translationY > 0) {
+        // Expanded + touch started at top + dragging down.
+        // Disable the ScrollView on the very first down-frame so both card and
+        // nutrition content lock together and move at exactly the same speed.
+        if (collapsingFromTopSV.value === 0) {
+          collapsingFromTopSV.value = 1;
+          runOnJS(setScrollEnabled)(false);
+        }
+        translateY.value = etY + e.translationY;
       }
+      // Expanded + not at top, or dragging up → do nothing, ScrollView handles it
     })
     .onEnd((e) => {
       const etY = expandedTranslateYSV.value;
@@ -332,20 +458,23 @@ export function AddMealSheet({
         if (e.translationY < -40 || e.velocityY < -500) {
           isExpanded.value = 1;
           runOnJS(setScrollEnabled)(true);
-          translateY.value = withSpring(etY, SPRING_CFG);
+          translateY.value = withTiming(etY, { duration: 260, easing: Easing.out(Easing.cubic) });
         } else if (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY) {
           runOnJS(closeWithAnimation)();
         } else {
           translateY.value = withSpring(0, SPRING_CFG);
         }
       } else {
-        if (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY) {
+        if (gestureStartedAtTopSV.value === 1 && (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY)) {
           isExpanded.value = 0;
-          runOnJS(setScrollEnabled)(false);
+          // scrollEnabled already false (set in onUpdate)
           translateY.value = withSpring(0, SPRING_CFG);
-        } else {
+        } else if (gestureStartedAtTopSV.value === 1) {
+          // Partial drag from top that didn't reach threshold — snap back, re-enable scroll
+          runOnJS(setScrollEnabled)(true);
           translateY.value = withSpring(etY, SPRING_CFG);
         }
+        // else: gesture ran while scrolling in list — sheet untouched, scroll stays enabled
       }
     });
 
@@ -380,7 +509,27 @@ export function AddMealSheet({
   const meshType = isTop100 ? 'gold' : isVerified ? 'quicksilver' : 'neutral';
   const rawMeshColors = meshType === 'gold' ? champagneGradient : meshType === 'quicksilver' ? quicksilverGradient : [Colors.primaryDark, Colors.primaryDarkLighter];
   const isLightMesh = meshType === 'gold' || meshType === 'quicksilver';
+  const handleAmountChange = useCallback((text: string) => {
+    const cleaned = text.replace(/[^0-9.]/g, '');
+    if (cleaned === '' || /^\d{0,3}(\.\d{0,2})?$/.test(cleaned)) {
+      if (cleaned !== '' && selectedFood) {
+        const amt = parseFloat(cleaned);
+        if (Number.isFinite(amt) && amt > 0) {
+          const grams = amt * resolveGrams(addMealUnit, selectedFood.portions);
+          const scale = grams / 100;
+          const cal = Math.round((selectedFood.calories || 0) * scale);
+          const p = (selectedFood.protein || 0) * scale;
+          const c = (selectedFood.carbs || 0) * scale;
+          const f = (selectedFood.fat || 0) * scale;
+          if (cal > 9999 || p > 999.9 || c > 999.9 || f > 999.9) return;
+        }
+      }
+      setAddMealAmount(cleaned);
+    }
+  }, [setAddMealAmount, addMealUnit, selectedFood]);
+
   const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
+  const [capsuleBottomInSheet, setCapsuleBottomInSheet] = useState(0);
   const dropdownProgress = useSharedValue(0);
 
   const openDropdown = () => {
@@ -396,16 +545,105 @@ export function AddMealSheet({
     opacity: dropdownProgress.value,
     transform: [
       { scale: 0.92 + dropdownProgress.value * 0.08 },
-      { translateY: (1 - dropdownProgress.value) * 6 },
+      { translateY: (1 - dropdownProgress.value) * -6 },
     ],
   }));
+  const dividerAnimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - dropdownProgress.value,
+  }));
 
-  // Scaling factor: all USDA nutrient values are per 100g. Scale to the user's chosen qty × unit.
-  const scalingFactor = (parseFloat(addMealAmount) || 1) * UNIT_TO_GRAMS[addMealUnit] / 100;
-  const scaledCal = calories ? String(Math.round(parseFloat(calories) * scalingFactor)) : '—';
-  const scaledProtein = hasSelectedFood && protein ? `${(parseFloat(protein) * scalingFactor).toFixed(1)}g` : '—';
-  const scaledCarbs = hasSelectedFood && carbs ? `${(parseFloat(carbs) * scalingFactor).toFixed(1)}g` : '—';
-  const scaledFat = hasSelectedFood && fat ? `${(parseFloat(fat) * scalingFactor).toFixed(1)}g` : '—';
+  // --- Marquee (auto-scrolling food name) ---
+  const [nameOverflow, setNameOverflow] = useState(0);
+  const marqueeX = useSharedValue(0);
+  const marqueeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleNameMeasure = useCallback((e: any) => {
+    const lines = e.nativeEvent?.lines;
+    const w = lines?.length ? lines[0].width : e.nativeEvent.layout?.width ?? 0;
+    const overflow = Math.max(0, w - FOOD_NAME_W);
+    setNameOverflow((prev) => (Math.abs(prev - overflow) > 1 ? overflow : prev));
+  }, []);
+
+  useEffect(() => {
+    setNameOverflow(0);
+    cancelAnimation(marqueeX);
+    marqueeX.value = 0;
+  }, [displayName, marqueeX]);
+
+  useEffect(() => {
+    if (marqueeTimerRef.current) clearTimeout(marqueeTimerRef.current);
+    cancelAnimation(marqueeX);
+    marqueeX.value = 0;
+
+    if (nameOverflow > 0 && visible) {
+      // Scroll exactly nameOverflow px left so the end of the text aligns with the right edge of the fat pill
+      const scrollOutDur = Math.max(nameOverflow * MARQUEE_SPEED, 1500);
+      const scrollBackDur = scrollOutDur; // same speed for revert
+      marqueeTimerRef.current = setTimeout(() => {
+        marqueeX.value = withRepeat(
+          withSequence(
+            // 1. Scroll left until the rest of the text lies at the right edge of the fat pill, then stop
+            withTiming(-nameOverflow, { duration: scrollOutDur, easing: Easing.linear }),
+            // 2. Pause at the end position
+            withDelay(MARQUEE_PAUSE_AT_END_MS, withTiming(-nameOverflow, { duration: 1 })),
+            // 3. Revert: smooth scroll back to show the beginning characters
+            withTiming(0, { duration: scrollBackDur, easing: Easing.linear }),
+            // 4. Pause at start before next cycle
+            withDelay(MARQUEE_PAUSE_AT_START_MS, withTiming(0, { duration: 1 })),
+          ),
+          -1,
+        );
+      }, MARQUEE_IDLE_MS);
+    }
+
+    return () => {
+      if (marqueeTimerRef.current) clearTimeout(marqueeTimerRef.current);
+    };
+  }, [nameOverflow, visible, marqueeX]);
+
+  const marqueeAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: marqueeX.value }],
+  }));
+
+  const foodPortions = selectedFood?.portions;
+  const baseUnits = userVolumeUnit === 'ml'
+    ? ([...ADD_MEAL_UNITS.filter(u => u !== 'oz'), 'oz'] as string[])
+    : ([...ADD_MEAL_UNITS] as string[]);
+  const allUnits: string[] = [
+    ...(foodPortions?.map(p => p.label) ?? []),
+    ...baseUnits,
+  ];
+
+  // Scaling factor for the nutrition data table (raw per-100g values from selectedFood).
+  const scalingFactor = (parseFloat(addMealAmount) || 1) * resolveGrams(addMealUnit, foodPortions) / 100;
+
+  // Pills: calories/protein/carbs/fat props are already scaled by the parent, display directly.
+  const amt = parseFloat(addMealAmount);
+  const hasAmt = Number.isFinite(amt) && amt > 0;
+  const scaledCal = hasAmt && calories ? String(Math.round(parseFloat(calories))) : '0';
+  const scaledProtein = hasAmt && protein ? `${parseFloat(protein).toFixed(1)}g` : '0g';
+  const scaledCarbs = hasAmt && carbs ? `${parseFloat(carbs).toFixed(1)}g` : '0g';
+  const scaledFat = hasAmt && fat ? `${parseFloat(fat).toFixed(1)}g` : '0g';
+
+  const cardGradient: [string, string] =
+    meshType === 'gold' ? ['#D4B896', '#A8895E']
+    : meshType === 'quicksilver' ? ['#d6d8da', '#6b6f74']
+    : ['#2F3031', '#1A1A1A'];
+
+  const pillColor =
+    meshType === 'gold' ? '#D4B896'
+    : meshType === 'quicksilver' ? '#B9B9B9'
+    : Colors.primaryDark;
+
+  const toggleBorderEnd =
+    meshType === 'gold' ? '#D4B896'
+    : meshType === 'quicksilver' ? '#B9B9B9'
+    : '#383838';
+
+  const toggleGradientStart = meshType === 'neutral'
+    ? { x: 0, y: 0 } : { x: 0, y: 0.5 };
+  const toggleGradientEnd = meshType === 'neutral'
+    ? { x: 1, y: 1 } : { x: 1, y: 0.5 };
 
   const meshColors =
     meshType === 'neutral'
@@ -457,17 +695,25 @@ export function AddMealSheet({
         <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
       </Animated.View>
 
+      <GestureDetector gesture={sheetGesture}>
       <Animated.View style={[styles.sheet, sheetAnimStyle]}>
 
         {/* Nutrition ScrollView — fills the full sheet, content starts below the gold card
-            via paddingTop: SHEET_H. When expanded, user can scroll this independently. */}
-        <ScrollView
-          style={styles.nutritionScroll}
-          contentContainerStyle={styles.nutritionScrollContent}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled={scrollEnabled}
-          bounces={false}
-        >
+            via paddingTop: SHEET_H. When expanded, user can scroll this independently.
+            NativeViewGestureHandler allows sheetGesture to run simultaneously with the
+            native scroll so the whole sheet moves as one block in semi-opened state. */}
+          <NativeViewGestureHandler ref={nativeScrollRef}>
+            <ScrollView
+              style={styles.nutritionScroll}
+              contentContainerStyle={styles.nutritionScrollContent}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={scrollEnabled}
+              bounces={true}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                scrollOffsetSV.value = e.nativeEvent.contentOffset.y;
+              }}
+            >
           <Text style={styles.nutritionDataHeading}>nutritional data</Text>
           <View style={styles.nutritionDataCard}>
             {buildNutritionRows(selectedFood, { calories, protein, carbs, fat, hasSelectedFood }, scalingFactor).map((row, i, arr) => (
@@ -480,26 +726,24 @@ export function AddMealSheet({
               </View>
             ))}
           </View>
-        </ScrollView>
+            </ScrollView>
+          </NativeViewGestureHandler>
 
         {/* Gold card — absolutely positioned on top (zIndex:2) so nutrition scrolls behind it */}
         <View style={styles.cardZone}>
           <LinearGradient
-            colors={['#D4B896', '#A8895E']}
+            colors={cardGradient}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
             style={styles.meshContainer}
           />
 
           <View style={styles.sheetInner}>
-            {/* Grabber — GestureDetector only here to avoid conflicts with Pressables below */}
-            <GestureDetector gesture={panGesture}>
               <View style={styles.headerDragZone}>
                 <View style={styles.grabber} />
               </View>
-            </GestureDetector>
 
-            {/* Badge */}
+            {/* Badge — Top 100 / Verified image, or spacer for default (preserves title position, brand below) */}
             <View style={styles.badgeRow}>
               {isTop100 ? (
                 <Image
@@ -507,15 +751,63 @@ export function AddMealSheet({
                   style={styles.tierBadgeImage}
                   resizeMode="contain"
                 />
+              ) : isVerified ? (
+                <Image
+                  source={require('../assets/badge_verified.png')}
+                  style={styles.tierBadgeImage}
+                  resizeMode="contain"
+                />
               ) : addMealTitleBrand.trim() ? (
-                <View style={styles.tierPill}>
-                  <Text style={styles.tierPillText}>{addMealTitleBrand.trim()}</Text>
-                </View>
+                <View style={styles.badgeRowSpacer} />
               ) : null}
             </View>
 
-            {/* Food name */}
-            <Text style={styles.foodNameWhite}>{displayName}</Text>
+            {/* Food name — marquee scroll for long names */}
+            <View style={[
+              styles.foodNameOuter,
+              addMealBrandName.trim() && !isTop100 && !isVerified && styles.foodNameOuterTightBottom,
+            ]}>
+              <View style={styles.foodNameMeasureWrap}>
+                <Text style={styles.foodNameMeasureText} onTextLayout={handleNameMeasure}>
+                  {displayName}
+                </Text>
+              </View>
+
+              {nameOverflow > 0 ? (
+                <MaskedView
+                  style={styles.foodNameMask}
+                  maskElement={
+                    <LinearGradient
+                      colors={['#000', '#000', 'transparent']}
+                      locations={[0, 1 - MARQUEE_FADE_W / FOOD_NAME_W, 1]}
+                      start={{ x: 0, y: 0.5 }}
+                      end={{ x: 1, y: 0.5 }}
+                      style={{ flex: 1 }}
+                    />
+                  }
+                >
+                  <Animated.View style={[styles.foodNameScrollTrack, marqueeAnimStyle]}>
+                    <Text style={styles.foodNameText}>{displayName}</Text>
+                  </Animated.View>
+                </MaskedView>
+              ) : (
+                <Text style={styles.foodNameText} numberOfLines={1}>
+                  {displayName}
+                </Text>
+              )}
+            </View>
+
+            {/* Brand name — any card with a brand (gold, silver, or default). Gold/silver use overlay style so no element moves. */}
+            {addMealBrandName.trim() ? (
+              <Text
+                style={[
+                  styles.brandNameBelow,
+                  (isTop100 || isVerified) && styles.brandNameBelowOverlay,
+                ]}
+              >
+                {addMealBrandName.trim()}
+              </Text>
+            ) : null}
 
             {/* 4 nutrition pills */}
             <View style={styles.statsGrid}>
@@ -525,42 +817,50 @@ export function AddMealSheet({
                 { value: scaledCarbs, label: 'carbs' },
                 { value: scaledFat, label: 'fat' },
               ].map((item, i) => (
-                <View key={i} style={styles.statsPill}>
-                  <Text style={styles.statValue}>{item.value}</Text>
+                <View key={i} style={[styles.statsPill, { backgroundColor: pillColor }]}>
+                  <CrossfadeText value={item.value} pillBg={pillColor} textStyle={styles.statValue} />
                   <Text style={styles.statLabel}>{item.label}</Text>
                 </View>
               ))}
             </View>
 
             {/* Combined quantity + unit capsule */}
-            <View style={styles.capsuleOuter}>
+            <View
+              style={styles.capsuleOuter}
+              onLayout={(e) => {
+                const { y, height } = e.nativeEvent.layout;
+                setCapsuleBottomInSheet(y + height);
+              }}
+            >
               <LinearGradient
-                colors={['rgba(255,255,255,0.1)', '#D4B896']}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
+                colors={['rgba(255,255,255,0.1)', toggleBorderEnd]}
+                start={toggleGradientStart}
+                end={toggleGradientEnd}
                 style={StyleSheet.absoluteFillObject}
               />
-              <View style={styles.capsuleBorderCutout} />
+              <View style={[styles.capsuleBorderCutout, { backgroundColor: pillColor }]} />
               <View style={styles.capsule}>
-                <View style={styles.capsuleLeft}>
-                  <Input
+                <Pressable style={styles.capsuleLeft} onPress={() => quantityInputRef.current?.focus()}>
+                  <TextInput
+                    ref={quantityInputRef}
                     value={addMealAmount}
-                    onChangeText={setAddMealAmount}
-                    keyboardType="numeric"
+                    onChangeText={handleAmountChange}
+                    keyboardType="decimal-pad"
+                    maxLength={6}
                     placeholder="1"
-                    containerStyle={styles.capsuleInputContainer}
+                    placeholderTextColor="rgba(255,255,255,0.4)"
                     style={styles.capsuleInputText}
                   />
-                </View>
-                <View style={styles.capsuleDivider} />
+                </Pressable>
+                <Animated.View style={[styles.capsuleDivider, dividerAnimStyle]} />
                 <Pressable
                   style={styles.capsuleRight}
                   onPress={() => {
                     Haptics.selectionAsync();
-                    openDropdown();
+                    unitDropdownOpen ? closeDropdown() : openDropdown();
                   }}
                 >
-                  <Text style={styles.capsuleUnitLabel}>{unitDisplayLabel(addMealUnit)}</Text>
+                  <Text style={styles.capsuleUnitLabel}>{unitCompactLabel(addMealUnit)}</Text>
                   <Ionicons name="chevron-up" size={14} color="#FFFFFF" />
                 </Pressable>
               </View>
@@ -578,7 +878,7 @@ export function AddMealSheet({
                   }
                 >
                   <LinearGradient
-                    colors={['#D4B896', '#A8895E']}
+                    colors={cardGradient}
                     start={{ x: 0, y: 0.5 }}
                     end={{ x: 1, y: 0.5 }}
                   >
@@ -590,28 +890,63 @@ export function AddMealSheet({
           </View>
         </View>
 
-      </Animated.View>
+        {/* Unit dropdown — lives inside the sheet so it moves with it */}
+        {unitDropdownOpen && (
+          <>
+            <Pressable style={[StyleSheet.absoluteFill, { zIndex: 50 }]} onPress={closeDropdown} />
+            <Animated.View
+              style={[
+                styles.dropdownShadowWrapper,
+                { top: capsuleBottomInSheet - 32 },
+                dropdownAnimStyle,
+              ]}
+            >
+              {/* Ring outer — overflow:hidden clips gradient ring */}
+              <View style={styles.dropdownRingOuter}>
+                {/* Ring gradient (same as capsule outline, slightly stronger) */}
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.25)', toggleBorderEnd]}
+                  start={toggleGradientStart}
+                  end={toggleGradientEnd}
+                  style={StyleSheet.absoluteFillObject}
+                />
+                {/* Inset fill+clip — 1px inside the ring, clips bg + scroll */}
+                <View style={styles.dropdownInsetFill}>
+                  <BlurView intensity={25} tint="default" style={StyleSheet.absoluteFillObject} />
+                  <ScrollView
+                    style={styles.dropdownScroll}
+                    bounces={true}
+                    alwaysBounceVertical={true}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {allUnits.map((u) => (
+                      <Pressable
+                        key={u}
+                        style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                        onPress={() => {
+                          setAddMealUnit(u);
+                          closeDropdown();
+                          Haptics.selectionAsync();
+                        }}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.dropdownItemText, addMealUnit === u && styles.dropdownItemTextSelected]}
+                        >
+                          {unitDisplayLabel(u)}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            </Animated.View>
+          </>
+        )}
 
-      {unitDropdownOpen && (
-        <>
-          <Pressable style={styles.unitDropdownBackdrop} onPress={closeDropdown} />
-          <Animated.View style={[styles.unitDropdownPopup, dropdownAnimStyle]}>
-            {ADD_MEAL_UNITS.map((u) => (
-              <Pressable
-                key={u}
-                style={({ pressed }) => [styles.unitDropdownItem, pressed && styles.unitDropdownItemPressed]}
-                onPress={() => {
-                  setAddMealUnit(u);
-                  closeDropdown();
-                  Haptics.selectionAsync();
-                }}
-              >
-                <Text style={[styles.unitDropdownItemText, addMealUnit === u && styles.unitDropdownItemTextSelected]}>{unitDisplayLabel(u)}</Text>
-              </Pressable>
-            ))}
-          </Animated.View>
-        </>
-      )}
+      </Animated.View>
+      </GestureDetector>
+
     </Modal>
   );
 }
@@ -665,12 +1000,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   badgeRow: {
-    paddingHorizontal: CARD_PAD,
+    paddingHorizontal: PILLS_H_PAD,
     marginBottom: -2,
   },
   tierBadgeImage: {
     height: 19,
     width: 64,
+  },
+  badgeRowSpacer: {
+    height: 20,
+    width: 1,
   },
   tierPill: {
     alignSelf: 'flex-start',
@@ -687,14 +1026,59 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textTransform: 'uppercase',
   },
-  foodNameWhite: {
+  brandNameBelow: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: -0.5,
+    color: '#FFFFFF',
+    opacity: 0.7,
+    textTransform: 'uppercase',
+    marginLeft: PILLS_H_PAD,
+    marginTop: -6,
+    marginBottom: 8,
+  },
+  brandNameBelowOverlay: {
+    marginTop: -20,
+    marginBottom: 8,
+  },
+  foodNameOuterTightBottom: {
+    marginBottom: 2,
+  },
+  foodNameOuter: {
+    marginLeft: PILLS_H_PAD,
+    width: FOOD_NAME_W,
+    overflow: 'hidden',
+    height: 34,
+    marginBottom: 16,
+  },
+  foodNameMeasureWrap: {
+    position: 'absolute',
+    top: -9999,
+    left: 0,
+    width: 9999,
+    flexDirection: 'row',
+  },
+  foodNameMeasureText: {
     fontSize: 26,
     fontWeight: '700',
     letterSpacing: -1.3,
     lineHeight: 32,
     color: '#FFFFFF',
-    paddingHorizontal: CARD_PAD,
-    marginBottom: 16,
+    alignSelf: 'flex-start', // Text sizes to content; onLayout reports intrinsic width
+  },
+  foodNameMask: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  foodNameScrollTrack: {
+    width: 9999,
+  },
+  foodNameText: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -1.3,
+    lineHeight: 32,
+    color: '#FFFFFF',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -706,7 +1090,6 @@ const styles = StyleSheet.create({
     width: 72,
     height: 51,
     borderRadius: 12,
-    backgroundColor: '#D4B896',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -727,7 +1110,7 @@ const styles = StyleSheet.create({
     width: 162,
     borderRadius: 12,
     alignSelf: 'center',
-    marginBottom: 22,
+    marginBottom: 16,
     overflow: 'hidden',
   },
   capsuleBorderCutout: {
@@ -737,7 +1120,6 @@ const styles = StyleSheet.create({
     right: 1,
     bottom: 1,
     borderRadius: 11,
-    backgroundColor: '#D4B896',
   },
   capsule: {
     position: 'absolute',
@@ -751,7 +1133,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   capsuleLeft: {
-    flex: 1,
+    width: 89,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -767,20 +1149,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
   },
-  capsuleInputContainer: {
-    marginBottom: 0,
-  },
   capsuleInputText: {
+    width: '100%',
     textAlign: 'center',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    letterSpacing: -0.8,
+    letterSpacing: -0.4,
     color: '#FFFFFF',
-    borderWidth: 0,
-    backgroundColor: 'transparent',
     paddingHorizontal: 4,
     paddingVertical: 0,
-    minHeight: 30,
+    height: 30,
   },
   capsuleUnitLabel: {
     fontSize: 16,
@@ -790,6 +1168,7 @@ const styles = StyleSheet.create({
   },
   addButtonWrap: {
     paddingHorizontal: CARD_PAD,
+    marginTop: 1,
   },
   addButton: {
     width: 341,
@@ -809,40 +1188,61 @@ const styles = StyleSheet.create({
     letterSpacing: -0.9,
     color: '#000000',
   },
-  unitDropdownBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 50,
-  },
-  unitDropdownPopup: {
+  dropdownShadowWrapper: {
     position: 'absolute',
-    top: SHEET_H - 98,
-    alignSelf: 'center',
-    width: 170,
-    backgroundColor: '#2F3031',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    right: (SCREEN_W - 162) / 2,
+    width: 72,
+    height: 92,
     zIndex: 51,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 16,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  dropdownRingOuter: {
+    flex: 1,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
     overflow: 'hidden',
   },
-  unitDropdownItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+  dropdownInsetFill: {
+    position: 'absolute',
+    top: 1,
+    left: 1,
+    right: 1,
+    bottom: 1,
+    borderTopLeftRadius: 11,
+    borderTopRightRadius: 11,
+    borderBottomLeftRadius: 11,
+    borderBottomRightRadius: 11,
+    overflow: 'hidden',
   },
-  unitDropdownItemPressed: {
+  dropdownScroll: {
+    flex: 1,
+  },
+  dropdownItem: {
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingHorizontal: 10,
+  },
+  dropdownItemPressed: {
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  unitDropdownItemText: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.65)',
-    letterSpacing: -0.3,
+  dropdownItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
   },
-  unitDropdownItemTextSelected: {
+  dropdownItemTextSelected: {
     fontWeight: '700',
     color: '#FFFFFF',
   },
@@ -853,7 +1253,7 @@ const styles = StyleSheet.create({
   nutritionScrollContent: {
     paddingTop: SHEET_H + Spacing.lg,
     paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.xl + 40,
+    paddingBottom: 120,
   },
   nutritionDataHeading: {
     fontSize: 17,
