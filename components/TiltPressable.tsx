@@ -73,20 +73,23 @@ export default function TiltPressable({
     scale.value = withSpring(1, cfg);
   };
 
-  const hapticLight = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
   const tap = Gesture.Tap()
-    .onBegin((e) => {
+    .onBegin(() => {
       scale.value = withSpring(scaleOnPress, { damping: 18, stiffness: 320, mass: 0.8 });
-      setFromTouch(e.x, e.y);
-      runOnJS(hapticLight)();
     })
     .onEnd((_e, success) => {
       if (success && onPressRef.current) runOnJS(firePress)();
+    })
+    .onFinalize(() => {
+      reset();
     });
 
+  const hapticLight = () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
   const pan = Gesture.Pan()
+    .activateAfterLongPress(longPressMs)
     .onBegin((e) => {
+      runOnJS(hapticLight)();
       scale.value = withSpring(scaleOnPress, { damping: 18, stiffness: 320, mass: 0.8 });
       setFromTouch(e.x, e.y);
     })

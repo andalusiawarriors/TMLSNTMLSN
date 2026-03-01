@@ -918,268 +918,6 @@ export default function ProgressGraphScreen() {
           </View>
         </View>
 
-        {/* ── Chart first (visible without scrolling) ── */}
-        <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
-        <View style={p.chartWrap}>
-        <TiltPressable borderRadius={38} style={{ alignSelf: 'stretch' }} shadowStyle={p.chartShadowStyle}>
-        <GlassSection>
-          {/* Tooltip row */}
-          <View style={p.tooltipRow}>
-            {selDisplay != null ? (
-              <Animated.View
-                key={`tip-${selDisplay.lbl}-${selDisplay.val}`}
-                entering={FadeInDown.duration(ANIM.tooltipDuration).easing(ANIM.easing)}
-                exiting={FadeOut.duration(160).easing(Easing.in(Easing.cubic))}
-                style={p.tooltipChip}
-              >
-                <Text style={p.tooltipVal}>{String(selDisplay.val ?? '')}</Text>
-                <Text style={p.tooltipLbl}>{String(selDisplay.lbl ?? '')}</Text>
-              </Animated.View>
-            ) : (
-              <View style={{ height: 36 }} />
-            )}
-          </View>
-
-          {!hasData ? (
-            <View style={[p.emptyState, { minHeight: CHART_HEIGHT + 32 }]}>
-              <Text style={p.emptyTitle}>No workouts yet.</Text>
-              <Text style={p.emptySub}>Finish one workout to populate this graph.</Text>
-              <Pressable
-                style={({ pressed }) => [p.emptyBtn, pressed && { transform: [{ scale: 0.97 }], opacity: 0.88 }]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/workout' as any); }}
-              >
-                <LinearGradient
-                  colors={['rgba(220,220,220,0.96)', 'rgba(198,198,198,0.90)']}
-                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.12)', 'transparent']}
-                  start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.60)', 'transparent']}
-                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.22 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.10)']}
-                  start={{ x: 0.5, y: 0.6 }} end={{ x: 0.5, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <Text style={p.emptyBtnText}>Start workout</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View
-              style={[p.chartCentered, isAllView && p.chartLeft]}
-              {...(!isAllView ? chartPan.panHandlers : {})}
-            >
-              {isAllView ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ paddingRight: SECTION_PAD }}
-                >
-                  <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW }]}>
-                <View>
-                  <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
-                    <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
-                      {yTicks.map((v, i) => (
-                        <Text key={i} style={p.yLbl}>
-                          {metric === 'duration' ? `${v.toFixed(1)}${yUnit}` : `${fmtYAxis(v)} ${yUnit}`}
-                        </Text>
-                      ))}
-                    </View>
-                    <View style={{ width: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
-                  </View>
-                  <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
-                </View>
-                <View style={p.chartBarsColumn}>
-                  <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
-                    {yTicks.map((_, i) => (
-                      <View key={i} style={{
-                        position: 'absolute', top: BAR_AREA_H * i / (yTicks.length - 1),
-                        left: 0, width: barsBlockW, height: 1, backgroundColor: C_GRID,
-                      }} />
-                    ))}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_AREA_H }}>
-                      {isAllView && yearlyData.length > 0 ? (
-                        yearlyData.map((yd, i) => {
-                          const v  = getValY(yd);
-                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
-                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
-                          const sel = selYearData?.year === yd.year;
-                          const has = selYearData != null;
-                          return (
-                            <Pressable key={`${yd.year}-${metric}`}
-                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelYearData(yd); }}
-                              style={{ width: effBarW, marginRight: i < yearlyData.length - 1 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
-                            >
-                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
-                                height: bh, width: effBarW, overflow: 'hidden',
-                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
-                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
-                              }}>
-                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
-                              </Animated.View>
-                            </Pressable>
-                          );
-                        })
-                      ) : isYearView && monthlyData.length === 12 ? (
-                        monthlyData.map((md, i) => {
-                          const v  = getValM(md);
-                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
-                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
-                          const sel = selMonthData?.month === md.month;
-                          const has = selMonthData != null;
-                          return (
-                            <Pressable key={`${md.month}-${metric}`}
-                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
-                              style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
-                            >
-                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
-                                height: bh, width: effBarW, overflow: 'hidden',
-                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
-                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
-                              }}>
-                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
-                              </Animated.View>
-                            </Pressable>
-                          );
-                        })
-                      ) : (
-                        dayDataInRange.map((pt, i) => {
-                          const v  = pt.data;
-                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
-                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
-                          const sel = selDay != null && isSameDay(pt.date, selDay.date);
-                          const has = selDay != null;
-                          const mr  = i < dayDataInRange.length - 1 ? BAR_GAP + ((i+1) % 7 === 0 ? WEEK_GAP : 0) : 0;
-                          return (
-                            <Pressable key={`${pt.date.getTime()}-${metric}`}
-                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
-                              style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
-                            >
-                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
-                                height: bh, width: effBarW, overflow: 'hidden',
-                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
-                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
-                              }}>
-                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
-                              </Animated.View>
-                            </Pressable>
-                          );
-                        })
-                      )}
-                    </View>
-                  </View>
-                  <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
-                  <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
-                    {xSegs.map((seg, i) => (
-                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-                </ScrollView>
-              ) : (
-                <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW, marginLeft: -20 }]}>
-                <View>
-                  <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
-                    <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
-                      {yTicks.map((v, i) => (
-                        <Text key={i} style={p.yLbl}>
-                          {metric === 'duration' ? `${v.toFixed(1)}${yUnit}` : `${fmtYAxis(v)} ${yUnit}`}
-                        </Text>
-                      ))}
-                    </View>
-                    <View style={{ width: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
-                  </View>
-                  <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
-                </View>
-                <View style={p.chartBarsColumn}>
-                  <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
-                    {yTicks.map((_, i) => (
-                      <View key={i} style={{
-                        position: 'absolute', top: BAR_AREA_H * i / (yTicks.length - 1),
-                        left: 0, width: barsBlockW, height: 1, backgroundColor: C_GRID,
-                      }} />
-                    ))}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_AREA_H }}>
-                      {isYearView && monthlyData.length === 12 ? (
-                        monthlyData.map((md, i) => {
-                          const v  = getValM(md);
-                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
-                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
-                          const sel = selMonthData?.month === md.month;
-                          const has = selMonthData != null;
-                          return (
-                            <Pressable key={`${md.month}-${metric}`}
-                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
-                              style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
-                            >
-                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
-                                height: bh, width: effBarW, overflow: 'hidden',
-                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
-                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
-                              }}>
-                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
-                              </Animated.View>
-                            </Pressable>
-                          );
-                        })
-                      ) : (
-                        dayDataInRange.map((pt, i) => {
-                          const v  = pt.data;
-                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
-                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
-                          const sel = selDay != null && isSameDay(pt.date, selDay.date);
-                          const has = selDay != null;
-                          const mr  = i < dayDataInRange.length - 1 ? BAR_GAP + ((i+1) % 7 === 0 ? WEEK_GAP : 0) : 0;
-                          return (
-                            <Pressable key={`${pt.date.getTime()}-${metric}`}
-                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
-                              style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
-                            >
-                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
-                                height: bh, width: effBarW, overflow: 'hidden',
-                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
-                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
-                              }}>
-                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
-                              </Animated.View>
-                            </Pressable>
-                          );
-                        })
-                      )}
-                    </View>
-                  </View>
-                  <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
-                  <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
-                    {xSegs.map((seg, i) => (
-                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-              )}
-            </View>
-          )}
-        </GlassSection>
-        </TiltPressable>
-        </View>
-        </Animated.View>
-
         {/* ── Dropdowns ── */}
         {dropOpen === 'month' && (
           <DropdownModal
@@ -1266,6 +1004,279 @@ export default function ProgressGraphScreen() {
             </View>
           </Animated.View>
         </Animated.View>
+
+        {/* ── 5. Chart (glass card) — spotlight fits widget via fitContent ── */}
+        <Animated.View entering={FadeInDown.delay(ANIM.stagger * 4).duration(ANIM.duration + 40).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
+        <View style={p.chartShadowWrap}>
+        <GlassSection>
+          {/* Tooltip row */}
+          <View style={p.tooltipRow}>
+            {selDisplay != null ? (
+              <Animated.View
+                key={`tip-${selDisplay.lbl}-${selDisplay.val}`}
+                entering={FadeInDown.duration(ANIM.tooltipDuration).easing(ANIM.easing)}
+                exiting={FadeOut.duration(160).easing(Easing.in(Easing.cubic))}
+                style={p.tooltipChip}
+              >
+                <Text style={p.tooltipVal}>{String(selDisplay.val ?? '')}</Text>
+                <Text style={p.tooltipLbl}>{String(selDisplay.lbl ?? '')}</Text>
+              </Animated.View>
+            ) : (
+              <View style={{ height: 36 }} />
+            )}
+          </View>
+
+          {!hasData ? (
+            <View style={[p.emptyState, { minHeight: CHART_HEIGHT + 32 }]}>
+              <Text style={p.emptyTitle}>No workouts yet.</Text>
+              <Text style={p.emptySub}>Finish one workout to populate this graph.</Text>
+              {/* Glass-prominent CTA — bright fill, dark text, specular rim */}
+              <Pressable
+                style={({ pressed }) => [p.emptyBtn, pressed && { transform: [{ scale: 0.97 }], opacity: 0.88 }]}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/workout' as any); }}
+              >
+                {/* Bright base fill */}
+                <LinearGradient
+                  colors={['rgba(220,220,220,0.96)', 'rgba(198,198,198,0.90)']}
+                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                {/* Diagonal specular — top-left bright hit */}
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.12)', 'transparent']}
+                  start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                {/* Top-rim lensing */}
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.60)', 'transparent']}
+                  start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.22 }}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                {/* Bottom depth */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(0,0,0,0.10)']}
+                  start={{ x: 0.5, y: 0.6 }} end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                  pointerEvents="none"
+                />
+                <Text style={p.emptyBtnText}>Start workout</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View
+              style={[p.chartCentered, isAllView && p.chartLeft]}
+              {...(!isAllView ? chartPan.panHandlers : {})}
+            >
+              {isAllView ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingRight: SECTION_PAD }}
+                >
+                  <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW }]}>
+                {/* Y axis */}
+                <View>
+                  <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
+                    <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
+                      {yTicks.map((v, i) => (
+                        <Text key={i} style={p.yLbl}>
+                          {metric === 'duration' ? `${v.toFixed(1)}${yUnit}` : `${fmtYAxis(v)} ${yUnit}`}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={{ width: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  </View>
+                  <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
+                </View>
+
+                {/* Bars + x-axis — centered when narrower than chart area */}
+                <View style={p.chartBarsColumn}>
+                  <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
+                    {yTicks.map((_, i) => (
+                      <View key={i} style={{
+                        position: 'absolute', top: BAR_AREA_H * i / (yTicks.length - 1),
+                        left: 0, width: barsBlockW, height: 1, backgroundColor: C_GRID,
+                      }} />
+                    ))}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_AREA_H }}>
+                      {isAllView && yearlyData.length > 0 ? (
+                        yearlyData.map((yd, i) => {
+                          const v  = getValY(yd);
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selYearData?.year === yd.year;
+                          const has = selYearData != null;
+                          return (
+                            <Pressable key={`${yd.year}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelYearData(yd); }}
+                              style={{ width: effBarW, marginRight: i < yearlyData.length - 1 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      ) : isYearView && monthlyData.length === 12 ? (
+                        monthlyData.map((md, i) => {
+                          const v  = getValM(md);
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selMonthData?.month === md.month;
+                          const has = selMonthData != null;
+                          return (
+                            <Pressable key={`${md.month}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
+                              style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      ) : (
+                        dayDataInRange.map((pt, i) => {
+                          const v  = pt.data;
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selDay != null && isSameDay(pt.date, selDay.date);
+                          const has = selDay != null;
+                          const mr  = i < dayDataInRange.length - 1 ? BAR_GAP + ((i+1) % 7 === 0 ? WEEK_GAP : 0) : 0;
+                          return (
+                            <Pressable key={`${pt.date.getTime()}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
+                              style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
+                    {xSegs.map((seg, i) => (
+                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+                </ScrollView>
+              ) : (
+                <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW, marginLeft: -20 }]}>
+                {/* Y axis */}
+                <View>
+                  <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
+                    <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
+                      {yTicks.map((v, i) => (
+                        <Text key={i} style={p.yLbl}>
+                          {metric === 'duration' ? `${v.toFixed(1)}${yUnit}` : `${fmtYAxis(v)} ${yUnit}`}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={{ width: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  </View>
+                  <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
+                </View>
+
+                {/* Bars + x-axis */}
+                <View style={p.chartBarsColumn}>
+                  <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
+                    {yTicks.map((_, i) => (
+                      <View key={i} style={{
+                        position: 'absolute', top: BAR_AREA_H * i / (yTicks.length - 1),
+                        left: 0, width: barsBlockW, height: 1, backgroundColor: C_GRID,
+                      }} />
+                    ))}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end', position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_AREA_H }}>
+                      {isYearView && monthlyData.length === 12 ? (
+                        monthlyData.map((md, i) => {
+                          const v  = getValM(md);
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selMonthData?.month === md.month;
+                          const has = selMonthData != null;
+                          return (
+                            <Pressable key={`${md.month}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
+                              style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      ) : (
+                        dayDataInRange.map((pt, i) => {
+                          const v  = pt.data;
+                          let bh   = effYMax > 0 ? Math.floor(BAR_AREA_H * v / effYMax) : 0;
+                          if (v > 0 && bh < MIN_BAR_H) bh = MIN_BAR_H;
+                          const sel = selDay != null && isSameDay(pt.date, selDay.date);
+                          const has = selDay != null;
+                          const mr  = i < dayDataInRange.length - 1 ? BAR_GAP + ((i+1) % 7 === 0 ? WEEK_GAP : 0) : 0;
+                          return (
+                            <Pressable key={`${pt.date.getTime()}-${metric}`}
+                              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
+                              style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
+                            >
+                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
+                                height: bh, width: effBarW, overflow: 'hidden',
+                                backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
+                                borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
+                              }}>
+                                {sel && <LinearGradient colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.08)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.45 }} style={StyleSheet.absoluteFillObject} pointerEvents="none" />}
+                              </Animated.View>
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
+                  <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
+                    {xSegs.map((seg, i) => (
+                      <View key={`${seg.label}-${seg.startIndex}`} style={{ width: xSegW[i] ?? 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={[p.xLbl, { width: '100%', textAlign: 'center' }]}>{seg.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+              )}
+            </View>
+          )}
+        </GlassSection>
+        </View>
+        </Animated.View>
       </Animated.ScrollView>
     </View>
   );
@@ -1336,11 +1347,8 @@ const p = StyleSheet.create({
     elevation: 12,
   },
 
-  chartWrap: {
+  chartShadowWrap: {
     borderRadius: 38,
-    overflow: 'visible' as const,
-  },
-  chartShadowStyle: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34,

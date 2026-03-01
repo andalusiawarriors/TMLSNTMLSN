@@ -67,6 +67,8 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `components/ProgressHub.tsx` – Reorder UX: blur+dark overlay, jiggle, long-press-to-drag (activateAfterLongPress), floating tile position, snap-into-place; fixed lint
+- `app/(tabs)/nutrition.tsx`, `components/ProgressHub.tsx` – Scroll fix: scrollViewLayer flex:1 so main ScrollView gets bounded height; ProgressHub root View no flex:1 so content sizes naturally
 - `components/ui/StickyGlassHeader.tsx`, `app/progress-graph.tsx` – Sticky filter header (Stoic-style): liquid glass on scroll, pills sticky, Animated.ScrollView
 - `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/UnitWheelPicker.tsx`, `package.json` (main + obh) – Add Meal popup redesign: calories showcase, P/C/F card, unit wheel, meal type at bottom
 - `app/(tabs)/nutrition.tsx`, `app/search-food.tsx`, `components/BackButton.tsx`, `components/Button.tsx` (main + obh) – Add Meal UI artist fix: back 54px, gradient Add Meal button, TMLSN label size, unit/amount controls

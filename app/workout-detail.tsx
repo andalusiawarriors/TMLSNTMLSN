@@ -3,27 +3,28 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   ActivityIndicator,
-  ImageBackground,
-  Dimensions,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useSharedValue, useAnimatedScrollHandler } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { CaretLeft, Database, Clock } from 'phosphor-react-native';
-import { Spacing, Typography, BorderRadius } from '../constants/theme';
+import { Spacing, Typography, Colors } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
-import { WorkoutSession } from '../types';
+import { WorkoutSession, Set } from '../types';
 import { formatWeightDisplay, toDisplayWeight, toDisplayVolume } from '../utils/units';
-import { Card } from '../components/Card';
+import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
+import { LiquidGlassPill } from '../components/ui/liquidGlass';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const windowHeight = Dimensions.get('window').height;
+const C_TEXT = Colors.primaryLight;
 
 export default function WorkoutDetailScreen() {
   const router = useRouter();
@@ -33,6 +34,11 @@ export default function WorkoutDetailScreen() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const scrollY = useSharedValue(0);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => { scrollY.value = e.contentOffset.y; },
+  });
 
   useEffect(() => {
     async function load() {
@@ -54,24 +60,37 @@ export default function WorkoutDetailScreen() {
     load();
   }, [sessionId]);
 
+  const backButton = (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.back();
+      }}
+      style={({ pressed }) => [styles.backChip, pressed && { opacity: 0.6, transform: [{ scale: 0.92 }] }]}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+    >
+      <View style={styles.backChipInner}>
+        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(47,48,49,0.40)' }]} />
+        <LinearGradient
+          colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0.03)', 'transparent']}
+          start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <Ionicons name="chevron-back" size={20} color={C_TEXT} style={{ zIndex: 2 }} />
+      </View>
+    </Pressable>
+  );
+
   if (loading || !session) {
     return (
       <View style={styles.container}>
-        <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-          <ImageBackground
-            source={require('../assets/home-background.png')}
-            style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
-            resizeMode="cover"
-          >
-            <LinearGradient
-              colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-              locations={[0, 0.2, 0.35, 0.45, 0.65]}
-              style={StyleSheet.absoluteFill}
-            />
-          </ImageBackground>
+        <HomeGradientBackground />
+        <View style={[styles.loadingHeader, { paddingTop: insets.top + 8 }]}>
+          {backButton}
         </View>
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 44) + 12 }]} />
-        <ActivityIndicator style={{ marginTop: Spacing.xxl }} color={colors.primaryLight} />
+        <ActivityIndicator style={{ marginTop: insets.top + Spacing.xxl }} color={colors.primaryLight} />
       </View>
     );
   }
@@ -85,129 +104,181 @@ export default function WorkoutDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Background: same as Home / Workout / Explore */}
-      <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-        <ImageBackground
-          source={require('../assets/home-background.png')}
-          style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
-          resizeMode="cover"
-        >
-          <LinearGradient
-            colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-            locations={[0, 0.2, 0.35, 0.45, 0.65]}
-            style={StyleSheet.absoluteFill}
-          />
-        </ImageBackground>
-      </View>
+      <HomeGradientBackground />
 
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: Math.max(insets.top, 44) + 12,
-            paddingHorizontal: Spacing.md + (insets.left || 0),
-            paddingRight: Spacing.md + (insets.right || 0),
-          },
-        ]}
-      >
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <CaretLeft size={26} color={colors.primaryLight} weight="bold" />
-        </Pressable>
-        <Text style={[styles.title, { color: colors.primaryLight }]}>Workout Detail</Text>
-        <View style={{ width: 44 }} />
-      </View>
-
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.xxl }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Card gradientFill borderRadius={20} style={styles.summaryCard}>
-          <Text style={[styles.summaryTitle, { color: colors.primaryLight }]}>{getSessionDisplayName(session)}</Text>
-          <Text style={[styles.summaryDate, { color: colors.primaryLight + '80' }]}>
-            {format(new Date(session.date), 'MMM d, yyyy • h:mm a')}
-          </Text>
-          <View style={styles.statsRow}>
-            <View style={[styles.statPill, { backgroundColor: colors.primaryDark }]}>
-              <Clock size={16} color={colors.primaryLight + 'B0'} />
-              <Text style={[styles.statText, { color: colors.primaryLight }]}>{session.duration}m duration</Text>
+      <StickyGlassHeader
+        title=""
+        leftSlot={null}
+        topPadding={8}
+        topSlotMarginBottom={10}
+        topSlot={
+          <View style={styles.headerTopRow}>
+            {backButton}
+            <View style={styles.headerInfoBlock}>
+              <Text style={[styles.headerTitle, { color: colors.primaryLight }]} numberOfLines={1}>
+                {getSessionDisplayName(session).toLowerCase()}.
+              </Text>
+              <Text style={[styles.headerDate, { color: colors.primaryLight + '60' }]}>
+                {format(new Date(session.date), 'MMM d, yyyy • h:mm a').toLowerCase()}
+              </Text>
             </View>
-            <View style={[styles.statPill, { backgroundColor: colors.primaryDark }]}>
-              <Database size={16} color={colors.primaryLight + 'B0'} />
-              <Text style={[styles.statText, { color: colors.primaryLight }]}>{formatWeightDisplay(volumeDisplay, weightUnit)} total</Text>
+            <View style={styles.headerPillsRow}>
+              <LiquidGlassPill
+                label={`${session.duration}m`}
+                scrubEnabled={false}
+              />
+              <LiquidGlassPill
+                label={`${formatWeightDisplay(volumeDisplay, weightUnit)} ${weightUnit}`}
+                scrubEnabled={false}
+              />
             </View>
           </View>
-        </Card>
+        }
+        scrollY={scrollY}
+        onLayout={setHeaderHeight}
+      >
+        {null}
+      </StickyGlassHeader>
 
+      <Animated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: headerHeight + 8, paddingBottom: insets.bottom + Spacing.xxl },
+        ]}
+        showsVerticalScrollIndicator={false}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+      >
         {session.exercises.map((ex, i) => (
-          <Card key={ex.id} gradientFill borderRadius={20} style={styles.exerciseCard}>
-            <Text style={[styles.exerciseTitle, { color: colors.primaryLight }]}>
-              {i + 1}. {ex.name}
-            </Text>
-            {ex.notes ? (
-              <Text style={[styles.exerciseNotes, { color: colors.primaryLight + 'A0' }]}>{ex.notes}</Text>
-            ) : null}
+          <View key={ex.id} style={styles.exerciseCardWrap}>
+            <View style={styles.glassCard}>
+              <BlurView intensity={26} tint="dark" style={[StyleSheet.absoluteFillObject, styles.glassRadius]} />
+              <View style={[StyleSheet.absoluteFillObject, styles.glassFill, styles.glassRadius]} />
+              <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.07)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }} style={[StyleSheet.absoluteFillObject, styles.glassRadius]} pointerEvents="none" />
+              <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.06)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.18 }} style={[StyleSheet.absoluteFillObject, styles.glassRadius]} pointerEvents="none" />
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.22)']} start={{ x: 0.5, y: 0.55 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, styles.glassRadius]} pointerEvents="none" />
+              <View style={[StyleSheet.absoluteFillObject, styles.glassBorder, styles.glassRadius]} pointerEvents="none" />
+              <View style={styles.exerciseCardContent}>
+                <Text style={[styles.exerciseTitle, { color: colors.primaryLight }]}>
+                  {i + 1}. {ex.name}
+                </Text>
+                {ex.notes ? (
+                  <Text style={[styles.exerciseNotes, { color: colors.primaryLight + 'A0' }]}>{ex.notes}</Text>
+                ) : null}
 
-            <View style={[styles.setRowHeader, { borderBottomColor: colors.primaryLight + '30' }]}>
-              <Text style={[styles.setColText, { flex: 0.5, color: colors.primaryLight + '80' }]}>Set</Text>
-              <Text style={[styles.setColText, { flex: 1, color: colors.primaryLight + '80' }]}>Weight</Text>
-              <Text style={[styles.setColText, { flex: 1, color: colors.primaryLight + '80' }]}>Reps</Text>
-            </View>
-
-            {ex.sets.map((set, sIdx) => {
-              const displayWt = toDisplayWeight(set.weight, weightUnit);
-              const isCompleted = set.completed;
-              return (
-                <View key={set.id}>
-                  <View style={[styles.setRow, !isCompleted && { opacity: 0.5 }]}>
-                    <Text style={[styles.setValText, { flex: 0.5, color: colors.primaryLight }]}>{sIdx + 1}</Text>
-                    <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
-                      {displayWt > 0 ? displayWt : '-'} {weightUnit}
-                    </Text>
-                    <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
-                      {set.reps > 0 ? set.reps : '-'}
-                    </Text>
-                  </View>
-                  {set.notes ? (
-                    <View style={styles.setNotesRow}>
-                      <Text style={[styles.setNotesText, { color: colors.primaryLight + '80' }]}>Note: {set.notes}</Text>
-                    </View>
-                  ) : null}
+                <View style={[styles.setRowHeader, { borderBottomColor: colors.primaryLight + '30' }]}>
+                  <Text style={[styles.setColText, { flex: 0.5, color: colors.primaryLight + '80' }]}>Set</Text>
+                  <Text style={[styles.setColText, { flex: 1, color: colors.primaryLight + '80' }]}>Weight</Text>
+                  <Text style={[styles.setColText, { flex: 1, color: colors.primaryLight + '80' }]}>Reps</Text>
                 </View>
-              );
-            })}
-          </Card>
+
+                {ex.sets.map((set, sIdx) => {
+                  const displayWt = toDisplayWeight(set.weight, weightUnit);
+                  const isCompleted = set.completed;
+                  return (
+                    <View key={set.id}>
+                      <View style={[styles.setRow, !isCompleted && { opacity: 0.5 }]}>
+                        <Text style={[styles.setValText, { flex: 0.5, color: colors.primaryLight }]}>{sIdx + 1}</Text>
+                        <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
+                          {displayWt > 0 ? displayWt : '-'} {weightUnit}
+                        </Text>
+                        <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
+                          {set.reps > 0 ? set.reps : '-'}
+                        </Text>
+                      </View>
+                      {(set as Set & { notes?: string }).notes ? (
+                        <View style={styles.setNotesRow}>
+                          <Text style={[styles.setNotesText, { color: colors.primaryLight + '80' }]}>Note: {(set as Set & { notes?: string }).notes}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
         ))}
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
 
+const GLASS_RADIUS = 16;
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#2F3031' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: Spacing.md,
-    zIndex: 2,
-  },
-  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: Typography.h2, fontWeight: '600', letterSpacing: -0.11 },
+  scroll: { flex: 1 },
   content: { padding: Spacing.lg },
-  summaryCard: { marginBottom: Spacing.xl, padding: Spacing.lg, overflow: 'hidden' },
-  summaryTitle: { fontSize: 24, fontWeight: '600', marginBottom: Spacing.xs },
-  summaryDate: { fontSize: Typography.label, opacity: 0.8, marginBottom: Spacing.md },
-  statsRow: { flexDirection: 'row', gap: Spacing.md },
-  statPill: {
+  loadingHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  backChip: { borderRadius: 20, overflow: 'hidden' },
+  backChipInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(198,198,198,0.18)',
+    overflow: 'hidden',
+  },
+  headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: 38,
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
   },
-  statText: { fontSize: Typography.label, fontWeight: '500' },
-  exerciseCard: { marginBottom: Spacing.md, padding: Spacing.lg, overflow: 'hidden' },
+  headerInfoBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+    alignItems: 'flex-start',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    textAlign: 'left',
+  },
+  headerDate: {
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'left',
+  },
+  headerPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  exerciseCardWrap: {
+    borderRadius: GLASS_RADIUS,
+    marginBottom: Spacing.md,
+    overflow: 'visible' as const,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  glassCard: {
+    borderRadius: GLASS_RADIUS,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  glassRadius: { borderRadius: GLASS_RADIUS },
+  glassFill: { backgroundColor: 'rgba(47, 48, 49, 0.30)' },
+  glassBorder: { borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
+  exerciseCardContent: { padding: Spacing.lg, zIndex: 1 },
   exerciseTitle: { fontSize: Typography.body, fontWeight: '600', marginBottom: Spacing.xs },
   exerciseNotes: { fontSize: Typography.label, fontStyle: 'italic', marginBottom: Spacing.sm },
   setRowHeader: {

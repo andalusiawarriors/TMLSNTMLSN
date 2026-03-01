@@ -143,6 +143,14 @@ function RootLayoutInner() {
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
+        <Stack.Screen
+          name="workout-detail"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
       </Stack>
       {/* Active workout pill at root — visible above modals and overlay */}
       <ActiveWorkoutPill />

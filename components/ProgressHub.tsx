@@ -1,9 +1,10 @@
 // ============================================================
 // TMLSN — Progress Hub (extracted for embedding in home tabs)
 // 6-tile widget grid. Each tile shows a live data preview.
+// iOS-style reorder: blur overlay, jiggle, long-press to drag.
 // ============================================================
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +13,8 @@ import {
   Dimensions,
   Pressable,
   ScrollView,
+  Modal,
+  Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,7 +24,18 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { format, startOfWeek, addDays } from 'date-fns';
 import * as Haptics from 'expo-haptics';
-import { CaretUp, CaretDown } from 'phosphor-react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  withSpring,
+  runOnJS,
+  Easing,
+  interpolate,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { Colors, Spacing } from '../constants/theme';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
@@ -165,6 +179,73 @@ const dotStyles = StyleSheet.create({
   label: { fontSize: 9, fontWeight: '500', color: 'rgba(198,198,198,0.38)' },
 });
 
+function MiniProgressBars({ sessions }: { sessions: WorkoutSession[] }) {
+  const today = new Date();
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const CHART_H = 44;
+  const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+  const dailyMins = useMemo(() => {
+    const mins = [0, 0, 0, 0, 0, 0, 0];
+    for (const s of sessions) {
+      if (!s.isComplete) continue;
+      const d = new Date(s.date);
+      if (isNaN(d.getTime())) continue;
+      const dayIdx = Math.floor((d.getTime() - weekStart.getTime()) / (24 * 60 * 60 * 1000));
+      if (dayIdx >= 0 && dayIdx < 7) mins[dayIdx] += s.duration ?? 0;
+    }
+    return mins;
+  }, [sessions]);
+
+  const maxMins = Math.max(...dailyMins, 1);
+
+  return (
+    <View style={miniBarStyles.wrap}>
+      <View style={miniBarStyles.barsRow}>
+        {dailyMins.map((m, i) => {
+          const h = maxMins > 0 && m > 0 ? Math.max(6, (m / maxMins) * CHART_H) : 4;
+          const isEmpty = m === 0;
+          return (
+            <View key={i} style={miniBarStyles.col}>
+              <View style={[miniBarStyles.barBg, { height: CHART_H }]}>
+                <View
+                  style={[
+                    miniBarStyles.barFill,
+                    { height: h },
+                    isEmpty && { backgroundColor: 'rgba(198,198,198,0.22)' },
+                  ]}
+                />
+              </View>
+              <Text style={miniBarStyles.label}>{DAY_LABELS[i]}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const miniBarStyles = StyleSheet.create({
+  wrap: { alignSelf: 'stretch' },
+  barsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 56 },
+  col: { flex: 1, alignItems: 'center', gap: 4 },
+  barBg: {
+    width: '100%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    backgroundColor: 'rgba(198,198,198,0.08)',
+    borderRadius: 3,
+    minHeight: 4,
+  },
+  barFill: {
+    width: '100%',
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 2,
+    minHeight: 4,
+  },
+  label: { fontSize: 9, fontWeight: '500', color: 'rgba(198,198,198,0.45)' },
+});
+
 function MiniStatRow({ value, label }: { value: string; label: string }) {
   return (
     <View style={miniStyles.row}>
@@ -258,6 +339,26 @@ function TileCard({ item, index, animTrigger, children, reorderMode }: { item: T
   );
 }
 
+function TileCardInner({ item, children }: { item: TileData; children?: React.ReactNode }) {
+  return (
+    <View style={[tileStyles.tileWrap, { width: CARD_SIZE, height: CARD_SIZE }]}>
+      <View style={[tileStyles.glass, { width: CARD_SIZE, height: CARD_SIZE }]}>
+        <BlurView intensity={26} tint="dark" style={[StyleSheet.absoluteFillObject, { borderRadius: TILE_RADIUS }]} />
+        <View style={[StyleSheet.absoluteFillObject, tileStyles.fill, { borderRadius: TILE_RADIUS }]} />
+        <LinearGradient colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.07)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }} style={[StyleSheet.absoluteFillObject, { borderRadius: TILE_RADIUS }]} pointerEvents="none" />
+        <LinearGradient colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.06)', 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.18 }} style={[StyleSheet.absoluteFillObject, { borderRadius: TILE_RADIUS }]} pointerEvents="none" />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.22)']} start={{ x: 0.5, y: 0.55 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: TILE_RADIUS }]} pointerEvents="none" />
+        <View style={[StyleSheet.absoluteFillObject, tileStyles.border, { borderRadius: TILE_RADIUS }]} pointerEvents="none" />
+        {children ? <View style={tileStyles.widgetContent}>{children}</View> : null}
+        <View style={tileStyles.label}>
+          <Text style={tileStyles.title} numberOfLines={2}>{item.title}</Text>
+          <Text style={tileStyles.subtitle} numberOfLines={1}>{item.subtitle}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const tileStyles = StyleSheet.create({
   tileWrap: { width: CARD_SIZE, height: CARD_SIZE, borderRadius: TILE_RADIUS, overflow: 'visible' as const },
   shadow: { shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.34, shadowRadius: 22, elevation: 12 },
@@ -278,6 +379,188 @@ const ALL_TILE_DEFS: Record<string, Omit<TileData, 'subtitle'>> = {
   'active-days': { id: 'active-days', title: 'active days', route: '/progress-heatmap' },
   workouts: { id: 'workouts', title: 'workouts', route: '/workout-history' },
 };
+
+function ReorderableTile({
+  item,
+  index,
+  children,
+  isDragging,
+  onActivate,
+  onDragUpdate,
+  onDragEnd,
+}: {
+  item: TileData;
+  index: number;
+  children: React.ReactNode;
+  isDragging: boolean;
+  onActivate: () => void;
+  onDragUpdate: (tx: number, ty: number, ax: number, ay: number) => void;
+  onDragEnd: () => void;
+}) {
+  const jiggle = useSharedValue(0);
+  useEffect(() => {
+    if (!isDragging) {
+      jiggle.value = withRepeat(withTiming(1, { duration: 500, easing: Easing.inOut(Easing.ease) }), -1, true);
+    } else {
+      jiggle.value = withTiming(0, { duration: 100 });
+    }
+  }, [isDragging]);
+  const jiggleStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(jiggle.value, [0, 1], [-2, 2]) }],
+  }));
+
+  const pan = Gesture.Pan()
+    .activateAfterLongPress(400)
+    .onStart(() => {
+      runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
+      runOnJS(onActivate)();
+    })
+    .onUpdate((e: { translationX: number; translationY: number; absoluteX: number; absoluteY: number }) => {
+      runOnJS(onDragUpdate)(e.translationX, e.translationY, e.absoluteX, e.absoluteY);
+    })
+    .onEnd(() => {
+      runOnJS(onDragEnd)();
+    });
+
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View
+        style={[styles.reorderTileSlot, jiggleStyle, isDragging && { opacity: 0.4 }]}
+      >
+        <TileCardInner item={item}>{children}</TileCardInner>
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+function ReorderModal({
+  tiles,
+  getTileContent,
+  draggingIndex,
+  setDraggingIndex,
+  moveToIndex,
+  onDone,
+  onCancel,
+  dragX,
+  dragY,
+}: {
+  tiles: TileData[];
+  getTileContent: (item: TileData) => React.ReactNode;
+  draggingIndex: number | null;
+  setDraggingIndex: (n: number | null) => void;
+  moveToIndex: (from: number, to: number) => void;
+  onDone: () => void;
+  onCancel: () => void;
+  dragX: SharedValue<number>;
+  dragY: SharedValue<number>;
+}) {
+  const insets = useSafeAreaInsets();
+  const gridRef = React.useRef<View>(null);
+  const [gridScreenPos, setGridScreenPos] = useState({ x: 0, y: 0 });
+  const [gridLayout, setGridLayout] = useState({ x: 0, y: 0 });
+  const draggingRef = React.useRef(draggingIndex);
+  draggingRef.current = draggingIndex;
+
+  const handleDragUpdate = useCallback((tx: number, ty: number, ax: number, ay: number) => {
+    dragX.value = tx;
+    dragY.value = ty;
+    const idx = draggingRef.current;
+    if (idx === null) return;
+    const relX = ax - gridScreenPos.x;
+    const relY = ay - gridScreenPos.y;
+    const col = Math.max(0, Math.min(1, Math.floor(relX / (CARD_SIZE + GRID_GAP))));
+    const row = Math.max(0, Math.min(2, Math.floor(relY / (CARD_SIZE + GRID_GAP))));
+    const toIndex = Math.max(0, Math.min(tiles.length - 1, row * 2 + col));
+    if (toIndex !== idx) {
+      moveToIndex(idx, toIndex);
+      setDraggingIndex(toIndex);
+    }
+  }, [gridScreenPos, tiles.length, moveToIndex, setDraggingIndex, dragX, dragY]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingIndex(null);
+    dragX.value = withSpring(0);
+    dragY.value = withSpring(0);
+  }, [setDraggingIndex, dragX, dragY]);
+
+  const floatingStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dragX.value }, { translateY: dragY.value }],
+    zIndex: 1000,
+  }));
+
+  const draggedItem = draggingIndex != null ? tiles[draggingIndex] : null;
+
+  return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent>
+      <View style={reorderModalStyles.container}>
+        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, reorderModalStyles.darkOverlay]} />
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.listContent, styles.reorderContent, { paddingBottom: 100 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View
+            ref={gridRef}
+            style={styles.reorderGrid}
+            onLayout={(e) => {
+              const { x, y } = e.nativeEvent.layout;
+              setGridLayout({ x, y });
+              gridRef.current?.measureInWindow((wx, wy) => setGridScreenPos({ x: wx, y: wy }));
+            }}
+          >
+            {tiles.map((item, index) => (
+              <ReorderableTile
+                key={item.id}
+                item={item}
+                index={index}
+                isDragging={draggingIndex === index}
+                onActivate={() => setDraggingIndex(index)}
+                onDragUpdate={handleDragUpdate}
+                onDragEnd={handleDragEnd}
+              >
+                {getTileContent(item)}
+              </ReorderableTile>
+            ))}
+          </View>
+          {draggedItem != null && draggingIndex != null && (
+            <Animated.View
+              style={[
+                reorderModalStyles.floatingTile,
+                {
+                  left: gridLayout.x + (draggingIndex % 2) * (CARD_SIZE + GRID_GAP),
+                  top: gridLayout.y + Math.floor(draggingIndex / 2) * (CARD_SIZE + GRID_GAP),
+                },
+                floatingStyle,
+              ]}
+              pointerEvents="none"
+            >
+              <TileCardInner item={draggedItem}>{getTileContent(draggedItem)}</TileCardInner>
+            </Animated.View>
+          )}
+          <View style={styles.reorderActions}>
+            <Pressable onPress={onCancel} style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.85 }]}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={onDone} style={({ pressed }) => [styles.doneBtn, pressed && { opacity: 0.85 }]}>
+              <Text style={styles.doneBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const reorderModalStyles = StyleSheet.create({
+  container: { flex: 1 },
+  darkOverlay: { backgroundColor: 'rgba(0,0,0,0.5)' },
+  floatingTile: {
+    position: 'absolute',
+    width: CARD_SIZE,
+    height: CARD_SIZE,
+  },
+});
 
 export function ProgressHub() {
   const [animTrigger, setAnimTrigger] = useState(0);
@@ -360,28 +643,44 @@ export function ProgressHub() {
     })) as TileData[];
   }, [order, subtitles]);
 
-  const moveTile = useCallback((index: number, direction: 'up' | 'down') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [displayOrder, setDisplayOrder] = useState<string[]>([]);
+  const dragX = useSharedValue(0);
+  const dragY = useSharedValue(0);
+
+  useEffect(() => {
+    if (isReorderMode) setDisplayOrder([...order]);
+  }, [isReorderMode, order]);
+
+  const moveToIndex = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    setDisplayOrder((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
+      return next;
+    });
     setOrder((prev) => {
       const next = [...prev];
-      const swap = direction === 'up' ? index - 1 : index + 1;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[index], next[swap]] = [next[swap], next[index]];
+      const [removed] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, removed);
       return next;
     });
   }, []);
 
   const handleDoneReorder = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await saveProgressHubOrder(order);
+    await saveProgressHubOrder(displayOrder.length ? displayOrder : order);
     setIsReorderMode(false);
+    setDraggingIndex(null);
     setAnimTrigger((t) => t + 1);
-  }, [order]);
+  }, [order, displayOrder]);
 
   const handleCancelReorder = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     getProgressHubOrder().then(setOrder);
     setIsReorderMode(false);
+    setDraggingIndex(null);
   }, []);
 
   const renderItem = useCallback(
@@ -415,66 +714,39 @@ export function ProgressHub() {
     [animTrigger, radarHeatmap, sessions, progressStats, activeDays, totalWorkouts, isReorderMode],
   );
 
+  const reorderTiles = useMemo(() => {
+    const ord = displayOrder.length ? displayOrder : order;
+    return ord
+      .filter((id) => ALL_TILE_DEFS[id])
+      .map((id) => ({
+        ...ALL_TILE_DEFS[id],
+        subtitle: subtitles[id] ?? '',
+      })) as TileData[];
+  }, [displayOrder, order, subtitles]);
+
+  const getTileContent = useCallback((item: TileData) => {
+    if (item.id === 'progress') return <View style={{ alignSelf: 'flex-start', gap: 6 }}><MiniStatRow value={String(progressStats.count)} label="sessions" /><MiniStatRow value={`${progressStats.totalMins}m`} label="total" />{progressStats.best > 0 && <MiniStatRow value={`${progressStats.best}m`} label="best" />}</View>;
+    if (item.id === 'strength') return <MiniRadar heatmapData={radarHeatmap} size={CARD_SIZE - 56} />;
+    if (item.id === 'activity') return <WeekDots sessions={sessions} />;
+    if (item.id === 'history') return <View style={{ alignSelf: 'flex-start', width: '100%' }}><MiniHistory sessions={sessions} /></View>;
+    if (item.id === 'active-days') return <BigStat value={String(activeDays)} sub="days active" />;
+    if (item.id === 'workouts') return <BigStat value={String(totalWorkouts)} sub="sessions" />;
+    return null;
+  }, [progressStats, radarHeatmap, sessions, activeDays, totalWorkouts]);
+
   if (isReorderMode) {
     return (
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={[styles.listContent, styles.reorderContent]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.reorderGrid}>
-          {tiles.map((item, index) => (
-            <View key={item.id} style={styles.reorderRow}>
-              <View style={styles.reorderTileWrap}>
-                <TileCard item={item} index={index} animTrigger={animTrigger} reorderMode>
-                  {item.id === 'progress' && (
-                    <View style={{ alignSelf: 'flex-start', gap: 6 }}>
-                      <MiniStatRow value={String(progressStats.count)} label="sessions" />
-                      <MiniStatRow value={`${progressStats.totalMins}m`} label="total" />
-                      {progressStats.best > 0 && <MiniStatRow value={`${progressStats.best}m`} label="best" />}
-                    </View>
-                  )}
-                  {item.id === 'strength' && <MiniRadar heatmapData={radarHeatmap} size={CARD_SIZE - 56} />}
-                  {item.id === 'activity' && <WeekDots sessions={sessions} />}
-                  {item.id === 'history' && <View style={{ alignSelf: 'flex-start', width: '100%' }}><MiniHistory sessions={sessions} /></View>}
-                  {item.id === 'active-days' && <BigStat value={String(activeDays)} sub="days active" />}
-                  {item.id === 'workouts' && <BigStat value={String(totalWorkouts)} sub="sessions" />}
-                </TileCard>
-              </View>
-              <View style={styles.reorderControls}>
-                <Pressable
-                  onPress={() => moveTile(index, 'up')}
-                  style={({ pressed }) => [styles.reorderBtn, pressed && { opacity: 0.6 }]}
-                  disabled={index === 0}
-                >
-                  <CaretUp size={20} color={index === 0 ? 'rgba(198,198,198,0.3)' : Colors.primaryLight} weight="bold" />
-                </Pressable>
-                <Pressable
-                  onPress={() => moveTile(index, 'down')}
-                  style={({ pressed }) => [styles.reorderBtn, pressed && { opacity: 0.6 }]}
-                  disabled={index === tiles.length - 1}
-                >
-                  <CaretDown size={20} color={index === tiles.length - 1 ? 'rgba(198,198,198,0.3)' : Colors.primaryLight} weight="bold" />
-                </Pressable>
-              </View>
-            </View>
-          ))}
-        </View>
-        <View style={styles.reorderActions}>
-          <Pressable
-            onPress={handleCancelReorder}
-            style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </Pressable>
-          <Pressable
-            onPress={handleDoneReorder}
-            style={({ pressed }) => [styles.doneBtn, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={styles.doneBtnText}>Done</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+      <ReorderModal
+        tiles={reorderTiles}
+        getTileContent={getTileContent}
+        draggingIndex={draggingIndex}
+        setDraggingIndex={setDraggingIndex}
+        moveToIndex={moveToIndex}
+        onDone={handleDoneReorder}
+        onCancel={handleCancelReorder}
+        dragX={dragX}
+        dragY={dragY}
+      />
     );
   }
 
@@ -519,26 +791,15 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   reorderGrid: {
-    gap: 12,
-    width: '100%',
-    maxWidth: 400,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+    width: PARENT_PAD * 2 + CARD_SIZE * 2 + GRID_GAP,
     alignSelf: 'center',
   },
-  reorderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  reorderTileWrap: {
-    flex: 1,
-  },
-  reorderControls: {
-    gap: 4,
-  },
-  reorderBtn: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(198,198,198,0.12)',
+  reorderTileSlot: {
+    width: CARD_SIZE,
+    height: CARD_SIZE,
   },
   reorderActions: {
     flexDirection: 'row',

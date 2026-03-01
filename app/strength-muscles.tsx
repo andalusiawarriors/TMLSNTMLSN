@@ -679,7 +679,7 @@ export default function StrengthMusclesScreen() {
           style={{ width: '100%' }}
         >
           <Animated.View layout={Layout.springify().damping(26).stiffness(200)}>
-            <MuscleRadarChart heatmapData={heatmapData} />
+            <MuscleRadarChart heatmapData={heatmapData} timeRange={timeRange} />
           </Animated.View>
         </AnimatedFadeInUp>
 

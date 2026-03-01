@@ -29,7 +29,6 @@ import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
-import TiltPressable from '../components/TiltPressable';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { Ionicons } from '@expo/vector-icons';
@@ -275,40 +274,60 @@ export default function WorkoutHistoryScreen() {
     const exerciseCount = item.exercises.length;
 
     return (
-      <TiltPressable
+      <Pressable
         key={item.id}
-        borderRadius={16}
         onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: item.id } })}
+        style={({ pressed }) => [styles.cardWrap, pressed && { opacity: 0.92 }]}
       >
-        <View style={[styles.card, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '10' }]}>
-          <View style={styles.cardTop}>
-            <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
-              {getSessionDisplayName(item)}
-            </Text>
-            <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
-              {format(new Date(item.date), 'MMM d, yyyy')}
-            </Text>
-          </View>
-          <View style={styles.cardStats}>
-            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-              <Clock size={13} color={colors.primaryLight + '70'} />
-              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>{item.duration}m</Text>
-            </View>
-            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-              <ChartBar size={13} color={colors.primaryLight + '70'} />
-              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
-                {volumeStr} {weightUnit}
+        <View style={styles.cardGlass}>
+          <BlurView intensity={26} tint="dark" style={[StyleSheet.absoluteFillObject, styles.cardGlassRadius]} />
+          <View style={[StyleSheet.absoluteFillObject, styles.cardFill, styles.cardGlassRadius]} />
+          <LinearGradient
+            colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.07)', 'transparent']}
+            start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
+            style={[StyleSheet.absoluteFillObject, styles.cardGlassRadius]} pointerEvents="none"
+          />
+          <LinearGradient
+            colors={['rgba(255,255,255,0.28)', 'rgba(255,255,255,0.06)', 'transparent']}
+            start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.18 }}
+            style={[StyleSheet.absoluteFillObject, styles.cardGlassRadius]} pointerEvents="none"
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.22)']}
+            start={{ x: 0.5, y: 0.55 }} end={{ x: 0.5, y: 1 }}
+            style={[StyleSheet.absoluteFillObject, styles.cardGlassRadius]} pointerEvents="none"
+          />
+          <View style={[StyleSheet.absoluteFillObject, styles.cardBorder, styles.cardGlassRadius]} pointerEvents="none" />
+          <View style={styles.cardContent}>
+            <View style={styles.cardTop}>
+              <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
+                {getSessionDisplayName(item)}
+              </Text>
+              <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
+                {format(new Date(item.date), 'MMM d, yyyy')}
               </Text>
             </View>
-            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-              <Barbell size={13} color={colors.primaryLight + '70'} />
-              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
-                {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
-              </Text>
+            <View style={styles.cardStats}>
+              <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                <Clock size={13} color={colors.primaryLight + '70'} />
+                <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>{item.duration}m</Text>
+              </View>
+              <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                <ChartBar size={13} color={colors.primaryLight + '70'} />
+                <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
+                  {volumeStr} {weightUnit}
+                </Text>
+              </View>
+              <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+                <Barbell size={13} color={colors.primaryLight + '70'} />
+                <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
+                  {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
-      </TiltPressable>
+      </Pressable>
     );
   };
 
@@ -413,8 +432,10 @@ export default function WorkoutHistoryScreen() {
           scrollEventThrottle={16}
         >
           <View style={styles.titleRowScroll}>
-            <Text style={styles.sectionTitle}>history.</Text>
-            <Text style={styles.sectionSub}>{headerSubtitle}</Text>
+            <View>
+              <Text style={styles.sectionTitle}>history.</Text>
+              <Text style={styles.sectionSub}>{headerSubtitle}</Text>
+            </View>
           </View>
 
           {dropOpen === 'week' && (
@@ -554,10 +575,26 @@ const styles = StyleSheet.create({
   },
   list: { gap: 10 },
   loader: { alignSelf: 'center' },
-  card: {
+  cardWrap: {
     borderRadius: 16,
+    overflow: 'visible' as const,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  cardGlass: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  cardGlassRadius: { borderRadius: 16 },
+  cardFill: { backgroundColor: 'rgba(47, 48, 49, 0.30)' },
+  cardBorder: { borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
+  cardContent: {
     padding: 18,
-    borderWidth: 1,
+    zIndex: 1,
   },
   cardTop: {
     flexDirection: 'row',
