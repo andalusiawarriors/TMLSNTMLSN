@@ -17,6 +17,7 @@ import { CaretLeft, Database, Clock } from 'phosphor-react-native';
 import { Spacing, Typography, BorderRadius } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { formatWeightDisplay, toDisplayWeight, toDisplayVolume } from '../utils/units';
 import { Card } from '../components/Card';
@@ -121,7 +122,7 @@ export default function WorkoutDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Card gradientFill borderRadius={20} style={styles.summaryCard}>
-          <Text style={[styles.summaryTitle, { color: colors.primaryLight }]}>{session.name}</Text>
+          <Text style={[styles.summaryTitle, { color: colors.primaryLight }]}>{getSessionDisplayName(session)}</Text>
           <Text style={[styles.summaryDate, { color: colors.primaryLight + '80' }]}>
             {format(new Date(session.date), 'MMM d, yyyy • h:mm a')}
           </Text>

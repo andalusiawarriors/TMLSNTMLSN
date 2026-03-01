@@ -24,6 +24,7 @@ import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { InteractiveGlassWrapper } from './ui/InteractiveGlassWrapper';
 
 import { getWorkoutSessions } from '../utils/storage';
+import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { workoutsToSetRecordsForRange } from '../utils/workoutMuscles';
 import {
   getWeekStart,
@@ -184,7 +185,7 @@ function MiniHistory({ sessions }: { sessions: WorkoutSession[] }) {
     <View style={mhStyles.list}>
       {recent.map((s) => (
         <View key={s.id} style={mhStyles.row}>
-          <Text style={mhStyles.name} numberOfLines={1}>{s.name}</Text>
+          <Text style={mhStyles.name} numberOfLines={1}>{getSessionDisplayName(s)}</Text>
           <Text style={mhStyles.date}>{format(new Date(s.date), 'MMM d')}</Text>
         </View>
       ))}
@@ -312,8 +313,8 @@ export function ProgressHub() {
     () => [
       { id: 'progress', title: 'progress.', subtitle: 'tap to open', route: '/progress-graph' },
       { id: 'strength', title: 'strength.', subtitle: 'tap to open', route: '/strength-muscles' },
-      { id: 'activity', title: 'activity', subtitle: periodLabel, route: '/progress-heatmap' },
       { id: 'history', title: 'history.', subtitle: 'all sessions', route: '/workout-history' },
+      { id: 'activity', title: 'activity', subtitle: periodLabel, route: '/progress-heatmap' },
       { id: 'active-days', title: 'active days', subtitle: `${activeDays} ${periodLabel}`, route: '/progress-heatmap' },
       { id: 'workouts', title: 'workouts', subtitle: `${totalWorkouts} ${periodLabel}`, route: '/workout-history' },
     ],

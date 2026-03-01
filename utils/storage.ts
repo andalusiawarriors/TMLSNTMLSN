@@ -120,6 +120,30 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   }
 };
 
+/** Update the name of an existing workout session. */
+export const updateWorkoutSessionName = async (sessionId: string, name: string): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && uid) {
+    try {
+      await supabaseStorage.supabaseUpdateWorkoutSessionName(uid, sessionId, name);
+      return;
+    } catch (error) {
+      console.error('Error updating workout session name:', error);
+      throw error;
+    }
+  }
+  try {
+    const existingSessions = await getWorkoutSessions();
+    const updatedSessions = existingSessions.map((s) =>
+      s.id === sessionId ? { ...s, name: name.trim() || s.name } : s
+    );
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+  } catch (error) {
+    console.error('Error updating workout session name:', error);
+    throw error;
+  }
+};
+
 export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {

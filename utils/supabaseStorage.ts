@@ -539,6 +539,26 @@ export async function supabaseSaveWorkoutSession(
   }
 }
 
+export async function supabaseUpdateWorkoutSessionName(
+  userId: string,
+  sessionId: string,
+  name: string
+): Promise<void> {
+  if (!supabase) {
+    console.error('Supabase client not configured');
+    throw new Error('Supabase client not configured');
+  }
+  const { error } = await supabase
+    .from('workout_sessions')
+    .update({ name: name.trim() || '' })
+    .eq('user_id', userId)
+    .eq('id', sessionId);
+  if (error) {
+    console.error('Supabase update workout session name:', error);
+    throw error;
+  }
+}
+
 function groupBy<T extends Record<string, unknown>>(
   rows: T[],
   key: string
