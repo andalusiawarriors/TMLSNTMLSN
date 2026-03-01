@@ -1646,7 +1646,6 @@ export default function NutritionScreen({
                 />
               </View>
             </View>
-            />
           </Animated.View>
         </Pressable>
 

@@ -24,6 +24,12 @@ export type StickyGlassHeaderProps = {
   subtitle?: string;
   leftSlot?: React.ReactNode;
   rightSlot?: React.ReactNode;
+  /** Renders above title row, full width, at the very top */
+  topSlot?: React.ReactNode;
+  /** When topSlot is used, reduce top padding so pill sits higher (default 18) */
+  topPadding?: number;
+  /** Margin below topSlot (default 8). Smaller = title sits higher. */
+  topSlotMarginBottom?: number;
   children: React.ReactNode;
   scrollY: SharedValue<number>;
   onLayout?: (height: number) => void;
@@ -34,6 +40,9 @@ export function StickyGlassHeader({
   subtitle,
   leftSlot,
   rightSlot,
+  topSlot,
+  topPadding = 18,
+  topSlotMarginBottom = 8,
   children,
   scrollY,
   onLayout,
@@ -60,7 +69,7 @@ export function StickyGlassHeader({
 
   return (
     <View
-      style={[styles.root, { paddingTop: insets.top + 18 }]}
+      style={[styles.root, { paddingTop: insets.top + topPadding }]}
       onLayout={handleLayout}
       pointerEvents="box-none"
     >
@@ -85,15 +94,21 @@ export function StickyGlassHeader({
         />
       </Animated.View>
 
-      {/* Content — title row + pills */}
-      <View style={[styles.titleRow, { zIndex: 1 }]}>
-        {leftSlot ?? <View style={styles.hSpacer} />}
-        <View style={styles.titleBlock}>
-          {title !== '' && <Text style={styles.title}>{title}</Text>}
-          {subtitle != null && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {topSlot != null && (
+        <View style={[styles.topSlot, { zIndex: 1, marginBottom: topSlotMarginBottom }]}>{topSlot}</View>
+      )}
+
+      {/* Content — title row + pills (hide titleRow when empty so children sit closer to topSlot) */}
+      {(title !== '' || subtitle != null || leftSlot != null || rightSlot != null) && (
+        <View style={[styles.titleRow, { zIndex: 1 }]}>
+          {leftSlot ?? <View style={styles.hSpacer} />}
+          <View style={styles.titleBlock}>
+            {title !== '' && <Text style={styles.title}>{title}</Text>}
+            {subtitle != null && <Text style={styles.subtitle}>{subtitle}</Text>}
+          </View>
+          {rightSlot ?? <View style={styles.hSpacer} />}
         </View>
-        {rightSlot ?? <View style={styles.hSpacer} />}
-      </View>
+      )}
 
       <View style={[styles.pillsRow, { zIndex: 1 }]}>{children}</View>
     </View>
@@ -142,6 +157,10 @@ const styles = StyleSheet.create({
   hSpacer: {
     width: 36,
     height: 36,
+  },
+  topSlot: {
+    width: '100%',
+    marginBottom: 8,
   },
   pillsRow: {
     gap: 0,

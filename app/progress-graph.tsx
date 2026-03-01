@@ -31,6 +31,8 @@ import Animated, {
   FadeIn,
   FadeOut,
   FadeInDown,
+  FadeInUp,
+  FlipInXDown,
   Layout,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -44,6 +46,7 @@ import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGl
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { InteractiveGlassWrapper } from '../components/ui/InteractiveGlassWrapper';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { KG_PER_LB } from '../utils/units';
 import type { WorkoutSession } from '../types';
@@ -96,6 +99,18 @@ const C_BAR_DIM    = 'rgba(198,198,198,0.25)';
 const C_GRID       = 'rgba(198,198,198,0.09)';
 const C_AXIS_LINE  = 'rgba(198,198,198,0.18)';
 const C_AXIS_LBL   = 'rgba(198,198,198,0.80)';
+
+// ── Premium animation constants ─────────────────────────────────
+const ANIM = {
+  duration: 380,
+  stagger: 50,
+  easing: Easing.out(Easing.cubic),
+  barDuration: 420,
+  barStagger: 40,
+  dropdownItemDuration: 300,
+  dropdownItemStagger: 32,
+  tooltipDuration: 280,
+};
 
 // ── Types ──────────────────────────────────────────────────────
 type TimeRange = 'month' | 'year' | 'all';
@@ -159,17 +174,17 @@ function aggregateByDay(sessions: WorkoutSession[]): DayData[] {
   }));
 }
 
-// ── Bar grow-up animation — gentle spring, minimal overshoot ────
+// ── Bar grow-up animation — premium timing, smooth ease-out ───────
 function barGrowUp(delayMs: number) {
   return (values: { targetHeight: number; targetOriginY: number }) => {
     'worklet';
     const { targetHeight, targetOriginY } = values;
-    const springCfg = { damping: 22, stiffness: 220, mass: 0.7 };
+    const timingCfg = { duration: ANIM.barDuration, easing: ANIM.easing };
     return {
       initialValues: { height: 0, originY: targetOriginY + targetHeight },
       animations: {
-        height:  withDelay(delayMs, withSpring(targetHeight, springCfg)),
-        originY: withDelay(delayMs, withSpring(targetOriginY, springCfg)),
+        height:  withDelay(delayMs, withTiming(targetHeight, timingCfg)),
+        originY: withDelay(delayMs, withTiming(targetOriginY, timingCfg)),
       },
     };
   };
@@ -202,7 +217,7 @@ function DropdownModal({
       <View style={[StyleSheet.absoluteFill, dd.scrim]} pointerEvents="none" />
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <Animated.View
-        entering={FadeInDown.duration(300).springify().damping(24).stiffness(240)}
+        entering={FadeInDown.duration(320).easing(ANIM.easing)}
         style={[dd.card, { top, left, width }]}
       >
         <BlurView intensity={28} tint="dark" style={[StyleSheet.absoluteFillObject, { borderRadius: 20 }]} />
@@ -248,8 +263,36 @@ const dd = StyleSheet.create({
 });
 
 
+// ── Animated value text (per-char FadeInUp, no overshoot) ─────────
+function AnimatedValueText({ value, style, enterDelay = 0, rowStyle }: { value: string; style?: object; enterDelay?: number; rowStyle?: object }) {
+  const str = String(value ?? '');
+  if (!str) return null;
+  return (
+    <View style={[{ flexDirection: 'row' }, rowStyle]}>
+      {str.split('').map((char, i) => (
+        <Animated.Text
+          key={`av-${str}-${i}`}
+          entering={FadeInUp.duration(ANIM.duration).easing(ANIM.easing).delay(enterDelay + i * ANIM.stagger)}
+          style={style}
+        >
+          {char}
+        </Animated.Text>
+      ))}
+    </View>
+  );
+}
+
 // ── Stat square tile ───────────────────────────────────────────
-function StatSquareTile({ label, value }: { label: string; value: string }) {
+function StatSquareTile({ label, value, enterDelay = 0, animationTrigger }: { label: string; value: string; enterDelay?: number; animationTrigger?: number }) {
+  const valueContent = animationTrigger != null ? (
+    <AnimatedFadeInUp trigger={animationTrigger} delay={enterDelay} duration={ANIM.duration} distance={5} style={tile.valueRow}>
+      <Text style={tile.value}>{value}</Text>
+    </AnimatedFadeInUp>
+  ) : (
+    <View style={tile.valueRow}>
+      <AnimatedValueText value={value} style={tile.value} enterDelay={enterDelay} />
+    </View>
+  );
   return (
     <View style={tile.shadow}>
       <View style={tile.wrap}>
@@ -282,19 +325,10 @@ function StatSquareTile({ label, value }: { label: string; value: string }) {
           pointerEvents="none"
         />
         <View style={tile.inner}>
-          <Animated.Text
-            key={`v-${value}`}
-            entering={FadeIn.duration(220)}
-            style={tile.value}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.65}
-          >
-            {value}
-          </Animated.Text>
+          {valueContent}
           <Animated.Text
             key={`l-${label}`}
-            entering={FadeIn.duration(220)}
+            entering={FadeIn.duration(280).easing(ANIM.easing)}
             style={tile.label}
             numberOfLines={2}
           >
@@ -334,13 +368,16 @@ const tile = StyleSheet.create({
     justifyContent: 'flex-end',
     zIndex: 1,
   },
+  valueRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+  },
   value: {
     fontSize: 28,
     fontWeight: '600',
     color: C_TEXT,
     letterSpacing: -0.8,
     lineHeight: 32,
-    marginBottom: 6,
   },
   label: {
     fontSize: 12,
@@ -499,9 +536,20 @@ export default function ProgressGraphScreen() {
     setWeightUnit(settings?.weightUnit ?? 'kg');
   }, []);
 
+  const [statFocusKey, setStatFocusKey] = useState(0);
   useFocusEffect(useCallback(() => {
     load();
+    setStatFocusKey(k => k + 1);
   }, [load]));
+
+  const isFirstPeriodMount = useRef(true);
+  useEffect(() => {
+    if (isFirstPeriodMount.current) {
+      isFirstPeriodMount.current = false;
+      return;
+    }
+    setStatFocusKey(k => k + 1);
+  }, [selMonth, selYear, timeRange, metric]);
 
   // ── Data: dayDataInRange ───────────────────────────────────
   const { dayDataInRange, yMax } = useMemo(() => {
@@ -831,10 +879,7 @@ export default function ProgressGraphScreen() {
         onLayout={setHeaderHeight}
       >
         <View style={p.titleMetricRow}>
-          <View>
-            <Text style={p.sectionTitle}>progress.</Text>
-            <Text style={p.sectionSub}>{headerSubtitle}</Text>
-          </View>
+          <View style={{ flex: 1 }} pointerEvents="none" />
           <View>
             <LiquidGlassSegmented
               options={[
@@ -857,7 +902,7 @@ export default function ProgressGraphScreen() {
         style={p.scroll}
         contentContainerStyle={[
           p.scrollContent,
-          { paddingTop: headerHeight + 8, paddingBottom: insets.bottom + 120 },
+          { paddingTop: headerHeight - 54, paddingBottom: insets.bottom + 120 },
         ]}
         showsVerticalScrollIndicator={false}
         bounces={false}
@@ -865,6 +910,14 @@ export default function ProgressGraphScreen() {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
       >
+        {/* ── Title row (scrolls with content, aligns with pill in header) ── */}
+        <View style={p.titleRowScroll}>
+          <View>
+            <Text style={p.sectionTitle}>progress.</Text>
+            <Text style={p.sectionSub}>{headerSubtitle}</Text>
+          </View>
+        </View>
+
         {/* ── Dropdowns ── */}
         {dropOpen === 'month' && (
           <DropdownModal
@@ -873,18 +926,19 @@ export default function ProgressGraphScreen() {
           >
             <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
               {MONTH_NAMES.map((name, i) => (
-                <Pressable
-                  key={name}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelMonth(i);
-                    setDropOpen(null);
-                    setDropLayout(null);
-                  }}
-                  style={[dd.item, i === selMonth && dd.itemSel]}
-                >
-                  <Text style={[dd.itemTxt, i === selMonth && dd.itemTxtSel]}>{name}</Text>
-                </Pressable>
+                <Animated.View key={name} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelMonth(i);
+                      setDropOpen(null);
+                      setDropLayout(null);
+                    }}
+                    style={[dd.item, i === selMonth && dd.itemSel]}
+                  >
+                    <Text style={[dd.itemTxt, i === selMonth && dd.itemTxtSel]}>{name}</Text>
+                  </Pressable>
+                </Animated.View>
               ))}
             </ScrollView>
           </DropdownModal>
@@ -895,19 +949,20 @@ export default function ProgressGraphScreen() {
             triggerLayout={dropLayout}
           >
             <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-              {availableYears.map((y) => (
-                <Pressable
-                  key={y}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelYear(y);
-                    setDropOpen(null);
-                    setDropLayout(null);
-                  }}
-                  style={[dd.item, y === selYear && dd.itemSel]}
-                >
-                  <Text style={[dd.itemTxt, y === selYear && dd.itemTxtSel]}>{y}</Text>
-                </Pressable>
+              {availableYears.map((y, i) => (
+                <Animated.View key={y} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelYear(y);
+                      setDropOpen(null);
+                      setDropLayout(null);
+                    }}
+                    style={[dd.item, y === selYear && dd.itemSel]}
+                  >
+                    <Text style={[dd.itemTxt, y === selYear && dd.itemTxtSel]}>{y}</Text>
+                  </Pressable>
+                </Animated.View>
               ))}
             </ScrollView>
           </DropdownModal>
@@ -915,41 +970,43 @@ export default function ProgressGraphScreen() {
 
         {/* ── 4. Stat tiles (2×2 grid, no outer card) ── */}
         <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
-          <Animated.View entering={FadeInDown.delay(0).duration(360).springify().damping(24)} layout={Layout.springify()}>
+          <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
             <View style={p.tileShadow}>
               <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label="sessions" value={summary.count} />
+                <StatSquareTile label="sessions" value={summary.count} enterDelay={0} animationTrigger={statFocusKey} />
               </InteractiveGlassWrapper>
             </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(40).duration(360).springify().damping(24)} layout={Layout.springify()}>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
             <View style={p.tileShadow}>
               <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
                 <StatSquareTile
                   label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
                   value={summary.fTotal}
+                  enterDelay={ANIM.stagger}
+                  animationTrigger={statFocusKey}
                 />
               </InteractiveGlassWrapper>
             </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(80).duration(360).springify().damping(24)} layout={Layout.springify()}>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 2).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
             <View style={p.tileShadow}>
               <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} />
+                <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} enterDelay={ANIM.stagger * 2} animationTrigger={statFocusKey} />
               </InteractiveGlassWrapper>
             </View>
           </Animated.View>
-          <Animated.View entering={FadeInDown.delay(120).duration(360).springify().damping(24)} layout={Layout.springify()}>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 3).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
             <View style={p.tileShadow}>
               <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label="avg / session" value={summary.fAvg} />
+                <StatSquareTile label="avg / session" value={summary.fAvg} enterDelay={ANIM.stagger * 3} animationTrigger={statFocusKey} />
               </InteractiveGlassWrapper>
             </View>
           </Animated.View>
         </Animated.View>
 
         {/* ── 5. Chart (glass card) — spotlight fits widget via fitContent ── */}
-        <Animated.View entering={FadeInDown.delay(160).duration(400).springify().damping(24)} layout={Layout.springify().damping(26).stiffness(200)}>
+        <Animated.View entering={FadeInDown.delay(ANIM.stagger * 4).duration(ANIM.duration + 40).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
         <View style={p.chartShadow}>
         <InteractiveGlassWrapper fitContent borderRadius={38}>
         <GlassSection>
@@ -958,8 +1015,8 @@ export default function ProgressGraphScreen() {
             {selDisplay != null ? (
               <Animated.View
                 key={`tip-${selDisplay.lbl}-${selDisplay.val}`}
-                entering={FadeInDown.duration(260).springify().damping(22).stiffness(260)}
-                exiting={FadeOut.duration(120)}
+                entering={FadeInDown.duration(ANIM.tooltipDuration).easing(ANIM.easing)}
+                exiting={FadeOut.duration(160).easing(Easing.in(Easing.cubic))}
                 style={p.tooltipChip}
               >
                 <Text style={p.tooltipVal}>{String(selDisplay.val ?? '')}</Text>
@@ -1059,7 +1116,7 @@ export default function ProgressGraphScreen() {
                               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelYearData(yd); }}
                               style={{ width: effBarW, marginRight: i < yearlyData.length - 1 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
                             >
-                              <Animated.View entering={barGrowUp(i * 30)} style={{
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
                                 height: bh, width: effBarW, overflow: 'hidden',
                                 backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
                                 borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
@@ -1081,7 +1138,7 @@ export default function ProgressGraphScreen() {
                               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
                               style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
                             >
-                              <Animated.View entering={barGrowUp(i * 30)} style={{
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
                                 height: bh, width: effBarW, overflow: 'hidden',
                                 backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
                                 borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
@@ -1104,7 +1161,7 @@ export default function ProgressGraphScreen() {
                               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
                               style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
                             >
-                              <Animated.View entering={barGrowUp(i * 20)} style={{
+                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
                                 height: bh, width: effBarW, overflow: 'hidden',
                                 backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
                                 borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
@@ -1168,7 +1225,7 @@ export default function ProgressGraphScreen() {
                               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelMonthData(md); }}
                               style={{ width: effBarW, marginRight: i < 11 ? BAR_GAP : 0, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
                             >
-                              <Animated.View entering={barGrowUp(i * 30)} style={{
+                              <Animated.View entering={barGrowUp(i * ANIM.barStagger)} style={{
                                 height: bh, width: effBarW, overflow: 'hidden',
                                 backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
                                 borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
@@ -1191,7 +1248,7 @@ export default function ProgressGraphScreen() {
                               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelDay(pt); }}
                               style={{ width: effBarW, marginRight: mr, height: BAR_AREA_H, alignItems: 'center', justifyContent: 'flex-end' }}
                             >
-                              <Animated.View entering={barGrowUp(i * 20)} style={{
+                              <Animated.View entering={barGrowUp(i * (ANIM.barStagger - 8))} style={{
                                 height: bh, width: effBarW, overflow: 'hidden',
                                 backgroundColor: sel ? '#FFFFFF' : has ? C_BAR_DIM : C_BAR,
                                 borderTopLeftRadius: BAR_TOP_R, borderTopRightRadius: BAR_TOP_R,
@@ -1252,7 +1309,11 @@ const p = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    marginTop: 2,
+    marginTop: -7,
+  },
+  titleRowScroll: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 28,
