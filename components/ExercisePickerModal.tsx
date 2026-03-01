@@ -142,12 +142,19 @@ export function ExercisePickerModal({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation}>
-      <Animated.View style={[styles.backdrop, backdropAnimStyle]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
-      </Animated.View>
+      {/* Backdrop: only tap target for close; dimmed layer behind */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation}>
+        <Animated.View style={[styles.backdrop, backdropAnimStyle]} pointerEvents="none" />
+      </Pressable>
 
-      <Animated.View style={[styles.sheet, sheetAnimStyle]} pointerEvents="box-none">
-        <View style={[styles.sheetInner, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
+      {/* Sheet container: does not capture touches; sheet card below does */}
+      <View style={styles.sheetContainer} pointerEvents="box-none">
+        <Animated.View style={[styles.sheet, sheetAnimStyle]} pointerEvents="box-none">
+          <Pressable
+            style={[styles.sheetCard, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}
+            onPress={() => {}}
+          >
+            <View style={styles.sheetInner}>
 
           {/* HEADER (this is the ONLY drag handle zone) */}
           <GestureDetector gesture={panGesture}>
@@ -251,8 +258,10 @@ export function ExercisePickerModal({
             />
           </View>
 
-        </View>
-      </Animated.View>
+            </View>
+          </Pressable>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -261,17 +270,27 @@ const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    zIndex: 1,
   },
-  sheet: {
+  sheetContainer: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
+    top: 0,
+    zIndex: 2,
+    justifyContent: 'flex-end',
+    pointerEvents: 'box-none',
+  },
+  sheet: {
+    width: '100%',
     height: SHEET_H,
+    overflow: 'hidden',
+  },
+  sheetCard: {
+    flex: 1,
     borderTopLeftRadius: 38,
     borderTopRightRadius: 38,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: Colors.primaryDarkLighter,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',

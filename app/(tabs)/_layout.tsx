@@ -49,7 +49,8 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const TAB_BAR_INNER_WIDTH = SCREEN_WIDTH - 2 * PILL_MARGIN_H;
 const BORDER_INSET = 1; // 1px gradient border
 const PILL_CONTENT_WIDTH = TAB_BAR_INNER_WIDTH - 2 * BORDER_INSET; // usable area inside border
-const TAB_SLOT_WIDTH = PILL_CONTENT_WIDTH / 5;
+const TAB_SLOT_COUNT = 5; // nutrition, explore, fab, prompts, profile (workout hidden)
+const TAB_SLOT_WIDTH = PILL_CONTENT_WIDTH / TAB_SLOT_COUNT;
 const SELECTED_TAB_PILL_H_PAD = 3; // horizontal padding each side within slot
 const SELECTED_TAB_PILL_WIDTH = TAB_SLOT_WIDTH - 2 * SELECTED_TAB_PILL_H_PAD;
 const SELECTED_TAB_PILL_V_PAD = 4; // vertical padding from inner edge
@@ -75,7 +76,7 @@ const POPUP_EXTRA_WHEN_PILL = 40; // extra padding so 8px gap between pill top a
 const POPUP_CARD_STAGGER_MS = 55;
 const POPUP_CARD_FONT = 'DMMono_500Medium';
 
-// ── Tab definitions (order matches Tabs.Screen order: index hidden, nutrition=0, workout=1, fab-action=2, prompts=3, profile=4) ──
+// ── Tab definitions (workout hidden from bar; order: nutrition=0, explore=1, fab=2, prompts=3, profile=4) ──
 const getTabMeta = (iconTint: string): Record<string, { label: string; icon: React.ReactNode; tabIndex: number }> => ({
   nutrition: {
     label: 'home.',
@@ -88,13 +89,13 @@ const getTabMeta = (iconTint: string): Record<string, { label: string; icon: Rea
       />
     ),
   },
-  workout: {
+  explore: {
     label: 'explore.',
     tabIndex: 1,
     icon: (
       <Image
-        source={require('../../assets/workout-tab-icon.png')}
-        style={{ width: ICON_BOX_SIZE * 1.2, height: ICON_BOX_SIZE * 1.2, marginTop: 2, tintColor: iconTint }}
+        source={require('../../assets/explore-tab-icon.png')}
+        style={{ width: ICON_BOX_SIZE * 1.11, height: ICON_BOX_SIZE * 1.11, tintColor: iconTint }}
         resizeMode="contain"
       />
     ),
@@ -208,7 +209,8 @@ export default function TabsLayout() {
   const [showMinimizeOverlay, setShowMinimizeOverlay] = useState(false);
   // State (not ref) so tab bar re-renders when we open workout page from another tab — highlight stays on that tab
   const [tabHighlightLock, setTabHighlightLock] = useState<number | null>(null);
-  const tabIndexFromPath = isNutritionSelected ? 0 : isWorkoutSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
+  const isExploreSelected = pathname.includes('explore');
+  const tabIndexFromPath = isNutritionSelected ? 0 : isWorkoutSelected ? lastTabIndexRef.current : isExploreSelected ? 1 : isPromptsSelected ? 3 : isProfileSelected ? 4 : 0;
   if (!isModalPath(pathname)) lastTabIndexRef.current = tabIndexFromPath;
   const activeTabIndex = tabHighlightLock !== null ? tabHighlightLock : (isModalPath(pathname) ? lastTabIndexRef.current : tabIndexFromPath);
 
@@ -220,7 +222,7 @@ export default function TabsLayout() {
   // When expanding workout from pill, keep tab highlight on the tab user was on
   useEffect(() => {
     return onWorkoutExpandOrigin((path) => {
-      const idx = path.includes('nutrition') ? 0 : path.includes('(profile)') ? 4 : path.includes('prompts') ? 3 : path.includes('workout') ? 1 : 0;
+      const idx = path.includes('nutrition') ? 0 : path.includes('(profile)') ? 4 : path.includes('prompts') ? 3 : path.includes('explore') ? 1 : path.includes('workout') ? 1 : 0;
       setTabHighlightLock(idx);
     });
   }, []);
@@ -335,12 +337,25 @@ export default function TabsLayout() {
   const barOpacity = useRef(new RNAnimated.Value(1)).current;
 
   // ══════════════════════════════════════════
+  // Hide tab bar when workout overlay is open
+  // ══════════════════════════════════════════
+  const workoutHideAnim = useRef(new RNAnimated.Value(0)).current;
+  useEffect(() => {
+    const shouldHide = !!activeWorkout && !minimized;
+    RNAnimated.timing(workoutHideAnim, {
+      toValue: shouldHide ? PILL_HEIGHT + PILL_BOTTOM + 20 : 0,
+      duration: 280,
+      useNativeDriver: true,
+    }).start();
+  }, [activeWorkout, minimized, workoutHideAnim]);
+
+  // ══════════════════════════════════════════
   // Per-tab icon tap micro-interactions
   // ══════════════════════════════════════════
   const tabScales = useRef([
     new RNAnimated.Value(1), // tab 0 (nutrition)
-    new RNAnimated.Value(1), // tab 1 (workout)
-    new RNAnimated.Value(1), // tab 2 (FAB — unused)
+    new RNAnimated.Value(1), // tab 1 (explore)
+    new RNAnimated.Value(1), // tab 2 (FAB)
     new RNAnimated.Value(1), // tab 3 (prompts)
     new RNAnimated.Value(1), // tab 4 (profile)
   ]).current;
@@ -748,8 +763,8 @@ export default function TabsLayout() {
   const renderTabBar = useCallback((props: any) => {
     const { state, navigation } = props;
 
-    // Build ordered route list (skip "index" which is hidden)
-    const visibleRoutes = state.routes.filter((r: any) => r.name !== 'index');
+    // Build ordered route list (skip "index" and "workout" which are hidden from tab bar)
+    const visibleRoutes = state.routes.filter((r: any) => r.name !== 'index' && r.name !== 'workout');
 
     return (
       <RNAnimated.View
@@ -759,7 +774,7 @@ export default function TabsLayout() {
           right: 0,
           bottom: PILL_BOTTOM,
           height: PILL_HEIGHT,
-          transform: [{ translateX: streakShiftX }],
+          transform: [{ translateX: streakShiftX }, { translateY: workoutHideAnim }],
         }}
       >
         {/* ── Layer 1: Animated background (recedes when FAB opens) — transparent + gradient border, same style as selection pill ── */}
@@ -1027,6 +1042,7 @@ export default function TabsLayout() {
     fabScaleAnim, fabStarRotateInterpolate, fabRotateInterpolate,
     handleFabPressIn, handleFabPress,
     activeTabIndex, clearTabHighlightLock, activeWorkout, minimized,
+    workoutHideAnim,
   ]);
 
   return (
@@ -1059,25 +1075,31 @@ export default function TabsLayout() {
           options={{ title: 'Home', headerShown: false }}
         />
 
-        {/* ── Tab 2: Workout ── */}
+        {/* ── Workout (hidden from tab bar; accessible via FAB / workout home) ── */}
         <Tabs.Screen
           name="workout"
-          options={{ title: 'WORKOUT', headerShown: false }}
+          options={{ title: 'WORKOUT', headerShown: false, href: null }}
         />
 
-        {/* ── Tab 3 (center): FAB action – not a real page ── */}
+        {/* ── Tab 3: Explore (public feed) ── */}
+        <Tabs.Screen
+          name="explore"
+          options={{ title: 'EXPLORE', headerShown: false }}
+        />
+
+        {/* ── Tab 4 (center): FAB action – not a real page ── */}
         <Tabs.Screen
           name="fab-action"
           options={{ title: '' }}
         />
 
-        {/* ── Tab 4: Prompts ── */}
+        {/* ── Tab 5: Prompts ── */}
         <Tabs.Screen
           name="prompts"
           options={{ title: 'PROMPTS', headerShown: false }}
         />
 
-        {/* ── Tab 5: Profile (progress) ── */}
+        {/* ── Tab 6: Profile (progress) ── */}
         <Tabs.Screen
           name="(profile)"
           options={{ title: 'Profile', headerShown: false }}

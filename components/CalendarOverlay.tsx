@@ -31,7 +31,7 @@ import {
 } from 'date-fns';
 import { Colors } from '../constants/theme';
 import { toDateString } from '../utils/helpers';
-import { PillSegmentedControl } from './PillSegmentedControl';
+import { LiquidGlassSegmented } from './ui/liquidGlass';
 import * as Haptics from 'expo-haptics';
 
 const CONTENT_PADDING = 19;
@@ -468,10 +468,13 @@ export function CalendarOverlay({ visible, onClose, selectedDate, onSelectDate, 
             </Pressable>
 
             <View style={styles.calendarToggle}>
-              <PillSegmentedControl
+              <LiquidGlassSegmented
+                options={[
+                  { key: 'Month', label: 'Month' },
+                  { key: 'Year', label: 'Year' },
+                ]}
                 value={calendarMode}
-                onValueChange={(v) => setCalendarMode(v as 'Month' | 'Year')}
-                segments={['Month', 'Year']}
+                onChange={(k) => setCalendarMode(k as 'Month' | 'Year')}
                 width={160}
               />
             </View>

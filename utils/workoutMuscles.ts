@@ -74,12 +74,24 @@ export function workoutsToSetRecords(
 ): SetRecord[] {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
+  return workoutsToSetRecordsForRange(sessions, weekStart, weekEnd);
+}
+
+/**
+ * Convert completed workout sessions to SetRecords for an arbitrary date range.
+ * dayOfWeek is still Mon=0..Sun=6 relative to the session date.
+ */
+export function workoutsToSetRecordsForRange(
+  sessions: WorkoutSession[],
+  rangeStart: Date,
+  rangeEnd: Date,
+): SetRecord[] {
   const records: SetRecord[] = [];
   for (const session of sessions) {
     if (!session.isComplete) continue;
     const sessionDate = new Date(session.date);
     if (Number.isNaN(sessionDate.getTime())) continue;
-    if (sessionDate < weekStart || sessionDate >= weekEnd) continue;
+    if (sessionDate < rangeStart || sessionDate >= rangeEnd) continue;
 
     const dayOfWeek = getDayOfWeek(sessionDate);
 

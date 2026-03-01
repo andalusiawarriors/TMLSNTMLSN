@@ -1,9 +1,9 @@
 // ============================================================
 // TMLSN — Fitness graph: Duration / Volume / Reps by time range
-// Bar chart; top-left shows selected day date + value; bubbles: Duration, Volume, Reps
+// Bar chart; summary strip; tap tooltip; swipe month; haptics
 // ============================================================
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -13,6 +13,7 @@ import {
   Dimensions,
   ScrollView,
   Modal,
+  PanResponder,
 } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -21,13 +22,15 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
-import { toDisplayVolume, KG_PER_LB } from '../utils/units';
-import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { KG_PER_LB } from '../utils/units';
+import { Colors, Typography, Spacing } from '../constants/theme';
 import type { WorkoutSession } from '../types';
 import { format, startOfDay, getYear, getMonth, startOfMonth, endOfMonth } from 'date-fns';
+import { useRouter } from 'expo-router';
 
 function parseDate(dateKey: string): Date {
   return new Date(dateKey + 'T12:00:00');
@@ -35,7 +38,6 @@ function parseDate(dateKey: string): Date {
 function isValidDate(d: Date): boolean {
   return !Number.isNaN(d.getTime());
 }
-/** Session date in local YYYY-MM-DD (so workouts show on the day they were done, not UTC). */
 function getSessionDateKey(s: WorkoutSession): string | null {
   const d = new Date(s.date);
   if (!isValidDate(d)) return null;
@@ -53,18 +55,13 @@ function eachDay(start: Date, end: Date): Date[] {
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
-function isWithinInterval(date: Date, interval: { start: Date; end: Date }): boolean {
-  return date >= interval.start && date <= interval.end;
-}
 
-// Use KG_PER_LB from utils/units for consistency
 const CHART_HEIGHT = 210;
 const BAR_GAP = 4;
 const WEEK_GAP = 8;
-const MIN_BAR_WIDTH = 8;
-const MIN_BAR_HEIGHT = 6; // minimum visible height when value > 0
+const MIN_BAR_HEIGHT = 6;
 const MAX_BAR_WIDTH_ALL_TIME = 32;
-const VALUE_SECTION_HEIGHT = 48;
+const VALUE_SECTION_HEIGHT = 52;
 const BUBBLES_ROW_HEIGHT = 52;
 const TIME_RANGE_PILL_WIDTH = 108;
 const BUBBLE_PILL_WIDTH = 108;
@@ -73,27 +70,29 @@ const AXIS_LINE_WIDTH = 1;
 const BAR_AREA_HEIGHT = CHART_HEIGHT - AXIS_LINE_WIDTH;
 const BAR_TOP_RADIUS = 38;
 const CHART_BG = 'transparent';
-const BAR_COLOR = '#c6c6c6';
+const BAR_COLOR = Colors.primaryLight;
+const BAR_COLOR_DIM = 'rgba(198, 198, 198, 0.30)';
+const BAR_COLOR_SELECTED = Colors.primaryLight;
 const AXIS_LABEL_COLOR = 'rgba(198, 198, 198, 0.85)';
-const GRIDLINE_COLOR = 'rgba(255, 255, 255, 0.1)';
-const AXIS_LINE_COLOR = 'rgba(255, 255, 255, 0.2)';
+const GRIDLINE_COLOR = 'rgba(198, 198, 198, 0.10)';
+const AXIS_LINE_COLOR = 'rgba(198, 198, 198, 0.18)';
 const DEFAULT_DURATION_MAX_HOURS = 3;
 const CHART_H_PADDING = Spacing.md;
-const PILL_SELECTED_BG = '#c6c6c6';
-const PILL_SELECTED_TEXT = '#2f3031';
-const PILL_BORDER = 'rgba(255, 255, 255, 0.2)';
+const PILL_SELECTED_BG = Colors.primaryLight;
+const PILL_SELECTED_TEXT = Colors.primaryDark;
+const PILL_BORDER = 'rgba(198, 198, 198, 0.12)';
+const SWIPE_THRESHOLD = 60;
 
 type TimeRange = 'month' | 'year' | 'all';
 type DropdownOpen = 'month' | 'year' | null;
 type Metric = 'duration' | 'volume' | 'reps';
 
-/** Bar slides from x-axis (bottom) up to its y-value — bottom fixed, top grows up */
 function barGrowUp(delayMs: number) {
   return (values: { targetHeight: number; targetOriginY: number }) => {
     'worklet';
     const { targetHeight, targetOriginY } = values;
-    const duration = 400;
-    const easing = Easing.out(Easing.cubic);
+    const duration = 220;
+    const easing = Easing.out(Easing.exp);
     return {
       initialValues: {
         height: 0,
@@ -229,19 +228,14 @@ function formatVolume(volumeKg: number, weightUnit: 'kg' | 'lb'): string {
 }
 
 function formatYAxisValue(value: number): string {
-  if (value >= 1_000_000) {
-    const m = value / 1_000_000;
-    return (m % 1 === 0 ? m : m.toFixed(1)) + 'M';
-  }
-  if (value >= 1_000) {
-    const k = value / 1_000;
-    return (k % 1 === 0 ? k : k.toFixed(1)) + 'k';
-  }
+  if (value >= 1_000_000) return Math.round(value / 1_000_000) + 'M';
+  if (value >= 1_000) return Math.round(value / 1_000) + 'k';
   return String(Math.round(value));
 }
 
 export function FitnessGraphWidget() {
   const { colors } = useTheme();
+  const router = useRouter();
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const now = new Date();
@@ -259,6 +253,34 @@ export function FitnessGraphWidget() {
   const [selectedMonthData, setSelectedMonthData] = useState<MonthData | null>(null);
   const [selectedYearData, setSelectedYearData] = useState<YearData | null>(null);
   const [animTrigger, setAnimTrigger] = useState(0);
+
+  // Refs for swipe pan handler (avoids stale closure)
+  const selectedMonthRef = useRef(currentMonth);
+  const selectedYearRef = useRef(currentYear);
+  const timeRangeRef = useRef<TimeRange>('month');
+  const swipeHandlerRef = useRef<{ advance: () => void; retreat: () => void }>({
+    advance: () => {},
+    retreat: () => {},
+  });
+
+  useEffect(() => { selectedMonthRef.current = selectedMonth; }, [selectedMonth]);
+  useEffect(() => { selectedYearRef.current = selectedYear; }, [selectedYear]);
+  useEffect(() => { timeRangeRef.current = timeRange; }, [timeRange]);
+
+  // Stable PanResponder created once — uses refs for current state
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        timeRangeRef.current === 'month' &&
+        Math.abs(gs.dx) > 10 &&
+        Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5,
+      onPanResponderRelease: (_, gs) => {
+        if (Math.abs(gs.dx) < SWIPE_THRESHOLD) return;
+        if (gs.dx < 0) swipeHandlerRef.current.advance();
+        else swipeHandlerRef.current.retreat();
+      },
+    })
+  ).current;
 
   const loadSessions = useCallback(async () => {
     const [s, settings] = await Promise.all([getWorkoutSessions(), getUserSettings()]);
@@ -485,11 +507,9 @@ export function FitnessGraphWidget() {
     : barWidth;
   const effectiveN = nYearly;
   const effectiveYMax = isAllTimeView ? yMaxAllTime : isYearView ? yMaxYearly : yMax;
-  const allTimeBarsWidth = isAllTimeView ? effectiveN * effectiveBarWidth + (effectiveN - 1) * BAR_GAP : 0;
   const effectiveChartWidth = isAllTimeView
     ? chartWidth
     : (isYearView ? effectiveN * effectiveBarWidth + (effectiveN - 1) * BAR_GAP : chartWidth);
-  const totalDailyBarsWidth = n * effectiveBarWidth + totalGapWidth;
   const barsBlockWidth = isAllTimeView
     ? chartWidth
     : (isYearView ? effectiveChartWidth : chartWidth);
@@ -550,366 +570,527 @@ export function FitnessGraphWidget() {
     return `${y.reps} reps`;
   };
 
+  // ── Derived data ───────────────────────────────────────────
+
+  const hasData = useMemo(() => {
+    if (isAllTimeView) return yearlyData.some((y) => getValueYear(y) > 0);
+    if (isYearView) return monthlyData.some((m) => getValueMonth(m) > 0);
+    return dayDataInRange.some((d) => d.data > 0);
+  }, [dayDataInRange, monthlyData, yearlyData, isAllTimeView, isYearView, metric, weightUnit]);
+
+  const summaryStats = useMemo(() => {
+    let sessionCount = 0;
+    let totalValue = 0;
+    let bestValue = 0;
+    let bestLabel = '—';
+
+    if (isAllTimeView) {
+      sessionCount = yearlyData.filter((y) => getValueYear(y) > 0).length;
+      for (const y of yearlyData) {
+        const v = getValueYear(y);
+        totalValue += v;
+        if (v > bestValue) { bestValue = v; bestLabel = String(y.year); }
+      }
+    } else if (isYearView) {
+      sessionCount = monthlyData.filter((m) => getValueMonth(m) > 0).length;
+      for (const m of monthlyData) {
+        const v = getValueMonth(m);
+        totalValue += v;
+        if (v > bestValue) { bestValue = v; bestLabel = m.monthName; }
+      }
+    } else {
+      const active = dayDataInRange.filter((d) => d.data > 0);
+      sessionCount = active.length;
+      for (const d of dayDataInRange) {
+        totalValue += d.data;
+        if (d.data > bestValue) {
+          bestValue = d.data;
+          bestLabel = format(d.date, 'd MMM');
+        }
+      }
+    }
+
+    const totalFormatted = (() => {
+      if (metric === 'duration') return formatDurationMinutes(totalValue * 60);
+      if (metric === 'volume') {
+        const unit = weightUnit === 'lb' ? 'lb' : 'kg';
+        return `${Math.round(totalValue).toLocaleString()} ${unit}`;
+      }
+      return `${Math.round(totalValue)} reps`;
+    })();
+
+    const bestFormatted = (() => {
+      if (bestValue === 0) return '—';
+      if (metric === 'duration') return formatDurationMinutes(bestValue * 60);
+      if (metric === 'volume') {
+        const unit = weightUnit === 'lb' ? 'lb' : 'kg';
+        return `${Math.round(bestValue).toLocaleString()} ${unit}`;
+      }
+      return `${Math.round(bestValue)} reps`;
+    })();
+
+    return { sessionCount, totalFormatted, bestFormatted, bestLabel };
+  }, [dayDataInRange, monthlyData, yearlyData, isAllTimeView, isYearView, metric, weightUnit]);
+
+  // ── Swipe month navigation ──────────────────────────────────
+  // Written into ref each render so panResponder handler sees current state
+  swipeHandlerRef.current = {
+    advance: () => {
+      const m = selectedMonthRef.current;
+      const y = selectedYearRef.current;
+      const limitYear = currentYear;
+      const limitMonth = currentMonth;
+      if (y > limitYear || (y === limitYear && m >= limitMonth)) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (m === 11) {
+        setSelectedMonth(0);
+        setSelectedYear(y + 1);
+      } else {
+        setSelectedMonth(m + 1);
+      }
+      setSelectedDay(null);
+    },
+    retreat: () => {
+      const m = selectedMonthRef.current;
+      const y = selectedYearRef.current;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (m === 0) {
+        setSelectedMonth(11);
+        setSelectedYear(y - 1);
+      } else {
+        setSelectedMonth(m - 1);
+      }
+      setSelectedDay(null);
+    },
+  };
+
+  // ── Render ─────────────────────────────────────────────────
+
   return (
     <View style={[styles.wrap, { marginBottom: Spacing.lg }]}>
-      {/* Time range: Month, Year, All time — above the info */}
+
+      {/* ── Summary strip ── */}
       <AnimatedFadeInUp delay={0} duration={320} trigger={animTrigger}>
-      <View style={styles.rangeRow}>
-        <View style={styles.rangeRowInner}>
-          {/* Month */}
-          <View style={styles.timeRangeButtonWrap} ref={monthButtonRef} collapsable={false}>
-            <Pressable
-              onPress={() => {
-                if (timeRange !== 'month') {
-                  setTimeRange('month');
-                  setSelectedMonth(currentMonth);
-                  setSelectedYear(currentYear);
-                  setDropdownOpen(null);
-                  setSelectedMonthData(null);
-                  setSelectedYearData(null);
-                } else {
-                  monthButtonRef.current?.measureInWindow((x, y, width, height) => {
-                    setDropdownTriggerLayout({ x, y, width, height });
-                    setDropdownOpen('month');
-                  });
-                }
-              }}
-              style={[
-                styles.timeRangePill,
-                {
-                  backgroundColor: timeRange === 'month' ? PILL_SELECTED_BG : 'transparent',
-                  borderColor: timeRange === 'month' ? PILL_SELECTED_BG : PILL_BORDER,
-                },
-              ]}
-            >
-              <View style={styles.timeRangePillContent}>
-                <Text
-                  style={[
-                    styles.timeRangePillText,
-                    { color: timeRange === 'month' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
-                  ]}
-                >
-                  {MONTH_NAMES[selectedMonth]} {selectedYear}
-                </Text>
-                <Text style={[styles.timeRangeArrow, { color: timeRange === 'month' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}>▼</Text>
-              </View>
-            </Pressable>
-            {dropdownOpen === 'month' && (
-              <DropdownModal
-                onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
-                style={styles.dropdown}
-                triggerLayout={dropdownTriggerLayout}
-              >
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-                  {MONTH_NAMES.map((name, i) => (
-                    <Pressable
-                      key={name}
-                      onPress={() => {
-                        setSelectedMonth(i);
-                        setDropdownOpen(null);
-                      }}
-                      style={[styles.dropdownItem, i === selectedMonth && styles.dropdownItemSelected]}
-                    >
-                      <Text style={[styles.dropdownItemText, i === selectedMonth && styles.dropdownItemTextSelected]}>
-                        {name}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </DropdownModal>
-            )}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryChip}>
+            <Text style={styles.summaryChipValue}>{summaryStats.sessionCount}</Text>
+            <Text style={styles.summaryChipLabel}>sessions</Text>
           </View>
-          {/* Year */}
-          <View style={styles.timeRangeButtonWrap} ref={yearButtonRef} collapsable={false}>
-            <Pressable
-              onPress={() => {
-                if (timeRange !== 'year') {
-                  setTimeRange('year');
-                  setSelectedYear(currentYear);
-                  setDropdownOpen(null);
-                  setSelectedDay(null);
-                  setSelectedYearData(null);
-                } else {
-                  yearButtonRef.current?.measureInWindow((x, y, width, height) => {
-                    setDropdownTriggerLayout({ x, y, width, height });
-                    setDropdownOpen('year');
-                  });
-                }
-              }}
-              style={[
-                styles.timeRangePill,
-                {
-                  backgroundColor: timeRange === 'year' ? PILL_SELECTED_BG : 'transparent',
-                  borderColor: timeRange === 'year' ? PILL_SELECTED_BG : PILL_BORDER,
-                },
-              ]}
-            >
-              <View style={styles.timeRangePillContent}>
-                <Text
-                  style={[
-                    styles.timeRangePillText,
-                    { color: timeRange === 'year' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
-                  ]}
-                >
-                  {selectedYear}
-                </Text>
-                <Text style={[styles.timeRangeArrow, { color: timeRange === 'year' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}>▼</Text>
-              </View>
-            </Pressable>
-            {dropdownOpen === 'year' && (
-              <DropdownModal
-                onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
-                style={styles.dropdown}
-                triggerLayout={dropdownTriggerLayout}
-              >
-                <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
-                  {availableYears.map((y) => (
-                    <Pressable
-                      key={y}
-                      onPress={() => {
-                        setSelectedYear(y);
-                        setDropdownOpen(null);
-                      }}
-                      style={[styles.dropdownItem, y === selectedYear && styles.dropdownItemSelected]}
-                    >
-                      <Text style={[styles.dropdownItemText, y === selectedYear && styles.dropdownItemTextSelected]}>
-                        {y}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </DropdownModal>
-            )}
+          <View style={styles.summaryChip}>
+            <Text style={styles.summaryChipValue} numberOfLines={1}>{summaryStats.totalFormatted}</Text>
+            <Text style={styles.summaryChipLabel}>total</Text>
           </View>
-          {/* All time — no dropdown */}
-          <Pressable
-            onPress={() => {
-              setTimeRange('all');
-              setDropdownOpen(null);
-              setSelectedDay(null);
-              setSelectedMonthData(null);
-            }}
-            style={[
-              styles.timeRangePill,
-              {
-                backgroundColor: timeRange === 'all' ? PILL_SELECTED_BG : 'transparent',
-                borderColor: timeRange === 'all' ? PILL_SELECTED_BG : PILL_BORDER,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.timeRangePillText,
-                { color: timeRange === 'all' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
-              ]}
-            >
-              All time
-            </Text>
-          </Pressable>
+          <View style={styles.summaryChip}>
+            <Text style={styles.summaryChipValue} numberOfLines={1}>{summaryStats.bestFormatted}</Text>
+            <Text style={styles.summaryChipLabel}>best · {summaryStats.bestLabel}</Text>
+          </View>
         </View>
-      </View>
       </AnimatedFadeInUp>
 
-      {/* Fixed-height slot for value/instruction so chart doesn't shift when tapping a bar */}
-      <AnimatedFadeInUp delay={50} duration={320} trigger={animTrigger}>
-      <View style={[styles.valueSection, { minHeight: VALUE_SECTION_HEIGHT }]}>
-        {timeRange === 'month' && selectedDay ? (
-          <View style={styles.valueRow}>
-            <Text style={styles.valueText}>{formatValue(selectedDay)}</Text>
-            <Text style={styles.valueDate}>{format(selectedDay.date, 'd MMM yyyy')}</Text>
-          </View>
-        ) : timeRange === 'year' && selectedMonthData ? (
-          <View style={styles.valueRow}>
-            <Text style={styles.valueText}>{formatValueMonth(selectedMonthData)}</Text>
-            <Text style={styles.valueDate}>{selectedMonthData.monthName} {selectedYear}</Text>
-          </View>
-        ) : timeRange === 'all' && selectedYearData ? (
-          <View style={styles.valueRow}>
-            <Text style={styles.valueText}>{formatValueYear(selectedYearData)}</Text>
-            <Text style={styles.valueDate}>{selectedYearData.year}</Text>
-          </View>
-        ) : (
-          <Text style={styles.instructionText}>Tap a bar for details.</Text>
-        )}
-      </View>
-      </AnimatedFadeInUp>
-
-      {/* Chart area: Y and bars same height, then X-axis row below so corner meets */}
-      <AnimatedFadeInUp delay={100} duration={360} trigger={animTrigger}>
-      <View style={[styles.chartOuter, { backgroundColor: CHART_BG }]}>
-        <View style={styles.chartInner}>
-          {/* Left: Y-axis (bar area height only) + 1px spacer under it */}
-          <View style={styles.chartLeftColumn}>
-            <View style={[styles.yAxisWrap, { width: Y_AXIS_LABEL_WIDTH, height: BAR_AREA_HEIGHT }]}>
-              <View style={[styles.yAxis, { flex: 1 }]}>
-                {yTicks.map((v, i) => (
-                  <Text key={i} style={styles.yAxisLabel}>
-                    {metric === 'duration'
-                      ? `${v.toFixed(1)}${yAxisUnit}`
-                      : `${formatYAxisValue(v)} ${yAxisUnit}`}
-                  </Text>
-                ))}
-              </View>
-              <View style={[styles.yAxisLine, { width: AXIS_LINE_WIDTH, backgroundColor: AXIS_LINE_COLOR }]} />
-            </View>
-            <View style={[styles.xAxisSpacer, { width: Y_AXIS_LABEL_WIDTH, height: AXIS_LINE_WIDTH }]} />
-          </View>
-          {/* Right: bars then X-axis line then month labels */}
-          <View style={styles.chartRightColumn}>
-            <View style={[styles.barsContainer, { width: effectiveChartWidth, height: BAR_AREA_HEIGHT }, isAllTimeView && styles.barsContainerAlignStart]}>
-              <View style={[styles.barsBlockWrap, { width: barsBlockWidth, height: BAR_AREA_HEIGHT }, isAllTimeView && { alignSelf: 'flex-start' }]}>
-                {yTicks.map((_, i) => (
-                  <View
-                    key={i}
+      {/* ── Time range row ── */}
+      <AnimatedFadeInUp delay={20} duration={320} trigger={animTrigger}>
+        <View style={styles.rangeRow}>
+          <View style={styles.rangeRowInner}>
+            {/* Month pill with dropdown */}
+            <View style={styles.timeRangeButtonWrap} ref={monthButtonRef} collapsable={false}>
+              <Pressable
+                onPress={() => {
+                  if (timeRange !== 'month') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setTimeRange('month');
+                    setSelectedMonth(currentMonth);
+                    setSelectedYear(currentYear);
+                    setDropdownOpen(null);
+                    setSelectedMonthData(null);
+                    setSelectedYearData(null);
+                  } else {
+                    monthButtonRef.current?.measureInWindow((x, y, width, height) => {
+                      setDropdownTriggerLayout({ x, y, width, height });
+                      setDropdownOpen('month');
+                    });
+                  }
+                }}
+                style={[
+                  styles.timeRangePill,
+                  {
+                    backgroundColor: timeRange === 'month' ? PILL_SELECTED_BG : 'transparent',
+                    borderColor: timeRange === 'month' ? PILL_SELECTED_BG : PILL_BORDER,
+                  },
+                ]}
+              >
+                <View style={styles.timeRangePillContent}>
+                  <Text
                     style={[
-                      styles.gridline,
-                      {
-                        top: (BAR_AREA_HEIGHT * (i / (yTicks.length - 1))),
-                        left: 0,
-                        width: barsBlockWidth,
-                        height: 1,
-                        backgroundColor: GRIDLINE_COLOR,
-                      },
+                      styles.timeRangePillText,
+                      { color: timeRange === 'month' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
                     ]}
-                  />
-                ))}
-                <View style={[styles.barsWrap, { width: barsBlockWidth, height: BAR_AREA_HEIGHT }]}>
-                {isAllTimeView && yearlyData.length > 0 ? (
-                  yearlyData.map((yearData, i) => {
-                    const value = getValueYear(yearData);
-                    const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
-                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
-                    const marginRight = i < yearlyData.length - 1 ? BAR_GAP : 0;
-                    return (
-                      <Pressable
-                        key={`${yearData.year}-${metric}`}
-                        onPress={() => setSelectedYearData(yearData)}
-                        style={[styles.barSlot, styles.barSlotYearly, { width: effectiveBarWidth, marginRight }]}
-                      >
-                        <View style={styles.barColumn}>
-                          <Animated.View
-                            entering={barGrowUp(i * 40)}
-                            style={[
-                              styles.bar,
-                              {
-                                height: barHeight,
-                                backgroundColor: BAR_COLOR,
-                                width: effectiveBarWidth,
-                                borderTopLeftRadius: BAR_TOP_RADIUS,
-                                borderTopRightRadius: BAR_TOP_RADIUS,
-                              },
-                            ]}
-                          />
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                ) : isYearView && monthlyData.length === 12 ? (
-                  monthlyData.map((monthData, i) => {
-                    const value = getValueMonth(monthData);
-                    const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
-                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
-                    const marginRight = i < 11 ? BAR_GAP : 0;
-                    return (
-                      <Pressable
-                        key={`${monthData.month}-${metric}`}
-                        onPress={() => setSelectedMonthData(monthData)}
-                        style={[styles.barSlot, styles.barSlotYearly, { width: effectiveBarWidth, marginRight }]}
-                      >
-                        <View style={styles.barColumn}>
-                          <Animated.View
-                            entering={barGrowUp(i * 40)}
-                            style={[
-                              styles.bar,
-                              {
-                                height: barHeight,
-                                backgroundColor: BAR_COLOR,
-                                width: effectiveBarWidth,
-                                borderTopLeftRadius: BAR_TOP_RADIUS,
-                                borderTopRightRadius: BAR_TOP_RADIUS,
-                              },
-                            ]}
-                          />
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  dayDataInRange.map((point, i) => {
-                    const value = point.data;
-                    const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
-                    let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
-                    if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
-                    const isSelected = selectedDay && isSameDay(point.date, selectedDay.date);
-                    const marginRight = i < dayDataInRange.length - 1
-                      ? BAR_GAP + ((i + 1) % 7 === 0 ? WEEK_GAP : 0)
-                      : 0;
-                    return (
-                      <Pressable
-                        key={`${point.date.getTime()}-${metric}`}
-                        onPress={() => setSelectedDay(point)}
-                        style={[styles.barSlot, { width: effectiveBarWidth, marginRight }]}
-                      >
-                        <Animated.View
-                          entering={barGrowUp(i * 40)}
-                          style={[
-                            styles.bar,
-                            {
-                              height: barHeight,
-                              backgroundColor: BAR_COLOR,
-                              width: effectiveBarWidth,
-                              borderTopLeftRadius: BAR_TOP_RADIUS,
-                              borderTopRightRadius: BAR_TOP_RADIUS,
-                            },
-                          ]}
-                        />
-                      </Pressable>
-                    );
-                  })
-                )}
+                  >
+                    {MONTH_NAMES[selectedMonth]} {selectedYear}
+                  </Text>
+                  <Text style={[styles.timeRangeArrow, { color: timeRange === 'month' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}>▼</Text>
                 </View>
-              </View>
+              </Pressable>
+              {dropdownOpen === 'month' && (
+                <DropdownModal
+                  onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
+                  style={styles.dropdown}
+                  triggerLayout={dropdownTriggerLayout}
+                >
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
+                    {MONTH_NAMES.map((name, i) => (
+                      <Pressable
+                        key={name}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setSelectedMonth(i);
+                          setDropdownOpen(null);
+                        }}
+                        style={[styles.dropdownItem, i === selectedMonth && styles.dropdownItemSelected]}
+                      >
+                        <Text style={[styles.dropdownItemText, i === selectedMonth && styles.dropdownItemTextSelected]}>
+                          {name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </DropdownModal>
+              )}
             </View>
-            <View style={[styles.xAxisLineRow, { width: barsBlockWidth, height: AXIS_LINE_WIDTH, backgroundColor: AXIS_LINE_COLOR }]} />
-            <View style={[styles.xAxisRow, { width: barsBlockWidth }]}>
-              {xAxisSegments.map((seg, i) => (
-                <View key={`${seg.label}-${seg.startIndex}`} style={[styles.xAxisSegment, { width: xAxisSegmentWidths[i] ?? 0 }]}>
-                  <Text style={styles.xAxisMonth}>{seg.label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-      </View>
-      </AnimatedFadeInUp>
 
-      {/* Toggle buttons BELOW chart: fixed height so chart doesn't shift */}
-      <AnimatedFadeInUp delay={150} duration={320} trigger={animTrigger}>
-      <View style={[styles.bubblesRow, { minHeight: BUBBLES_ROW_HEIGHT }]}>
-        <View style={styles.bubblesRowInner}>
-          {(['duration', 'volume', 'reps'] as const).map((m) => (
+            {/* Year pill with dropdown */}
+            <View style={styles.timeRangeButtonWrap} ref={yearButtonRef} collapsable={false}>
+              <Pressable
+                onPress={() => {
+                  if (timeRange !== 'year') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setTimeRange('year');
+                    setSelectedYear(currentYear);
+                    setDropdownOpen(null);
+                    setSelectedDay(null);
+                    setSelectedYearData(null);
+                  } else {
+                    yearButtonRef.current?.measureInWindow((x, y, width, height) => {
+                      setDropdownTriggerLayout({ x, y, width, height });
+                      setDropdownOpen('year');
+                    });
+                  }
+                }}
+                style={[
+                  styles.timeRangePill,
+                  {
+                    backgroundColor: timeRange === 'year' ? PILL_SELECTED_BG : 'transparent',
+                    borderColor: timeRange === 'year' ? PILL_SELECTED_BG : PILL_BORDER,
+                  },
+                ]}
+              >
+                <View style={styles.timeRangePillContent}>
+                  <Text
+                    style={[
+                      styles.timeRangePillText,
+                      { color: timeRange === 'year' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
+                    ]}
+                  >
+                    {selectedYear}
+                  </Text>
+                  <Text style={[styles.timeRangeArrow, { color: timeRange === 'year' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}>▼</Text>
+                </View>
+              </Pressable>
+              {dropdownOpen === 'year' && (
+                <DropdownModal
+                  onClose={() => { setDropdownOpen(null); setDropdownTriggerLayout(null); }}
+                  style={styles.dropdown}
+                  triggerLayout={dropdownTriggerLayout}
+                >
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator>
+                    {availableYears.map((y) => (
+                      <Pressable
+                        key={y}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setSelectedYear(y);
+                          setDropdownOpen(null);
+                        }}
+                        style={[styles.dropdownItem, y === selectedYear && styles.dropdownItemSelected]}
+                      >
+                        <Text style={[styles.dropdownItemText, y === selectedYear && styles.dropdownItemTextSelected]}>
+                          {y}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </DropdownModal>
+              )}
+            </View>
+
+            {/* All time — no dropdown */}
             <Pressable
-              key={m}
-              onPress={() => setMetric(m)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setTimeRange('all');
+                setDropdownOpen(null);
+                setSelectedDay(null);
+                setSelectedMonthData(null);
+              }}
               style={[
-                styles.bubble,
+                styles.timeRangePill,
                 {
-                  backgroundColor: metric === m ? PILL_SELECTED_BG : 'transparent',
-                  borderColor: metric === m ? PILL_SELECTED_BG : PILL_BORDER,
+                  backgroundColor: timeRange === 'all' ? PILL_SELECTED_BG : 'transparent',
+                  borderColor: timeRange === 'all' ? PILL_SELECTED_BG : PILL_BORDER,
                 },
               ]}
             >
               <Text
-                style={[styles.bubbleText, { color: metric === m ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}
+                style={[
+                  styles.timeRangePillText,
+                  { color: timeRange === 'all' ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' },
+                ]}
               >
-                {m === 'duration' ? 'Duration' : m === 'volume' ? 'Volume' : 'Reps'}
+                All time
               </Text>
             </Pressable>
-          ))}
+          </View>
         </View>
-      </View>
+      </AnimatedFadeInUp>
+
+      {/* ── Selected value tooltip (glass chip) ── */}
+      <AnimatedFadeInUp delay={40} duration={320} trigger={animTrigger}>
+        <View style={[styles.valueSection, { minHeight: VALUE_SECTION_HEIGHT }]}>
+          {timeRange === 'month' && selectedDay ? (
+            <View style={styles.tooltipChip}>
+              <Text style={styles.tooltipValue}>{formatValue(selectedDay)}</Text>
+              <Text style={styles.tooltipDate}>{format(selectedDay.date, 'EEE, d MMM yyyy')}</Text>
+            </View>
+          ) : timeRange === 'year' && selectedMonthData ? (
+            <View style={styles.tooltipChip}>
+              <Text style={styles.tooltipValue}>{formatValueMonth(selectedMonthData)}</Text>
+              <Text style={styles.tooltipDate}>{selectedMonthData.monthName} {selectedYear}</Text>
+            </View>
+          ) : timeRange === 'all' && selectedYearData ? (
+            <View style={styles.tooltipChip}>
+              <Text style={styles.tooltipValue}>{formatValueYear(selectedYearData)}</Text>
+              <Text style={styles.tooltipDate}>{selectedYearData.year}</Text>
+            </View>
+          ) : (
+            // Empty placeholder — keeps height stable, no instruction text
+            <View style={styles.tooltipPlaceholder} />
+          )}
+        </View>
+      </AnimatedFadeInUp>
+
+      {/* ── Chart area ── */}
+      <AnimatedFadeInUp delay={80} duration={360} trigger={animTrigger}>
+        {!hasData ? (
+          /* Empty state */
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No workouts yet.</Text>
+            <Text style={styles.emptySubtitle}>Finish one workout to populate this graph.</Text>
+            <Pressable
+              style={({ pressed }) => [styles.emptyBtn, pressed && styles.emptyBtnPressed]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                router.push('/(tabs)/workout' as any);
+              }}
+            >
+              <Text style={styles.emptyBtnText}>Start workout</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={[styles.chartOuter, { backgroundColor: CHART_BG }]} {...panResponder.panHandlers}>
+            <View style={styles.chartInner}>
+              {/* Y-axis */}
+              <View style={styles.chartLeftColumn}>
+                <View style={[styles.yAxisWrap, { width: Y_AXIS_LABEL_WIDTH, height: BAR_AREA_HEIGHT }]}>
+                  <View style={[styles.yAxis, { flex: 1 }]}>
+                    {yTicks.map((v, i) => (
+                      <Text key={i} style={styles.yAxisLabel}>
+                        {metric === 'duration'
+                          ? `${v.toFixed(1)}${yAxisUnit}`
+                          : `${formatYAxisValue(v)} ${yAxisUnit}`}
+                      </Text>
+                    ))}
+                  </View>
+                  <View style={[styles.yAxisLine, { width: AXIS_LINE_WIDTH, backgroundColor: AXIS_LINE_COLOR }]} />
+                </View>
+                <View style={[styles.xAxisSpacer, { width: Y_AXIS_LABEL_WIDTH, height: AXIS_LINE_WIDTH }]} />
+              </View>
+
+              {/* Bars + x-axis */}
+              <View style={styles.chartRightColumn}>
+                <View style={[styles.barsContainer, { width: effectiveChartWidth, height: BAR_AREA_HEIGHT }, isAllTimeView && styles.barsContainerAlignStart]}>
+                  <View style={[styles.barsBlockWrap, { width: barsBlockWidth, height: BAR_AREA_HEIGHT }, isAllTimeView && { alignSelf: 'flex-start' }]}>
+                    {yTicks.map((_, i) => (
+                      <View
+                        key={i}
+                        style={[
+                          styles.gridline,
+                          {
+                            top: (BAR_AREA_HEIGHT * (i / (yTicks.length - 1))),
+                            left: 0,
+                            width: barsBlockWidth,
+                            height: 1,
+                            backgroundColor: GRIDLINE_COLOR,
+                          },
+                        ]}
+                      />
+                    ))}
+                    <View style={[styles.barsWrap, { width: barsBlockWidth, height: BAR_AREA_HEIGHT }]}>
+                      {isAllTimeView && yearlyData.length > 0 ? (
+                        yearlyData.map((yearData, i) => {
+                          const value = getValueYear(yearData);
+                          const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
+                          let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                          if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
+                          const marginRight = i < yearlyData.length - 1 ? BAR_GAP : 0;
+                          const isSelected = selectedYearData?.year === yearData.year;
+                          const hasSel = selectedYearData != null;
+                          return (
+                            <Pressable
+                              key={`${yearData.year}-${metric}`}
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setSelectedYearData(yearData);
+                              }}
+                              style={[styles.barSlot, styles.barSlotYearly, { width: effectiveBarWidth, marginRight }]}
+                            >
+                              <View style={styles.barColumn}>
+                                <Animated.View
+                                  entering={barGrowUp(i * 30)}
+                                  style={[
+                                    styles.bar,
+                                    {
+                                      height: barHeight,
+                                      backgroundColor: hasSel && !isSelected ? BAR_COLOR_DIM : BAR_COLOR_SELECTED,
+                                      width: effectiveBarWidth,
+                                      borderTopLeftRadius: BAR_TOP_RADIUS,
+                                      borderTopRightRadius: BAR_TOP_RADIUS,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            </Pressable>
+                          );
+                        })
+                      ) : isYearView && monthlyData.length === 12 ? (
+                        monthlyData.map((monthData, i) => {
+                          const value = getValueMonth(monthData);
+                          const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
+                          let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                          if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
+                          const marginRight = i < 11 ? BAR_GAP : 0;
+                          const isSelected = selectedMonthData?.month === monthData.month;
+                          const hasSel = selectedMonthData != null;
+                          return (
+                            <Pressable
+                              key={`${monthData.month}-${metric}`}
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setSelectedMonthData(monthData);
+                              }}
+                              style={[styles.barSlot, styles.barSlotYearly, { width: effectiveBarWidth, marginRight }]}
+                            >
+                              <View style={styles.barColumn}>
+                                <Animated.View
+                                  entering={barGrowUp(i * 30)}
+                                  style={[
+                                    styles.bar,
+                                    {
+                                      height: barHeight,
+                                      backgroundColor: hasSel && !isSelected ? BAR_COLOR_DIM : BAR_COLOR_SELECTED,
+                                      width: effectiveBarWidth,
+                                      borderTopLeftRadius: BAR_TOP_RADIUS,
+                                      borderTopRightRadius: BAR_TOP_RADIUS,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            </Pressable>
+                          );
+                        })
+                      ) : (
+                        dayDataInRange.map((point, i) => {
+                          const value = point.data;
+                          const heightRatio = effectiveYMax > 0 ? value / effectiveYMax : 0;
+                          let barHeight = effectiveYMax > 0 ? Math.floor(BAR_AREA_HEIGHT * heightRatio) : 0;
+                          if (value > 0 && barHeight < MIN_BAR_HEIGHT) barHeight = MIN_BAR_HEIGHT;
+                          const isSelected = selectedDay != null && isSameDay(point.date, selectedDay.date);
+                          const hasSel = selectedDay != null;
+                          const marginRight = i < dayDataInRange.length - 1
+                            ? BAR_GAP + ((i + 1) % 7 === 0 ? WEEK_GAP : 0)
+                            : 0;
+                          return (
+                            <Pressable
+                              key={`${point.date.getTime()}-${metric}`}
+                              onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                setSelectedDay(point);
+                              }}
+                              style={[styles.barSlot, { width: effectiveBarWidth, marginRight }]}
+                            >
+                              <Animated.View
+                                entering={barGrowUp(i * 20)}
+                                style={[
+                                  styles.bar,
+                                  {
+                                    height: barHeight,
+                                    backgroundColor: hasSel && !isSelected ? BAR_COLOR_DIM : BAR_COLOR_SELECTED,
+                                    width: effectiveBarWidth,
+                                    borderTopLeftRadius: BAR_TOP_RADIUS,
+                                    borderTopRightRadius: BAR_TOP_RADIUS,
+                                  },
+                                ]}
+                              />
+                            </Pressable>
+                          );
+                        })
+                      )}
+                    </View>
+                  </View>
+                </View>
+                <View style={[styles.xAxisLineRow, { width: barsBlockWidth, height: AXIS_LINE_WIDTH, backgroundColor: AXIS_LINE_COLOR }]} />
+                <View style={[styles.xAxisRow, { width: barsBlockWidth }]}>
+                  {xAxisSegments.map((seg, i) => (
+                    <View key={`${seg.label}-${seg.startIndex}`} style={[styles.xAxisSegment, { width: xAxisSegmentWidths[i] ?? 0 }]}>
+                      <Text style={styles.xAxisMonth}>{seg.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+      </AnimatedFadeInUp>
+
+      {/* ── Metric toggle (below chart) ── */}
+      <AnimatedFadeInUp delay={120} duration={320} trigger={animTrigger}>
+        <View style={[styles.bubblesRow, { minHeight: BUBBLES_ROW_HEIGHT }]}>
+          <View style={styles.bubblesRowInner}>
+            {(['duration', 'volume', 'reps'] as const).map((m) => (
+              <Pressable
+                key={m}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setMetric(m);
+                  setSelectedDay(null);
+                  setSelectedMonthData(null);
+                  setSelectedYearData(null);
+                }}
+                style={[
+                  styles.bubble,
+                  {
+                    backgroundColor: metric === m ? PILL_SELECTED_BG : 'transparent',
+                    borderColor: metric === m ? PILL_SELECTED_BG : PILL_BORDER,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.bubbleText, { color: metric === m ? PILL_SELECTED_TEXT : 'rgba(255,255,255,0.9)' }]}
+                >
+                  {m === 'duration' ? 'Duration' : m === 'volume' ? 'Volume' : 'Reps'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       </AnimatedFadeInUp>
     </View>
   );
@@ -922,29 +1103,70 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     padding: CHART_H_PADDING,
   },
+
+  // Summary strip
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+    justifyContent: 'center',
+  },
+  summaryChip: {
+    flex: 1,
+    backgroundColor: 'rgba(198, 198, 198, 0.07)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 198, 0.12)',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  summaryChipValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+    letterSpacing: -0.2,
+  },
+  summaryChipLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(198, 198, 198, 0.55)',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+
+  // Value section / tooltip
   valueSection: {
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 4,
   },
-  instructionText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: AXIS_LABEL_COLOR,
-  },
-  valueRow: {
+  tooltipChip: {
+    backgroundColor: 'rgba(198, 198, 198, 0.10)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 198, 0.16)',
+    paddingVertical: 8,
+    paddingHorizontal: 18,
     alignItems: 'center',
   },
-  valueText: {
+  tooltipValue: {
     fontSize: Typography.body,
     fontWeight: '600',
     color: BAR_COLOR,
+    letterSpacing: -0.2,
   },
-  valueDate: {
+  tooltipDate: {
     fontSize: Typography.label,
     fontWeight: '500',
     color: AXIS_LABEL_COLOR,
     marginTop: 2,
   },
+  tooltipPlaceholder: {
+    height: VALUE_SECTION_HEIGHT,
+  },
+
+  // Range pills
   rangeRow: {
     width: '100%',
     alignItems: 'center',
@@ -963,7 +1185,7 @@ const styles = StyleSheet.create({
   timeRangePill: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 999,
+    borderRadius: 38,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -986,8 +1208,8 @@ const styles = StyleSheet.create({
   dropdown: {
     minWidth: 100,
     maxHeight: 220,
-    backgroundColor: '#2F3031',
-    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.primaryDark,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: PILL_BORDER,
     overflow: 'hidden',
@@ -1016,10 +1238,12 @@ const styles = StyleSheet.create({
   dropdownItemTextSelected: {
     color: PILL_SELECTED_BG,
   },
+
+  // Chart
   chartOuter: {
     width: '100%',
     marginBottom: Spacing.md,
-    borderRadius: BorderRadius.md,
+    borderRadius: 12,
     overflow: 'hidden',
     paddingVertical: Spacing.sm,
     paddingLeft: 0,
@@ -1099,12 +1323,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
-  barValueLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: AXIS_LABEL_COLOR,
-    marginBottom: 4,
-  },
   bar: {
     alignSelf: 'center',
   },
@@ -1126,6 +1344,48 @@ const styles = StyleSheet.create({
     color: AXIS_LABEL_COLOR,
     textAlign: 'center',
   },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: 'rgba(198, 198, 198, 0.85)',
+    letterSpacing: -0.2,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(198, 198, 198, 0.50)',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyBtn: {
+    marginTop: 12,
+    backgroundColor: 'rgba(198, 198, 198, 0.10)',
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 198, 0.18)',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+  },
+  emptyBtnPressed: {
+    opacity: 0.65,
+  },
+  emptyBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+    letterSpacing: -0.2,
+  },
+
+  // Metric toggle bubbles
   bubblesRow: {
     width: '100%',
     alignItems: 'center',
@@ -1142,7 +1402,7 @@ const styles = StyleSheet.create({
   bubble: {
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 999,
+    borderRadius: 38,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

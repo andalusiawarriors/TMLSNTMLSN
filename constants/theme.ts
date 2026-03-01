@@ -117,3 +117,40 @@ export const Shadows = {
     elevation: 1,
   }
 };
+
+export const Glass = {
+  // Base fill — kept semi-transparent so blur shows through
+  fill: 'rgba(47, 48, 49, 0.42)',
+  fillPressed: 'rgba(47, 48, 49, 0.72)',
+  // "Glass prominent" selected state — like SwiftUI .glassProminent
+  fillSelected: 'rgba(198, 198, 198, 0.20)',
+  fillProminentBg: 'rgba(198, 198, 198, 0.14)',
+
+  // Borders — the "lensing" rim on the glass edge
+  border: 'rgba(198, 198, 198, 0.18)',
+  borderSelected: 'rgba(198, 198, 198, 0.42)',
+  borderWidth: 1,
+
+  // Specular highlight — the bright reflection at the top of the glass
+  specular: 'rgba(255, 255, 255, 0.14)',
+  specularStrong: 'rgba(255, 255, 255, 0.22)',
+  innerGlow: 'rgba(255, 255, 255, 0.09)',
+
+  // Blur intensity for BlurView (expo-blur)
+  blurIntensity: 22,
+
+  shadow: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  radius: {
+    primary: 38,
+    secondary: 20,
+    micro: 12,
+  },
+  textPrimary: Colors.primaryLight,
+  textSecondary: 'rgba(198, 198, 198, 0.58)',
+} as const;

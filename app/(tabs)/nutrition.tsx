@@ -65,6 +65,7 @@ import {
   getNutritionLogByDate,
   getNutritionLogs,
   saveNutritionLog,
+  clearAllNutritionLogs,
   getUserSettings,
   saveUserSettings,
   getSavedFoods,
@@ -83,14 +84,16 @@ import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { HeatmapPreviewWidgetSideBySide } from '../../components/HeatmapPreviewWidget';
-import { PillSegmentedControl, type SegmentValue } from '../../components/PillSegmentedControl';
+import { LiquidGlassSegmented } from '../../components/ui/liquidGlass';
+type SegmentValue = 'Nutrition' | 'Fitness';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
-const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
+// Quicksilver badge asset not in repo; use gold badge until quicksilver_verified_badge.png is added
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
+const QUICKSILVER_VERIFIED_BADGE = GOLD_VERIFIED_BADGE;
 const QUICKSILVER_GRADIENT = ['#6b6f74', '#a0a4a8', '#d6d8da', '#b8babc'] as const;
 const QUICKSILVER_TEXT = '#9A9EA4'; // solid color so nutrition is always visible on cards
 const CHAMPAGNE_TEXT = '#D4B896';
@@ -385,6 +388,18 @@ export default function NutritionScreen({
 
   const loadDataRef = useRef(loadData);
   loadDataRef.current = loadData;
+  // One-time clear of all food logs (remove this block after use)
+  const clearLogsOnceRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!clearLogsOnceRef.current) {
+        clearLogsOnceRef.current = true;
+        clearAllNutritionLogs()
+          .then(() => loadDataRef.current())
+          .catch((e) => console.warn('[Nutrition] clear logs once:', e));
+      }
+    }, [])
+  );
   // Only run entrance animations when the tab actually gains focus, not when viewingDate changes.
   // (useFocusEffect re-runs when its callback identity changes; loadData changes with viewingDate, so we use a ref to keep the callback stable.)
   useFocusEffect(
@@ -1127,6 +1142,26 @@ export default function NutritionScreen({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
+  const handleClearAllFoodLogs = useCallback(() => {
+    Alert.alert(
+      'Delete all food logs?',
+      'This will remove every day\'s food log. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAllNutritionLogs();
+            setTodayLog(null);
+            loadData();
+            setShowEditGoals(false);
+          },
+        },
+      ]
+    );
+  }, [loadData]);
+
   const MEAL_TYPE_LABELS: Record<MealType, string> = {
     breakfast: 'Breakfast',
     lunch: 'Lunch',
@@ -1611,7 +1646,6 @@ export default function NutritionScreen({
                 />
               </View>
             </View>
-            />
           </Animated.View>
         </Pressable>
 
@@ -1709,7 +1743,12 @@ export default function NutritionScreen({
               <View style={[styles.dot, fitnessCardPage === 1 ? styles.dotActive : undefined]} />
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
+              <LiquidGlassSegmented
+                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
+                value={homeSegment}
+                onChange={(k) => setHomeSegment(k as SegmentValue)}
+                width={160}
+              />
             </View>
             {/* Recently uploaded – below toggle */}
             <Text style={styles.recentlyUploadedTitle}>Recently uploaded</Text>
@@ -1852,7 +1891,12 @@ export default function NutritionScreen({
               </Pressable>
             </View>
             <View style={{ paddingHorizontal: CONTENT_PADDING, marginTop: Spacing.sm, marginBottom: Spacing.sm, alignSelf: 'center' }}>
-              <PillSegmentedControl value={homeSegment} onValueChange={(v) => setHomeSegment(v as SegmentValue)} width={160} />
+              <LiquidGlassSegmented
+                options={[{ key: 'Nutrition', label: 'Nutrition' }, { key: 'Fitness', label: 'Fitness' }]}
+                value={homeSegment}
+                onChange={(k) => setHomeSegment(k as SegmentValue)}
+                width={160}
+              />
             </View>
             {/* Recently uploaded – below toggle */}
             <View>
@@ -2743,6 +2787,9 @@ export default function NutritionScreen({
                 textStyle={{ fontFamily: Font.semiBold, color: Colors.primaryLight }}
               />
             </View>
+            <Pressable onPress={handleClearAllFoodLogs} style={{ marginTop: Spacing.md, paddingVertical: Spacing.sm }}>
+              <Text style={{ fontSize: 14, color: Colors.primaryLight + '99' }}>Clear all food logs</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>

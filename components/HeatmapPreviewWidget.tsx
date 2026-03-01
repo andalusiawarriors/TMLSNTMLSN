@@ -19,8 +19,9 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
-import { BodyAnatomySvg } from './BodyAnatomySvg';
+import { DetailedBodyHeatmap } from './DetailedBodyHeatmap';
 import { Colors, Spacing, Shadows, Typography, BorderRadius } from '../constants/theme';
+import { getUserSettings } from '../utils/storage';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const BODY_WIDTH = Math.min(180, PROGRESS_CARD_WIDTH - Spacing.lg * 2);
@@ -64,6 +65,13 @@ interface HeatmapPreviewWidgetProps {
 
 export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps) {
   const [pageIndex, setPageIndex] = useState(0);
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+
+  useEffect(() => {
+    getUserSettings().then((s) => {
+      if (s.bodyMapGender) setGender(s.bodyMapGender);
+    });
+  }, []);
 
   const todayDayOfWeek = useMemo(() => {
     const d = new Date();
@@ -97,28 +105,28 @@ export function HeatmapPreviewWidget({ heatmapData }: HeatmapPreviewWidgetProps)
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Slide 1: Front view — body only, enclosed by widget */}
+        {/* Slide 1: Front view */}
         <View style={styles.slide}>
-          <BodyAnatomySvg
-            variant="front"
+          <DetailedBodyHeatmap
             heatmapData={heatmapData}
             selectedDay={todayDayOfWeek}
             maxVolume={maxVolumeForDay}
-            pressedMuscleGroup={null}
+            variant="front"
+            gender={gender}
             width={BODY_WIDTH}
-            height={BODY_HEIGHT}
+            showCard={false}
           />
         </View>
         {/* Slide 2: Back view */}
         <View style={styles.slide}>
-          <BodyAnatomySvg
-            variant="back"
+          <DetailedBodyHeatmap
             heatmapData={heatmapData}
             selectedDay={todayDayOfWeek}
             maxVolume={maxVolumeForDay}
-            pressedMuscleGroup={null}
+            variant="back"
+            gender={gender}
             width={BODY_WIDTH}
-            height={BODY_HEIGHT}
+            showCard={false}
           />
         </View>
       </ScrollView>
@@ -228,6 +236,14 @@ export function HeatmapPreviewWidgetSideBySide({
   cardWidth = Dimensions.get('window').width - 38,
   bare = false,
 }: HeatmapPreviewWidgetSideBySideProps) {
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+
+  useEffect(() => {
+    getUserSettings().then((s) => {
+      if (s.bodyMapGender) setGender(s.bodyMapGender);
+    });
+  }, []);
+
   const weekAggregate = useMemo(
     () => aggregateHeatmapLast7Days(heatmapData),
     [heatmapData]
@@ -268,26 +284,26 @@ export function HeatmapPreviewWidgetSideBySide({
       <Text style={styles.sideBySideTitle}>muscles hit · last 7 days</Text>
       <View style={styles.sideBySideRow}>
         <View style={styles.sideBySideCell}>
-          <BodyAnatomySvg
-            variant="front"
+          <DetailedBodyHeatmap
             heatmapData={weekAggregate}
             selectedDay={0}
             maxVolume={maxVolume}
-            pressedMuscleGroup={null}
+            variant="front"
+            gender={gender}
             width={bodyWidth}
-            height={bodyHeight}
+            showCard={false}
           />
           <Text style={styles.sideBySideLabel}>front</Text>
         </View>
         <View style={[styles.sideBySideCell, { marginLeft: gap }]}>
-          <BodyAnatomySvg
-            variant="back"
+          <DetailedBodyHeatmap
             heatmapData={weekAggregate}
             selectedDay={0}
             maxVolume={maxVolume}
-            pressedMuscleGroup={null}
+            variant="back"
+            gender={gender}
             width={bodyWidth}
-            height={bodyHeight}
+            showCard={false}
           />
           <Text style={styles.sideBySideLabel}>back</Text>
         </View>
