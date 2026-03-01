@@ -90,10 +90,14 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
       restTimerSound: s.restTimerSound ?? true,
       defaultRestTimer: s.defaultRestTimer,
       defaultRestTimerEnabled: s.defaultRestTimerEnabled,
+      progressHubOrder: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : undefined,
     };
   }
+  const pho = row.progress_hub_order as string[] | undefined;
+  const progressHubOrder = Array.isArray(pho) ? pho : undefined;
   const dg = row.daily_goals as Record<string, number> | undefined;
   return {
+    progressHubOrder,
     dailyGoals: {
       calories: dg?.calories ?? DEFAULT_SETTINGS.dailyGoals.calories,
       protein: dg?.protein ?? DEFAULT_SETTINGS.dailyGoals.protein,
@@ -124,6 +128,7 @@ function mapUserSettingsToRow(
     rest_timer_sound: s.restTimerSound,
     default_rest_timer: s.defaultRestTimer ?? null,
     default_rest_timer_enabled: s.defaultRestTimerEnabled ?? null,
+    progress_hub_order: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : null,
   };
 }
 

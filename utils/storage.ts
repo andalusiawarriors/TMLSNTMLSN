@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine, SavedFood } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseStorage from './supabaseStorage';
-import { DEFAULT_GOALS, DEFAULT_SETTINGS } from '../constants/storageDefaults';
+import { DEFAULT_GOALS, DEFAULT_SETTINGS, DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
 
 // Current user ID for Supabase-backed storage (set by AuthContext on login/logout)
 let _storageUserId: string | null = null;
@@ -387,6 +387,20 @@ export const getUserSettings = async (): Promise<UserSettings> => {
     console.error('Error getting user settings:', error);
     return DEFAULT_SETTINGS;
   }
+};
+
+/** Progress Hub widget order. Uses UserSettings.progressHubOrder. */
+export const getProgressHubOrder = async (): Promise<string[]> => {
+  const settings = await getUserSettings();
+  const order = settings.progressHubOrder;
+  if (Array.isArray(order) && order.length > 0) return order;
+  return [...DEFAULT_PROGRESS_HUB_ORDER];
+};
+
+/** Save Progress Hub widget order to user account. */
+export const saveProgressHubOrder = async (order: string[]): Promise<void> => {
+  const settings = await getUserSettings();
+  await saveUserSettings({ ...settings, progressHubOrder: order });
 };
 
 let _promptsMigrationAttempted = false;

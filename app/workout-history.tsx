@@ -29,6 +29,7 @@ import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import TiltPressable from '../components/TiltPressable';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { Ionicons } from '@expo/vector-icons';
@@ -274,44 +275,40 @@ export default function WorkoutHistoryScreen() {
     const exerciseCount = item.exercises.length;
 
     return (
-      <Pressable
+      <TiltPressable
         key={item.id}
+        borderRadius={16}
         onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: item.id } })}
-        style={({ pressed }) => [
-          styles.card,
-          {
-            backgroundColor: pressed ? colors.primaryLight + '14' : colors.primaryLight + '08',
-            borderColor: colors.primaryLight + '10',
-          },
-        ]}
       >
-        <View style={styles.cardTop}>
-          <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
-            {getSessionDisplayName(item)}
-          </Text>
-          <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
-            {format(new Date(item.date), 'MMM d, yyyy')}
-          </Text>
-        </View>
-        <View style={styles.cardStats}>
-          <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-            <Clock size={13} color={colors.primaryLight + '70'} />
-            <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>{item.duration}m</Text>
-          </View>
-          <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-            <ChartBar size={13} color={colors.primaryLight + '70'} />
-            <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
-              {volumeStr} {weightUnit}
+        <View style={[styles.card, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '10' }]}>
+          <View style={styles.cardTop}>
+            <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
+              {getSessionDisplayName(item)}
+            </Text>
+            <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
+              {format(new Date(item.date), 'MMM d, yyyy')}
             </Text>
           </View>
-          <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
-            <Barbell size={13} color={colors.primaryLight + '70'} />
-            <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
-              {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
-            </Text>
+          <View style={styles.cardStats}>
+            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+              <Clock size={13} color={colors.primaryLight + '70'} />
+              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>{item.duration}m</Text>
+            </View>
+            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+              <ChartBar size={13} color={colors.primaryLight + '70'} />
+              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
+                {volumeStr} {weightUnit}
+              </Text>
+            </View>
+            <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
+              <Barbell size={13} color={colors.primaryLight + '70'} />
+              <Text style={[styles.statText, { color: colors.primaryLight + 'CC' }]}>
+                {exerciseCount} exercise{exerciseCount !== 1 ? 's' : ''}
+              </Text>
+            </View>
           </View>
         </View>
-      </Pressable>
+      </TiltPressable>
     );
   };
 

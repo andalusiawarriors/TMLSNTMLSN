@@ -32,7 +32,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
-import { InteractiveGlassWrapper } from '../components/ui/InteractiveGlassWrapper';
+import TiltPressable from '../components/TiltPressable';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { MuscleBodyHeatmap } from '../components/MuscleBodyHeatmap';
 import { MuscleRadarChart } from '../components/MuscleRadarChart';
@@ -686,34 +686,34 @@ export default function StrengthMusclesScreen() {
         {/* ── 2×2 Stat tiles ── */}
         <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
           <Animated.View entering={FadeInDown.delay(40).duration(360).springify().damping(24)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="sessions" value={String(stats.sessionCount)} enterDelay={0} animationTrigger={rangeFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(80).duration(360).springify().damping(24)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="muscle groups" value={String(stats.muscleCount)} enterDelay={ANIM_STAGGER} animationTrigger={rangeFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(120).duration(360).springify().damping(24)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="top muscle" value={stats.topName} enterDelay={ANIM_STAGGER * 2} animationTrigger={rangeFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(160).duration(360).springify().damping(24)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
                 <StatSquareTile label="total sets" value={String(stats.totalSets)} enterDelay={ANIM_STAGGER * 3} animationTrigger={rangeFocusKey} />
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
         </Animated.View>
@@ -727,8 +727,8 @@ export default function StrengthMusclesScreen() {
           style={{ width: '100%' }}
         >
           <Animated.View layout={Layout.springify().damping(26).stiffness(200)}>
-            <View style={p.sectionShadow}>
-              <InteractiveGlassWrapper fitContent borderRadius={38}>
+            <View style={p.sectionWrap}>
+              <TiltPressable borderRadius={38} style={{ alignSelf: 'stretch' }} shadowStyle={p.sectionShadowStyle}>
                 <GlassSection>
                   <View style={{ marginBottom: -24 }}>
                     <MuscleBodyHeatmap
@@ -737,7 +737,7 @@ export default function StrengthMusclesScreen() {
                     />
                   </View>
                 </GlassSection>
-              </InteractiveGlassWrapper>
+              </TiltPressable>
             </View>
           </Animated.View>
         </AnimatedFadeInUp>
@@ -781,14 +781,17 @@ const p = StyleSheet.create({
   },
 
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: TILE_GAP },
-  tileShadow: {
+  tileWrap: {
     width: TILE_SIZE, height: TILE_SIZE, borderRadius: 38,
+    overflow: 'visible' as const,
+  },
+  tileShadowStyle: {
     shadowColor: '#000000', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34, shadowRadius: 22, elevation: 12,
   },
 
-  sectionShadow: {
-    borderRadius: 38,
+  sectionWrap: { borderRadius: 38, overflow: 'visible' as const },
+  sectionShadowStyle: {
     shadowColor: '#000000', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34, shadowRadius: 22, elevation: 12,
   },

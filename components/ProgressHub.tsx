@@ -10,6 +10,8 @@ import {
   StyleSheet,
   FlatList,
   Dimensions,
+  Pressable,
+  ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,12 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { format, startOfWeek, addDays } from 'date-fns';
+import * as Haptics from 'expo-haptics';
+import { CaretUp, CaretDown } from 'phosphor-react-native';
 
 import { Colors, Spacing } from '../constants/theme';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
-import { InteractiveGlassWrapper } from './ui/InteractiveGlassWrapper';
+import TiltPressable from './TiltPressable';
 
-import { getWorkoutSessions } from '../utils/storage';
+import { getWorkoutSessions, getProgressHubOrder, saveProgressHubOrder } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { workoutsToSetRecordsForRange } from '../utils/workoutMuscles';
 import {
@@ -35,6 +39,7 @@ import type { WorkoutSession } from '../types';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
 import { getPeriodRange, aggregateSessionsByDay } from '../utils/dateBins';
 import type { HeatmapPeriod } from '../utils/dateBins';
+import { DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const PARENT_PAD = 19;
@@ -223,12 +228,17 @@ interface TileData {
   route: string;
 }
 
-function TileCard({ item, index, animTrigger, children }: { item: TileData; index: number; animTrigger: number; children?: React.ReactNode }) {
+function TileCard({ item, index, animTrigger, children, reorderMode }: { item: TileData; index: number; animTrigger: number; children?: React.ReactNode; reorderMode?: boolean }) {
   const router = useRouter();
   return (
     <AnimatedFadeInUp delay={50 + index * 45} duration={440} trigger={animTrigger}>
-      <View style={tileStyles.shadow}>
-        <InteractiveGlassWrapper width={CARD_SIZE} height={CARD_SIZE} borderRadius={TILE_RADIUS} onRelease={() => router.push(item.route as any)}>
+      <View style={tileStyles.tileWrap}>
+        <TiltPressable
+          style={{ width: CARD_SIZE, height: CARD_SIZE }}
+          borderRadius={TILE_RADIUS}
+          shadowStyle={tileStyles.shadow}
+          onPress={reorderMode ? undefined : () => router.push(item.route as any)}
+        >
           <View style={tileStyles.glass}>
             <BlurView intensity={26} tint="dark" style={[StyleSheet.absoluteFillObject, { borderRadius: TILE_RADIUS }]} />
             <View style={[StyleSheet.absoluteFillObject, tileStyles.fill, { borderRadius: TILE_RADIUS }]} />
@@ -242,14 +252,15 @@ function TileCard({ item, index, animTrigger, children }: { item: TileData; inde
               <Text style={tileStyles.subtitle} numberOfLines={1}>{item.subtitle}</Text>
             </View>
           </View>
-        </InteractiveGlassWrapper>
+        </TiltPressable>
       </View>
     </AnimatedFadeInUp>
   );
 }
 
 const tileStyles = StyleSheet.create({
-  shadow: { width: CARD_SIZE, height: CARD_SIZE, borderRadius: TILE_RADIUS, shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.34, shadowRadius: 22, elevation: 12 },
+  tileWrap: { width: CARD_SIZE, height: CARD_SIZE, borderRadius: TILE_RADIUS, overflow: 'visible' as const },
+  shadow: { shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.34, shadowRadius: 22, elevation: 12 },
   glass: { flex: 1, borderRadius: TILE_RADIUS, overflow: 'hidden', backgroundColor: 'transparent' },
   fill: { backgroundColor: 'rgba(47, 48, 49, 0.30)' },
   border: { borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
@@ -259,18 +270,33 @@ const tileStyles = StyleSheet.create({
   subtitle: { fontSize: 12, fontWeight: '500', color: 'rgba(198,198,198,0.55)', marginTop: 5, letterSpacing: -0.1 },
 });
 
+const ALL_TILE_DEFS: Record<string, Omit<TileData, 'subtitle'>> = {
+  progress: { id: 'progress', title: 'progress.', route: '/progress-graph' },
+  strength: { id: 'strength', title: 'strength.', route: '/strength-muscles' },
+  history: { id: 'history', title: 'history.', route: '/workout-history' },
+  activity: { id: 'activity', title: 'activity', route: '/progress-heatmap' },
+  'active-days': { id: 'active-days', title: 'active days', route: '/progress-heatmap' },
+  workouts: { id: 'workouts', title: 'workouts', route: '/workout-history' },
+};
+
 export function ProgressHub() {
   const [animTrigger, setAnimTrigger] = useState(0);
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const heatPeriod: HeatmapPeriod = 'month';
   const [radarHeatmap, setRadarHeatmap] = useState<HeatmapData[]>([]);
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [order, setOrder] = useState<string[]>([...DEFAULT_PROGRESS_HUB_ORDER]);
 
   useFocusEffect(
     useCallback(() => {
       setAnimTrigger((t) => t + 1);
       const load = async () => {
-        const allSessions = await getWorkoutSessions();
+        const [allSessions, savedOrder] = await Promise.all([
+          getWorkoutSessions(),
+          getProgressHubOrder(),
+        ]);
         setSessions(allSessions);
+        setOrder(savedOrder);
         const weekStart = getWeekStart();
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 7);
@@ -309,17 +335,54 @@ export function ProgressHub() {
     return { count: inPeriod.length, totalMins, best };
   }, [sessions, heatPeriod]);
 
-  const tiles: TileData[] = useMemo(
-    () => [
-      { id: 'progress', title: 'progress.', subtitle: 'tap to open', route: '/progress-graph' },
-      { id: 'strength', title: 'strength.', subtitle: 'tap to open', route: '/strength-muscles' },
-      { id: 'history', title: 'history.', subtitle: 'all sessions', route: '/workout-history' },
-      { id: 'activity', title: 'activity', subtitle: periodLabel, route: '/progress-heatmap' },
-      { id: 'active-days', title: 'active days', subtitle: `${activeDays} ${periodLabel}`, route: '/progress-heatmap' },
-      { id: 'workouts', title: 'workouts', subtitle: `${totalWorkouts} ${periodLabel}`, route: '/workout-history' },
-    ],
+  const subtitles: Record<string, string> = useMemo(
+    () => ({
+      progress: 'tap to open',
+      strength: 'tap to open',
+      history: 'all sessions',
+      activity: periodLabel,
+      'active-days': `${activeDays} ${periodLabel}`,
+      workouts: `${totalWorkouts} ${periodLabel}`,
+    }),
     [activeDays, totalWorkouts, periodLabel],
   );
+
+  const tiles: TileData[] = useMemo(() => {
+    const defs = order
+      .filter((id) => ALL_TILE_DEFS[id])
+      .map((id) => ({
+        ...ALL_TILE_DEFS[id],
+        subtitle: subtitles[id] ?? '',
+      })) as TileData[];
+    return defs.length > 0 ? defs : (DEFAULT_PROGRESS_HUB_ORDER as unknown as string[]).map((id) => ({
+      ...ALL_TILE_DEFS[id],
+      subtitle: subtitles[id] ?? '',
+    })) as TileData[];
+  }, [order, subtitles]);
+
+  const moveTile = useCallback((index: number, direction: 'up' | 'down') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setOrder((prev) => {
+      const next = [...prev];
+      const swap = direction === 'up' ? index - 1 : index + 1;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[index], next[swap]] = [next[swap], next[index]];
+      return next;
+    });
+  }, []);
+
+  const handleDoneReorder = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await saveProgressHubOrder(order);
+    setIsReorderMode(false);
+    setAnimTrigger((t) => t + 1);
+  }, [order]);
+
+  const handleCancelReorder = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    getProgressHubOrder().then(setOrder);
+    setIsReorderMode(false);
+  }, []);
 
   const renderItem = useCallback(
     ({ item, index }: { item: TileData; index: number }) => {
@@ -343,22 +406,101 @@ export function ProgressHub() {
       } else if (item.id === 'workouts') {
         content = <BigStat value={String(totalWorkouts)} sub="sessions" />;
       }
-      return <TileCard item={item} index={index} animTrigger={animTrigger}>{content}</TileCard>;
+      return (
+        <TileCard item={item} index={index} animTrigger={animTrigger} reorderMode={isReorderMode}>
+          {content}
+        </TileCard>
+      );
     },
-    [animTrigger, radarHeatmap, sessions, progressStats, activeDays, totalWorkouts],
+    [animTrigger, radarHeatmap, sessions, progressStats, activeDays, totalWorkouts, isReorderMode],
   );
 
+  if (isReorderMode) {
+    return (
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.listContent, styles.reorderContent]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.reorderGrid}>
+          {tiles.map((item, index) => (
+            <View key={item.id} style={styles.reorderRow}>
+              <View style={styles.reorderTileWrap}>
+                <TileCard item={item} index={index} animTrigger={animTrigger} reorderMode>
+                  {item.id === 'progress' && (
+                    <View style={{ alignSelf: 'flex-start', gap: 6 }}>
+                      <MiniStatRow value={String(progressStats.count)} label="sessions" />
+                      <MiniStatRow value={`${progressStats.totalMins}m`} label="total" />
+                      {progressStats.best > 0 && <MiniStatRow value={`${progressStats.best}m`} label="best" />}
+                    </View>
+                  )}
+                  {item.id === 'strength' && <MiniRadar heatmapData={radarHeatmap} size={CARD_SIZE - 56} />}
+                  {item.id === 'activity' && <WeekDots sessions={sessions} />}
+                  {item.id === 'history' && <View style={{ alignSelf: 'flex-start', width: '100%' }}><MiniHistory sessions={sessions} /></View>}
+                  {item.id === 'active-days' && <BigStat value={String(activeDays)} sub="days active" />}
+                  {item.id === 'workouts' && <BigStat value={String(totalWorkouts)} sub="sessions" />}
+                </TileCard>
+              </View>
+              <View style={styles.reorderControls}>
+                <Pressable
+                  onPress={() => moveTile(index, 'up')}
+                  style={({ pressed }) => [styles.reorderBtn, pressed && { opacity: 0.6 }]}
+                  disabled={index === 0}
+                >
+                  <CaretUp size={20} color={index === 0 ? 'rgba(198,198,198,0.3)' : Colors.primaryLight} weight="bold" />
+                </Pressable>
+                <Pressable
+                  onPress={() => moveTile(index, 'down')}
+                  style={({ pressed }) => [styles.reorderBtn, pressed && { opacity: 0.6 }]}
+                  disabled={index === tiles.length - 1}
+                >
+                  <CaretDown size={20} color={index === tiles.length - 1 ? 'rgba(198,198,198,0.3)' : Colors.primaryLight} weight="bold" />
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+        <View style={styles.reorderActions}>
+          <Pressable
+            onPress={handleCancelReorder}
+            style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleDoneReorder}
+            style={({ pressed }) => [styles.doneBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.doneBtnText}>Done</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    );
+  }
+
   return (
-    <FlatList
-      data={tiles}
-      keyExtractor={(item) => item.id}
-      numColumns={2}
-      renderItem={renderItem}
-      columnWrapperStyle={styles.columnWrapper}
-      contentContainerStyle={styles.listContent}
-      showsVerticalScrollIndicator={false}
-      scrollEnabled={false}
-    />
+    <View>
+      <FlatList
+        data={tiles}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        renderItem={renderItem}
+        columnWrapperStyle={styles.columnWrapper}
+        contentContainerStyle={[styles.listContent, { overflow: 'visible' as const }]}
+        style={{ overflow: 'visible' as const }}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={false}
+      />
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setIsReorderMode(true);
+        }}
+        style={({ pressed }) => [styles.reorderPill, pressed && { opacity: 0.85 }]}
+      >
+        <Text style={styles.reorderPillText}>Reorder</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -372,5 +514,79 @@ const styles = StyleSheet.create({
   },
   columnWrapper: {
     gap: GRID_GAP,
+  },
+  reorderContent: {
+    paddingBottom: 100,
+  },
+  reorderGrid: {
+    gap: 12,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  reorderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reorderTileWrap: {
+    flex: 1,
+  },
+  reorderControls: {
+    gap: 4,
+  },
+  reorderBtn: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(198,198,198,0.12)',
+  },
+  reorderActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 24,
+    alignSelf: 'center',
+  },
+  cancelBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.35)',
+  },
+  cancelBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(198,198,198,0.8)',
+  },
+  doneBtn: {
+    alignSelf: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 24,
+    backgroundColor: 'rgba(198,198,198,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.35)',
+  },
+  doneBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primaryLight,
+  },
+  reorderPill: {
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    backgroundColor: 'rgba(198,198,198,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.25)',
+  },
+  reorderPillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(198,198,198,0.9)',
   },
 });

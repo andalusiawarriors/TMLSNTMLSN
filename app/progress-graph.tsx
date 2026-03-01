@@ -44,7 +44,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
-import { InteractiveGlassWrapper } from '../components/ui/InteractiveGlassWrapper';
+import TiltPressable from '../components/TiltPressable';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
@@ -918,97 +918,10 @@ export default function ProgressGraphScreen() {
           </View>
         </View>
 
-        {/* ── Dropdowns ── */}
-        {dropOpen === 'month' && (
-          <DropdownModal
-            onClose={() => { setDropOpen(null); setDropLayout(null); }}
-            triggerLayout={dropLayout}
-          >
-            <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-              {MONTH_NAMES.map((name, i) => (
-                <Animated.View key={name} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
-                  <Pressable
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setSelMonth(i);
-                      setDropOpen(null);
-                      setDropLayout(null);
-                    }}
-                    style={[dd.item, i === selMonth && dd.itemSel]}
-                  >
-                    <Text style={[dd.itemTxt, i === selMonth && dd.itemTxtSel]}>{name}</Text>
-                  </Pressable>
-                </Animated.View>
-              ))}
-            </ScrollView>
-          </DropdownModal>
-        )}
-        {dropOpen === 'year' && (
-          <DropdownModal
-            onClose={() => { setDropOpen(null); setDropLayout(null); }}
-            triggerLayout={dropLayout}
-          >
-            <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-              {availableYears.map((y, i) => (
-                <Animated.View key={y} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
-                  <Pressable
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setSelYear(y);
-                      setDropOpen(null);
-                      setDropLayout(null);
-                    }}
-                    style={[dd.item, y === selYear && dd.itemSel]}
-                  >
-                    <Text style={[dd.itemTxt, y === selYear && dd.itemTxtSel]}>{y}</Text>
-                  </Pressable>
-                </Animated.View>
-              ))}
-            </ScrollView>
-          </DropdownModal>
-        )}
-
-        {/* ── 4. Stat tiles (2×2 grid, no outer card) ── */}
-        <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
-          <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label="sessions" value={summary.count} enterDelay={0} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
-            </View>
-          </Animated.View>
-          <Animated.View entering={FadeInDown.delay(ANIM.stagger).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile
-                  label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
-                  value={summary.fTotal}
-                  enterDelay={ANIM.stagger}
-                  animationTrigger={statFocusKey}
-                />
-              </InteractiveGlassWrapper>
-            </View>
-          </Animated.View>
-          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 2).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} enterDelay={ANIM.stagger * 2} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
-            </View>
-          </Animated.View>
-          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 3).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
-            <View style={p.tileShadow}>
-              <InteractiveGlassWrapper width={TILE_SIZE} height={TILE_SIZE}>
-                <StatSquareTile label="avg / session" value={summary.fAvg} enterDelay={ANIM.stagger * 3} animationTrigger={statFocusKey} />
-              </InteractiveGlassWrapper>
-            </View>
-          </Animated.View>
-        </Animated.View>
-
-        {/* ── 5. Chart (glass card) — spotlight fits widget via fitContent ── */}
-        <Animated.View entering={FadeInDown.delay(ANIM.stagger * 4).duration(ANIM.duration + 40).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
-        <View style={p.chartShadow}>
-        <InteractiveGlassWrapper fitContent borderRadius={38}>
+        {/* ── Chart first (visible without scrolling) ── */}
+        <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify().damping(26).stiffness(200)}>
+        <View style={p.chartWrap}>
+        <TiltPressable borderRadius={38} style={{ alignSelf: 'stretch' }} shadowStyle={p.chartShadowStyle}>
         <GlassSection>
           {/* Tooltip row */}
           <View style={p.tooltipRow}>
@@ -1031,33 +944,28 @@ export default function ProgressGraphScreen() {
             <View style={[p.emptyState, { minHeight: CHART_HEIGHT + 32 }]}>
               <Text style={p.emptyTitle}>No workouts yet.</Text>
               <Text style={p.emptySub}>Finish one workout to populate this graph.</Text>
-              {/* Glass-prominent CTA — bright fill, dark text, specular rim */}
               <Pressable
                 style={({ pressed }) => [p.emptyBtn, pressed && { transform: [{ scale: 0.97 }], opacity: 0.88 }]}
                 onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/workout' as any); }}
               >
-                {/* Bright base fill */}
                 <LinearGradient
                   colors={['rgba(220,220,220,0.96)', 'rgba(198,198,198,0.90)']}
                   start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }}
                   style={StyleSheet.absoluteFillObject}
                   pointerEvents="none"
                 />
-                {/* Diagonal specular — top-left bright hit */}
                 <LinearGradient
                   colors={['rgba(255,255,255,0.55)', 'rgba(255,255,255,0.12)', 'transparent']}
                   start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
                   style={StyleSheet.absoluteFillObject}
                   pointerEvents="none"
                 />
-                {/* Top-rim lensing */}
                 <LinearGradient
                   colors={['rgba(255,255,255,0.60)', 'transparent']}
                   start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 0.22 }}
                   style={StyleSheet.absoluteFillObject}
                   pointerEvents="none"
                 />
-                {/* Bottom depth */}
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.10)']}
                   start={{ x: 0.5, y: 0.6 }} end={{ x: 0.5, y: 1 }}
@@ -1079,7 +987,6 @@ export default function ProgressGraphScreen() {
                   contentContainerStyle={{ paddingRight: SECTION_PAD }}
                 >
                   <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW }]}>
-                {/* Y axis */}
                 <View>
                   <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
                     <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
@@ -1093,8 +1000,6 @@ export default function ProgressGraphScreen() {
                   </View>
                   <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
                 </View>
-
-                {/* Bars + x-axis — centered when narrower than chart area */}
                 <View style={p.chartBarsColumn}>
                   <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
                     {yTicks.map((_, i) => (
@@ -1174,7 +1079,6 @@ export default function ProgressGraphScreen() {
                       )}
                     </View>
                   </View>
-
                   <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
                   <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
                     {xSegs.map((seg, i) => (
@@ -1188,7 +1092,6 @@ export default function ProgressGraphScreen() {
                 </ScrollView>
               ) : (
                 <View style={[p.chartInner, { width: Y_AXIS_W + barsBlockW, marginLeft: -20 }]}>
-                {/* Y axis */}
                 <View>
                   <View style={{ width: Y_AXIS_W, height: BAR_AREA_H, flexDirection: 'row', alignItems: 'stretch' }}>
                     <View style={{ flex: 1, justifyContent: 'space-between', paddingRight: 6, alignItems: 'flex-end' }}>
@@ -1202,8 +1105,6 @@ export default function ProgressGraphScreen() {
                   </View>
                   <View style={{ width: Y_AXIS_W, height: AXIS_LINE_W }} />
                 </View>
-
-                {/* Bars + x-axis */}
                 <View style={p.chartBarsColumn}>
                   <View style={{ width: barsBlockW, height: BAR_AREA_H, position: 'relative' }}>
                     {yTicks.map((_, i) => (
@@ -1261,7 +1162,6 @@ export default function ProgressGraphScreen() {
                       )}
                     </View>
                   </View>
-
                   <View style={{ width: barsBlockW, height: AXIS_LINE_W, backgroundColor: C_AXIS_LINE }} />
                   <View style={{ flexDirection: 'row', marginTop: 7, width: barsBlockW }}>
                     {xSegs.map((seg, i) => (
@@ -1276,8 +1176,95 @@ export default function ProgressGraphScreen() {
             </View>
           )}
         </GlassSection>
-        </InteractiveGlassWrapper>
+        </TiltPressable>
         </View>
+        </Animated.View>
+
+        {/* ── Dropdowns ── */}
+        {dropOpen === 'month' && (
+          <DropdownModal
+            onClose={() => { setDropOpen(null); setDropLayout(null); }}
+            triggerLayout={dropLayout}
+          >
+            <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {MONTH_NAMES.map((name, i) => (
+                <Animated.View key={name} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelMonth(i);
+                      setDropOpen(null);
+                      setDropLayout(null);
+                    }}
+                    style={[dd.item, i === selMonth && dd.itemSel]}
+                  >
+                    <Text style={[dd.itemTxt, i === selMonth && dd.itemTxtSel]}>{name}</Text>
+                  </Pressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+          </DropdownModal>
+        )}
+        {dropOpen === 'year' && (
+          <DropdownModal
+            onClose={() => { setDropOpen(null); setDropLayout(null); }}
+            triggerLayout={dropLayout}
+          >
+            <ScrollView style={{ maxHeight: 210 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {availableYears.map((y, i) => (
+                <Animated.View key={y} entering={FlipInXDown.duration(ANIM.dropdownItemDuration).easing(ANIM.easing).delay(i * ANIM.dropdownItemStagger)}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setSelYear(y);
+                      setDropOpen(null);
+                      setDropLayout(null);
+                    }}
+                    style={[dd.item, y === selYear && dd.itemSel]}
+                  >
+                    <Text style={[dd.itemTxt, y === selYear && dd.itemTxtSel]}>{y}</Text>
+                  </Pressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+          </DropdownModal>
+        )}
+
+        {/* ── 4. Stat tiles (2×2 grid, no outer card) ── */}
+        <Animated.View layout={Layout.springify().damping(26).stiffness(200)} style={p.tileGrid}>
+          <Animated.View entering={FadeInDown.delay(0).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
+                <StatSquareTile label="sessions" value={summary.count} enterDelay={0} animationTrigger={statFocusKey} />
+              </TiltPressable>
+            </View>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
+                <StatSquareTile
+                  label={metric === 'duration' ? 'total time' : metric === 'volume' ? 'total vol.' : 'total reps'}
+                  value={summary.fTotal}
+                  enterDelay={ANIM.stagger}
+                  animationTrigger={statFocusKey}
+                />
+              </TiltPressable>
+            </View>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 2).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
+                <StatSquareTile label={`best · ${summary.bestLbl}`} value={summary.fBest} enterDelay={ANIM.stagger * 2} animationTrigger={statFocusKey} />
+              </TiltPressable>
+            </View>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(ANIM.stagger * 3).duration(ANIM.duration).easing(ANIM.easing)} layout={Layout.springify()}>
+            <View style={p.tileWrap}>
+              <TiltPressable borderRadius={38} style={{ width: TILE_SIZE, height: TILE_SIZE }} shadowStyle={p.tileShadowStyle}>
+                <StatSquareTile label="avg / session" value={summary.fAvg} enterDelay={ANIM.stagger * 3} animationTrigger={statFocusKey} />
+              </TiltPressable>
+            </View>
+          </Animated.View>
         </Animated.View>
       </Animated.ScrollView>
     </View>
@@ -1335,10 +1322,13 @@ const p = StyleSheet.create({
     gap: TILE_GAP,
   },
 
-  tileShadow: {
+  tileWrap: {
     width: TILE_SIZE,
     height: TILE_SIZE,
     borderRadius: 38,
+    overflow: 'visible' as const,
+  },
+  tileShadowStyle: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34,
@@ -1346,8 +1336,11 @@ const p = StyleSheet.create({
     elevation: 12,
   },
 
-  chartShadow: {
+  chartWrap: {
     borderRadius: 38,
+    overflow: 'visible' as const,
+  },
+  chartShadowStyle: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.34,

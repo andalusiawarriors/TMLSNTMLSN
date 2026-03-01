@@ -8,6 +8,10 @@ export const DEFAULT_GOALS: DailyGoals = {
   water: 128, // oz
 };
 
+export const DEFAULT_PROGRESS_HUB_ORDER = [
+  'progress', 'strength', 'history', 'activity', 'active-days', 'workouts',
+] as const;
+
 export const DEFAULT_SETTINGS: UserSettings = {
   dailyGoals: DEFAULT_GOALS,
   weightUnit: 'lb',
@@ -17,4 +21,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
   defaultRestTimer: 120,
   defaultRestTimerEnabled: true,
   bodyMapGender: 'male',
+  progressHubOrder: [...DEFAULT_PROGRESS_HUB_ORDER],
 };
