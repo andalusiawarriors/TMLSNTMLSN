@@ -6,6 +6,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View } from 'react-native';
+import Constants from 'expo-constants';
+import type { ReactNode } from 'react';
+
+/** Wraps children with HapticProvider only when not in Expo Go (NitroModules crash there). Restores same provider tree as when quantity-card haptics worked. */
+function HapticProviderWrapper({ children }: { children: ReactNode }) {
+  const isExpoGo = Constants.appOwnership === 'expo';
+  if (isExpoGo) return <>{children}</>;
+  const { HapticProvider } = require('@renegades/react-native-tickle');
+  return <HapticProvider>{children}</HapticProvider>;
+}
 
 // Keep native splash visible until fonts load (avoids blank screen)
 SplashScreen.preventAutoHideAsync();
@@ -195,13 +205,15 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <ThemeProvider>
-        <AuthProvider>
-          <ActiveWorkoutProvider>
-            <RootLayoutInner />
-          </ActiveWorkoutProvider>
-        </AuthProvider>
-      </ThemeProvider>
+      <HapticProviderWrapper>
+        <ThemeProvider>
+          <AuthProvider>
+            <ActiveWorkoutProvider>
+              <RootLayoutInner />
+            </ActiveWorkoutProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </HapticProviderWrapper>
     </GestureHandlerRootView>
   );
 }

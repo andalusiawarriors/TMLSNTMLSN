@@ -92,7 +92,7 @@ export default function SearchFoodScreen() {
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('100g');
+  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('1g');
   const [addMealAmount, setAddMealAmount] = useState('1');
   const selectedFoodRef = useRef<ParsedNutrition | null>(null);
   const [selectedFood, setSelectedFood] = useState<ParsedNutrition | null>(null);

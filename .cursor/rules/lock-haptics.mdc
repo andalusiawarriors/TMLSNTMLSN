@@ -1,0 +1,38 @@
+---
+description: Lock haptic feedback behaviour; no changes without explicit user request.
+alwaysApply: true
+---
+
+# Haptics — locked
+
+**Haptic feedback is locked.** It must not be changed unless the user explicitly asks for a specific change to it. This avoids accidental removal or alteration when other agents or edits touch the same files.
+
+## What is locked (haptics)
+
+- **Root layout:** `app/_layout.tsx` — `HapticProviderWrapper`, conditional use of `HapticProvider` (expo Go vs dev/build). Do not remove or change the wrapper or the conditional require of `@renegades/react-native-tickle`.
+- **Tabs layout:** `app/(tabs)/_layout.tsx` — FAB press haptics: `Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)` in `handleFabPress`, `Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)` in `handleFabPressIn`. Do not remove or alter these calls.
+- **Home screen “add a food” search bar (the only “search food button”):** In `app/(tabs)/nutrition.tsx`, the pill below the calorie ring that says “add a food” and opens the search overlay. Its tap handler is `activateHomeSearch`. **No haptic** must fire when the user taps to open or close this search bar. Do not add `Haptics.*` to `activateHomeSearch`, `dismissHomeSearch`, or to the touch targets that open/close the search (Views with responder handlers, backdrop, X). The FAB is not the “search food button”; the user means only this home-screen pill connected to the calorie ring.
+- **Tab pills (calories / progress / fitness):** In `app/(tabs)/nutrition.tsx`, the header tab row. These must **not** call `Haptics.*` on press. When the user scrolls, the search bar can sit under the header; a tap to open/close search can hit a tab pill instead. So tab pill press must not trigger haptic. Keep `android_disableSound` on the tab pill Pressables.
+- **Add Meal sheet:** `components/AddMealSheet.tsx` — `ringInOptions`, `ringOutOptions`, `pillScrollOptions`, `pillOutOptions` (all use `haptic: visible ? 'sequence' : 'none'`). The passing of these options into `useAnimatedRingNumber`. Do not change to `'none'` or remove the haptic option unless the user explicitly asks.
+- **Ring number hook:** `hooks/useAnimatedRingNumber.ts` — haptic option handling (`'none' | 'single' | 'sequence'`), and the calls to `Haptics.impactAsync` (Light for single, Heavy for sequence). Do not remove or change intensity/frequency of these calls unless the user explicitly asks.
+- **Nutrition screen (other):** `app/(tabs)/nutrition.tsx` — the home calorie/macro ring uses `useAnimatedRingNumber(..., { haptic: 'none' })` so that when the log updates (e.g. after closing the Add Meal sheet) no haptic fires. Haptic for “changing quantity” is only in AddMealSheet. Do not set home ring haptic to `'sequence'` or `'single'` unless the user explicitly asks. Other `Haptics.*` calls (save, barcode, refresh, etc.) are unchanged.
+
+## Rules
+
+1. **Do not modify** any of the above unless the user’s request clearly and specifically asks to change something about haptics (e.g. “remove FAB haptic”, “softer haptics on quantity card”, “add haptic on X”).
+2. **When the user does request a specific haptic change:** change only that one thing. Do not remove or alter other haptic behaviour in the same file or elsewhere without explicit user authorization.
+3. **If a task would touch one of the listed files or code paths** and the change could affect haptic behaviour (e.g. refactoring `handleFabPress`, changing `AddMealSheet` options, editing `useAnimatedRingNumber`), **do not remove or disable haptics**. Preserve existing `Haptics.*` calls and haptic option values unless the user asked for a haptic change.
+4. **No “drive-by” edits:** do not remove, comment out, or “simplify” haptic calls while editing for other reasons (e.g. “cleanup”, “reduce dependencies”, “fix crash” without the user asking to remove haptics). For Expo Go compatibility, keep the conditional `HapticProviderWrapper`; do not delete haptic logic elsewhere.
+
+## Allowed without touching locked behaviour
+
+- Editing the same files for non-haptic changes (e.g. layout, styling, new props that do not affect `haptic` options or `Haptics.*` calls).
+- Adding new haptic feedback at a new UI location when the user explicitly asks for it.
+- Changing haptic behaviour only when the user explicitly requests it (then apply rule 2).
+
+## Summary
+
+- **“Search food button” = only** the home screen “add a food” pill (below the calorie ring in nutrition). Not the FAB.
+- **Locked:** HapticProvider in root layout; FAB haptics in tabs layout; **no haptic** on the “add a food” search bar (activateHomeSearch/dismissHomeSearch and their Pressables); AddMealSheet ring/pill haptic options; useAnimatedRingNumber haptic logic; other nutrition haptic usage.
+- **Change only when:** the user explicitly requests a specific haptic change.
+- **Otherwise:** preserve all existing haptic calls and option values; do not remove or disable them.

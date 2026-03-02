@@ -33,25 +33,25 @@ const PRELOAD_QUERIES = [
 ];
 const preloadCache = new Map<string, ParsedNutrition[]>();
 
-/** Exact key first; else best partial match so "white bread" can show preloaded "bread" instantly. */
+/** Exact key first; else best partial match so "white bread" can show preloaded "bread" instantly. Always re-filter so 0/0/0 macro items never leak from cache. */
 function getPreloadedResults(query: string): ParsedNutrition[] {
   const key = query.trim().toLowerCase();
   const exact = preloadCache.get(key);
-  if (exact && exact.length > 0) return exact;
+  if (exact && exact.length > 0) return filterResults(exact);
   for (const preloadKey of PRELOAD_QUERIES.map((q) => q.trim().toLowerCase()).sort((a, b) => b.length - a.length)) {
     if (key.includes(preloadKey) || preloadKey.includes(key)) {
       const hit = preloadCache.get(preloadKey);
-      if (hit && hit.length > 0) return hit;
+      if (hit && hit.length > 0) return filterResults(hit);
     }
   }
   return [];
 }
 
-/** List Food first-match only: use preload only when cache has exact key. Avoids "chicken breast" using "chicken" preload. */
+/** List Food first-match only: use preload only when cache has exact key. Avoids "chicken breast" using "chicken" preload. Always re-filter so 0/0/0 macro items never leak from cache. */
 function getPreloadedResultsExact(query: string): ParsedNutrition[] {
   const key = query.trim().toLowerCase();
   const exact = preloadCache.get(key);
-  return exact && exact.length > 0 ? exact : [];
+  return exact && exact.length > 0 ? filterResults(exact) : [];
 }
 
 /* ------------------------------------------------------------------ */

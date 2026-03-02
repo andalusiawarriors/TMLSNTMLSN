@@ -16,6 +16,7 @@ import {
   Image,
   ImageSourcePropType,
   Dimensions,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,13 +37,15 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
-import Svg, { Defs, RadialGradient, Stop, Circle, Path } from 'react-native-svg';
+import Svg, { Defs, RadialGradient, Stop, Circle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from '../utils/unitGrams';
 import * as Theme from '../constants/theme';
-import type { MealType } from '../types';
+import type { MealType, DailyGoals } from '../types';
+import { DEFAULT_GOALS } from '../constants/storageDefaults';
 import type { ParsedNutrition } from '../utils/foodApi';
 import * as Haptics from 'expo-haptics';
 import { useAnimatedRingNumber } from '../hooks/useAnimatedRingNumber';
+import { useAnimatedProgress } from '../hooks/useAnimatedProgress';
 
 const { Colors, Typography, Spacing, BorderRadius } = Theme;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -362,6 +365,7 @@ export interface AddMealSheetProps {
   userVolumeUnit?: 'oz' | 'ml';
   /** When provided, renders a live-preview calorie ring above the sheet */
   dayLog?: { calories: number; protein: number; carbs: number; fat: number };
+  dailyGoals?: DailyGoals;
 }
 
 export function AddMealSheet({
@@ -394,6 +398,7 @@ export function AddMealSheet({
   selectedFood,
   userVolumeUnit,
   dayLog,
+  dailyGoals,
 }: AddMealSheetProps) {
   const insets = useSafeAreaInsets();
 
@@ -409,7 +414,7 @@ export function AddMealSheet({
   // Backdrop starts below the ring + a little gap so the ring stays unmasked
   const BACKDROP_TOP = PR_TOP + PR_H + 8;
   const [isClosingRing, setIsClosingRing] = useState(false);
-  const RING_OUT_DURATION_MS = 480; // matches sheet close so ring + pills can animate out while sheet is visible
+  const RING_OUT_DURATION_MS = 500; // same as ring-in so out animates in the same way and fashion
   const amountEmpty = !addMealAmount.trim() || !Number.isFinite(parseFloat(addMealAmount)) || parseFloat(addMealAmount) <= 0;
   // Ring matches home screen: when amount empty, show day's current total (not 0)
   const previewCaloriesRaw = isClosingRing
@@ -418,16 +423,41 @@ export function AddMealSheet({
   const previewProteinRaw  = isClosingRing ? (dayLog?.protein ?? 0)  : amountEmpty ? (dayLog?.protein ?? 0)  : Math.round((dayLog?.protein ?? 0)  + (parseFloat(protein)  || 0));
   const previewCarbsRaw    = isClosingRing ? (dayLog?.carbs ?? 0)    : amountEmpty ? (dayLog?.carbs ?? 0)    : Math.round((dayLog?.carbs ?? 0)    + (parseFloat(carbs)    || 0));
   const previewFatRaw      = isClosingRing ? (dayLog?.fat ?? 0)      : amountEmpty ? (dayLog?.fat ?? 0)      : Math.round((dayLog?.fat ?? 0)      + (parseFloat(fat)      || 0));
-  const ringInOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
-  const ringOutOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
-  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
-  const previewProtein  = useAnimatedRingNumber(previewProteinRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
-  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
-  const previewFat      = useAnimatedRingNumber(previewFatRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
+  // Haptic must be 'sequence' whenever sheet is open or closing so ring animates with feedback when user types quantity
+  const sheetOpenOrClosing = visible || isClosingRing;
+  const calHapticOpts = { haptic: sheetOpenOrClosing ? 'sequence' as const : 'none' as const };
+  const silentOpts = { haptic: 'none' as const };
+  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, calHapticOpts);
+  const previewProtein  = useAnimatedRingNumber(previewProteinRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
+  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
+  const previewFat      = useAnimatedRingNumber(previewFatRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
+  const goals = dailyGoals ?? DEFAULT_GOALS;
+  const PR_ARC_LEN = Math.PI * PR_R;
+  const PR_DASH = 2;
+  const PR_DASH_GAP = 4;
+  const PR_BOUNDARY_LINE_WIDTH = PR_DASH * 1.05;
+  const PR_NUM_LINES = Math.ceil(PR_ARC_LEN / (PR_DASH + PR_DASH_GAP));
+  const _prCalRatio = previewCaloriesRaw / goals.calories;
+  const _prProgressDuration = isClosingRing ? RING_OUT_DURATION_MS : (_prCalRatio > 1 ? 700 : 500);
+  const animPrCalProgress = useAnimatedProgress(Math.min(_prCalRatio, 3), _prProgressDuration);
+  const prFilledCount = Math.round(Math.min(animPrCalProgress, 1) * PR_NUM_LINES);
+  const prOverflowCount = Math.round(Math.min(Math.max(animPrCalProgress - 1, 0), 1) * PR_NUM_LINES);
+  const PR_CX = PR_W / 2;
+  const PR_CY = PR_ARC_MID;
+  const prInnerR = PR_R - PR_STROKE / 2;
+  const prOuterR = PR_R + PR_STROKE / 2;
+  const PR_MACRO_R = (PR_MACRO_SIZE - PR_MACRO_STROKE) / 2;
+  const PR_MACRO_CIRC = 2 * Math.PI * PR_MACRO_R;
+  const _prProtRatio = previewProteinRaw / goals.protein;
+  const _prCarbRatio = previewCarbsRaw / goals.carbs;
+  const _prFatRatio  = previewFatRaw / goals.fat;
+  const animPrProteinProgress = useAnimatedProgress(Math.min(_prProtRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prProtRatio > 1 ? 700 : 500));
+  const animPrCarbsProgress   = useAnimatedProgress(Math.min(_prCarbRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prCarbRatio > 1 ? 700 : 500));
+  const animPrFatProgress     = useAnimatedProgress(Math.min(_prFatRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prFatRatio > 1 ? 700 : 500));
   const previewMacros = [
-    { value: previewProtein, label: 'protein', left: 47, top: 63 },
-    { value: previewCarbs,   label: 'carbs',   left: (PR_W - PR_MACRO_SIZE) / 2, top: 95 },
-    { value: previewFat,     label: 'fat',     left: PR_W - 47 - PR_MACRO_SIZE, top: 63 },
+    { value: previewProtein, label: 'protein', progress: animPrProteinProgress, left: 47, top: 63 },
+    { value: previewCarbs,   label: 'carbs',   progress: animPrCarbsProgress,   left: (PR_W - PR_MACRO_SIZE) / 2, top: 95 },
+    { value: previewFat,     label: 'fat',     progress: animPrFatProgress,     left: PR_W - 47 - PR_MACRO_SIZE, top: 63 },
   ];
 
   const translateY = useSharedValue(CLOSED_Y);
@@ -456,7 +486,7 @@ export function AddMealSheet({
     }
   }, [visible]);
 
-  const SHEET_CLOSE_MS = 180;
+  const SHEET_CLOSE_MS = 500; // same duration as ring-out so sheet and numbers animate out together, matching the in animation
 
   const runSheetClose = useCallback((opts: { closeDurationMs?: number } = {}) => {
     const closeDurationMs = opts.closeDurationMs ?? SHEET_CLOSE_MS;
@@ -467,6 +497,8 @@ export function AddMealSheet({
   }, [translateY, onClose]);
 
   const closeWithAnimation = () => {
+    quantityInputRef.current?.blur();
+    Keyboard.dismiss();
     if (unitDropdownOpen) {
       setUnitDropdownOpen(false);
       dropdownProgress.value = 0;
@@ -574,9 +606,12 @@ export function AddMealSheet({
           if (cal > 9999 || p > 999.9 || c > 999.9 || f > 999.9) return;
         }
       }
+      if (cleaned !== addMealAmount) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
       setAddMealAmount(cleaned);
     }
-  }, [setAddMealAmount, addMealUnit, selectedFood]);
+  }, [addMealAmount, setAddMealAmount, addMealUnit, selectedFood]);
 
   const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
   const [capsuleBottomInSheet, setCapsuleBottomInSheet] = useState(0);
@@ -674,14 +709,12 @@ export function AddMealSheet({
   const pillProteinTarget = isClosingRing ? 0 : (hasAmt && protein ? Math.round(parseFloat(protein)) : 0);
   const pillCarbsTarget = isClosingRing ? 0 : (hasAmt && carbs ? Math.round(parseFloat(carbs)) : 0);
   const pillFatTarget = isClosingRing ? 0 : (hasAmt && fat ? Math.round(parseFloat(fat)) : 0);
-  const pillScrollOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
-  const pillOutOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
   const pillDuration = isClosingRing ? RING_OUT_DURATION_MS : 500;
-  const pillOpts = isClosingRing ? pillOutOptions : pillScrollOptions;
-  const animatedPillCal = useAnimatedRingNumber(pillCalTarget, pillDuration, pillOpts);
-  const animatedPillProtein = useAnimatedRingNumber(pillProteinTarget, pillDuration, pillOpts);
-  const animatedPillCarbs = useAnimatedRingNumber(pillCarbsTarget, pillDuration, pillOpts);
-  const animatedPillFat = useAnimatedRingNumber(pillFatTarget, pillDuration, pillOpts);
+  const pillCalHapticOpts = { haptic: sheetOpenOrClosing ? 'sequence' as const : 'none' as const };
+  const animatedPillCal = useAnimatedRingNumber(pillCalTarget, pillDuration, pillCalHapticOpts);
+  const animatedPillProtein = useAnimatedRingNumber(pillProteinTarget, pillDuration, silentOpts);
+  const animatedPillCarbs = useAnimatedRingNumber(pillCarbsTarget, pillDuration, silentOpts);
+  const animatedPillFat = useAnimatedRingNumber(pillFatTarget, pillDuration, silentOpts);
 
   const cardGradient: [string, string] =
     meshType === 'gold' ? ['#D4B896', '#A8895E']
@@ -766,7 +799,7 @@ export function AddMealSheet({
                   <Stop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
                 </RadialGradient>
               </Defs>
-              <Path
+              <SvgPath
                 d={`M ${PR_STROKE / 2} ${PR_ARC_MID} A ${PR_R} ${PR_R} 0 0 1 ${PR_W - PR_STROKE / 2} ${PR_ARC_MID}`}
                 fill="none"
                 stroke="url(#previewRingGrad)"
@@ -776,18 +809,84 @@ export function AddMealSheet({
                 strokeMiterlimit={28.96}
               />
             </Svg>
+            {prFilledCount > 0 && (() => {
+              const arcD = `M ${PR_STROKE / 2} ${PR_ARC_MID} A ${PR_R} ${PR_R} 0 0 1 ${PR_W - PR_STROKE / 2} ${PR_ARC_MID}`;
+              const whiteDash = (prFilledCount === 1 ? '2' : Array(prFilledCount).fill('2').join(' 4 ')) + ' 99999';
+              const showBoundary = prOverflowCount === 0;
+              const bIdx = prFilledCount - 1;
+              const bT = (bIdx * (PR_DASH + PR_DASH_GAP) + PR_DASH / 2) / PR_ARC_LEN;
+              const bAngle = Math.PI * (1 - bT);
+              return (
+                <Svg width={PR_W} height={PR_ARC_MID + PR_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                  <SvgPath d={arcD} fill="none" stroke="#FFFFFF" strokeWidth={PR_STROKE} strokeDasharray={whiteDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
+                  {showBoundary && (
+                    <SvgLine
+                      x1={PR_CX + (prInnerR - 0.1 * PR_STROKE) * Math.cos(bAngle)} y1={PR_CY - (prInnerR - 0.1 * PR_STROKE) * Math.sin(bAngle)}
+                      x2={PR_CX + (prOuterR + 0.1 * PR_STROKE) * Math.cos(bAngle)} y2={PR_CY - (prOuterR + 0.1 * PR_STROKE) * Math.sin(bAngle)}
+                      stroke="#FFFFFF" strokeWidth={PR_BOUNDARY_LINE_WIDTH} strokeLinecap="butt"
+                    />
+                  )}
+                </Svg>
+              );
+            })()}
+            {prOverflowCount > 0 && (() => {
+              const arcD = `M ${PR_STROKE / 2} ${PR_ARC_MID} A ${PR_R} ${PR_R} 0 0 1 ${PR_W - PR_STROKE / 2} ${PR_ARC_MID}`;
+              const redDashes = prOverflowCount === 1 ? '2' : Array(prOverflowCount).fill('2').join(' 4 ');
+              const redDash = redDashes + ' 99999';
+              const bIdx = prOverflowCount - 1;
+              const bT = (bIdx * (PR_DASH + PR_DASH_GAP) + PR_DASH / 2) / PR_ARC_LEN;
+              const bAngle = Math.PI * (1 - bT);
+              return (
+                <Svg width={PR_W} height={PR_ARC_MID + PR_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                  <SvgPath d={arcD} fill="none" stroke="#FF0000" strokeWidth={PR_STROKE} strokeDasharray={redDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
+                  <SvgLine
+                    x1={PR_CX + (prInnerR - 0.1 * PR_STROKE) * Math.cos(bAngle)} y1={PR_CY - (prInnerR - 0.1 * PR_STROKE) * Math.sin(bAngle)}
+                    x2={PR_CX + (prOuterR + 0.1 * PR_STROKE) * Math.cos(bAngle)} y2={PR_CY - (prOuterR + 0.1 * PR_STROKE) * Math.sin(bAngle)}
+                    stroke="#FF0000" strokeWidth={PR_BOUNDARY_LINE_WIDTH} strokeLinecap="butt"
+                  />
+                </Svg>
+              );
+            })()}
             <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
               <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>{previewCalories}</Text>
               <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>calories</Text>
             </View>
-            {previewMacros.map(m => (
-              <View key={m.label} style={{ position: 'absolute', left: m.left, top: m.top, alignItems: 'center', width: PR_MACRO_SIZE }}>
-                <View style={{ width: PR_MACRO_SIZE, height: PR_MACRO_SIZE, borderRadius: PR_MACRO_SIZE / 2, borderWidth: PR_MACRO_STROKE, borderColor: 'rgba(198,198,198,0.35)', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>{m.value}</Text>
+            {previewMacros.map(m => {
+              const mFill = Math.min(m.progress, 1);
+              const mOver = Math.min(Math.max(m.progress - 1, 0), 1);
+              const ctr = PR_MACRO_SIZE / 2;
+              return (
+                <View key={m.label} style={{ position: 'absolute', left: m.left, top: m.top, alignItems: 'center', width: PR_MACRO_SIZE }}>
+                  <View style={{ width: PR_MACRO_SIZE, height: PR_MACRO_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+                    <Svg width={PR_MACRO_SIZE} height={PR_MACRO_SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                      <Circle cx={ctr} cy={ctr} r={PR_MACRO_R} fill="none" stroke="rgba(198,198,198,0.35)" strokeWidth={PR_MACRO_STROKE} />
+                      {mFill > 0 && (
+                        <Circle
+                          cx={ctr} cy={ctr} r={PR_MACRO_R}
+                          fill="none" stroke="#FFFFFF" strokeWidth={PR_MACRO_STROKE}
+                          strokeDasharray={`${PR_MACRO_CIRC}`}
+                          strokeDashoffset={`${PR_MACRO_CIRC * (1 - mFill)}`}
+                          strokeLinecap="round"
+                          transform={`rotate(-90 ${ctr} ${ctr})`}
+                        />
+                      )}
+                      {mOver > 0.001 && (
+                        <Circle
+                          cx={ctr} cy={ctr} r={PR_MACRO_R}
+                          fill="none" stroke="#FF0000" strokeWidth={PR_MACRO_STROKE}
+                          strokeDasharray={`${PR_MACRO_CIRC * mOver} ${PR_MACRO_CIRC * (1 - mOver)}`}
+                          strokeDashoffset={`${-PR_MACRO_CIRC * mFill}`}
+                          strokeLinecap="round"
+                          transform={`rotate(-90 ${ctr} ${ctr})`}
+                        />
+                      )}
+                    </Svg>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>{m.value}</Text>
+                  </View>
+                  <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>{m.label}</Text>
                 </View>
-                <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>{m.label}</Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </Animated.View>
       )}

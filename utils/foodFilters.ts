@@ -75,9 +75,17 @@ export function latinRatio(text: string): number {
   return latin / Math.max(1, text.replace(/\s/g, '').length);
 }
 
+/** True if food has zero protein, zero carbs, and zero fat — such items must never be shown. */
+export function hasNoMacros(food: import('./foodApi').ParsedNutrition): boolean {
+  const p = food.protein ?? 0;
+  const c = food.carbs ?? 0;
+  const f = food.fat ?? 0;
+  return p === 0 && c === 0 && f === 0;
+}
+
 export function hasValidNutrition(food: import('./foodApi').ParsedNutrition): boolean {
   const { calories, protein, carbs, fat } = food;
-  if (calories === 0 && protein === 0 && carbs === 0 && fat === 0) return true;
+  if (hasNoMacros(food)) return false;
   if (calories === 0 && (protein + carbs + fat) > 5) return false;
   if (calories > 1000) return false;
   if (protein > 100 || carbs > 100 || fat > 100) return false;
@@ -163,6 +171,7 @@ export function filterResults(items: ParsedNutrition[]): ParsedNutrition[] {
     const sanitizedName = sanitizeFoodName(item.name);
     const sanitizedBrand = sanitizeFoodName(item.brand || '');
     if (!isAcceptableFood(sanitizedName, sanitizedBrand)) continue;
+    if (hasNoMacros(item)) continue;
     if (!hasValidNutrition(item)) continue;
     if (latinRatio(sanitizedName) < 0.5) continue;
     result.push({
@@ -179,6 +188,7 @@ export function filterResults(items: ParsedNutrition[]): ParsedNutrition[] {
  */
 export function filterSingleFood(food: ParsedNutrition | null): ParsedNutrition | null {
   if (!food) return null;
+  if (hasNoMacros(food)) return null;
   const sanitizedName = sanitizeFoodName(food.name);
   const sanitizedBrand = sanitizeFoodName(food.brand || '');
   if (!isAcceptableFood(sanitizedName, sanitizedBrand)) return null;
