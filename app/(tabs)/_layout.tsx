@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated as RNAnimated,
+  Easing,
   Dimensions,
   BackHandler,
 } from 'react-native';
@@ -20,6 +21,7 @@ import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
+import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
@@ -590,10 +592,8 @@ export default function TabsLayout() {
       RNAnimated.timing(pillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
 
-    RNAnimated.parallel([
-      RNAnimated.timing(popupContentAnim, { toValue: 0, duration: 90, useNativeDriver: true }),
-      RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
-    ]).start(() => {
+    RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    RNAnimated.spring(popupContentAnim, { toValue: 0, damping: 20, stiffness: 140, mass: 0.8, useNativeDriver: true }).start(() => {
       setShowPopup(false);
     });
   }, [popupOverlayAnim, popupContentAnim, playPopupClose, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity]);
@@ -664,10 +664,8 @@ export default function TabsLayout() {
       RNAnimated.timing(pillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
 
-    RNAnimated.parallel([
-      RNAnimated.timing(popupContentAnim, { toValue: 0, duration: 90, useNativeDriver: true }),
-      RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
-    ]).start(() => {
+    RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    RNAnimated.spring(popupContentAnim, { toValue: 0, damping: 20, stiffness: 140, mass: 0.8, useNativeDriver: true }).start(() => {
       setShowPopup(false);
       // list food: emit on nutrition tab (opens List Food modal); from other tabs use food-action-modal.
       // search food: always push to full search-food page.
@@ -699,10 +697,8 @@ export default function TabsLayout() {
       RNAnimated.timing(pillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
 
-    RNAnimated.parallel([
-      RNAnimated.timing(popupContentAnim, { toValue: 0, duration: 90, useNativeDriver: true }),
-      RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 120, useNativeDriver: true }),
-    ]).start(() => {
+    RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    RNAnimated.spring(popupContentAnim, { toValue: 0, damping: 20, stiffness: 140, mass: 0.8, useNativeDriver: true }).start(() => {
       setShowPopup(false);
       // Always open the workout PAGE (no modals). Keep toolbar highlight on the tab where FAB was opened.
       if (!openedFromWorkoutRef.current) setTabHighlightLock(fabOpenedFromTabIndexRef.current);
@@ -727,9 +723,9 @@ export default function TabsLayout() {
     extrapolate: 'clamp',
   });
 
-  const contentOpacity = popupOverlayAnim.interpolate({
-    inputRange: [0, 0.18, 0.42, 0.65, 0.85, 1],
-    outputRange: [0, 0.25, 0.72, 0.92, 0.98, 1],
+  const contentOpacity = popupContentAnim.interpolate({
+    inputRange: [0, 0.3, 0.6, 1],
+    outputRange: [0, 0.6, 0.9, 1],
     extrapolate: 'clamp',
   });
   const contentTranslateY = popupContentAnim.interpolate({
@@ -1050,6 +1046,7 @@ export default function TabsLayout() {
 
   return (
     <StreakShiftContext.Provider value={streakShiftX}>
+    <PopupOverlayAnimContext.Provider value={popupOverlayAnim}>
     <View style={{ flex: 1, backgroundColor: colors.primaryDark }}>
       <Tabs
         initialRouteName="nutrition"
@@ -1172,23 +1169,9 @@ export default function TabsLayout() {
       {/* ══════════════════════════════════════════════════════════ */}
       {/* POPUP OVERLAY — rendered ABOVE Tabs so it's always on top */}
       {/* ══════════════════════════════════════════════════════════ */}
-      {showPopup && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {/* Backdrop blur + dismiss (tap to close) — stops above tab bar so nav stays crisp */}
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => closePopup(true)}>
-            <RNAnimated.View
-              style={[
-                { position: 'absolute', top: 0, left: 0, right: 0, bottom: TAB_BAR_HEIGHT, overflow: 'hidden', opacity: overlayOpacity },
-              ]}
-            >
-              <BlurView
-                intensity={15}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-                {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-              />
-            </RNAnimated.View>
-          </Pressable>
+        <View style={StyleSheet.absoluteFill} pointerEvents={showPopup ? 'box-none' : 'none'}>
+          {/* Dismiss tap area — full screen, no blur */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => closePopup(true)} disabled={!showPopup} />
 
           {/* Pills container — equal-width columns, anchored above FAB; move up when ActiveWorkoutPill visible */}
           <RNAnimated.View
@@ -1202,7 +1185,17 @@ export default function TabsLayout() {
               transform: [{ translateY: contentTranslateY }, { scale: contentScale }],
             }}
           >
-            <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP, width: '100%', maxWidth: 400, paddingHorizontal: 16 }}>
+            <View style={{ width: '100%', maxWidth: 400, paddingHorizontal: 16 }}>
+            <View>
+              <RNAnimated.View style={[StyleSheet.absoluteFill, { borderRadius: POPUP_PILL_RADIUS, overflow: 'hidden', opacity: overlayOpacity }]}>
+                <BlurView
+                  intensity={15}
+                  tint="dark"
+                  style={[StyleSheet.absoluteFill, { borderRadius: POPUP_PILL_RADIUS, overflow: 'hidden' }]}
+                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
+                />
+              </RNAnimated.View>
+              <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP }}>
               {/* Left column: saved foods, search food, scan food */}
               <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
                 <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
@@ -1288,6 +1281,8 @@ export default function TabsLayout() {
                 </RNAnimated.View>
               </View>
             </View>
+            </View>
+            </View>
           </RNAnimated.View>
 
           {/* Workout block overlay — when user tries to start workout while one is active */}
@@ -1315,8 +1310,8 @@ export default function TabsLayout() {
             </View>
           )}
         </View>
-      )}
     </View>
+    </PopupOverlayAnimContext.Provider>
     </StreakShiftContext.Provider>
   );
 }

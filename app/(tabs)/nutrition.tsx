@@ -28,6 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
 import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
+import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -201,10 +202,11 @@ export default function NutritionScreen({
     [todayLog, viewingDate]
   );
 
-  const animatedCal = useAnimatedRingNumber(viewingDateLog.calories);
-  const animatedProtein = useAnimatedRingNumber(viewingDateLog.protein);
-  const animatedCarbs = useAnimatedRingNumber(viewingDateLog.carbs);
-  const animatedFat = useAnimatedRingNumber(viewingDateLog.fat);
+  const ringHaptic = 'sequence' as const;
+  const animatedCal = useAnimatedRingNumber(viewingDateLog.calories, 380, { haptic: ringHaptic });
+  const animatedProtein = useAnimatedRingNumber(viewingDateLog.protein, 380, { haptic: ringHaptic });
+  const animatedCarbs = useAnimatedRingNumber(viewingDateLog.carbs, 380, { haptic: ringHaptic });
+  const animatedFat = useAnimatedRingNumber(viewingDateLog.fat, 380, { haptic: ringHaptic });
 
   const cardScale = useSharedValue(1);
   const cardScaleStyle = useAnimatedStyle(() => ({
@@ -257,6 +259,12 @@ export default function NutritionScreen({
   const streakShiftX = useContext(StreakShiftContext);
   const streakShiftXOrZero = useRef(new RNAnimated.Value(0)).current;
   const contentShiftX = streakShiftX ?? streakShiftXOrZero;
+  const popupOverlayAnim = useContext(PopupOverlayAnimContext);
+  const popupOverlayFallback = useRef(new RNAnimated.Value(0)).current;
+  const popupRingShiftY = (popupOverlayAnim ?? popupOverlayFallback).interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 25],
+  });
 
   useEffect(() => {
     if (fireStreakPopupVisible) {
@@ -343,8 +351,8 @@ export default function NutritionScreen({
   const [mealImage, setMealImage] = useState<string | undefined>();
   const [addMealTitleBrand, setAddMealTitleBrand] = useState('');
   const [addMealBrandName, setAddMealBrandName] = useState('');
-  const [addMealUnit, setAddMealUnit] = useState<string>('100g');
-  const [addMealAmount, setAddMealAmount] = useState('1');
+  const [addMealUnit, setAddMealUnit] = useState<string>('1g');
+  const [addMealAmount, setAddMealAmount] = useState('');
   const [hasAddMealSelectedFood, setHasAddMealSelectedFood] = useState(false);
   const [selectedFoodForSheet, setSelectedFoodForSheet] = useState<ParsedNutrition | null>(null);
   const selectedFoodRef = useRef<ParsedNutrition | null>(null);
@@ -546,7 +554,7 @@ export default function NutritionScreen({
   const resetMealForm = () => {
     setMealName(''); setCalories(''); setProtein(''); setCarbs(''); setFat(''); setMealImage(undefined);
     setAddMealTitleBrand(''); setAddMealBrandName('');
-    setAddMealUnit('100g'); setAddMealAmount('1');
+    setAddMealUnit('1g'); setAddMealAmount('');
     setHasAddMealSelectedFood(false);
     setSelectedFoodForSheet(null);
     selectedFoodRef.current = null;
@@ -1694,7 +1702,7 @@ export default function NutritionScreen({
             ];
             return (
               <View style={{ alignItems: 'center' }}>
-                <View style={{ width: RING_W, height: RING_H, marginTop: 4 }}>
+                <View style={{ width: RING_W, height: RING_H, marginTop: 29 }}>
                   {/* Semicircle arc */}
                   <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
                     <Defs>
@@ -1849,10 +1857,9 @@ export default function NutritionScreen({
       )}
 
       {/* ═══ INLINE HOME SEARCH — layer 2: ring, bar, results (above blur) ═══ */}
-      {/* Hidden when AddMealSheet is open — sheet renders its own ring; showing both causes number clash */}
-      {homeSearchActive && homeTab === 'calories' && searchOverlayScreen !== 'addMeal' && (
+      {homeSearchActive && homeTab === 'calories' && (
         <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 51, opacity: searchExpandAnim }]} pointerEvents="box-none">
-          {/* Calorie ring + macros */}
+          {/* Calorie ring + macros — always visible; AddMealSheet's ring (in Modal) layers on top */}
           {(() => {
             const RING_W = 291;
             const RING_STROKE = 11;
@@ -1871,9 +1878,9 @@ export default function NutritionScreen({
               { left: (RING_W - MACRO_RING_SIZE) / 2, top: 95 },
               { left: RING_W - 47 - MACRO_RING_SIZE, top: 63 },
             ];
-            const RING_TOP = insets.top + 73 + 4;
+            const RING_TOP = insets.top + 73 + 29;
             return (
-              <View style={{ position: 'absolute', top: RING_TOP, left: 0, right: 0, alignItems: 'center', zIndex: 1 }} pointerEvents="none">
+              <View style={{ position: 'absolute', top: RING_TOP, left: 0, right: 0, alignItems: 'center', zIndex: 1, opacity: searchOverlayScreen === 'addMeal' ? 0 : 1 }} pointerEvents="none">
                 <View style={{ width: RING_W, height: RING_H }}>
                   <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
                     <Defs>
@@ -1909,7 +1916,7 @@ export default function NutritionScreen({
             );
           })()}
           {/* Search bar — left-pinned so width growth doesn't shift content */}
-          <View style={{ position: 'absolute', top: insets.top + 73 + 4 + 162 + 16, left: (SCREEN_WIDTH - (291 + 12 + 53)) / 2 }}>
+          <View style={{ position: 'absolute', top: insets.top + 73 + 29 + 162 + 16, left: (SCREEN_WIDTH - (291 + 12 + 53)) / 2 }}>
             <RNAnimated.View style={{
               width: searchExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [291, 291 + 12 + 53] }),
               height: 53,
@@ -1957,7 +1964,7 @@ export default function NutritionScreen({
             </RNAnimated.View>
           </View>
           {/* Search results — fills from search bar to bottom of screen */}
-          <View style={{ position: 'absolute', top: insets.top + 73 + 4 + 162 + 16 + 53 + 8, bottom: 0, left: CONTENT_PADDING, right: CONTENT_PADDING }}>
+          <View style={{ position: 'absolute', top: insets.top + 73 + 29 + 162 + 16 + 53 + 8, bottom: 0, left: CONTENT_PADDING, right: CONTENT_PADDING }}>
             {foodSearchLoading && foodSearchResults.length === 0 && (
               <ActivityIndicator style={{ marginVertical: 16 }} color="#C6C6C6" />
             )}

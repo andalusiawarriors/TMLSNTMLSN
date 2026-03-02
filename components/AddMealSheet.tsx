@@ -105,9 +105,14 @@ const SHEET_SLOT = Math.round(SCREEN_H * 0.52) - 48;
 const SHEET_H = 284;
 const MESH_ELLIPSE_SIZE = 800;
 const CLOSED_Y = SHEET_SLOT + 40;
-const OPEN_Y = 0;
-const DISMISS_Y = 90;
-const DISMISS_VELOCITY = 900;
+/** Offset from insets.top to search pill top on nutrition (73+29+162+16). Semi-open card top aligns here. */
+const SEARCH_PILL_TOP_OFFSET = 73 + 29 + 162 + 16; // 280
+/** Semi-open → close: sensitive (easy to dismiss) */
+const DISMISS_Y_SEMI = 90;
+const DISMISS_VELOCITY_SEMI = 900;
+/** Expanded → close: less sensitive (easy to snap to semi-open instead) */
+const DISMISS_Y_EXPANDED = 400;
+const DISMISS_VELOCITY_EXPANDED = 5000;
 const SPRING_CFG = { damping: 28, stiffness: 460, mass: 0.4 };
 const CARD_R = 28;
 const CARD_PAD = 24;
@@ -400,17 +405,25 @@ export function AddMealSheet({
   const PR_MACRO_SIZE = 41;
   const PR_MACRO_STROKE = 3;
   const PR_H = PR_ARC_MID + 16;
-  const PR_TOP = insets.top + 73 + 4;
+  const PR_TOP = insets.top + 73 + 29;
   // Backdrop starts below the ring + a little gap so the ring stays unmasked
   const BACKDROP_TOP = PR_TOP + PR_H + 8;
-  const previewCaloriesRaw = Math.round((dayLog?.calories ?? 0) + (parseFloat(calories) || 0));
-  const previewProteinRaw  = Math.round((dayLog?.protein  ?? 0) + (parseFloat(protein)  || 0));
-  const previewCarbsRaw    = Math.round((dayLog?.carbs    ?? 0) + (parseFloat(carbs)    || 0));
-  const previewFatRaw      = Math.round((dayLog?.fat      ?? 0) + (parseFloat(fat)      || 0));
-  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw);
-  const previewProtein  = useAnimatedRingNumber(previewProteinRaw);
-  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw);
-  const previewFat      = useAnimatedRingNumber(previewFatRaw);
+  const [isClosingRing, setIsClosingRing] = useState(false);
+  const RING_OUT_DURATION_MS = 480; // matches sheet close so ring + pills can animate out while sheet is visible
+  const amountEmpty = !addMealAmount.trim() || !Number.isFinite(parseFloat(addMealAmount)) || parseFloat(addMealAmount) <= 0;
+  // Ring matches home screen: when amount empty, show day's current total (not 0)
+  const previewCaloriesRaw = isClosingRing
+    ? (dayLog?.calories ?? 0)
+    : amountEmpty ? (dayLog?.calories ?? 0) : Math.round((dayLog?.calories ?? 0) + (parseFloat(calories) || 0));
+  const previewProteinRaw  = isClosingRing ? (dayLog?.protein ?? 0)  : amountEmpty ? (dayLog?.protein ?? 0)  : Math.round((dayLog?.protein ?? 0)  + (parseFloat(protein)  || 0));
+  const previewCarbsRaw    = isClosingRing ? (dayLog?.carbs ?? 0)    : amountEmpty ? (dayLog?.carbs ?? 0)    : Math.round((dayLog?.carbs ?? 0)    + (parseFloat(carbs)    || 0));
+  const previewFatRaw      = isClosingRing ? (dayLog?.fat ?? 0)      : amountEmpty ? (dayLog?.fat ?? 0)      : Math.round((dayLog?.fat ?? 0)      + (parseFloat(fat)      || 0));
+  const ringInOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
+  const ringOutOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
+  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
+  const previewProtein  = useAnimatedRingNumber(previewProteinRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
+  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
+  const previewFat      = useAnimatedRingNumber(previewFatRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, isClosingRing ? ringOutOptions : ringInOptions);
   const previewMacros = [
     { value: previewProtein, label: 'protein', left: 47, top: 63 },
     { value: previewCarbs,   label: 'carbs',   left: (PR_W - PR_MACRO_SIZE) / 2, top: 95 },
@@ -427,17 +440,31 @@ export function AddMealSheet({
   const nativeScrollRef = useRef<NativeViewGestureHandler>(null);
   const quantityInputRef = useRef<TextInput>(null);
   const expandedTranslateYSV = useSharedValue(-(SCREEN_H - SHEET_SLOT - (insets.top || 44) - 10));
+  const semiOpenY = insets.top + SEARCH_PILL_TOP_OFFSET - SCREEN_H + SHEET_SLOT;
+  const semiOpenYSV = useSharedValue(semiOpenY);
 
   useEffect(() => {
     expandedTranslateYSV.value = -(SCREEN_H - SHEET_SLOT - insets.top - 10);
-  }, [insets.top, expandedTranslateYSV]);
+    semiOpenYSV.value = semiOpenY;
+  }, [insets.top, expandedTranslateYSV, semiOpenY, semiOpenYSV]);
 
   useEffect(() => {
     if (visible) {
       setUnitDropdownOpen(false);
       dropdownProgress.value = 0;
+      setIsClosingRing(false);
     }
   }, [visible]);
+
+  const SHEET_CLOSE_MS = 180;
+
+  const runSheetClose = useCallback((opts: { closeDurationMs?: number } = {}) => {
+    const closeDurationMs = opts.closeDurationMs ?? SHEET_CLOSE_MS;
+    // Don't fade backdrop — keep it opaque so sheet "passes through" and reveals search results gradually
+    translateY.value = withTiming(CLOSED_Y, { duration: closeDurationMs, easing: Easing.in(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(onClose)();
+    });
+  }, [translateY, onClose]);
 
   const closeWithAnimation = () => {
     if (unitDropdownOpen) {
@@ -446,17 +473,13 @@ export function AddMealSheet({
     }
     isExpanded.value = 0;
     setScrollEnabled(false);
-    backdropOpacity.value = withTiming(0, { duration: 180 });
-    translateY.value = withTiming(CLOSED_Y, { duration: 180, easing: Easing.in(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(onClose)();
-    });
+    if (dayLog != null) setIsClosingRing(true);
+    runSheetClose();
   };
 
   // Single gesture covering the entire sheet. In semi-opened state it moves the
-  // whole sheet (card + nutrition area as one block). In expanded state it only
-  // moves the sheet when the touch started at scroll offset 0 and drags down;
-  // all other expanded-state drags fall through to the ScrollView via
-  // simultaneousWithExternalGesture.
+  // whole sheet (card + nutrition area as one block). In expanded state it moves
+  // the sheet when dragging down from scroll top OR from the card (coloured area).
   const sheetGesture = Gesture.Pan()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .simultaneousWithExternalGesture(nativeScrollRef as React.RefObject<React.ComponentType<{}>>)
@@ -467,20 +490,19 @@ export function AddMealSheet({
     })
     .onUpdate((e) => {
       const etY = expandedTranslateYSV.value;
+      const touchOnCard = e.y >= 0 && e.y <= SHEET_H;
       if (isExpanded.value === 0) {
-        // Semi-opened: whole sheet moves as one block in any direction
-        translateY.value = Math.max(etY, e.translationY);
-      } else if (gestureStartedAtTopSV.value === 1 && e.translationY > 0) {
-        // Expanded + touch started at top + dragging down.
-        // Disable the ScrollView on the very first down-frame so both card and
-        // nutrition content lock together and move at exactly the same speed.
+        // Semi-opened: whole sheet moves as one block in any direction (baseline = semiOpenYSV)
+        translateY.value = Math.max(etY, semiOpenYSV.value + e.translationY);
+      } else if ((gestureStartedAtTopSV.value === 1 || touchOnCard) && e.translationY > 0) {
+        // Expanded + (touch at scroll top OR on card) + dragging down — move sheet.
         if (collapsingFromTopSV.value === 0) {
           collapsingFromTopSV.value = 1;
           runOnJS(setScrollEnabled)(false);
         }
         translateY.value = etY + e.translationY;
       }
-      // Expanded + not at top, or dragging up → do nothing, ScrollView handles it
+      // Expanded + not at top and not on card, or dragging up → ScrollView handles it
     })
     .onEnd((e) => {
       const etY = expandedTranslateYSV.value;
@@ -489,22 +511,20 @@ export function AddMealSheet({
           isExpanded.value = 1;
           runOnJS(setScrollEnabled)(true);
           translateY.value = withTiming(etY, { duration: 260, easing: Easing.out(Easing.cubic) });
-        } else if (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY) {
+        } else if (e.translationY > DISMISS_Y_SEMI || e.velocityY > DISMISS_VELOCITY_SEMI) {
           runOnJS(closeWithAnimation)();
         } else {
-          translateY.value = withSpring(0, SPRING_CFG);
+          translateY.value = withSpring(semiOpenYSV.value, SPRING_CFG);
         }
       } else {
-        if (gestureStartedAtTopSV.value === 1 && (e.translationY > DISMISS_Y || e.velocityY > DISMISS_VELOCITY)) {
+        // Expanded: soft drag down → stop at semi-open; hard/far drag down → close entirely
+        if (collapsingFromTopSV.value === 1 && (e.translationY > DISMISS_Y_EXPANDED || e.velocityY > DISMISS_VELOCITY_EXPANDED)) {
+          runOnJS(closeWithAnimation)();
+        } else if (collapsingFromTopSV.value === 1) {
           isExpanded.value = 0;
-          // scrollEnabled already false (set in onUpdate)
-          translateY.value = withSpring(0, SPRING_CFG);
-        } else if (gestureStartedAtTopSV.value === 1) {
-          // Partial drag from top that didn't reach threshold — snap back, re-enable scroll
-          runOnJS(setScrollEnabled)(true);
-          translateY.value = withSpring(etY, SPRING_CFG);
+          runOnJS(setScrollEnabled)(false);
+          translateY.value = withSpring(semiOpenYSV.value, SPRING_CFG);
         }
-        // else: gesture ran while scrolling in list — sheet untouched, scroll stays enabled
       }
     });
 
@@ -520,7 +540,7 @@ export function AddMealSheet({
     if (visible) {
       isExpanded.value = 0;
       setScrollEnabled(false);
-      translateY.value = withTiming(OPEN_Y, { duration: 220, easing: Easing.out(Easing.cubic) });
+      translateY.value = withTiming(semiOpenY, { duration: 220, easing: Easing.out(Easing.cubic) });
       backdropOpacity.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.ease) });
     } else {
       isExpanded.value = 0;
@@ -528,7 +548,7 @@ export function AddMealSheet({
       translateY.value = CLOSED_Y;
       backdropOpacity.value = 0;
     }
-  }, [visible, translateY, backdropOpacity, isExpanded]);
+  }, [visible, translateY, backdropOpacity, isExpanded, semiOpenY]);
 
   const isTop100 = addMealTitleBrand.trim().toUpperCase() === 'TMLSN TOP 100';
   const isVerified = addMealTitleBrand.trim().toUpperCase() === 'TMLSN VERIFIED';
@@ -647,13 +667,21 @@ export function AddMealSheet({
   // Scaling factor for the nutrition data table (raw per-100g values from selectedFood).
   const scalingFactor = (parseFloat(addMealAmount) || 1) * resolveGrams(addMealUnit, foodPortions) / 100;
 
-  // Pills: calories/protein/carbs/fat props are already scaled by the parent, display directly.
+  // Pills: calories/protein/carbs/fat — numeric targets; animate to 0 on close (same as ring out).
   const amt = parseFloat(addMealAmount);
   const hasAmt = Number.isFinite(amt) && amt > 0;
-  const scaledCal = hasAmt && calories ? String(Math.round(parseFloat(calories))) : '0';
-  const scaledProtein = hasAmt && protein ? `${parseFloat(protein).toFixed(1)}g` : '0g';
-  const scaledCarbs = hasAmt && carbs ? `${parseFloat(carbs).toFixed(1)}g` : '0g';
-  const scaledFat = hasAmt && fat ? `${parseFloat(fat).toFixed(1)}g` : '0g';
+  const pillCalTarget = isClosingRing ? 0 : (hasAmt && calories ? Math.round(parseFloat(calories)) : 0);
+  const pillProteinTarget = isClosingRing ? 0 : (hasAmt && protein ? Math.round(parseFloat(protein)) : 0);
+  const pillCarbsTarget = isClosingRing ? 0 : (hasAmt && carbs ? Math.round(parseFloat(carbs)) : 0);
+  const pillFatTarget = isClosingRing ? 0 : (hasAmt && fat ? Math.round(parseFloat(fat)) : 0);
+  const pillScrollOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
+  const pillOutOptions = { haptic: visible ? 'sequence' as const : 'none' as const };
+  const pillDuration = isClosingRing ? RING_OUT_DURATION_MS : 500;
+  const pillOpts = isClosingRing ? pillOutOptions : pillScrollOptions;
+  const animatedPillCal = useAnimatedRingNumber(pillCalTarget, pillDuration, pillOpts);
+  const animatedPillProtein = useAnimatedRingNumber(pillProteinTarget, pillDuration, pillOpts);
+  const animatedPillCarbs = useAnimatedRingNumber(pillCarbsTarget, pillDuration, pillOpts);
+  const animatedPillFat = useAnimatedRingNumber(pillFatTarget, pillDuration, pillOpts);
 
   const cardGradient: [string, string] =
     meshType === 'gold' ? ['#D4B896', '#A8895E']
@@ -721,11 +749,8 @@ export function AddMealSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation}>
-      {/* Backdrop — full-screen blur overlay; ring renders above via higher zIndex */}
-      <Animated.View style={[styles.backdrop, backdropAnimStyle]}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-        <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
-      </Animated.View>
+      {/* Tap-to-close: full screen so tapping search bar area also closes */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
 
       {/* Live-preview calorie ring — sits above backdrop in transparent modal space */}
       {dayLog && (
@@ -769,6 +794,10 @@ export function AddMealSheet({
 
       <GestureDetector gesture={sheetGesture}>
       <Animated.View style={[styles.sheet, sheetAnimStyle]}>
+        {/* Sheet backdrop — View not BlurView to avoid crash on close (BlurView unmount can crash) */}
+        <Animated.View style={[styles.sheetBlurWrap, backdropAnimStyle]}>
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
+        </Animated.View>
 
         {/* Nutrition ScrollView — fills the full sheet, content starts below the gold card
             via paddingTop: SHEET_H. When expanded, user can scroll this independently.
@@ -881,16 +910,16 @@ export function AddMealSheet({
               </Text>
             ) : null}
 
-            {/* 4 nutrition pills */}
+            {/* 4 nutrition pills — scrolling number animation (same as ring) */}
             <View style={styles.statsGrid}>
               {[
-                { value: scaledCal, label: 'calories' },
-                { value: scaledProtein, label: 'protein' },
-                { value: scaledCarbs, label: 'carbs' },
-                { value: scaledFat, label: 'fat' },
+                { value: String(animatedPillCal), label: 'calories' },
+                { value: `${animatedPillProtein}g`, label: 'protein' },
+                { value: `${animatedPillCarbs}g`, label: 'carbs' },
+                { value: `${animatedPillFat}g`, label: 'fat' },
               ].map((item, i) => (
                 <View key={i} style={[styles.statsPill, { backgroundColor: pillColor }]}>
-                  <CrossfadeText value={item.value} pillBg={pillColor} textStyle={styles.statValue} />
+                  <Text style={styles.statValue}>{item.value}</Text>
                   <Text style={styles.statLabel}>{item.label}</Text>
                 </View>
               ))}
@@ -1038,7 +1067,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderTopLeftRadius: CARD_R,
     borderTopRightRadius: CARD_R,
-    zIndex: 10,
+    zIndex: 25, // above ring (20) so expanded card fully covers ring/calorie element
+  },
+  sheetBlurWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: CARD_R,
+    borderTopRightRadius: CARD_R,
+    overflow: 'hidden',
   },
   cardZone: {
     position: 'absolute',

@@ -28,9 +28,9 @@ export function getSmartDefaultUnit(food: ParsedNutrition): { unit: string; amou
   const wholeItem = portions.find(p =>
     /^1\s+(medium|large|small|extra\s+large|whole|unit|piece|serving|bar|packet|bottle|can|slice|scoop)\b/i.test(p.label)
   );
-  if (wholeItem) return { unit: wholeItem.label, amount: '1' };
-  if (food.unit === 'ml') return { unit: '100ml', amount: '1' };
-  return { unit: '100g', amount: '1' };
+  if (wholeItem) return { unit: wholeItem.label, amount: '' };
+  if (food.unit === 'ml') return { unit: 'ml', amount: '' };
+  return { unit: '1g', amount: '' };
 }
 
 function unitLabel(u: AddMealUnit): string {
