@@ -21,6 +21,7 @@ import {
   Set,
   Prompt,
   UserSettings,
+  TrainingSettings,
   SavedRoutine,
   SavedFood,
   Meal,
@@ -91,11 +92,15 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
       defaultRestTimer: s.defaultRestTimer,
       defaultRestTimerEnabled: s.defaultRestTimerEnabled,
       progressHubOrder: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : undefined,
+      training: s.training ?? undefined,
     };
   }
   const pho = row.progress_hub_order as string[] | undefined;
   const progressHubOrder = Array.isArray(pho) ? pho : undefined;
   const dg = row.daily_goals as Record<string, number> | undefined;
+  const training = row.training_settings != null
+    ? (row.training_settings as TrainingSettings)
+    : undefined;
   return {
     progressHubOrder,
     dailyGoals: {
@@ -112,6 +117,7 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
     defaultRestTimer: row.default_rest_timer != null ? Number(row.default_rest_timer) : undefined,
     defaultRestTimerEnabled:
       row.default_rest_timer_enabled != null ? Boolean(row.default_rest_timer_enabled) : undefined,
+    training,
   };
 }
 
@@ -129,6 +135,7 @@ function mapUserSettingsToRow(
     default_rest_timer: s.defaultRestTimer ?? null,
     default_rest_timer_enabled: s.defaultRestTimerEnabled ?? null,
     progress_hub_order: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : null,
+    training_settings: s.training ?? null,
   };
 }
 

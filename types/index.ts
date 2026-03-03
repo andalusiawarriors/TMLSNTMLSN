@@ -104,6 +104,33 @@ export interface Prompt {
   category?: string;
 }
 
+// Training System Settings
+export type VolumeFramework = 'rp' | 'range' | 'custom';
+export type ScheduleMode = 'builder' | 'tmlsn' | 'ghost';
+export type WeekReset = 'monday' | 'rolling' | 'custom_day';
+
+export interface RpMuscleTarget {
+  mev: number;
+  mav: number;
+  mrv: number;
+}
+
+export interface RangeMuscleTarget {
+  min: number;
+  max: number;
+}
+
+export interface TrainingSettings {
+  volumeFramework: VolumeFramework;
+  scheduleMode: ScheduleMode;
+  weekReset: WeekReset;
+  allowMidWeekEdits: boolean;
+  scheduleNotifications: boolean;
+  scheduleReminderEnabled: boolean;
+  rpMuscleTargets: Record<string, RpMuscleTarget>;
+  rangeMuscleTargets: Record<string, RangeMuscleTarget>;
+}
+
 // User Settings
 export interface UserSettings {
   dailyGoals: DailyGoals;
@@ -115,6 +142,10 @@ export interface UserSettings {
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
   /** Progress Hub widget order (ids). Saved per account. */
   progressHubOrder?: string[];
+  /** Anatomical figure for muscle heatmap (male/female) */
+  bodyMapGender?: 'male' | 'female';
+  /** Training system configuration */
+  training?: TrainingSettings;
 }
 
 // Saved Food (for quick re-logging)

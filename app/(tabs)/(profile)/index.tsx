@@ -117,6 +117,17 @@ export default function ProfileScreen() {
           <SettingsRow icon="people-outline" label="Upgrade to Family Plan" last onPress={() => {}} />
         </SettingsCard>
 
+        <SettingsSectionHeader label="Training" />
+        <SettingsCard>
+          <SettingsRow
+            icon="barbell-outline"
+            label="Training System"
+            subtitle="Volume framework, schedule & week reset"
+            last
+            onPress={() => router.push('/training-settings')}
+          />
+        </SettingsCard>
+
         <SettingsSectionHeader label="Goals & Tracking" />
         <SettingsCard>
           <SettingsRow icon="heart-outline" label="Apple Health" rightText="✓ Connected" last={false} onPress={() => {}} />
