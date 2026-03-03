@@ -75,6 +75,21 @@ export async function supabaseSaveUserSettings(
     .from('user_settings')
     .upsert(row, { onConflict: 'user_id' });
   if (error) {
+    // PGRST204 means a column we're writing doesn't exist in the DB schema yet.
+    // Retry with only the core columns so the save doesn't crash while migrations
+    // are pending. Run the migration SQL to restore full persistence.
+    if ((error as { code?: string }).code === 'PGRST204') {
+      console.warn('Supabase save user settings: schema mismatch — retrying with core columns only. Run pending migrations to fix.', error.message);
+      const { progress_hub_order: _pho, ...coreRow } = row as Record<string, unknown>;
+      const { error: retryError } = await supabase
+        .from('user_settings')
+        .upsert(coreRow, { onConflict: 'user_id' });
+      if (retryError) {
+        console.error('Supabase save user settings (retry):', retryError);
+        throw retryError;
+      }
+      return;
+    }
     console.error('Supabase save user settings:', error);
     throw error;
   }
