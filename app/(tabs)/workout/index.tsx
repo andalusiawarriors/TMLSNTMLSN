@@ -376,7 +376,7 @@ export default function WorkoutScreen({
     useCallback(() => {
       setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => setWeightUnit(s.weightUnit));
-      getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 5)));
+      getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 10)));
     }, [])
   );
 
@@ -1434,14 +1434,36 @@ export default function WorkoutScreen({
                         // Prescription for this exercise (progressive overload ghost values)
                         const exKey = exercise.exerciseDbId ?? exercise.name;
                         const prescription = exKey ? prescriptions[exKey] : null;
-                        const ghostWeight = prescription
-                          ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
-                          : null;
-                        const ghostReps = prescription
-                          ? String(prescription.goal === 'add_load'
-                              ? (exercise.repRangeLow ?? 8)
-                              : (exercise.repRangeHigh ?? 12))
-                          : null;
+
+                        let ghostWeight: string | null = null;
+                        let ghostReps: string | null = null;
+
+                        if (prescription) {
+                          // Engine prescription takes priority (suggests next progression step)
+                          ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
+                          ghostReps = String(prescription.goal === 'add_load'
+                            ? (exercise.repRangeLow ?? 8)
+                            : (exercise.repRangeHigh ?? 12));
+                        } else if (exercise.name) {
+                          // Fallback: find last performance in recent session history
+                          const exNameLower = exercise.name.toLowerCase();
+                          for (const session of recentSessions) {
+                            const matchEx = session.exercises?.find(
+                              (e) => (exercise.exerciseDbId && e.exerciseDbId === exercise.exerciseDbId)
+                                    || e.name.toLowerCase() === exNameLower
+                            );
+                            if (matchEx) {
+                              const doneSets = matchEx.sets?.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+                              if (doneSets && doneSets.length > 0) {
+                                const last = doneSets[doneSets.length - 1];
+                                ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
+                                ghostReps = String(last.reps);
+                                break; // recentSessions sorted desc; first match = most recent
+                              }
+                            }
+                          }
+                        }
+
                         return exercise.sets.map((set, setIndex) => {
                         const isCompleted = set.completed;
                         const rowKey = `${exerciseIndex}-${setIndex}`;
