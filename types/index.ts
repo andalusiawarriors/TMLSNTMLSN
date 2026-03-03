@@ -59,6 +59,8 @@ export interface Set {
   weight: number;
   reps: number;
   completed: boolean;
+  rpe?: number | null;
+  notes?: string;
 }
 
 export interface WorkoutSplit {
@@ -127,6 +129,8 @@ export interface TrainingSettings {
   allowMidWeekEdits: boolean;
   scheduleNotifications: boolean;
   scheduleReminderEnabled: boolean;
+  /** When true, progressive overload advancement requires achieving the target RPE range. */
+  useRpeForOverload: boolean;
   rpMuscleTargets: Record<string, RpMuscleTarget>;
   rangeMuscleTargets: Record<string, RangeMuscleTarget>;
 }

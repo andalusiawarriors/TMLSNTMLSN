@@ -19,6 +19,7 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   allowMidWeekEdits: true,
   scheduleNotifications: true,
   scheduleReminderEnabled: true,
+  useRpeForOverload: true,
   rpMuscleTargets: {
     chest:      { mev: 8,  mav: 16, mrv: 22 },
     back:       { mev: 10, mav: 18, mrv: 25 },

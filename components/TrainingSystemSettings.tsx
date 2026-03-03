@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserSettings, saveUserSettings } from '../utils/storage';
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
-import { Font, Spacing } from '../constants/theme';
+import { Spacing } from '../constants/theme';
 import {
   SETTINGS_CARD_BG,
   SETTINGS_CARD_BORDER,
@@ -411,7 +411,7 @@ export default function TrainingSystemSettings() {
   const setWeekReset = (id: WeekReset) =>
     setTraining(prev => ({ ...prev, weekReset: id }));
 
-  const toggleOption = (key: 'allowMidWeekEdits' | 'scheduleNotifications' | 'scheduleReminderEnabled') =>
+  const toggleOption = (key: 'allowMidWeekEdits' | 'scheduleNotifications' | 'scheduleReminderEnabled' | 'useRpeForOverload') =>
     setTraining(prev => ({ ...prev, [key]: !prev[key] }));
 
   const handleRPChange = (muscle: string, key: keyof RpMuscleTarget, val: number) =>
@@ -540,6 +540,23 @@ export default function TrainingSystemSettings() {
 
         <View style={styles.divider} />
 
+        {/* ── Progressive Overload ── */}
+        <SectionLabel>PROGRESSIVE OVERLOAD</SectionLabel>
+        <View style={[styles.card, styles.resetCard]}>
+          <View style={styles.toggleGroup}>
+            <ToggleRow
+              label="Use RPE for progressive overload"
+              enabled={training.useRpeForOverload ?? true}
+              onToggle={() => toggleOption('useRpeForOverload')}
+            />
+            <Text style={styles.rpeHintText}>
+              When on, load progression only advances after you log an RPE that meets your target — keeping effort-based overload honest.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
         {/* ── Config Summary ── */}
         <ConfigSummary training={training} />
 
@@ -589,7 +606,6 @@ const styles = StyleSheet.create({
 
   // Section label
   sectionLabel: {
-    fontFamily: Font.mono,
     fontSize: 10,
     letterSpacing: 2,
     color: TEXT_MUTED,
@@ -667,7 +683,6 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   selCardDetail: {
-    fontFamily: Font.mono,
     fontSize: 10.5,
     color: TEXT_MUTED,
     letterSpacing: 0.2,
@@ -688,7 +703,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(212,184,150,0.32)',
   },
   tagText: {
-    fontFamily: Font.mono,
     fontSize: 9,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
@@ -768,7 +782,6 @@ const styles = StyleSheet.create({
     color: TEXT_PRIMARY,
   },
   resetRowDesc: {
-    fontFamily: Font.mono,
     fontSize: 10.5,
     color: TEXT_MUTED,
   },
@@ -807,7 +820,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   editorColHeader: {
-    fontFamily: Font.mono,
     fontSize: 9.5,
     letterSpacing: 1,
     color: TEXT_MUTED,
@@ -843,7 +855,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     textAlign: 'center',
     fontSize: 12,
-    fontFamily: Font.mono,
     color: TEXT_PRIMARY,
   },
   editorInputWide: {
@@ -862,9 +873,14 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   customHintText: {
-    fontFamily: Font.mono,
     fontSize: 11.5,
     color: TEXT_MUTED,
+  },
+  rpeHintText: {
+    fontSize: 11.5,
+    color: TEXT_MUTED,
+    marginTop: 8,
+    lineHeight: 16,
   },
 
   // Config summary
@@ -877,7 +893,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   summaryHeader: {
-    fontFamily: Font.mono,
     fontSize: 10,
     letterSpacing: 2,
     color: TEXT_MUTED,
@@ -893,12 +908,10 @@ const styles = StyleSheet.create({
     borderBottomColor: DIVIDER,
   },
   summaryKey: {
-    fontFamily: Font.mono,
     fontSize: 12,
     color: TEXT_MUTED,
   },
   summaryVal: {
-    fontFamily: Font.mono,
     fontSize: 12,
     color: GOLD,
   },

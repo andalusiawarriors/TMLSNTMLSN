@@ -538,6 +538,7 @@ export async function supabaseSaveWorkoutSession(
           reps: Number(s.reps ?? 0),
           completed: Boolean(s.completed ?? false),
           notes: s.notes ?? null,
+          rpe: s.rpe != null ? Number(s.rpe) : null,
         });
       }
     }
@@ -606,6 +607,7 @@ function assembleWorkoutSession(
         reps: Number(sr.reps ?? 0),
         completed: Boolean(sr.completed ?? false),
         notes: sr.notes != null ? String(sr.notes) : undefined,
+        rpe: sr.rpe != null ? Number(sr.rpe) : null,
       }));
       return {
         id: String(er.id ?? ''),
