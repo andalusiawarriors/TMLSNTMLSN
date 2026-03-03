@@ -76,6 +76,17 @@ const formatRoutineTitle = (name: string) => {
   return words.join(' ');
 };
 
+/** Human-readable label for an RPE value. */
+function getRpeLabel(rpe: number): string {
+  if (rpe <= 4) return 'Very Easy';
+  if (rpe <= 5) return 'Moderate';
+  if (rpe <= 6.5) return 'Somewhat Hard';
+  if (rpe <= 7.5) return 'Hard';
+  if (rpe <= 8.5) return 'Very Hard';
+  if (rpe <= 9.5) return 'Near Max';
+  return 'Max Effort';
+}
+
 /** Build a fresh WorkoutSession payload for save (from latest state). */
 function buildCompletedWorkoutSession(w: WorkoutSession): WorkoutSession {
   const duration = Math.round(
@@ -314,6 +325,8 @@ export default function WorkoutScreen({
   } | null>(null);
   /** Local string while editing weight/reps so value stays visible and stable until blur (parse then save). */
   const [editingCellValue, setEditingCellValue] = useState('');
+  /** RPE popup picker state — shown when user taps the RPE cell. */
+  const [rpePopup, setRpePopup] = useState<{ exerciseIndex: number; setIndex: number; value: number } | null>(null);
   /** When set, this row's check button is pressed — highlight the whole set row. */
   const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
   /** Keyboard height for positioning the confirm bar above the keyboard. */
@@ -1592,60 +1605,26 @@ export default function WorkoutScreen({
                                     </View>
                                   </View>
 
-                                  {/* RPE cell */}
-                                  <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.rpe, zIndex: 1 }]}>
+                                  {/* RPE cell — tap to open slider popup */}
+                                  <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.rpe }]}>
                                     <View style={styles.setCellContentCenter}>
-                                      {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'rpe' ? (
-                                        <View
-                                          ref={(r) => { focusedInputWrapperRef.current = r; }}
-                                          style={[
-                                            styles.setInputCellBase,
-                                            styles.setRpeInputOverride,
-                                            { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
-                                            styles.setInputCellActiveVisual,
-                                            { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
-                                          ]}
-                                          collapsable={false}
-                                        >
-                                          <Input
-                                            value={editingCellValue}
-                                            onChangeText={(text) => setEditingCellValue(text)}
-                                            onFocus={() => scrollToSetRow(exerciseIndex, setIndex)}
-                                            onBlur={() => commitActiveFieldIfNeeded('blur')}
-                                            onEndEditing={() => { }}
-                                            autoFocus
-                                            keyboardType="decimal-pad"
-                                            placeholder="—"
-                                            multiline={false}
-                                            maxLength={4}
-                                            containerStyle={[styles.setInputCellInner, styles.setRpeInputOverride]}
-                                            style={[
-                                              styles.setInputTextVisible,
-                                              styles.setInputFixedDimensions,
-                                              { color: colors.primaryLight, backgroundColor: 'transparent' },
-                                            ]}
-                                            placeholderTextColor={colors.primaryLight + '50'}
-                                            selectionColor={colors.primaryLight + '60'}
-                                            textAlignVertical="center"
-                                          />
-                                        </View>
-                                      ) : (
-                                        <Pressable
-                                          onPressIn={playIn}
-                                          onPressOut={playOut}
-                                          onPress={() => {
-                                            const displayValue = set.rpe != null ? String(set.rpe) : '';
-                                            setEditingCell({ exerciseIndex, setIndex, field: 'rpe' });
-                                            setEditingCellValue(displayValue);
-                                          }}
-                                          style={styles.setRpeInactivePill}
-                                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                        >
-                                          <Text style={[styles.setInputPlaceholderText, set.rpe != null ? { color: colors.primaryLight } : { color: colors.primaryLight + '30' }]}>
-                                            {set.rpe != null ? String(set.rpe) : '—'}
-                                          </Text>
-                                        </Pressable>
-                                      )}
+                                      <Pressable
+                                        onPressIn={playIn}
+                                        onPressOut={playOut}
+                                        onPress={() => {
+                                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                          setRpePopup({ exerciseIndex, setIndex, value: set.rpe ?? 7 });
+                                        }}
+                                        style={[
+                                          styles.setRpeInactivePill,
+                                          set.rpe != null && { borderColor: colors.primaryLight + '40', backgroundColor: colors.primaryLight + '12' },
+                                        ]}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                      >
+                                        <Text style={[styles.setRpePillText, set.rpe != null ? { color: colors.primaryLight } : { color: colors.primaryLight + '35' }]}>
+                                          {set.rpe != null ? (set.rpe % 1 === 0 ? String(set.rpe) : set.rpe.toFixed(1)) : '—'}
+                                        </Text>
+                                      </Pressable>
                                     </View>
                                   </View>
 
@@ -1941,6 +1920,75 @@ export default function WorkoutScreen({
           defaultRestTimer={120}
         />
       )}
+
+      {/* RPE Picker Popup */}
+      <Modal
+        visible={rpePopup !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRpePopup(null)}
+      >
+        <View style={styles.rpeModalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setRpePopup(null)} />
+          {rpePopup && (
+            <View style={styles.rpePopupCard}>
+              <View style={styles.rpePopupHandle} />
+              <Text style={styles.rpePopupTitle}>Rate of Perceived Exertion</Text>
+
+              {/* Large value + label */}
+              <View style={styles.rpeValueRow}>
+                <Text style={[styles.rpeValueBig, { color: colors.primaryLight }]}>
+                  {rpePopup.value % 1 === 0 ? String(rpePopup.value) : rpePopup.value.toFixed(1)}
+                </Text>
+                <Text style={styles.rpeValueLabel}>{getRpeLabel(rpePopup.value)}</Text>
+              </View>
+
+              {/* Slider row */}
+              <View style={styles.rpeSliderRow}>
+                <Text style={styles.rpeSliderEdge}>1</Text>
+                <Slider
+                  style={styles.rpeSlider}
+                  minimumValue={1}
+                  maximumValue={10}
+                  step={0.5}
+                  value={rpePopup.value}
+                  onValueChange={(v) => {
+                    setRpePopup(prev => prev ? { ...prev, value: v } : null);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  minimumTrackTintColor={colors.primaryLight}
+                  maximumTrackTintColor={colors.primaryLight + '30'}
+                  thumbTintColor={colors.primaryLight}
+                />
+                <Text style={styles.rpeSliderEdge}>10</Text>
+              </View>
+
+              {/* Action buttons */}
+              <View style={styles.rpeButtonRow}>
+                <Pressable
+                  style={styles.rpeClearButton}
+                  onPress={() => {
+                    updateSet(rpePopup.exerciseIndex, rpePopup.setIndex, { rpe: null });
+                    setRpePopup(null);
+                  }}
+                >
+                  <Text style={styles.rpeClearButtonText}>Clear</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.rpeDoneButton, { backgroundColor: colors.primaryLight }]}
+                  onPress={() => {
+                    updateSet(rpePopup.exerciseIndex, rpePopup.setIndex, { rpe: rpePopup.value });
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    setRpePopup(null);
+                  }}
+                >
+                  <Text style={[styles.rpeDoneButtonText, { color: colors.primaryDark }]}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
 
       {/* Set/Exercise Notes Modal — Bottom Sheet Style */}
       <Modal
@@ -2871,7 +2919,7 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '40',
     letterSpacing: -0.11,
   },
-  /** RPE column inactive pill — narrower than the weight/reps pill so it fits in the 0.75-flex column. */
+  /** RPE column pill — tappable, opens the slider popup. */
   setRpeInactivePill: {
     height: SET_INPUT_PILL_HEIGHT,
     width: '90%',
@@ -2881,13 +2929,113 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     borderRadius: SET_INPUT_BORDER_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '18',
+    backgroundColor: Colors.primaryLight + '08',
     paddingHorizontal: 4,
   },
-  /** Override minWidth on the base input wrapper/inner for the RPE column. */
-  setRpeInputOverride: {
-    minWidth: 0,
-    width: '90%',
-    maxWidth: 48,
+  setRpePillText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    letterSpacing: -0.1,
+    textAlign: 'center' as const,
+  },
+  // ─── RPE Popup ────────────────────────────────────────────────────────────
+  rpeModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  rpePopupCard: {
+    width: '100%',
+    backgroundColor: '#1c1c1e',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    paddingTop: 16,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  rpePopupHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    marginBottom: 20,
+  },
+  rpePopupTitle: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.35)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase' as const,
+    marginBottom: 20,
+  },
+  rpeValueRow: {
+    alignItems: 'center' as const,
+    marginBottom: 28,
+  },
+  rpeValueBig: {
+    fontSize: 72,
+    fontWeight: '700' as const,
+    lineHeight: 76,
+    letterSpacing: -3,
+  },
+  rpeValueLabel: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: 'rgba(255,255,255,0.45)',
+    marginTop: 6,
+  },
+  rpeSliderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    width: '100%',
+    marginBottom: 28,
+  },
+  rpeSlider: {
+    flex: 1,
+    height: 40,
+  },
+  rpeSliderEdge: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.30)',
+    width: 20,
+    textAlign: 'center' as const,
+  },
+  rpeButtonRow: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    width: '100%',
+  },
+  rpeClearButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  rpeClearButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.45)',
+  },
+  rpeDoneButton: {
+    flex: 2,
+    height: 50,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  rpeDoneButtonText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
   },
   setCheckWrap: {
     width: SET_CHECK_BUTTON_SIZE,
