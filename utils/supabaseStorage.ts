@@ -666,6 +666,40 @@ export async function supabaseSaveWorkoutSession(
   }
 }
 
+/**
+ * Fetch the next-session prescription (target weight + goal) for a set of
+ * canonical exercise IDs.  Returns a map keyed by the same canonical ID that
+ * was passed in (exerciseDbId ?? exercise.name).
+ */
+export async function supabaseGetExercisePrescriptions(
+  userId: string,
+  canonicalIds: string[]
+): Promise<Record<string, { nextWeight: number; goal: string }>> {
+  if (!supabase || canonicalIds.length === 0) return {};
+  const progressIds = canonicalIds.map((id) => toExerciseProgressId(id));
+  const progressToCanonical: Record<string, string> = {};
+  canonicalIds.forEach((id) => { progressToCanonical[toExerciseProgressId(id)] = id; });
+
+  const { data, error } = await supabase
+    .from('exercise_progress_state')
+    .select('exercise_id, next_target_weight, next_goal_type')
+    .eq('user_id', userId)
+    .in('exercise_id', progressIds);
+
+  if (error || !data) return {};
+
+  const result: Record<string, { nextWeight: number; goal: string }> = {};
+  for (const row of data) {
+    if (row.next_target_weight == null) continue;
+    const canonical = progressToCanonical[row.exercise_id] ?? row.exercise_id;
+    result[canonical] = {
+      nextWeight: row.next_target_weight,
+      goal: row.next_goal_type ?? 'add_reps',
+    };
+  }
+  return result;
+}
+
 export async function supabaseUpdateWorkoutSessionName(
   userId: string,
   sessionId: string,

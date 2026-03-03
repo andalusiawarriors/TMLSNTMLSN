@@ -59,6 +59,8 @@ import { UserPlus, At, Gear, List, Clock, Database } from 'phosphor-react-native
 import { format } from 'date-fns';
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
+import { useAuth } from '../../../context/AuthContext';
+import { supabaseGetExercisePrescriptions } from '../../../utils/supabaseStorage';
 import { BackButton } from '../../../components/BackButton';
 import Slider from '@react-native-community/slider';
 import { StickyWorkoutHeader } from '../../../components/StickyWorkoutHeader';
@@ -221,6 +223,7 @@ export default function WorkoutScreen({
 }: WorkoutScreenModalProps = {}) {
   const router = useRouter();
   const { colors } = useTheme();
+  const { user } = useAuth();
   const {
     activeWorkout,
     setActiveWorkout,
@@ -327,6 +330,11 @@ export default function WorkoutScreen({
   const [editingCellValue, setEditingCellValue] = useState('');
   /** RPE popup picker state — shown when user taps the RPE cell. */
   const [rpePopup, setRpePopup] = useState<{ exerciseIndex: number; setIndex: number; value: number } | null>(null);
+  /**
+   * Progressive overload prescriptions keyed by exercise canonical ID
+   * (exerciseDbId ?? exercise.name).  Loaded once per workout session start.
+   */
+  const [prescriptions, setPrescriptions] = useState<Record<string, { nextWeight: number; goal: string }>>({});
   /** When set, this row's check button is pressed — highlight the whole set row. */
   const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
   /** Keyboard height for positioning the confirm bar above the keyboard. */
@@ -461,6 +469,16 @@ export default function WorkoutScreen({
       })();
     }
   }, [startRoutineId]);
+
+  // Fetch progressive overload prescriptions whenever a new workout session starts.
+  useEffect(() => {
+    if (!activeWorkout || !user) { setPrescriptions({}); return; }
+    const canonicalIds = activeWorkout.exercises
+      .map((ex) => ex.exerciseDbId ?? ex.name)
+      .filter(Boolean) as string[];
+    supabaseGetExercisePrescriptions(user.id, canonicalIds).then(setPrescriptions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkout?.id, user?.id]);
 
   useEffect(() => {
     if (!activeWorkout) {
@@ -1412,7 +1430,19 @@ export default function WorkoutScreen({
                       </View>
 
                       {/* Set rows — same flex column ratios as header */}
-                      {exercise.sets.map((set, setIndex) => {
+                      {(() => {
+                        // Prescription for this exercise (progressive overload ghost values)
+                        const exKey = exercise.exerciseDbId ?? exercise.name;
+                        const prescription = exKey ? prescriptions[exKey] : null;
+                        const ghostWeight = prescription
+                          ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
+                          : null;
+                        const ghostReps = prescription
+                          ? String(prescription.goal === 'add_load'
+                              ? (exercise.repRangeLow ?? 8)
+                              : (exercise.repRangeHigh ?? 12))
+                          : null;
+                        return exercise.sets.map((set, setIndex) => {
                         const isCompleted = set.completed;
                         const rowKey = `${exerciseIndex}-${setIndex}`;
                         return (
@@ -1530,8 +1560,17 @@ export default function WorkoutScreen({
                                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                         >
-                                          <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                            {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
+                                          <Text style={[
+                                            styles.setInputPlaceholderText,
+                                            set.weight > 0
+                                              ? { color: colors.primaryLight }
+                                              : ghostWeight
+                                                ? { color: colors.primaryLight + '50' }
+                                                : { color: colors.primaryLight + '40' },
+                                          ]}>
+                                            {set.weight > 0
+                                              ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit)
+                                              : (ghostWeight ?? '—')}
                                           </Text>
                                         </Pressable>
                                       )}
@@ -1597,8 +1636,17 @@ export default function WorkoutScreen({
                                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                         >
-                                          <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                            {set.reps > 0 ? String(set.reps) : '—'}
+                                          <Text style={[
+                                            styles.setInputPlaceholderText,
+                                            set.reps > 0
+                                              ? { color: colors.primaryLight }
+                                              : ghostReps
+                                                ? { color: colors.primaryLight + '50' }
+                                                : { color: colors.primaryLight + '40' },
+                                          ]}>
+                                            {set.reps > 0
+                                              ? String(set.reps)
+                                              : (ghostReps ?? '—')}
                                           </Text>
                                         </Pressable>
                                       )}
@@ -1717,7 +1765,8 @@ export default function WorkoutScreen({
                             </View>
                           </View>
                         );
-                      })}
+                        }); // end sets.map
+                      })()} {/* end IIFE */}
 
                       {/* Add set button */}
                       <Pressable
