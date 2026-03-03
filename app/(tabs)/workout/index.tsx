@@ -1765,8 +1765,8 @@ export default function WorkoutScreen({
                             </View>
                           </View>
                         );
-                        }); // end sets.map
-                      })()} {/* end IIFE */}
+                        }); // sets.map
+                      })()}
 
                       {/* Add set button */}
                       <Pressable
