@@ -13,7 +13,9 @@
  * - prompts: user_id + id PK; title, summary, full_text, source, source_url, date_added, category
  */
 
+import { v5 as uuidv5 } from 'uuid';
 import { supabase } from '../lib/supabase';
+import type { Database } from '../types/supabase';
 import {
   NutritionLog,
   WorkoutSession,
@@ -32,6 +34,71 @@ import { resolveExerciseDbIdFromName } from './workoutMuscles';
 
 // workout_sets column for set ordering (DB may use set_number, set_order, order, etc.)
 const SET_ORDER_COLUMN = 'set_number';
+
+// --- Progressive overload (RPE-based prescription) ---
+
+type PrescriptionMeta = {
+  repRangeLow: number;
+  repRangeHigh: number;
+  smallestIncrement: number;
+  defaultTargetRpe: number;
+};
+
+type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
+
+type PrescriptionResult = { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load' };
+
+function computeNextPrescription(meta: PrescriptionMeta, sets: PrescriptionSet[]): PrescriptionResult | null {
+  const workSets = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+  if (workSets.length === 0) return null;
+
+  const lastSet = workSets[workSets.length - 1];
+  const workingWeight = lastSet.weight;
+  const { repRangeLow, repRangeHigh, smallestIncrement, defaultTargetRpe } = meta;
+
+  const allHitRepRangeHigh = workSets.every((s) => s.reps >= repRangeHigh);
+  const lastRpe = lastSet.rpe ?? 0;
+  const anyRepsLow = workSets.some((s) => s.reps <= repRangeLow - 2);
+
+  if (allHitRepRangeHigh && lastRpe <= defaultTargetRpe + 0.5) {
+    return { nextWeight: workingWeight + smallestIncrement, goal: 'add_load' };
+  }
+  if (lastRpe >= 10 && anyRepsLow) {
+    return { nextWeight: workingWeight * 0.95, goal: 'reduce_load' };
+  }
+  return { nextWeight: workingWeight, goal: 'add_reps' };
+}
+
+async function saveExercisePrescription(params: {
+  userId: string;
+  exerciseId: string;
+  nextWeight: number;
+  goal: 'add_load' | 'add_reps' | 'reduce_load';
+}): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('exercise_progress_state').upsert(
+    {
+      user_id: params.userId,
+      exercise_id: params.exerciseId,
+      variant_key: 'default',
+      next_target_weight: params.nextWeight,
+      next_goal_type: params.goal,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,exercise_id,variant_key' }
+  );
+  if (error) {
+    console.error('Supabase save exercise prescription:', error);
+  }
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EXERCISE_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+function toExerciseProgressId(exerciseId: string): string {
+  if (UUID_REGEX.test(exerciseId)) return exerciseId;
+  return uuidv5(exerciseId, EXERCISE_NAMESPACE);
+}
 
 /** Generate a UUID v4 for Supabase columns that expect UUID type. */
 function generateUuid(): string {
@@ -107,7 +174,6 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
       defaultRestTimer: s.defaultRestTimer,
       defaultRestTimerEnabled: s.defaultRestTimerEnabled,
       progressHubOrder: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : undefined,
-      training: s.training ?? undefined,
     };
   }
   const pho = row.progress_hub_order as string[] | undefined;
@@ -531,6 +597,10 @@ export async function supabaseSaveWorkoutSession(
       rest_timer: ex.restTimer ?? null,
       notes: ex.notes ?? null,
       exercise_db_id: ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? null,
+      rep_range_low: ex.repRangeLow ?? 8,
+      rep_range_high: ex.repRangeHigh ?? 12,
+      smallest_increment: ex.smallestIncrement ?? 2.5,
+      default_target_rpe: ex.defaultTargetRpe ?? 8.5,
     }));
     const { error: insertExError } = await supabase.from('workout_exercises').insert(exerciseRows);
     if (insertExError) {
@@ -558,10 +628,39 @@ export async function supabaseSaveWorkoutSession(
       }
     }
     if (setRows.length > 0) {
-      const { error: insertSetsError } = await supabase.from('workout_sets').insert(setRows);
+      type WorkoutSetInsert = Database['public']['Tables']['workout_sets']['Insert'];
+      const { error: insertSetsError } = await supabase
+        .from('workout_sets')
+        .insert(setRows as WorkoutSetInsert[]);
       if (insertSetsError) {
         console.error('Supabase save workout session (insert sets):', JSON.stringify(insertSetsError, null, 2));
         throw insertSetsError;
+      }
+
+      for (const ex of session.exercises) {
+        if (!ex.sets?.length) continue;
+        const meta: PrescriptionMeta = {
+          repRangeLow: ex.repRangeLow ?? 8,
+          repRangeHigh: ex.repRangeHigh ?? 12,
+          smallestIncrement: ex.smallestIncrement ?? 2.5,
+          defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
+        };
+        const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
+          weight: Number(s.weight ?? 0),
+          reps: Number(s.reps ?? 0),
+          rpe: s.rpe ?? null,
+          completed: Boolean(s.completed ?? false),
+        }));
+        const prescription = computeNextPrescription(meta, prescriptionSets);
+        if (!prescription) continue;
+        const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
+        const exerciseId = toExerciseProgressId(canonicalId);
+        await saveExercisePrescription({
+          userId,
+          exerciseId,
+          nextWeight: prescription.nextWeight,
+          goal: prescription.goal,
+        });
       }
     }
   }

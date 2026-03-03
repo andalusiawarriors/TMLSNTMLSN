@@ -52,6 +52,10 @@ export interface Exercise {
   notes?: string;
   /** ID from exercise database for muscle heatmap mapping */
   exerciseDbId?: string;
+  repRangeLow?: number | null;
+  repRangeHigh?: number | null;
+  smallestIncrement?: number | null;
+  defaultTargetRpe?: number | null;
 }
 
 export interface Set {
@@ -60,7 +64,7 @@ export interface Set {
   reps: number;
   completed: boolean;
   rpe?: number | null;
-  notes?: string;
+  notes?: string | null;
 }
 
 export interface WorkoutSplit {
@@ -146,10 +150,6 @@ export interface UserSettings {
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
   /** Progress Hub widget order (ids). Saved per account. */
   progressHubOrder?: string[];
-  /** Anatomical figure for muscle heatmap (male/female) */
-  bodyMapGender?: 'male' | 'female';
-  /** Training system configuration */
-  training?: TrainingSettings;
 }
 
 // Saved Food (for quick re-logging)

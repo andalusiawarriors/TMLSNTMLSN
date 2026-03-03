@@ -318,6 +318,7 @@ function TileCard({ item, index, animTrigger, children, reorderMode }: { item: T
           style={{ width: CARD_SIZE, height: CARD_SIZE }}
           borderRadius={TILE_RADIUS}
           shadowStyle={tileStyles.shadow}
+          longPressMs={210}
           onPress={reorderMode ? undefined : () => router.push(item.route as any)}
         >
           <View style={tileStyles.glass}>

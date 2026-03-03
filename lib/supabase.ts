@@ -1,5 +1,6 @@
 // URL polyfill loaded in index.js (native only)
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '../types/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SUPABASE_URL as CONFIG_URL, SUPABASE_ANON_KEY as CONFIG_KEY } from './supabaseConfig';
 
@@ -18,7 +19,7 @@ if (__DEV__ && !isValid) {
 }
 
 export const supabase = isValid
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient<Database>(supabaseUrl, supabaseAnonKey, {
       global: { fetch: global.fetch.bind(global) },
       auth: {
         storage: AsyncStorage,
