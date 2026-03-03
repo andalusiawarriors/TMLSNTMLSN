@@ -95,6 +95,8 @@ function buildCompletedWorkoutSession(w: WorkoutSession): WorkoutSession {
         weight: s.weight,
         reps: s.reps,
         completed: s.completed,
+        rpe: s.rpe ?? undefined,
+        notes: s.notes ?? undefined,
       })),
     })),
     duration,
@@ -117,9 +119,10 @@ const SWIPE_WIDGET_EXTRA_HEIGHT = 0;
 /** Set table: shared flex ratios for header and every set row (balanced for phone width). */
 const SET_TABLE_FLEX = {
   set: 0.85,
-  previous: 1.0,
+  previous: 0.8,
   weight: 0.95,
   reps: 0.95,
+  rpe: 0.75,
   check: 0.65,
 } as const;
 const SET_ROW_HEIGHT = 56;
@@ -307,7 +310,7 @@ export default function WorkoutScreen({
   const [editingCell, setEditingCell] = useState<{
     exerciseIndex: number;
     setIndex: number;
-    field: 'weight' | 'reps';
+    field: 'weight' | 'reps' | 'rpe';
   } | null>(null);
   /** Local string while editing weight/reps so value stays visible and stable until blur (parse then save). */
   const [editingCellValue, setEditingCellValue] = useState('');
@@ -661,7 +664,7 @@ export default function WorkoutScreen({
     }
   };
 
-  const updateSet = (exerciseIndex: number, setIndex: number, updates: { weight?: number; reps?: number; completed?: boolean; notes?: string }) => {
+  const updateSet = (exerciseIndex: number, setIndex: number, updates: { weight?: number; reps?: number; completed?: boolean; notes?: string; rpe?: number | null }) => {
     if (!activeWorkout) return;
     const exercise = activeWorkout.exercises[exerciseIndex];
     if (!exercise || !exercise.sets[setIndex]) return;
@@ -679,6 +682,7 @@ export default function WorkoutScreen({
       ...(updates.reps !== undefined && { reps: updates.reps }),
       ...(updates.completed !== undefined && { completed: updates.completed }),
       ...(updates.notes !== undefined && { notes: updates.notes }),
+      ...(updates.rpe !== undefined && { rpe: updates.rpe }),
     };
 
     const updatedExercises = [...activeWorkout.exercises];
@@ -702,6 +706,13 @@ export default function WorkoutScreen({
       if (n !== null) {
         updateSet(exerciseIndex, setIndex, { weight: n });
         if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'weight', parsed: n, source });
+      }
+    } else if (field === 'rpe') {
+      const n = parseNumericInput(editingCellValue, 'float');
+      if (n !== null) {
+        const clamped = Math.min(10, Math.max(1, n));
+        updateSet(exerciseIndex, setIndex, { rpe: clamped });
+        if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'rpe', parsed: clamped, source });
       }
     } else {
       const n = parseNumericInput(editingCellValue, 'int');
@@ -1379,6 +1390,9 @@ export default function WorkoutScreen({
                         <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps }]}>
                           <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">REPS</Text>
                         </View>
+                        <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.rpe }]}>
+                          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">RPE</Text>
+                        </View>
                         <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
                           <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1}>✓</Text>
                         </View>
@@ -1578,6 +1592,63 @@ export default function WorkoutScreen({
                                     </View>
                                   </View>
 
+                                  {/* RPE cell */}
+                                  <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.rpe, zIndex: 1 }]}>
+                                    <View style={styles.setCellContentCenter}>
+                                      {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'rpe' ? (
+                                        <View
+                                          ref={(r) => { focusedInputWrapperRef.current = r; }}
+                                          style={[
+                                            styles.setInputCellBase,
+                                            styles.setRpeInputOverride,
+                                            { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
+                                            styles.setInputCellActiveVisual,
+                                            { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
+                                          ]}
+                                          collapsable={false}
+                                        >
+                                          <Input
+                                            value={editingCellValue}
+                                            onChangeText={(text) => setEditingCellValue(text)}
+                                            onFocus={() => scrollToSetRow(exerciseIndex, setIndex)}
+                                            onBlur={() => commitActiveFieldIfNeeded('blur')}
+                                            onEndEditing={() => { }}
+                                            autoFocus
+                                            keyboardType="decimal-pad"
+                                            placeholder="—"
+                                            multiline={false}
+                                            maxLength={4}
+                                            containerStyle={[styles.setInputCellInner, styles.setRpeInputOverride]}
+                                            style={[
+                                              styles.setInputTextVisible,
+                                              styles.setInputFixedDimensions,
+                                              { color: colors.primaryLight, backgroundColor: 'transparent' },
+                                            ]}
+                                            placeholderTextColor={colors.primaryLight + '50'}
+                                            selectionColor={colors.primaryLight + '60'}
+                                            textAlignVertical="center"
+                                          />
+                                        </View>
+                                      ) : (
+                                        <Pressable
+                                          onPressIn={playIn}
+                                          onPressOut={playOut}
+                                          onPress={() => {
+                                            const displayValue = set.rpe != null ? String(set.rpe) : '';
+                                            setEditingCell({ exerciseIndex, setIndex, field: 'rpe' });
+                                            setEditingCellValue(displayValue);
+                                          }}
+                                          style={styles.setRpeInactivePill}
+                                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                        >
+                                          <Text style={[styles.setInputPlaceholderText, set.rpe != null ? { color: colors.primaryLight } : { color: colors.primaryLight + '30' }]}>
+                                            {set.rpe != null ? String(set.rpe) : '—'}
+                                          </Text>
+                                        </Pressable>
+                                      )}
+                                    </View>
+                                  </View>
+
                                   <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.check }]}>
                                     <View style={styles.setCellContentCenter}>
                                       <Pressable
@@ -1600,6 +1671,13 @@ export default function WorkoutScreen({
                                               const n = parseNumericInput(editingCellValue, 'float');
                                               if (n !== null) {
                                                 updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
+                                              } else {
+                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
+                                              }
+                                            } else if (field === 'rpe') {
+                                              const n = parseNumericInput(editingCellValue, 'float');
+                                              if (n !== null) {
+                                                updateSet(exerciseIndex, setIndex, { rpe: Math.min(10, Math.max(1, n)), completed: nextCompleted });
                                               } else {
                                                 updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
                                               }
@@ -2792,6 +2870,24 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.primaryLight + '40',
     letterSpacing: -0.11,
+  },
+  /** RPE column inactive pill — narrower than the weight/reps pill so it fits in the 0.75-flex column. */
+  setRpeInactivePill: {
+    height: SET_INPUT_PILL_HEIGHT,
+    width: '90%',
+    minWidth: 0,
+    maxWidth: 48,
+    alignSelf: 'center' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
+    paddingHorizontal: 4,
+  },
+  /** Override minWidth on the base input wrapper/inner for the RPE column. */
+  setRpeInputOverride: {
+    minWidth: 0,
+    width: '90%',
+    maxWidth: 48,
   },
   setCheckWrap: {
     width: SET_CHECK_BUTTON_SIZE,
