@@ -1463,6 +1463,7 @@ export default function WorkoutScreen({
                                           ref={(r) => { focusedInputWrapperRef.current = r; }}
                                           style={[
                                             styles.setInputCellBase,
+                                            styles.setRpeInputOverride,
                                             { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' },
                                             styles.setInputCellActiveVisual,
                                             { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' },
@@ -1480,7 +1481,7 @@ export default function WorkoutScreen({
                                             placeholder="—"
                                             multiline={false}
                                             maxLength={4}
-                                            containerStyle={styles.setInputCellInner}
+                                            containerStyle={[styles.setInputCellInner, styles.setRpeInputOverride]}
                                             style={[
                                               styles.setInputTextVisible,
                                               styles.setInputFixedDimensions,
@@ -1500,7 +1501,7 @@ export default function WorkoutScreen({
                                             setEditingCell({ exerciseIndex, setIndex, field: 'rpe' });
                                             setEditingCellValue(displayValue);
                                           }}
-                                          style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                                          style={styles.setRpeInactivePill}
                                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                         >
                                           <Text style={[styles.setInputPlaceholderText, set.rpe != null ? { color: colors.primaryLight } : { color: colors.primaryLight + '30' }]}>
@@ -2651,6 +2652,24 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.primaryLight + '40',
     letterSpacing: -0.11,
+  },
+  /** RPE column inactive pill — narrower than the weight/reps pill so it fits in the 0.75-flex column. */
+  setRpeInactivePill: {
+    height: SET_INPUT_PILL_HEIGHT,
+    width: '90%',
+    minWidth: 0,
+    maxWidth: 48,
+    alignSelf: 'center' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
+    paddingHorizontal: 4,
+  },
+  /** Override minWidth on the base input wrapper/inner for the RPE column. */
+  setRpeInputOverride: {
+    minWidth: 0,
+    width: '90%',
+    maxWidth: 48,
   },
   setCheckWrap: {
     width: SET_CHECK_BUTTON_SIZE,
