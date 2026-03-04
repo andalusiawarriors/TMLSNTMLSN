@@ -285,7 +285,7 @@ export default function WorkoutHistoryScreen() {
       [
         {
           text: 'Edit Workout',
-          onPress: () => router.push({ pathname: '/workout-detail', params: { sessionId: item.id, edit: 'true' } }),
+          onPress: () => router.push({ pathname: '/workout-edit', params: { sessionId: item.id } }),
         },
         {
           text: 'Delete Workout',
