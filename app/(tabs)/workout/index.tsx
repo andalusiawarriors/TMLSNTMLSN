@@ -1436,21 +1436,24 @@ export default function WorkoutScreen({
 
                       {/* Set rows — same flex column ratios as header */}
                       {(() => {
-                        // Prescription for this exercise (progressive overload ghost values)
+                        // One pass through recentSessions to power both the "Previous" column
+                        // (per-set data from last session) and ghost value fallback.
                         const exKey = exercise.exerciseDbId ?? exercise.name;
                         const prescription = exKey ? prescriptions[exKey] : null;
 
                         let ghostWeight: string | null = null;
                         let ghostReps: string | null = null;
+                        // prevSets[i] = { weight, reps } from the most recent prior session set i
+                        let prevSets: Array<{ weight: number; reps: number }> = [];
 
                         if (prescription) {
-                          // Engine prescription takes priority (suggests next progression step)
                           ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
                           ghostReps = String(prescription.goal === 'add_load'
                             ? (exercise.repRangeLow ?? 8)
                             : (exercise.repRangeHigh ?? 12));
-                        } else if (exercise.name) {
-                          // Fallback: find last performance in recent session history
+                        }
+
+                        if (exercise.name) {
                           const exNameLower = exercise.name.toLowerCase();
                           for (const session of recentSessions) {
                             const matchEx = session.exercises?.find(
@@ -1458,11 +1461,17 @@ export default function WorkoutScreen({
                                     || e.name.toLowerCase() === exNameLower
                             );
                             if (matchEx) {
-                              const doneSets = matchEx.sets?.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
-                              if (doneSets && doneSets.length > 0) {
-                                const last = doneSets[doneSets.length - 1];
-                                ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
-                                ghostReps = String(last.reps);
+                              const allSets = matchEx.sets ?? [];
+                              const doneSets = allSets.filter((s) => s.weight > 0 && s.reps > 0);
+                              if (doneSets.length > 0) {
+                                // Previous column: per-set weight×reps from last session
+                                prevSets = allSets.map((s) => ({ weight: s.weight, reps: s.reps }));
+                                // Ghost fallback when prescription engine has no data yet
+                                if (!prescription) {
+                                  const last = doneSets[doneSets.length - 1];
+                                  ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
+                                  ghostReps = String(last.reps);
+                                }
                                 break; // recentSessions sorted desc; first match = most recent
                               }
                             }
@@ -1521,8 +1530,8 @@ export default function WorkoutScreen({
                                         numberOfLines={1}
                                         ellipsizeMode="tail"
                                       >
-                                        {setIndex > 0 && exercise.sets[setIndex - 1].weight > 0
-                                          ? `${formatWeightDisplay(toDisplayWeight(exercise.sets[setIndex - 1].weight, weightUnit), weightUnit)}×${exercise.sets[setIndex - 1].reps}`
+                                        {prevSets[setIndex]?.weight > 0
+                                          ? `${formatWeightDisplay(toDisplayWeight(prevSets[setIndex].weight, weightUnit), weightUnit)}×${prevSets[setIndex].reps}`
                                           : '—'}
                                       </Text>
                                     </View>
