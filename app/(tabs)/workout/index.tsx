@@ -1724,36 +1724,35 @@ export default function WorkoutScreen({
                                           const nextCompleted = !set.completed;
                                           const isEditingThisSet =
                                             editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
+                                          const setUpdates: { weight?: number; reps?: number; rpe?: number | null; completed: boolean } = { completed: nextCompleted };
                                           if (isEditingThisSet && editingCell) {
                                             const { field } = editingCell;
                                             if (field === 'weight') {
                                               const n = parseNumericInput(editingCellValue, 'float');
-                                              if (n !== null) {
-                                                updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
-                                              } else {
-                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                              }
+                                              if (n !== null) setUpdates.weight = n;
                                             } else if (field === 'rpe') {
                                               const n = parseNumericInput(editingCellValue, 'float');
-                                              if (n !== null) {
-                                                updateSet(exerciseIndex, setIndex, { rpe: Math.min(10, Math.max(1, n)), completed: nextCompleted });
-                                              } else {
-                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                              }
+                                              if (n !== null) setUpdates.rpe = Math.min(10, Math.max(1, n));
                                             } else {
                                               const n = parseNumericInput(editingCellValue, 'int');
-                                              if (n !== null) {
-                                                updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
-                                              } else {
-                                                updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                              }
+                                              if (n !== null) setUpdates.reps = n;
                                             }
                                             setEditingCell(null);
                                             setEditingCellValue('');
                                             Keyboard.dismiss();
-                                          } else {
-                                            updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
                                           }
+                                          // Apply ghost values for any fields still at 0 when marking complete
+                                          if (nextCompleted) {
+                                            if ((setUpdates.weight ?? set.weight) === 0 && ghostWeight !== null) {
+                                              const gw = parseNumericInput(ghostWeight, 'float');
+                                              if (gw !== null) setUpdates.weight = gw;
+                                            }
+                                            if ((setUpdates.reps ?? set.reps) === 0 && ghostReps !== null) {
+                                              const gr = parseNumericInput(ghostReps, 'int');
+                                              if (gr !== null) setUpdates.reps = gr;
+                                            }
+                                          }
+                                          updateSet(exerciseIndex, setIndex, setUpdates);
                                           if (nextCompleted === true) {
                                             if (exercise.restTimer) {
                                               startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
