@@ -927,10 +927,6 @@ export default function WorkoutScreen({
       await saveWorkoutSession(payload);
       await logStreakWorkout();
 
-      setActiveWorkout(null);
-      setShowExerciseEntry(false);
-      setCurrentExerciseIndex(0);
-
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCloseModal?.();
       router.push({ pathname: '/workout-save', params: { sessionId: payload.id } });

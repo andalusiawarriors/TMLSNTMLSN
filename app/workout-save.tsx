@@ -32,6 +32,26 @@ export default function WorkoutSaveScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { setActiveWorkout, discardWorkout } = useActiveWorkout();
+
+  const handleDiscard = () => {
+    Alert.alert(
+      'Discard Workout',
+      'This will permanently delete this workout. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            discardWorkout(() => {
+              router.replace('/(tabs)' as any);
+            });
+          },
+        },
+      ]
+    );
+  };
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -129,6 +149,9 @@ export default function WorkoutSaveScreen() {
           }
         }
       }
+
+      // Clear the active workout now that the user has confirmed the save
+      setActiveWorkout(null);
 
       // Navigate to summary screen
       router.replace({ pathname: '/workout-logged', params: { sessionId } } as any);
@@ -276,7 +299,7 @@ export default function WorkoutSaveScreen() {
 
               <View style={[styles.divider, styles.discardDivider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-              <Pressable onPress={() => router.back()} style={styles.discardWrap} hitSlop={8}>
+              <Pressable onPress={handleDiscard} style={styles.discardWrap} hitSlop={8}>
                 <Text style={styles.discardText}>Discard Workout</Text>
               </Pressable>
             </ScrollView>

@@ -112,7 +112,8 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   }
   try {
     const existingSessions = await getWorkoutSessions();
-    const updatedSessions = [...existingSessions, session];
+    // Upsert by id: replace existing session with same id (e.g. user edits then re-finishes)
+    const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== session.id), session];
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
   } catch (error) {
     console.error('Error saving workout session:', error);
