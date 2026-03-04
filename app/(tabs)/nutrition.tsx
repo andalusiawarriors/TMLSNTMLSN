@@ -1549,7 +1549,8 @@ export default function NutritionScreen({
             zIndex: 20,
           }}
         >
-          {/* Date row — centered full width */}
+          {/* Date row — centered full width; hidden on progress/fitness tabs */}
+          {homeTab === 'calories' && (
           <View
             ref={headerMeasureRef}
             onLayout={onHeaderLayout}
@@ -1579,6 +1580,7 @@ export default function NutritionScreen({
               <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
             </Pressable>
           </View>
+          )}
 
           {/* Gradient bar (behind tab labels) */}
           <View
