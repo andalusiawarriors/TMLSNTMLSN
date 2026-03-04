@@ -12,6 +12,8 @@ import {
   Modal,
   Keyboard,
   TouchableOpacity,
+  InputAccessoryView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -155,6 +157,7 @@ export function WorkoutSetTable({
   const [ghostTooltip, setGhostTooltip] = useState<{ lastText: string; targetText: string } | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commitInProgressRef = useRef(false);
+  const accessoryViewID = `set-confirm-${exerciseIndex}`;
 
   const commitActiveFieldIfNeeded = useCallback(
     (source: 'done' | 'outside' | 'blur') => {
@@ -279,6 +282,7 @@ export function WorkoutSetTable({
                             placeholder="—"
                             multiline={false}
                             maxLength={5}
+                            inputAccessoryViewID={Platform.OS === 'ios' ? accessoryViewID : undefined}
                             containerStyle={styles.setInputCellInner}
                             style={[styles.setInputTextVisible, styles.setInputFixedDimensions, { color: colors.primaryLight, backgroundColor: 'transparent' }]}
                             placeholderTextColor={colors.primaryLight + '50'}
@@ -339,6 +343,7 @@ export function WorkoutSetTable({
                             placeholder="—"
                             multiline={false}
                             maxLength={4}
+                            inputAccessoryViewID={Platform.OS === 'ios' ? accessoryViewID : undefined}
                             containerStyle={styles.setInputCellInner}
                             style={[styles.setInputTextVisible, styles.setInputFixedDimensions, { color: colors.primaryLight, backgroundColor: 'transparent' }]}
                             placeholderTextColor={colors.primaryLight + '50'}
@@ -492,7 +497,23 @@ export function WorkoutSetTable({
         <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
       </Pressable>
 
-      {editingCell && (
+      {Platform.OS === 'ios' && editingCell && (
+        <InputAccessoryView nativeID={accessoryViewID}>
+          <View style={[styles.keyboardAccessoryBar, { backgroundColor: colors.primaryDark, borderTopColor: colors.primaryLight + '18' }]}>
+            <Pressable
+              onPressIn={playIn}
+              onPressOut={playOut}
+              onPress={() => commitActiveFieldIfNeeded('done')}
+              style={styles.keyboardAccessoryDone}
+              hitSlop={8}
+            >
+              <Text style={[styles.keyboardAccessoryDoneText, { color: colors.primaryLight }]}>Done</Text>
+            </Pressable>
+          </View>
+        </InputAccessoryView>
+      )}
+
+      {Platform.OS !== 'ios' && editingCell && (
         <View style={[styles.keyboardConfirmBar, { bottom: keyboardHeight }]}>
           <Pressable
             onPressIn={playIn}
@@ -810,6 +831,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addSetButtonBlockText: { fontSize: Typography.label, fontWeight: '600' as const, color: Colors.primaryLight + '90', letterSpacing: -0.11 },
+  keyboardAccessoryBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+  },
+  keyboardAccessoryDone: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  keyboardAccessoryDoneText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    letterSpacing: -0.11,
+  },
   keyboardConfirmBar: {
     position: 'absolute',
     left: 0,
