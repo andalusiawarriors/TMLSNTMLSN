@@ -78,15 +78,20 @@ const formatRoutineTitle = (name: string) => {
   return words.join(' ');
 };
 
-/** Human-readable label for an RPE value. */
+/** RPE → Reps-In-Reserve description shown inside the picker. */
 function getRpeLabel(rpe: number): string {
-  if (rpe <= 4) return 'Very Easy';
-  if (rpe <= 5) return 'Moderate';
-  if (rpe <= 6.5) return 'Somewhat Hard';
-  if (rpe <= 7.5) return 'Hard';
-  if (rpe <= 8.5) return 'Very Hard';
-  if (rpe <= 9.5) return 'Near Max';
-  return 'Max Effort';
+  const rir = 10 - rpe;
+  if (rir <= 0) return 'Max effort — no reps left';
+  if (rir <= 0.5) return 'Could barely squeeze out 1 more';
+  if (rir <= 1) return 'Could do 1 more rep';
+  if (rir <= 1.5) return 'Could do 1–2 more reps';
+  if (rir <= 2) return 'Could do 2 more reps';
+  if (rir <= 2.5) return 'Could do 2–3 more reps';
+  if (rir <= 3) return 'Could do 3 more reps';
+  if (rir <= 3.5) return 'Could do 3–4 more reps';
+  if (rir <= 4) return 'Could do 4 more reps';
+  if (rir <= 5) return 'Could do 5 more reps';
+  return `Could do ${Math.round(rir)}+ more reps`;
 }
 
 /** Build a fresh WorkoutSession payload for save (from latest state). */
@@ -1992,29 +1997,32 @@ export default function WorkoutScreen({
         />
       )}
 
-      {/* RPE Picker Popup */}
+      {/* RPE Picker — bottom sheet */}
       <Modal
         visible={rpePopup !== null}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setRpePopup(null)}
       >
         <View style={styles.rpeModalBackdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setRpePopup(null)} />
           {rpePopup && (
             <View style={styles.rpePopupCard}>
+              {/* Handle */}
               <View style={styles.rpePopupHandle} />
+
+              {/* Title */}
               <Text style={styles.rpePopupTitle}>Rate of Perceived Exertion</Text>
 
-              {/* Large value + label */}
+              {/* Large RPE value + RIR description */}
               <View style={styles.rpeValueRow}>
                 <Text style={[styles.rpeValueBig, { color: colors.primaryLight }]}>
-                  {rpePopup.value % 1 === 0 ? String(rpePopup.value) : rpePopup.value.toFixed(1)}
+                  {`RPE ${rpePopup.value % 1 === 0 ? String(rpePopup.value) : rpePopup.value.toFixed(1)}`}
                 </Text>
                 <Text style={styles.rpeValueLabel}>{getRpeLabel(rpePopup.value)}</Text>
               </View>
 
-              {/* Slider row */}
+              {/* Slider */}
               <View style={styles.rpeSliderRow}>
                 <Text style={styles.rpeSliderEdge}>1</Text>
                 <Slider
@@ -2032,6 +2040,31 @@ export default function WorkoutScreen({
                   thumbTintColor={colors.primaryLight}
                 />
                 <Text style={styles.rpeSliderEdge}>10</Text>
+              </View>
+
+              {/* Quick-tap number row (whole numbers 1–10) */}
+              <View style={styles.rpeNumberRow}>
+                {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as number[]).map((n) => {
+                  const active = rpePopup.value === n;
+                  return (
+                    <Pressable
+                      key={n}
+                      style={[
+                        styles.rpeNumberChip,
+                        active && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
+                      ]}
+                      onPress={() => {
+                        setRpePopup(prev => prev ? { ...prev, value: n } : null);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+                    >
+                      <Text style={[styles.rpeNumberChipText, active && { color: colors.primaryDark }]}>
+                        {String(n)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
 
               {/* Action buttons */}
@@ -3011,31 +3044,31 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
     textAlign: 'center' as const,
   },
-  // ─── RPE Popup ────────────────────────────────────────────────────────────
+  // ─── RPE Bottom Sheet ─────────────────────────────────────────────────────
   rpeModalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
   },
   rpePopupCard: {
     width: '100%',
     backgroundColor: '#1c1c1e',
-    borderRadius: 24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderWidth: 1,
+    borderBottomWidth: 0,
     borderColor: 'rgba(255,255,255,0.09)',
-    paddingTop: 16,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
-    alignItems: 'center',
+    paddingTop: 14,
+    paddingBottom: 44,
+    paddingHorizontal: 24,
+    alignItems: 'center' as const,
   },
   rpePopupHandle: {
     width: 40,
     height: 4,
     borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    marginBottom: 20,
+    marginBottom: 22,
   },
   rpePopupTitle: {
     fontSize: 11,
@@ -3043,29 +3076,30 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)',
     letterSpacing: 1.2,
     textTransform: 'uppercase' as const,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   rpeValueRow: {
     alignItems: 'center' as const,
-    marginBottom: 28,
+    marginBottom: 24,
   },
   rpeValueBig: {
-    fontSize: 72,
+    fontSize: 52,
     fontWeight: '700' as const,
-    lineHeight: 76,
-    letterSpacing: -3,
+    lineHeight: 58,
+    letterSpacing: -2,
   },
   rpeValueLabel: {
     fontSize: 14,
     fontWeight: '500' as const,
     color: 'rgba(255,255,255,0.45)',
     marginTop: 6,
+    textAlign: 'center' as const,
   },
   rpeSliderRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     width: '100%',
-    marginBottom: 28,
+    marginBottom: 20,
   },
   rpeSlider: {
     flex: 1,
@@ -3077,6 +3111,26 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.30)',
     width: 20,
     textAlign: 'center' as const,
+  },
+  rpeNumberRow: {
+    flexDirection: 'row' as const,
+    width: '100%',
+    justifyContent: 'space-between' as const,
+    marginBottom: 24,
+  },
+  rpeNumberChip: {
+    width: 30,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.13)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  rpeNumberChipText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.55)',
   },
   rpeButtonRow: {
     flexDirection: 'row' as const,
