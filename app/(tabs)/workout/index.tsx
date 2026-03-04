@@ -2042,24 +2042,23 @@ export default function WorkoutScreen({
                 <Text style={styles.rpeSliderEdge}>10</Text>
               </View>
 
-              {/* Quick-tap number row (whole numbers 1–10) */}
-              <View style={styles.rpeNumberRow}>
+              {/* Quick-tap numbers — single segmented pill */}
+              <View style={styles.rpeNumberPill}>
                 {([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as number[]).map((n) => {
                   const active = rpePopup.value === n;
                   return (
                     <Pressable
                       key={n}
                       style={[
-                        styles.rpeNumberChip,
-                        active && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
+                        styles.rpeNumberPillItem,
+                        active && { backgroundColor: colors.primaryLight },
                       ]}
                       onPress={() => {
                         setRpePopup(prev => prev ? { ...prev, value: n } : null);
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }}
-                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                     >
-                      <Text style={[styles.rpeNumberChipText, active && { color: colors.primaryDark }]}>
+                      <Text style={[styles.rpeNumberPillText, active && { color: colors.primaryDark }]}>
                         {String(n)}
                       </Text>
                     </Pressable>
@@ -3112,25 +3111,27 @@ const styles = StyleSheet.create({
     width: 20,
     textAlign: 'center' as const,
   },
-  rpeNumberRow: {
+  rpeNumberPill: {
     flexDirection: 'row' as const,
     width: '100%',
-    justifyContent: 'space-between' as const,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    padding: 3,
     marginBottom: 24,
   },
-  rpeNumberChip: {
-    width: 30,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.13)',
+  rpeNumberPillItem: {
+    flex: 1,
+    height: 36,
+    borderRadius: 999,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  rpeNumberChipText: {
-    fontSize: 14,
+  rpeNumberPillText: {
+    fontSize: 13,
     fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.45)',
   },
   rpeButtonRow: {
     flexDirection: 'row' as const,
