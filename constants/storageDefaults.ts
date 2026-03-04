@@ -9,7 +9,7 @@ export const DEFAULT_GOALS: DailyGoals = {
 };
 
 export const DEFAULT_PROGRESS_HUB_ORDER = [
-  'progress', 'strength', 'exercises', 'history', 'activity', 'active-days', 'workouts',
+  'progress', 'strength', 'history', 'activity', 'active-days', 'workouts',
 ] as const;
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {

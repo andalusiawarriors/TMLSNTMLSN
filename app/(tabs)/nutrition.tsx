@@ -94,6 +94,8 @@ import NutritionHero from '../../components/NutritionHero';
 import { ProgressHub } from '../../components/ProgressHub';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
+import { EXERCISE_DATABASE } from '../../utils/exerciseDb/exerciseDatabase';
+import { getAllExerciseSettings } from '../../utils/exerciseSettings';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
 
 const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
@@ -173,6 +175,7 @@ export default function NutritionScreen({
   const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [homeTab, setHomeTab] = useState<'calories' | 'progress' | 'fitness'>('calories');
+  const [favCount, setFavCount] = useState(0);
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -418,6 +421,8 @@ export default function NutritionScreen({
       ),
     ];
     setWorkoutDateKeys(dateKeys);
+    const exSettings = await getAllExerciseSettings();
+    setFavCount(Object.values(exSettings).filter((s) => s.favorite).length);
   }, [viewingDate]);
 
   const loadDataRef = useRef(loadData);
@@ -1939,7 +1944,23 @@ export default function NutritionScreen({
             <ProgressHub />
           </View>
         ) : (
-          <View style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}>
+          <View style={{ width: CAROUSEL_WIDTH, alignSelf: 'center', gap: 16 }}>
+            <Pressable
+              onPress={() => router.push('/exercises' as any)}
+              style={({ pressed }) => [fitStyles.exercisesTile, pressed && { opacity: 0.85 }]}
+            >
+              <View style={fitStyles.exercisesTileContent}>
+                <View style={{ gap: 4 }}>
+                  <Text style={fitStyles.exercisesTileValue}>{EXERCISE_DATABASE.length}</Text>
+                  <Text style={fitStyles.exercisesTileLabel}>exercises.</Text>
+                </View>
+                {favCount > 0 && (
+                  <View style={fitStyles.exercisesBadge}>
+                    <Text style={fitStyles.exercisesBadgeText}>★ {favCount} starred</Text>
+                  </View>
+                )}
+              </View>
+            </Pressable>
             {hasHeatmapSetRecords ? (
               <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
             ) : (
@@ -3962,5 +3983,45 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
+  },
+});
+
+const fitStyles = StyleSheet.create({
+  exercisesTile: {
+    backgroundColor: 'rgba(47,48,49,0.55)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+  },
+  exercisesTileContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  exercisesTileValue: {
+    fontSize: 38,
+    fontWeight: '700',
+    letterSpacing: -1.2,
+    color: Colors.primaryLight,
+    lineHeight: 42,
+  },
+  exercisesTileLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(198,198,198,0.55)',
+    letterSpacing: -0.2,
+  },
+  exercisesBadge: {
+    backgroundColor: 'rgba(198,198,198,0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  exercisesBadgeText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(198,198,198,0.65)',
   },
 });
