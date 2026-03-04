@@ -437,6 +437,15 @@ export function WorkoutSetTable({
                               const gr = parseNumericInput(effectiveGhostReps, 'int');
                               if (gr !== null) setUpdates.reps = gr;
                             }
+                          } else {
+                            // Revert ghost-applied values back to 0 so ghost shows again
+                            if (effectiveGhostWeight !== null && set.weight > 0) {
+                              const displayedWeight = formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit);
+                              if (displayedWeight === effectiveGhostWeight) setUpdates.weight = 0;
+                            }
+                            if (effectiveGhostReps !== null && set.reps > 0) {
+                              if (String(set.reps) === effectiveGhostReps) setUpdates.reps = 0;
+                            }
                           }
                           updateSet(exerciseIndex, setIndex, setUpdates);
                           if (nextCompleted && exercise.restTimer && onRestTimerStart) {
