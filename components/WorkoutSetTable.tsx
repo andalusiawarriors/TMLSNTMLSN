@@ -181,9 +181,12 @@ export function WorkoutSetTable({
     [editingCell, editingCellValue, exercise.sets, updateSet]
   );
 
+  const commitActiveFieldRef = useRef(commitActiveFieldIfNeeded);
+  commitActiveFieldRef.current = commitActiveFieldIfNeeded;
   useEffect(() => {
-    if (externalCommitTrigger > 0) commitActiveFieldIfNeeded('outside');
-  }, [externalCommitTrigger, commitActiveFieldIfNeeded]);
+    if (externalCommitTrigger > 0) commitActiveFieldRef.current('outside');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalCommitTrigger]);
 
   return (
     <>
@@ -211,6 +214,10 @@ export function WorkoutSetTable({
       {exercise.sets.map((set, setIndex) => {
         const isCompleted = set.completed;
         const rowKey = `${exerciseIndex}-${setIndex}`;
+        // Only show ghost for sets that have a corresponding previous set, or when prescription drives the target.
+        const hasHistoryForSet = setIndex < prevSets.length;
+        const effectiveGhostWeight = (prescription != null || hasHistoryForSet) ? ghostWeight : null;
+        const effectiveGhostReps = (prescription != null || hasHistoryForSet) ? ghostReps : null;
         return (
           <View key={set.id} style={styles.setBlock} onLayout={(e) => onSetRowLayout?.(exerciseIndex, setIndex, e.nativeEvent.layout.y)}>
             <Swipeable
@@ -288,7 +295,7 @@ export function WorkoutSetTable({
                             setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
                             setEditingCellValue(displayValue);
                           }}
-                          onLongPress={set.weight === 0 && ghostWeight ? () => {
+                          onLongPress={set.weight === 0 && effectiveGhostWeight ? () => {
                             const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
                               ? prevSets[setIndex]
                               : prevSets.find((s) => s.weight > 0 && s.reps > 0) ?? null;
@@ -297,10 +304,10 @@ export function WorkoutSetTable({
                               : '—';
                             const _tw = prescription
                               ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
-                              : (ghostWeight ?? '—');
+                              : (effectiveGhostWeight ?? '—');
                             const _tr = prescription
                               ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
-                              : (ghostReps ?? '—');
+                              : (effectiveGhostReps ?? '—');
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });
@@ -309,8 +316,8 @@ export function WorkoutSetTable({
                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : ghostWeight ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
-                            {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : (ghostWeight ?? '—')}
+                          <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : effectiveGhostWeight ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
+                            {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : (effectiveGhostWeight ?? '—')}
                           </Text>
                         </Pressable>
                       )}
@@ -348,7 +355,7 @@ export function WorkoutSetTable({
                             setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
                             setEditingCellValue(displayValue);
                           }}
-                          onLongPress={set.reps === 0 && ghostReps ? () => {
+                          onLongPress={set.reps === 0 && effectiveGhostReps ? () => {
                             const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
                               ? prevSets[setIndex]
                               : prevSets.find((s) => s.weight > 0 && s.reps > 0) ?? null;
@@ -357,10 +364,10 @@ export function WorkoutSetTable({
                               : '—';
                             const _tw = prescription
                               ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
-                              : (ghostWeight ?? '—');
+                              : (effectiveGhostWeight ?? '—');
                             const _tr = prescription
                               ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
-                              : (ghostReps ?? '—');
+                              : (effectiveGhostReps ?? '—');
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });
@@ -369,8 +376,8 @@ export function WorkoutSetTable({
                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : ghostReps ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
-                            {set.reps > 0 ? String(set.reps) : (ghostReps ?? '—')}
+                          <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : effectiveGhostReps ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
+                            {set.reps > 0 ? String(set.reps) : (effectiveGhostReps ?? '—')}
                           </Text>
                         </Pressable>
                       )}
@@ -422,12 +429,12 @@ export function WorkoutSetTable({
                             Keyboard.dismiss();
                           }
                           if (nextCompleted) {
-                            if ((setUpdates.weight ?? set.weight) === 0 && ghostWeight !== null) {
-                              const gw = parseNumericInput(ghostWeight, 'float');
+                            if ((setUpdates.weight ?? set.weight) === 0 && effectiveGhostWeight !== null) {
+                              const gw = parseNumericInput(effectiveGhostWeight, 'float');
                               if (gw !== null) setUpdates.weight = gw;
                             }
-                            if ((setUpdates.reps ?? set.reps) === 0 && ghostReps !== null) {
-                              const gr = parseNumericInput(ghostReps, 'int');
+                            if ((setUpdates.reps ?? set.reps) === 0 && effectiveGhostReps !== null) {
+                              const gr = parseNumericInput(effectiveGhostReps, 'int');
                               if (gr !== null) setUpdates.reps = gr;
                             }
                           }
