@@ -14,18 +14,102 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import { format } from 'date-fns';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import { Camera, Image as ImageIcon, CaretLeft, Trophy } from 'phosphor-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { supabase } from '../lib/supabase';
-import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
 import { getWorkoutSessions, getUserSettings, updateWorkoutSessionName } from '../utils/storage';
-import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
+import { toDisplayWeight, toDisplayVolume, formatWeightDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { GlassCard } from '../components/ui/GlassCard';
+import { Colors, Glass, Font } from '../constants/theme';
+import { WorkoutSession } from '../types';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TILE_GAP = 10;
+const TILE_SIZE = (SCREEN_WIDTH - 40 - TILE_GAP) / 2;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function formatMins(minutes: number): string {
+  if (minutes <= 0) return '—';
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// ─── Stat Tile ───────────────────────────────────────────────────────────────
+
+function StatTile({
+  value,
+  label,
+  icon,
+  highlight = false,
+}: {
+  value: string;
+  label: string;
+  icon: string;
+  highlight?: boolean;
+}) {
+  return (
+    <View style={[styles.tile, Glass.shadow]}>
+      <BlurView
+        intensity={Glass.blurIntensity}
+        tint="dark"
+        style={[StyleSheet.absoluteFillObject, { borderRadius: Glass.radius.primary }]}
+      />
+      <View
+        style={[
+          StyleSheet.absoluteFillObject,
+          { backgroundColor: Glass.fill, borderRadius: Glass.radius.primary },
+        ]}
+      />
+      <LinearGradient
+        colors={[Glass.specularStrong, Glass.specular, 'transparent']}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 0.55 }}
+        style={[StyleSheet.absoluteFillObject, { borderRadius: Glass.radius.primary }]}
+        pointerEvents="none"
+      />
+      <View
+        style={[
+          StyleSheet.absoluteFillObject,
+          {
+            borderRadius: Glass.radius.primary,
+            borderWidth: Glass.borderWidth,
+            borderColor: highlight ? Colors.primaryLight + '55' : Glass.border,
+          },
+        ]}
+        pointerEvents="none"
+      />
+      <View style={styles.tileContent}>
+        <Ionicons
+          name={icon as any}
+          size={18}
+          color={highlight ? Colors.primaryLight : Colors.primaryLight + '45'}
+          style={{ marginBottom: 10 }}
+        />
+        <Text style={[styles.tileValue, highlight && { color: Colors.primaryLight }]}>
+          {value}
+        </Text>
+        <Text style={styles.tileLabel}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -34,185 +118,138 @@ export default function WorkoutSaveScreen() {
   const insets = useSafeAreaInsets();
   const { originRoute } = useActiveWorkout();
 
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  // Session data
+  const [session, setSession] = useState<WorkoutSession | null>(null);
+  const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
+  const [prs, setPrs] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+
+  // Social post state
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [createdPostId, setCreatedPostId] = useState<string | null>(null);
-
-  const [session, setSession] = useState<any>(null);
-  const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
+  const [showShare, setShowShare] = useState(false);
 
   useEffect(() => {
-    async function loadSession() {
+    (async () => {
       const [sessions, settings] = await Promise.all([
         getWorkoutSessions(),
         getUserSettings(),
       ]);
-      const found = sessions.find((s: any) => s.id === sessionId);
-      setSession(found || null);
-      setWeightUnit(settings.weightUnit);
-      if (found?.name && found.name !== 'Workout') {
-        setTitle(found.name);
+      const unit = settings?.weightUnit ?? 'lb';
+      setWeightUnit(unit);
+
+      const current = sessions.find((s) => s.id === sessionId) ?? null;
+      setSession(current);
+
+      if (current?.name && current.name !== 'Workout') {
+        setTitle(current.name);
       }
-    }
-    if (sessionId) loadSession();
+
+      // PR detection — max weight this session vs every prior session
+      if (current) {
+        const priorSessions = sessions.filter((s) => s.id !== sessionId);
+        const prSet = new Set<string>();
+
+        for (const ex of current.exercises ?? []) {
+          const doneSets = (ex.sets ?? []).filter((s) => s.completed && s.weight > 0);
+          if (doneSets.length === 0) continue;
+          const curMax = Math.max(...doneSets.map((s) => s.weight));
+
+          const exNameLower = ex.name.toLowerCase();
+          let priorMax = 0;
+          for (const ps of priorSessions) {
+            const matchEx = ps.exercises?.find(
+              (e) =>
+                (ex.exerciseDbId && e.exerciseDbId === ex.exerciseDbId) ||
+                e.name.toLowerCase() === exNameLower
+            );
+            if (matchEx) {
+              const m = Math.max(
+                ...(matchEx.sets ?? [])
+                  .filter((s) => s.completed && s.weight > 0)
+                  .map((s) => s.weight),
+                0
+              );
+              priorMax = Math.max(priorMax, m);
+            }
+          }
+          if (curMax > priorMax) prSet.add(ex.name);
+        }
+        setPrs(prSet);
+      }
+
+      setLoading(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    })();
   }, [sessionId]);
 
-  // Derived stats
+  // ── Derived stats ──────────────────────────────────────────────────────────
+  const allCompleted = (session?.exercises ?? []).flatMap((ex) =>
+    (ex.sets ?? []).filter((s) => s.completed)
+  );
+  const rawVolume = allCompleted.reduce((acc, s) => acc + s.weight * s.reps, 0);
+  const volumeStr = rawVolume > 0
+    ? formatWeightDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit)
+    : '—';
+  const totalSets = allCompleted.length;
+  const totalReps = allCompleted.reduce((acc, s) => acc + s.reps, 0);
+  const prCount = prs.size;
   const duration = session?.duration ?? 0;
-  const totalSets = session
-    ? session.exercises.reduce(
-        (acc: number, ex: any) =>
-          acc + ex.sets.filter((s: any) => s.completed).length,
-        0
-      )
-    : 0;
-  const rawVolume = session
-    ? session.exercises.reduce(
-        (acc: number, ex: any) =>
-          acc +
-          ex.sets
-            .filter((s: any) => s.completed)
-            .reduce(
-              (sacc: number, set: any) => sacc + set.weight * set.reps,
-              0
-            ),
-        0
-      )
-    : 0;
-  const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
-  const volumeStr = formatWeightDisplay(volumeDisplay, weightUnit);
 
-  const formatDuration = (seconds: number): string => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  };
-
+  // ── Photo helpers ──────────────────────────────────────────────────────────
   const handleTakePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera access.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 5],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-      setUploadError(null);
-    }
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Please grant camera access.'); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 5], quality: 0.7 });
+    if (!result.canceled && result.assets[0]) { setImageUri(result.assets[0].uri); setUploadError(null); }
   };
 
   const handlePickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant photo access.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 5],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-      setUploadError(null);
-    }
+    if (status !== 'granted') { Alert.alert('Permission needed', 'Please grant photo access.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 5], quality: 0.7 });
+    if (!result.canceled && result.assets[0]) { setImageUri(result.assets[0].uri); setUploadError(null); }
   };
 
-  const handleSave = async () => {
+  // ── Share / save post ──────────────────────────────────────────────────────
+  const handleShare = async () => {
     if (!supabase || !sessionId) return;
     setIsSaving(true);
     setUploadError(null);
-
     try {
-      if (title.trim()) {
-        await updateWorkoutSessionName(sessionId, title.trim());
-      }
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      if (title.trim()) await updateWorkoutSessionName(sessionId, title.trim());
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not logged in');
 
       let postId = createdPostId;
-
       if (!postId) {
         const { data: postData, error: postError } = await supabase
           .from('workout_posts')
-          .insert({
-            user_id: user.id,
-            session_id: sessionId,
-            title: title.trim() || null,
-            description: description.trim() || null,
-            visibility: isPublic ? 'public' : 'private',
-          })
-          .select()
-          .single();
-
+          .insert({ user_id: user.id, session_id: sessionId, title: title.trim() || null, description: description.trim() || null, visibility: isPublic ? 'public' : 'private' })
+          .select().single();
         if (postError) throw postError;
         postId = postData.id;
         setCreatedPostId(postId);
-        if (__DEV__) console.log('[WorkoutSave] created postId:', postId);
       }
 
-      if (imageUri) {
-        const timestamp = Date.now();
-        const imagePath = `${postId}/${timestamp}.jpg`;
-
-        const file = await fetch(imageUri);
-        const blob = await file.blob();
-
-        const { error: uploadErr } = await supabase.storage
-          .from('workout-images')
-          .upload(imagePath, blob, { upsert: true });
-
-        if (uploadErr) {
-          setUploadError(
-            'Image upload failed. Post saved. Tap Save again to retry.'
-          );
-          if (__DEV__) console.warn('[WorkoutSave] upload failed:', uploadErr);
-          setIsSaving(false);
-          return;
-        }
-
-        const { error: updateErr } = await supabase
-          .from('workout_posts')
-          .update({ image_path: imagePath })
-          .eq('id', postId);
-
-        if (updateErr) {
-          setUploadError(
-            'Could not update post with image. Tap Save again to retry.'
-          );
-          if (__DEV__)
-            console.warn('[WorkoutSave] update image_path failed:', updateErr);
-          setIsSaving(false);
-          return;
-        }
-
-        if (__DEV__)
-          console.log('[WorkoutSave] uploaded image_path:', imagePath);
+      if (imageUri && postId) {
+        const imagePath = `${postId}/${Date.now()}.jpg`;
+        const blob = await (await fetch(imageUri)).blob();
+        const { error: uploadErr } = await supabase.storage.from('workout-images').upload(imagePath, blob, { upsert: true });
+        if (uploadErr) { setUploadError('Image upload failed. Post saved. Tap Share again to retry.'); setIsSaving(false); return; }
+        await supabase.from('workout_posts').update({ image_path: imagePath }).eq('id', postId);
       }
 
-      const dest =
-        originRoute && originRoute !== '/(tabs)/workout'
-          ? originRoute
-          : '/(tabs)/nutrition';
+      const dest = originRoute && originRoute !== '/(tabs)/workout' ? originRoute : '/(tabs)/nutrition';
       router.replace(dest as any);
     } catch (e) {
-      console.error('Save error', e);
-      Alert.alert('Error', 'Could not save post.');
+      console.error('Share error', e);
+      Alert.alert('Error', 'Could not share workout.');
     } finally {
       setIsSaving(false);
     }
@@ -220,298 +257,204 @@ export default function WorkoutSaveScreen() {
 
   const dateLabel = format(new Date(), 'EEEE, MMMM d · h:mm a');
 
-  const divider = (
-    <View
-      style={[
-        styles.divider,
-        { backgroundColor: colors.primaryLight + '15' },
-      ]}
-    />
-  );
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
+        <HomeGradientBackground />
+        <ActivityIndicator color={Colors.primaryLight} />
+      </View>
+    );
+  }
+
+  const exercises = session?.exercises ?? [];
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
         <HomeGradientBackground />
-        <KeyboardAvoidingView
-          style={{ flex: 1, zIndex: 2 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          {/* TOP BAR */}
+        <KeyboardAvoidingView style={{ flex: 1, zIndex: 2 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+
+          {/* ── Top bar ──────────────────────────────────────────────────── */}
           <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.topBarLeft}
-              hitSlop={12}
-            >
-              <CaretLeft size={24} color={colors.primaryLight} weight="regular" />
+            <Pressable onPress={() => router.back()} style={styles.topBarSide} hitSlop={12}>
+              <CaretLeft size={22} color={colors.primaryLight + '80'} weight="regular" />
             </Pressable>
-
-            <Text style={[styles.screenTitle, { color: colors.primaryLight }]}>
-              Save Workout
-            </Text>
-
-            <Pressable
-              onPress={handleSave}
-              style={styles.topBarRight}
-              hitSlop={12}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="small" color={colors.primaryDark} />
-              ) : (
-                <View
-                  style={[
-                    styles.saveButton,
-                    { backgroundColor: colors.primaryLight },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.saveButtonText,
-                      { color: colors.primaryDark },
-                    ]}
-                  >
-                    Save
-                  </Text>
-                </View>
-              )}
-            </Pressable>
+            <View style={styles.topBarSide} />
           </View>
 
           <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={[
-              styles.scroll,
-              { paddingBottom: insets.bottom + 48 },
-            ]}
+            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 48 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Error banner */}
-            {uploadError ? (
-              <View
-                style={[
-                  styles.errorRow,
-                  { backgroundColor: '#FF3B30' + '15' },
-                ]}
-              >
-                <Text style={[styles.errorText, { color: colors.primaryLight }]}>
-                  {uploadError}
-                </Text>
+
+            {/* ── Hero header ──────────────────────────────────────────────── */}
+            <View style={styles.hero}>
+              <View style={[styles.checkCircle, { backgroundColor: Colors.primaryLight }]}>
+                <Ionicons name="checkmark" size={42} color={Colors.primaryDark} />
               </View>
-            ) : null}
-
-            {/* 1. Title input */}
-            <TextInput
-              style={[styles.titleInput, { color: colors.primaryLight }]}
-              placeholder="Workout title"
-              placeholderTextColor={colors.primaryLight + '30'}
-              value={title}
-              onChangeText={setTitle}
-              returnKeyType="done"
-            />
-
-            {/* 2. Divider */}
-            {divider}
-
-            {/* 3. Stats row */}
-            <View style={styles.statsRow}>
-              <View style={styles.statCol}>
-                <Text
-                  style={[
-                    styles.statLabel,
-                    { color: colors.primaryLight + '50' },
-                  ]}
-                >
-                  Duration
-                </Text>
-                <Text
-                  style={[styles.statValue, { color: colors.primaryLight }]}
-                >
-                  {duration > 0 ? formatDuration(duration) : '--'}
-                </Text>
-              </View>
-
-              <View style={styles.statCol}>
-                <Text
-                  style={[
-                    styles.statLabel,
-                    { color: colors.primaryLight + '50' },
-                  ]}
-                >
-                  Volume
-                </Text>
-                <Text
-                  style={[styles.statValue, { color: colors.primaryLight }]}
-                >
-                  {rawVolume > 0 ? volumeStr : '--'}
-                </Text>
-              </View>
-
-              <View style={styles.statCol}>
-                <Text
-                  style={[
-                    styles.statLabel,
-                    { color: colors.primaryLight + '50' },
-                  ]}
-                >
-                  Sets
-                </Text>
-                <Text
-                  style={[styles.statValue, { color: colors.primaryLight }]}
-                >
-                  {totalSets > 0 ? String(totalSets) : '--'}
-                </Text>
-              </View>
+              <Text style={styles.heroTitle}>Workout Complete</Text>
+              <Text style={styles.heroName}>{session?.name ?? 'Workout'}</Text>
+              <Text style={styles.heroDuration}>{formatMins(duration)}</Text>
             </View>
 
-            {/* 4. Divider */}
-            {divider}
-
-            {/* 5. When row */}
-            <View style={styles.whenRow}>
-              <Text
-                style={[
-                  styles.whenLabel,
-                  { color: colors.primaryLight + '60' },
-                ]}
-              >
-                When
-              </Text>
-              <Text
-                style={[styles.whenValue, { color: colors.primaryLight }]}
-              >
-                {dateLabel}
-              </Text>
+            {/* ── 2×2 stat tiles ───────────────────────────────────────────── */}
+            <View style={styles.tileGrid}>
+              <StatTile value={volumeStr} label="Total Volume" icon="barbell-outline" />
+              <StatTile value={String(totalSets)} label="Sets Completed" icon="layers-outline" />
+              <StatTile value={String(totalReps)} label="Total Reps" icon="repeat-outline" />
+              <StatTile value={String(prCount)} label="Personal Records" icon="trophy-outline" highlight={prCount > 0} />
             </View>
 
-            {/* 6. Divider */}
-            {divider}
+            {/* ── Exercise breakdown ────────────────────────────────────────── */}
+            {exercises.some((ex) => (ex.sets ?? []).some((s) => s.completed)) && (
+              <>
+                <Text style={styles.sectionLabel}>EXERCISES</Text>
+                <GlassCard noPadding style={styles.exCard}>
+                  {exercises.map((ex, idx) => {
+                    const done = (ex.sets ?? []).filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+                    if (done.length === 0) return null;
+                    const exVol = done.reduce((acc, s) => acc + s.weight * s.reps, 0);
+                    const maxW = Math.max(...done.map((s) => s.weight));
+                    const isPr = prs.has(ex.name);
+                    const isLast = idx === exercises.length - 1;
+                    return (
+                      <View key={ex.id} style={[styles.exRow, !isLast && styles.exRowDivider]}>
+                        <View style={styles.exLeft}>
+                          <View style={styles.exNameRow}>
+                            <Text style={styles.exName} numberOfLines={1}>{ex.name}</Text>
+                            {isPr && (
+                              <View style={styles.prBadge}>
+                                <Text style={styles.prBadgeText}>PR</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.exMeta}>
+                            {done.length} {done.length === 1 ? 'set' : 'sets'} · {formatWeightDisplay(toDisplayVolume(exVol, weightUnit), weightUnit)} vol
+                          </Text>
+                        </View>
+                        <Text style={styles.exMaxWeight}>
+                          {formatWeightDisplay(toDisplayWeight(maxW, weightUnit), weightUnit)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </GlassCard>
+              </>
+            )}
 
-            {/* 7. Photo row */}
-            <View style={styles.photoRow}>
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} style={styles.previewImage} />
-              ) : (
-                <View
-                  style={[
-                    styles.photoPlaceholder,
-                    { borderColor: colors.primaryLight + '25' },
-                  ]}
-                >
-                  <Camera
-                    size={22}
-                    color={colors.primaryLight + '40'}
-                    weight="regular"
+            {/* ── Done button ───────────────────────────────────────────────── */}
+            <Pressable
+              style={({ pressed }) => [styles.doneButton, { backgroundColor: Colors.primaryLight, opacity: pressed ? 0.85 : 1 }]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.back(); }}
+            >
+              <Text style={[styles.doneButtonText, { color: Colors.primaryDark }]}>Done</Text>
+            </Pressable>
+
+            {/* ── Share toggle ──────────────────────────────────────────────── */}
+            <Pressable
+              style={styles.shareToggle}
+              onPress={() => { setShowShare((v) => !v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+            >
+              <Text style={styles.shareToggleText}>
+                {showShare ? 'Hide' : 'Share this workout'} ↓
+              </Text>
+            </Pressable>
+
+            {/* ── Social post form ──────────────────────────────────────────── */}
+            {showShare && (
+              <View style={styles.shareSection}>
+                {uploadError && (
+                  <View style={styles.errorRow}>
+                    <Text style={[styles.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
+                  </View>
+                )}
+
+                <TextInput
+                  style={[styles.titleInput, { color: colors.primaryLight }]}
+                  placeholder="Workout title"
+                  placeholderTextColor={colors.primaryLight + '30'}
+                  value={title}
+                  onChangeText={setTitle}
+                  returnKeyType="done"
+                />
+
+                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+
+                <View style={styles.whenRow}>
+                  <Text style={[styles.whenLabel, { color: colors.primaryLight + '60' }]}>When</Text>
+                  <Text style={[styles.whenValue, { color: colors.primaryLight }]}>{dateLabel}</Text>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+
+                {/* Photo */}
+                <View style={styles.photoRow}>
+                  {imageUri ? (
+                    <Image source={{ uri: imageUri }} style={styles.previewImage} />
+                  ) : (
+                    <View style={[styles.photoPlaceholder, { borderColor: colors.primaryLight + '25' }]}>
+                      <Camera size={22} color={colors.primaryLight + '40'} weight="regular" />
+                    </View>
+                  )}
+                  <View style={styles.photoButtons}>
+                    <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handleTakePhoto}>
+                      <Camera size={18} color={colors.primaryLight} weight="regular" />
+                      <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Camera</Text>
+                    </Pressable>
+                    <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handlePickPhoto}>
+                      <ImageIcon size={18} color={colors.primaryLight} weight="regular" />
+                      <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Gallery</Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+
+                {/* Description */}
+                <View style={styles.descSection}>
+                  <Text style={[styles.descLabel, { color: colors.primaryLight + '50' }]}>Notes</Text>
+                  <TextInput
+                    style={[styles.descInput, { color: colors.primaryLight }]}
+                    placeholder="How did your workout go?"
+                    placeholderTextColor={colors.primaryLight + '30'}
+                    multiline
+                    value={description}
+                    onChangeText={setDescription}
+                    textAlignVertical="top"
                   />
                 </View>
-              )}
 
-              <View style={styles.photoButtons}>
-                <Pressable
-                  style={[
-                    styles.photoBtn,
-                    { backgroundColor: colors.primaryLight + '10' },
-                  ]}
-                  onPress={handleTakePhoto}
-                >
-                  <Camera size={18} color={colors.primaryLight} weight="regular" />
-                  <Text
-                    style={[styles.photoBtnLabel, { color: colors.primaryLight }]}
-                  >
-                    Camera
-                  </Text>
-                </Pressable>
+                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-                <Pressable
-                  style={[
-                    styles.photoBtn,
-                    { backgroundColor: colors.primaryLight + '10' },
-                  ]}
-                  onPress={handlePickPhoto}
-                >
-                  <ImageIcon
-                    size={18}
-                    color={colors.primaryLight}
-                    weight="regular"
+                {/* Visibility */}
+                <View style={styles.visibilityRow}>
+                  <Text style={[styles.visibilityLabel, { color: colors.primaryLight }]}>Make public</Text>
+                  <Switch
+                    value={isPublic}
+                    onValueChange={setIsPublic}
+                    trackColor={{ false: colors.primaryLight + '20', true: colors.primaryLight + '80' }}
+                    thumbColor={isPublic ? colors.primaryDark : colors.primaryLight + '60'}
+                    ios_backgroundColor={colors.primaryLight + '20'}
                   />
-                  <Text
-                    style={[styles.photoBtnLabel, { color: colors.primaryLight }]}
-                  >
-                    Gallery
-                  </Text>
+                </View>
+
+                {/* Share button */}
+                <Pressable
+                  style={({ pressed }) => [styles.shareButton, { opacity: pressed ? 0.85 : 1 }]}
+                  onPress={handleShare}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color={Colors.primaryDark} />
+                  ) : (
+                    <Text style={[styles.shareButtonText, { color: Colors.primaryDark }]}>Share Workout</Text>
+                  )}
                 </Pressable>
               </View>
-            </View>
+            )}
 
-            {/* 8. Divider */}
-            {divider}
-
-            {/* 9. Description */}
-            <View style={styles.descSection}>
-              <Text
-                style={[
-                  styles.descLabel,
-                  { color: colors.primaryLight + '50' },
-                ]}
-              >
-                Description
-              </Text>
-              <TextInput
-                style={[styles.descInput, { color: colors.primaryLight }]}
-                placeholder="How did your workout go? Leave some notes here..."
-                placeholderTextColor={colors.primaryLight + '30'}
-                multiline
-                value={description}
-                onChangeText={setDescription}
-                textAlignVertical="top"
-              />
-            </View>
-
-            {/* 10. Divider */}
-            {divider}
-
-            {/* 11. Visibility row */}
-            <View style={styles.visibilityRow}>
-              <Text
-                style={[styles.visibilityLabel, { color: colors.primaryLight }]}
-              >
-                Visibility
-              </Text>
-              <Switch
-                value={isPublic}
-                onValueChange={setIsPublic}
-                trackColor={{
-                  false: colors.primaryLight + '20',
-                  true: colors.primaryLight + '80',
-                }}
-                thumbColor={
-                  isPublic
-                    ? colors.primaryDark
-                    : colors.primaryLight + '60'
-                }
-                ios_backgroundColor={colors.primaryLight + '20'}
-              />
-            </View>
-
-            {/* 12. Divider */}
-            <View
-              style={[
-                styles.divider,
-                styles.discardDivider,
-                { backgroundColor: colors.primaryLight + '15' },
-              ]}
-            />
-
-            {/* 13. Discard button */}
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.discardWrap}
-              hitSlop={8}
-            >
-              <Text style={styles.discardText}>Discard Workout</Text>
-            </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
@@ -519,108 +462,205 @@ export default function WorkoutSaveScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
-  // Top bar
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 4,
   },
-  topBarLeft: {
-    minWidth: 40,
-    alignItems: 'flex-start',
+  topBarSide: { minWidth: 40 },
+
+  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+
+  // ── Hero ─────────────────────────────────────────────────────────────────
+  hero: { alignItems: 'center', marginBottom: 32 },
+  checkCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 18,
   },
-  topBarRight: {
-    minWidth: 40,
-    alignItems: 'flex-end',
+  heroTitle: {
+    fontFamily: Font.bold,
+    fontSize: 30,
+    fontWeight: '700',
+    color: Colors.primaryLight,
+    letterSpacing: -0.7,
+    marginBottom: 6,
+  },
+  heroName: {
+    fontFamily: Font.medium,
+    fontSize: 16,
+    color: Colors.primaryLight + '65',
+    letterSpacing: -0.2,
+    marginBottom: 4,
+  },
+  heroDuration: {
+    fontFamily: Font.medium,
+    fontSize: 14,
+    color: Colors.primaryLight + '45',
+  },
+
+  // ── Stat tiles ────────────────────────────────────────────────────────────
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: TILE_GAP,
+    marginBottom: 32,
+  },
+  tile: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: Glass.radius.primary,
+    overflow: 'hidden',
+  },
+  tileContent: {
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    padding: 14,
+    zIndex: 1,
   },
-  screenTitle: {
-    fontSize: 17,
+  tileValue: {
+    fontFamily: Font.bold,
+    fontSize: 30,
+    fontWeight: '700',
+    color: Colors.primaryLight + 'BB',
+    letterSpacing: -1.2,
+    lineHeight: 34,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  tileLabel: {
+    fontFamily: Font.medium,
+    fontSize: 11,
+    fontWeight: '500',
+    color: Colors.primaryLight + '50',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+
+  // ── Section label ─────────────────────────────────────────────────────────
+  sectionLabel: {
+    fontFamily: Font.semiBold,
+    fontSize: 11,
     fontWeight: '600',
-    letterSpacing: -0.3,
+    color: Colors.primaryLight + '40',
+    letterSpacing: 1.4,
+    marginBottom: 10,
+    marginLeft: 4,
   },
-  saveButton: {
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
+
+  // ── Exercise breakdown ────────────────────────────────────────────────────
+  exCard: { marginBottom: 28 },
+  exRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
   },
-  saveButtonText: {
+  exRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Glass.border,
+  },
+  exLeft: { flex: 1, marginRight: 12 },
+  exNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  exName: {
+    fontFamily: Font.semiBold,
     fontSize: 15,
     fontWeight: '600',
+    color: Colors.primaryLight + 'DD',
     letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  exMeta: {
+    fontFamily: Font.medium,
+    fontSize: 12,
+    color: Colors.primaryLight + '48',
+    letterSpacing: -0.1,
+  },
+  exMaxWeight: {
+    fontFamily: Font.semiBold,
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.primaryLight + '75',
+    letterSpacing: -0.3,
+  },
+  prBadge: {
+    backgroundColor: Colors.primaryLight + '16',
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '35',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  prBadgeText: {
+    fontFamily: Font.bold,
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.primaryLight,
+    letterSpacing: 0.4,
   },
 
-  // Scroll
-  scroll: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
+  // ── Done button ───────────────────────────────────────────────────────────
+  doneButton: {
+    height: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  doneButtonText: {
+    fontFamily: Font.bold,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
 
-  // Error banner
+  // ── Share toggle ──────────────────────────────────────────────────────────
+  shareToggle: { alignItems: 'center', paddingVertical: 12, marginBottom: 4 },
+  shareToggleText: {
+    fontFamily: Font.medium,
+    fontSize: 13,
+    color: Colors.primaryLight + '45',
+    letterSpacing: -0.1,
+  },
+
+  // ── Share section ─────────────────────────────────────────────────────────
+  shareSection: { marginTop: 8 },
   errorRow: {
     padding: 12,
     borderRadius: 10,
+    backgroundColor: '#FF3B30' + '15',
     marginBottom: 8,
   },
-  errorText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  errorText: { fontSize: 14, lineHeight: 20 },
 
-  // Divider
-  divider: {
-    height: StyleSheet.hairlineWidth,
-  },
+  divider: { height: StyleSheet.hairlineWidth },
 
-  // 1. Title
   titleInput: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '600',
-    letterSpacing: -0.5,
-    paddingVertical: 20,
+    letterSpacing: -0.4,
+    paddingVertical: 18,
   },
-
-  // 3. Stats row
-  statsRow: {
-    flexDirection: 'row',
-    paddingVertical: 16,
-  },
-  statCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  // 5. When row
   whenRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 14,
   },
-  whenLabel: {
-    fontSize: 15,
-  },
-  whenValue: {
-    fontSize: 15,
-  },
+  whenLabel: { fontSize: 15 },
+  whenValue: { fontSize: 15 },
 
-  // 7. Photo row
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -628,75 +668,42 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   photoPlaceholder: {
-    width: 72,
-    height: 90,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 72, height: 90, borderRadius: 10,
+    borderWidth: 1.5, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
   },
-  previewImage: {
-    width: 72,
-    height: 90,
-    borderRadius: 10,
-  },
-  photoButtons: {
-    flex: 1,
-    gap: 10,
-  },
+  previewImage: { width: 72, height: 90, borderRadius: 10 },
+  photoButtons: { flex: 1, gap: 10 },
   photoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
   },
-  photoBtnLabel: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  photoBtnLabel: { fontSize: 15, fontWeight: '500' },
 
-  // 9. Description
-  descSection: {
-    paddingVertical: 14,
-  },
-  descLabel: {
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  descInput: {
-    fontSize: 15,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
+  descSection: { paddingVertical: 14 },
+  descLabel: { fontSize: 12, marginBottom: 8 },
+  descInput: { fontSize: 15, minHeight: 80, textAlignVertical: 'top' },
 
-  // 11. Visibility
   visibilityRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 16,
   },
-  visibilityLabel: {
-    fontSize: 15,
-  },
+  visibilityLabel: { fontSize: 15 },
 
-  // 12. Discard divider spacing
-  discardDivider: {
-    marginTop: 16,
-  },
-
-  // 13. Discard
-  discardWrap: {
-    paddingVertical: 20,
+  shareButton: {
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
   },
-  discardText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#FF3B30',
-    textAlign: 'center',
+  shareButtonText: {
+    fontFamily: Font.bold,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
 });
