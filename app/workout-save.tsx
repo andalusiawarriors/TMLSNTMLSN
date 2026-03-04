@@ -24,7 +24,7 @@ import { format } from 'date-fns';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Camera, Image as ImageIcon, CaretLeft, Trophy } from 'phosphor-react-native';
+import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
 import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { supabase } from '../lib/supabase';
@@ -32,14 +32,21 @@ import { getWorkoutSessions, getUserSettings, updateWorkoutSessionName } from '.
 import { toDisplayWeight, toDisplayVolume, formatWeightDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { GlassCard } from '../components/ui/GlassCard';
-import { Colors, Glass, Font } from '../constants/theme';
+import { Colors, Glass } from '../constants/theme';
 import { WorkoutSession } from '../types';
 
+// ─── Layout ──────────────────────────────────────────────────────────────────
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const TILE_GAP = 10;
+const TILE_GAP = 12;
 const TILE_SIZE = (SCREEN_WIDTH - 40 - TILE_GAP) / 2;
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Design tokens (match progress-graph.tsx exactly) ────────────────────────
+
+const C_TEXT     = 'rgba(198,198,198,0.92)';
+const C_TEXT_DIM = 'rgba(198,198,198,0.50)';
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatMins(minutes: number): string {
   if (minutes <= 0) return '—';
@@ -49,65 +56,111 @@ function formatMins(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-// ─── Stat Tile ───────────────────────────────────────────────────────────────
+// ─── Stat Tile — identical layers to progress-graph.tsx StatSquareTile ───────
 
-function StatTile({
-  value,
-  label,
-  icon,
-  highlight = false,
-}: {
-  value: string;
-  label: string;
-  icon: string;
-  highlight?: boolean;
-}) {
+function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <View style={[styles.tile, Glass.shadow]}>
-      <BlurView
-        intensity={Glass.blurIntensity}
-        tint="dark"
-        style={[StyleSheet.absoluteFillObject, { borderRadius: Glass.radius.primary }]}
-      />
-      <View
-        style={[
-          StyleSheet.absoluteFillObject,
-          { backgroundColor: Glass.fill, borderRadius: Glass.radius.primary },
-        ]}
-      />
-      <LinearGradient
-        colors={[Glass.specularStrong, Glass.specular, 'transparent']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 0.55 }}
-        style={[StyleSheet.absoluteFillObject, { borderRadius: Glass.radius.primary }]}
-        pointerEvents="none"
-      />
-      <View
-        style={[
-          StyleSheet.absoluteFillObject,
-          {
-            borderRadius: Glass.radius.primary,
-            borderWidth: Glass.borderWidth,
-            borderColor: highlight ? Colors.primaryLight + '55' : Glass.border,
-          },
-        ]}
-        pointerEvents="none"
-      />
-      <View style={styles.tileContent}>
-        <Ionicons
-          name={icon as any}
-          size={18}
-          color={highlight ? Colors.primaryLight : Colors.primaryLight + '45'}
-          style={{ marginBottom: 10 }}
+    <View style={tile.shadow}>
+      <View style={tile.wrap}>
+        {/* 1. Backdrop blur */}
+        <BlurView
+          intensity={26}
+          tint="dark"
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 38 }]}
         />
-        <Text style={[styles.tileValue, highlight && { color: Colors.primaryLight }]}>
-          {value}
-        </Text>
-        <Text style={styles.tileLabel}>{label}</Text>
+        {/* 2. Dark fill overlay */}
+        <View
+          style={[StyleSheet.absoluteFillObject, tile.fillOverlay, { borderRadius: 38 }]}
+        />
+        {/* 3. Diagonal specular highlight */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0.20)', 'rgba(255,255,255,0.06)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0.85, y: 0.85 }}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 38 }]}
+          pointerEvents="none"
+        />
+        {/* 4. Top-rim lensing band */}
+        <LinearGradient
+          colors={['rgba(255,255,255,0.26)', 'rgba(255,255,255,0.05)', 'transparent']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 0.16 }}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 38 }]}
+          pointerEvents="none"
+        />
+        {/* 5. Bottom depth shadow */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.20)']}
+          start={{ x: 0.5, y: 0.55 }}
+          end={{ x: 0.5, y: 1 }}
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 38 }]}
+          pointerEvents="none"
+        />
+        {/* 6. Border rim */}
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            { borderRadius: 38, borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
+          ]}
+          pointerEvents="none"
+        />
+        {/* Content — bottom-aligned like progress hub */}
+        <View style={tile.inner}>
+          <View style={tile.valueRow}>
+            <Text style={tile.value}>{value}</Text>
+          </View>
+          <Text style={tile.label} numberOfLines={2}>{label}</Text>
+        </View>
       </View>
     </View>
   );
 }
+
+const tile = StyleSheet.create({
+  shadow: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: 38,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.30,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  wrap: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: 38,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  fillOverlay: {
+    backgroundColor: 'rgba(47,48,49,0.28)',
+  },
+  inner: {
+    flex: 1,
+    padding: 18,
+    justifyContent: 'flex-end',
+    zIndex: 1,
+  },
+  valueRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+  },
+  value: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: C_TEXT,
+    letterSpacing: -0.8,
+    lineHeight: 32,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: C_TEXT_DIM,
+    lineHeight: 16,
+  },
+});
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
@@ -146,9 +199,7 @@ export default function WorkoutSaveScreen() {
       const current = sessions.find((s) => s.id === sessionId) ?? null;
       setSession(current);
 
-      if (current?.name && current.name !== 'Workout') {
-        setTitle(current.name);
-      }
+      if (current?.name && current.name !== 'Workout') setTitle(current.name);
 
       // PR detection — max weight this session vs every prior session
       if (current) {
@@ -159,9 +210,9 @@ export default function WorkoutSaveScreen() {
           const doneSets = (ex.sets ?? []).filter((s) => s.completed && s.weight > 0);
           if (doneSets.length === 0) continue;
           const curMax = Math.max(...doneSets.map((s) => s.weight));
-
           const exNameLower = ex.name.toLowerCase();
           let priorMax = 0;
+
           for (const ps of priorSessions) {
             const matchEx = ps.exercises?.find(
               (e) =>
@@ -170,9 +221,7 @@ export default function WorkoutSaveScreen() {
             );
             if (matchEx) {
               const m = Math.max(
-                ...(matchEx.sets ?? [])
-                  .filter((s) => s.completed && s.weight > 0)
-                  .map((s) => s.weight),
+                ...(matchEx.sets ?? []).filter((s) => s.completed && s.weight > 0).map((s) => s.weight),
                 0
               );
               priorMax = Math.max(priorMax, m);
@@ -192,14 +241,12 @@ export default function WorkoutSaveScreen() {
   const allCompleted = (session?.exercises ?? []).flatMap((ex) =>
     (ex.sets ?? []).filter((s) => s.completed)
   );
-  const rawVolume = allCompleted.reduce((acc, s) => acc + s.weight * s.reps, 0);
-  const volumeStr = rawVolume > 0
-    ? formatWeightDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit)
-    : '—';
-  const totalSets = allCompleted.length;
-  const totalReps = allCompleted.reduce((acc, s) => acc + s.reps, 0);
-  const prCount = prs.size;
-  const duration = session?.duration ?? 0;
+  const rawVolume  = allCompleted.reduce((acc, s) => acc + s.weight * s.reps, 0);
+  const volumeStr  = rawVolume > 0 ? formatWeightDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit) : '—';
+  const totalSets  = allCompleted.length;
+  const totalReps  = allCompleted.reduce((acc, s) => acc + s.reps, 0);
+  const prCount    = prs.size;
+  const duration   = session?.duration ?? 0;
 
   // ── Photo helpers ──────────────────────────────────────────────────────────
   const handleTakePhoto = async () => {
@@ -257,10 +304,10 @@ export default function WorkoutSaveScreen() {
 
   const dateLabel = format(new Date(), 'EEEE, MMMM d · h:mm a');
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
+      <View style={[s.root, { justifyContent: 'center', alignItems: 'center' }]}>
         <HomeGradientBackground />
         <ActivityIndicator color={Colors.primaryLight} />
       </View>
@@ -271,70 +318,71 @@ export default function WorkoutSaveScreen() {
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
+      <View style={[s.root, { backgroundColor: colors.primaryDark }]}>
         <HomeGradientBackground />
+
         <KeyboardAvoidingView style={{ flex: 1, zIndex: 2 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-          {/* ── Top bar ──────────────────────────────────────────────────── */}
-          <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-            <Pressable onPress={() => router.back()} style={styles.topBarSide} hitSlop={12}>
+          {/* Top bar */}
+          <View style={[s.topBar, { paddingTop: insets.top + 8 }]}>
+            <Pressable onPress={() => router.back()} style={s.topBarSide} hitSlop={12}>
               <CaretLeft size={22} color={colors.primaryLight + '80'} weight="regular" />
             </Pressable>
-            <View style={styles.topBarSide} />
+            <View style={s.topBarSide} />
           </View>
 
           <ScrollView
-            contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 48 }]}
+            contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 48 }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
 
-            {/* ── Hero header ──────────────────────────────────────────────── */}
-            <View style={styles.hero}>
-              <View style={[styles.checkCircle, { backgroundColor: Colors.primaryLight }]}>
-                <Ionicons name="checkmark" size={42} color={Colors.primaryDark} />
+            {/* ── Hero ─────────────────────────────────────────────────── */}
+            <View style={s.hero}>
+              <View style={[s.checkCircle, { backgroundColor: Colors.primaryLight }]}>
+                <Ionicons name="checkmark" size={44} color={Colors.primaryDark} />
               </View>
-              <Text style={styles.heroTitle}>Workout Complete</Text>
-              <Text style={styles.heroName}>{session?.name ?? 'Workout'}</Text>
-              <Text style={styles.heroDuration}>{formatMins(duration)}</Text>
+              <Text style={s.heroTitle}>Workout Complete</Text>
+              <Text style={s.heroName}>{session?.name ?? 'Workout'}</Text>
+              <Text style={s.heroDuration}>{formatMins(duration)}</Text>
             </View>
 
-            {/* ── 2×2 stat tiles ───────────────────────────────────────────── */}
-            <View style={styles.tileGrid}>
-              <StatTile value={volumeStr} label="Total Volume" icon="barbell-outline" />
-              <StatTile value={String(totalSets)} label="Sets Completed" icon="layers-outline" />
-              <StatTile value={String(totalReps)} label="Total Reps" icon="repeat-outline" />
-              <StatTile value={String(prCount)} label="Personal Records" icon="trophy-outline" highlight={prCount > 0} />
+            {/* ── 2×2 Stat Tiles (progress hub style) ──────────────────── */}
+            <View style={s.tileGrid}>
+              <StatTile value={volumeStr}      label="total volume" />
+              <StatTile value={String(totalSets)} label="sets completed" />
+              <StatTile value={String(totalReps)} label="total reps" />
+              <StatTile value={String(prCount)}   label={prCount === 1 ? 'personal record' : 'personal records'} />
             </View>
 
-            {/* ── Exercise breakdown ────────────────────────────────────────── */}
+            {/* ── Exercise breakdown ────────────────────────────────────── */}
             {exercises.some((ex) => (ex.sets ?? []).some((s) => s.completed)) && (
               <>
-                <Text style={styles.sectionLabel}>EXERCISES</Text>
-                <GlassCard noPadding style={styles.exCard}>
+                <Text style={s.sectionLabel}>EXERCISES</Text>
+                <GlassCard noPadding style={s.exCard}>
                   {exercises.map((ex, idx) => {
                     const done = (ex.sets ?? []).filter((s) => s.completed && s.weight > 0 && s.reps > 0);
                     if (done.length === 0) return null;
                     const exVol = done.reduce((acc, s) => acc + s.weight * s.reps, 0);
-                    const maxW = Math.max(...done.map((s) => s.weight));
-                    const isPr = prs.has(ex.name);
+                    const maxW  = Math.max(...done.map((s) => s.weight));
+                    const isPr  = prs.has(ex.name);
                     const isLast = idx === exercises.length - 1;
                     return (
-                      <View key={ex.id} style={[styles.exRow, !isLast && styles.exRowDivider]}>
-                        <View style={styles.exLeft}>
-                          <View style={styles.exNameRow}>
-                            <Text style={styles.exName} numberOfLines={1}>{ex.name}</Text>
+                      <View key={ex.id} style={[s.exRow, !isLast && s.exRowDivider]}>
+                        <View style={s.exLeft}>
+                          <View style={s.exNameRow}>
+                            <Text style={s.exName} numberOfLines={1}>{ex.name}</Text>
                             {isPr && (
-                              <View style={styles.prBadge}>
-                                <Text style={styles.prBadgeText}>PR</Text>
+                              <View style={s.prBadge}>
+                                <Text style={s.prBadgeText}>PR</Text>
                               </View>
                             )}
                           </View>
-                          <Text style={styles.exMeta}>
+                          <Text style={s.exMeta}>
                             {done.length} {done.length === 1 ? 'set' : 'sets'} · {formatWeightDisplay(toDisplayVolume(exVol, weightUnit), weightUnit)} vol
                           </Text>
                         </View>
-                        <Text style={styles.exMaxWeight}>
+                        <Text style={s.exMaxWeight}>
                           {formatWeightDisplay(toDisplayWeight(maxW, weightUnit), weightUnit)}
                         </Text>
                       </View>
@@ -344,35 +392,33 @@ export default function WorkoutSaveScreen() {
               </>
             )}
 
-            {/* ── Done button ───────────────────────────────────────────────── */}
+            {/* ── Done button ───────────────────────────────────────────── */}
             <Pressable
-              style={({ pressed }) => [styles.doneButton, { backgroundColor: Colors.primaryLight, opacity: pressed ? 0.85 : 1 }]}
+              style={({ pressed }) => [s.doneButton, { backgroundColor: Colors.primaryLight, opacity: pressed ? 0.85 : 1 }]}
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.back(); }}
             >
-              <Text style={[styles.doneButtonText, { color: Colors.primaryDark }]}>Done</Text>
+              <Text style={[s.doneButtonText, { color: Colors.primaryDark }]}>Done</Text>
             </Pressable>
 
-            {/* ── Share toggle ──────────────────────────────────────────────── */}
+            {/* ── Share toggle ──────────────────────────────────────────── */}
             <Pressable
-              style={styles.shareToggle}
+              style={s.shareToggle}
               onPress={() => { setShowShare((v) => !v); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
             >
-              <Text style={styles.shareToggleText}>
-                {showShare ? 'Hide' : 'Share this workout'} ↓
-              </Text>
+              <Text style={s.shareToggleText}>{showShare ? 'Hide' : 'Share this workout ↓'}</Text>
             </Pressable>
 
-            {/* ── Social post form ──────────────────────────────────────────── */}
+            {/* ── Social post form (opt-in) ─────────────────────────────── */}
             {showShare && (
-              <View style={styles.shareSection}>
+              <View style={s.shareSection}>
                 {uploadError && (
-                  <View style={styles.errorRow}>
-                    <Text style={[styles.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
+                  <View style={s.errorRow}>
+                    <Text style={[s.errorText, { color: colors.primaryLight }]}>{uploadError}</Text>
                   </View>
                 )}
 
                 <TextInput
-                  style={[styles.titleInput, { color: colors.primaryLight }]}
+                  style={[s.titleInput, { color: colors.primaryLight }]}
                   placeholder="Workout title"
                   placeholderTextColor={colors.primaryLight + '30'}
                   value={title}
@@ -380,44 +426,43 @@ export default function WorkoutSaveScreen() {
                   returnKeyType="done"
                 />
 
-                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+                <View style={[s.divider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-                <View style={styles.whenRow}>
-                  <Text style={[styles.whenLabel, { color: colors.primaryLight + '60' }]}>When</Text>
-                  <Text style={[styles.whenValue, { color: colors.primaryLight }]}>{dateLabel}</Text>
+                <View style={s.whenRow}>
+                  <Text style={[s.whenLabel, { color: colors.primaryLight + '60' }]}>When</Text>
+                  <Text style={[s.whenValue, { color: colors.primaryLight }]}>{dateLabel}</Text>
                 </View>
 
-                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+                <View style={[s.divider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-                {/* Photo */}
-                <View style={styles.photoRow}>
-                  {imageUri ? (
-                    <Image source={{ uri: imageUri }} style={styles.previewImage} />
-                  ) : (
-                    <View style={[styles.photoPlaceholder, { borderColor: colors.primaryLight + '25' }]}>
-                      <Camera size={22} color={colors.primaryLight + '40'} weight="regular" />
-                    </View>
-                  )}
-                  <View style={styles.photoButtons}>
-                    <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handleTakePhoto}>
+                <View style={s.photoRow}>
+                  {imageUri
+                    ? <Image source={{ uri: imageUri }} style={s.previewImage} />
+                    : (
+                      <View style={[s.photoPlaceholder, { borderColor: colors.primaryLight + '25' }]}>
+                        <Camera size={22} color={colors.primaryLight + '40'} weight="regular" />
+                      </View>
+                    )
+                  }
+                  <View style={s.photoButtons}>
+                    <Pressable style={[s.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handleTakePhoto}>
                       <Camera size={18} color={colors.primaryLight} weight="regular" />
-                      <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Camera</Text>
+                      <Text style={[s.photoBtnLabel, { color: colors.primaryLight }]}>Camera</Text>
                     </Pressable>
-                    <Pressable style={[styles.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handlePickPhoto}>
+                    <Pressable style={[s.photoBtn, { backgroundColor: colors.primaryLight + '10' }]} onPress={handlePickPhoto}>
                       <ImageIcon size={18} color={colors.primaryLight} weight="regular" />
-                      <Text style={[styles.photoBtnLabel, { color: colors.primaryLight }]}>Gallery</Text>
+                      <Text style={[s.photoBtnLabel, { color: colors.primaryLight }]}>Gallery</Text>
                     </Pressable>
                   </View>
                 </View>
 
-                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+                <View style={[s.divider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-                {/* Description */}
-                <View style={styles.descSection}>
-                  <Text style={[styles.descLabel, { color: colors.primaryLight + '50' }]}>Notes</Text>
+                <View style={s.descSection}>
+                  <Text style={[s.descLabel, { color: colors.primaryLight + '50' }]}>Notes</Text>
                   <TextInput
-                    style={[styles.descInput, { color: colors.primaryLight }]}
-                    placeholder="How did your workout go?"
+                    style={[s.descInput, { color: colors.primaryLight }]}
+                    placeholder="How did it go?"
                     placeholderTextColor={colors.primaryLight + '30'}
                     multiline
                     value={description}
@@ -426,11 +471,10 @@ export default function WorkoutSaveScreen() {
                   />
                 </View>
 
-                <View style={[styles.divider, { backgroundColor: colors.primaryLight + '15' }]} />
+                <View style={[s.divider, { backgroundColor: colors.primaryLight + '15' }]} />
 
-                {/* Visibility */}
-                <View style={styles.visibilityRow}>
-                  <Text style={[styles.visibilityLabel, { color: colors.primaryLight }]}>Make public</Text>
+                <View style={s.visibilityRow}>
+                  <Text style={[s.visibilityLabel, { color: colors.primaryLight }]}>Make public</Text>
                   <Switch
                     value={isPublic}
                     onValueChange={setIsPublic}
@@ -440,17 +484,15 @@ export default function WorkoutSaveScreen() {
                   />
                 </View>
 
-                {/* Share button */}
                 <Pressable
-                  style={({ pressed }) => [styles.shareButton, { opacity: pressed ? 0.85 : 1 }]}
+                  style={({ pressed }) => [s.shareButton, { backgroundColor: Colors.primaryLight, opacity: pressed ? 0.85 : 1 }]}
                   onPress={handleShare}
                   disabled={isSaving}
                 >
-                  {isSaving ? (
-                    <ActivityIndicator size="small" color={Colors.primaryDark} />
-                  ) : (
-                    <Text style={[styles.shareButtonText, { color: Colors.primaryDark }]}>Share Workout</Text>
-                  )}
+                  {isSaving
+                    ? <ActivityIndicator size="small" color={Colors.primaryDark} />
+                    : <Text style={[s.shareButtonText, { color: Colors.primaryDark }]}>Share Workout</Text>
+                  }
                 </Pressable>
               </View>
             )}
@@ -462,9 +504,9 @@ export default function WorkoutSaveScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1 },
 
   topBar: {
@@ -478,7 +520,7 @@ const styles = StyleSheet.create({
 
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
 
-  // ── Hero ─────────────────────────────────────────────────────────────────
+  // Hero
   hero: { alignItems: 'center', marginBottom: 32 },
   checkCircle: {
     width: 80,
@@ -489,77 +531,44 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heroTitle: {
-    fontFamily: Font.bold,
     fontSize: 30,
     fontWeight: '700',
-    color: Colors.primaryLight,
+    color: C_TEXT,
     letterSpacing: -0.7,
     marginBottom: 6,
   },
   heroName: {
-    fontFamily: Font.medium,
     fontSize: 16,
-    color: Colors.primaryLight + '65',
+    fontWeight: '500',
+    color: C_TEXT_DIM,
     letterSpacing: -0.2,
     marginBottom: 4,
   },
   heroDuration: {
-    fontFamily: Font.medium,
     fontSize: 14,
-    color: Colors.primaryLight + '45',
+    fontWeight: '400',
+    color: 'rgba(198,198,198,0.38)',
   },
 
-  // ── Stat tiles ────────────────────────────────────────────────────────────
+  // Tile grid
   tileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: TILE_GAP,
     marginBottom: 32,
   },
-  tile: {
-    width: TILE_SIZE,
-    height: TILE_SIZE,
-    borderRadius: Glass.radius.primary,
-    overflow: 'hidden',
-  },
-  tileContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    zIndex: 1,
-  },
-  tileValue: {
-    fontFamily: Font.bold,
-    fontSize: 30,
-    fontWeight: '700',
-    color: Colors.primaryLight + 'BB',
-    letterSpacing: -1.2,
-    lineHeight: 34,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  tileLabel: {
-    fontFamily: Font.medium,
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.primaryLight + '50',
-    textAlign: 'center',
-    lineHeight: 14,
-  },
 
-  // ── Section label ─────────────────────────────────────────────────────────
+  // Section label
   sectionLabel: {
-    fontFamily: Font.semiBold,
     fontSize: 11,
     fontWeight: '600',
-    color: Colors.primaryLight + '40',
+    color: 'rgba(198,198,198,0.40)',
     letterSpacing: 1.4,
     marginBottom: 10,
     marginLeft: 4,
   },
 
-  // ── Exercise breakdown ────────────────────────────────────────────────────
+  // Exercise card
   exCard: { marginBottom: 28 },
   exRow: {
     flexDirection: 'row',
@@ -569,48 +578,45 @@ const styles = StyleSheet.create({
   },
   exRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Glass.border,
+    borderBottomColor: 'rgba(198,198,198,0.12)',
   },
   exLeft: { flex: 1, marginRight: 12 },
   exNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
   exName: {
-    fontFamily: Font.semiBold,
     fontSize: 15,
     fontWeight: '600',
-    color: Colors.primaryLight + 'DD',
+    color: C_TEXT,
     letterSpacing: -0.2,
     flexShrink: 1,
   },
   exMeta: {
-    fontFamily: Font.medium,
     fontSize: 12,
-    color: Colors.primaryLight + '48',
+    fontWeight: '400',
+    color: C_TEXT_DIM,
     letterSpacing: -0.1,
   },
   exMaxWeight: {
-    fontFamily: Font.semiBold,
     fontSize: 15,
     fontWeight: '600',
-    color: Colors.primaryLight + '75',
+    color: 'rgba(198,198,198,0.65)',
     letterSpacing: -0.3,
   },
   prBadge: {
-    backgroundColor: Colors.primaryLight + '16',
+    backgroundColor: 'rgba(198,198,198,0.12)',
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '35',
+    borderColor: 'rgba(198,198,198,0.28)',
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   prBadgeText: {
-    fontFamily: Font.bold,
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.primaryLight,
+    color: C_TEXT,
     letterSpacing: 0.4,
   },
 
-  // ── Done button ───────────────────────────────────────────────────────────
+  // Done button
   doneButton: {
     height: 56,
     borderRadius: 18,
@@ -619,91 +625,40 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   doneButtonText: {
-    fontFamily: Font.bold,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
 
-  // ── Share toggle ──────────────────────────────────────────────────────────
+  // Share toggle
   shareToggle: { alignItems: 'center', paddingVertical: 12, marginBottom: 4 },
   shareToggleText: {
-    fontFamily: Font.medium,
     fontSize: 13,
-    color: Colors.primaryLight + '45',
+    fontWeight: '500',
+    color: 'rgba(198,198,198,0.40)',
     letterSpacing: -0.1,
   },
 
-  // ── Share section ─────────────────────────────────────────────────────────
+  // Share section
   shareSection: { marginTop: 8 },
-  errorRow: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#FF3B30' + '15',
-    marginBottom: 8,
-  },
+  errorRow: { padding: 12, borderRadius: 10, backgroundColor: '#FF3B30' + '15', marginBottom: 8 },
   errorText: { fontSize: 14, lineHeight: 20 },
-
   divider: { height: StyleSheet.hairlineWidth },
-
-  titleInput: {
-    fontSize: 22,
-    fontWeight: '600',
-    letterSpacing: -0.4,
-    paddingVertical: 18,
-  },
-  whenRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
+  titleInput: { fontSize: 22, fontWeight: '600', letterSpacing: -0.4, paddingVertical: 18 },
+  whenRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14 },
   whenLabel: { fontSize: 15 },
   whenValue: { fontSize: 15 },
-
-  photoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    paddingVertical: 14,
-  },
-  photoPlaceholder: {
-    width: 72, height: 90, borderRadius: 10,
-    borderWidth: 1.5, borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 14 },
+  photoPlaceholder: { width: 72, height: 90, borderRadius: 10, borderWidth: 1.5, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
   previewImage: { width: 72, height: 90, borderRadius: 10 },
   photoButtons: { flex: 1, gap: 10 },
-  photoBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
-  },
+  photoBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
   photoBtnLabel: { fontSize: 15, fontWeight: '500' },
-
   descSection: { paddingVertical: 14 },
   descLabel: { fontSize: 12, marginBottom: 8 },
   descInput: { fontSize: 15, minHeight: 80, textAlignVertical: 'top' },
-
-  visibilityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
+  visibilityRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16 },
   visibilityLabel: { fontSize: 15 },
-
-  shareButton: {
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-  },
-  shareButtonText: {
-    fontFamily: Font.bold,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
+  shareButton: { height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  shareButtonText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
 });
