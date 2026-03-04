@@ -92,6 +92,7 @@ import { useAnimatedProgress } from '../../hooks/useAnimatedProgress';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
 import NutritionHero from '../../components/NutritionHero';
 import { ProgressHub } from '../../components/ProgressHub';
+import { FitnessHub } from '../../components/FitnessHub';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
@@ -1940,7 +1941,7 @@ export default function NutritionScreen({
           </View>
         ) : (
           <View style={{ overflow: 'visible' as const }}>
-            <ProgressHub />
+            <FitnessHub />
           </View>
         )}
         </View>
