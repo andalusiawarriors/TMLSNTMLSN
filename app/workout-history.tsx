@@ -28,7 +28,7 @@ import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings, deleteWorkoutSession } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
-import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
+import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
@@ -308,7 +308,7 @@ export default function WorkoutHistoryScreen() {
     const rawVolume = item.exercises.reduce((acc, ex) =>
       acc + ex.sets.filter((s) => s.completed).reduce((sacc, set) => sacc + set.weight * set.reps, 0), 0);
     const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
-    const volumeStr = formatWeightDisplay(volumeDisplay, weightUnit);
+    const volumeStr = formatVolumeDisplay(volumeDisplay, weightUnit);
     const exerciseCount = item.exercises.length;
 
     return (

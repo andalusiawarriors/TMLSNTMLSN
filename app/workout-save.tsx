@@ -23,8 +23,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
-import { getWorkoutSessions, getUserSettings, updateWorkoutSessionName } from '../utils/storage';
-import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
+import { getWorkoutSessions, getUserSettings, finalizeWorkoutSession } from '../utils/storage';
+import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
 export default function WorkoutSaveScreen() {
@@ -32,7 +32,7 @@ export default function WorkoutSaveScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { setActiveWorkout, discardWorkout } = useActiveWorkout();
+  const { activeWorkout, setActiveWorkout, discardWorkout } = useActiveWorkout();
 
   const handleDiscard = () => {
     Alert.alert(
@@ -78,6 +78,14 @@ export default function WorkoutSaveScreen() {
     if (sessionId) loadSession();
   }, [sessionId]);
 
+  // Prefer active workout from context when it matches (user just tapped Finish); else use loaded session.
+  useEffect(() => {
+    if (sessionId && activeWorkout?.id === sessionId) {
+      setSession(activeWorkout);
+      if (activeWorkout.name && activeWorkout.name !== 'Workout') setTitle(activeWorkout.name);
+    }
+  }, [sessionId, activeWorkout]);
+
   // Derived stats
   const duration = session?.duration ?? 0;
   const totalSets = session
@@ -90,7 +98,7 @@ export default function WorkoutSaveScreen() {
         0
       )
     : 0;
-  const volumeStr = rawVolume > 0 ? formatWeightDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit) : '--';
+  const volumeStr = rawVolume > 0 ? formatVolumeDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit) : '--';
 
   const formatDuration = (mins: number): string => {
     if (mins <= 0) return '--';
@@ -116,11 +124,19 @@ export default function WorkoutSaveScreen() {
 
   const handleSave = async () => {
     if (!sessionId) return;
+    const sessionToFinalize = (activeWorkout?.id === sessionId ? activeWorkout : null) ?? session;
+    if (!sessionToFinalize) {
+      Alert.alert('Error', 'Workout data not found. Go back and try again.');
+      return;
+    }
     setIsSaving(true);
     setUploadError(null);
 
     try {
-      if (title.trim()) await updateWorkoutSessionName(sessionId, title.trim());
+      // Single canonical finalize: persist session + exercises + sets, run prescriptions, mark complete. Idempotent for same sessionId.
+      const nameToUse = title.trim() || sessionToFinalize.name || 'Workout';
+      const sessionWithName = { ...sessionToFinalize, name: nameToUse };
+      await finalizeWorkoutSession(sessionWithName);
 
       if (supabase) {
         const { data: { user } } = await supabase.auth.getUser();
@@ -129,7 +145,7 @@ export default function WorkoutSaveScreen() {
           if (!postId) {
             const { data: postData, error: postError } = await supabase
               .from('workout_posts')
-              .insert({ user_id: user.id, session_id: sessionId, title: title.trim() || null, description: description.trim() || null, visibility: isPublic ? 'public' : 'private' })
+              .insert({ user_id: user.id, session_id: sessionId, title: nameToUse, description: description.trim() || null, visibility: isPublic ? 'public' : 'private' })
               .select().single();
             if (postError) throw postError;
             postId = postData.id;

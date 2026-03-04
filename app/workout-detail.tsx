@@ -23,7 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings, deleteWorkoutSession, updateWorkoutSession } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession, Set } from '../types';
-import { formatWeightDisplay, toDisplayWeight, fromDisplayWeight, toDisplayVolume, parseNumericInput } from '../utils/units';
+import { formatWeightDisplay, formatVolumeDisplay, toDisplayWeight, fromDisplayWeight, toDisplayVolume, parseNumericInput } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { LiquidGlassPill } from '../components/ui/liquidGlass';
@@ -263,7 +263,7 @@ export default function WorkoutDetailScreen() {
                     scrubEnabled={false}
                   />
                   <LiquidGlassPill
-                    label={`${formatWeightDisplay(volumeDisplay, weightUnit)} ${weightUnit}`}
+                    label={`${formatVolumeDisplay(volumeDisplay, weightUnit)} ${weightUnit}`}
                     scrubEnabled={false}
                   />
                   <Pressable
@@ -364,7 +364,7 @@ export default function WorkoutDetailScreen() {
                       <View style={[styles.setRow, !isCompleted && { opacity: 0.5 }]}>
                         <Text style={[styles.setValText, { flex: 0.5, color: colors.primaryLight }]}>{sIdx + 1}</Text>
                         <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
-                          {displayWt > 0 ? displayWt : '-'} {weightUnit}
+                          {displayWt > 0 ? formatWeightDisplay(displayWt, weightUnit) : '-'} {weightUnit}
                         </Text>
                         <Text style={[styles.setValText, { flex: 1, color: colors.primaryLight }]}>
                           {set.reps > 0 ? set.reps : '-'}

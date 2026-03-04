@@ -543,6 +543,12 @@ export async function supabaseGetRecentWorkouts(
   return sessions.slice(0, limit);
 }
 
+/**
+ * Persist workout session, exercises, and sets; then run prescription compute and upsert
+ * exercise_progress_state. Idempotent for the same sessionId: repeat calls (e.g. double-tap
+ * Save) upsert session by id, delete exercises/sets for session_id then reinsert, so final
+ * DB state is the same and no duplicate rows.
+ */
 export async function supabaseSaveWorkoutSession(
   userId: string,
   session: WorkoutSession

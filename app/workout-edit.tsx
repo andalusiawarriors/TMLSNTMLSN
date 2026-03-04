@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,11 +23,12 @@ import { useTheme } from '../context/ThemeContext';
 import { getWorkoutSessions, getUserSettings, deleteWorkoutSession, updateWorkoutSession } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
-import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay, parseNumericInput } from '../utils/units';
+import { fromDisplayWeight, toDisplayVolume } from '../utils/units';
 import { generateId } from '../utils/helpers';
-import { Input } from '../components/Input';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { WorkoutSetTable } from '../components/WorkoutSetTable';
+import { buildPrevSetsAndGhost } from '../utils/workoutSetTable';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -49,21 +49,14 @@ export default function WorkoutEditScreen() {
   const { playIn, playOut } = useButtonSound();
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
+  const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
-
-  const [editingCell, setEditingCell] = useState<{
-    exerciseIndex: number;
-    setIndex: number;
-    field: 'weight' | 'reps' | 'rpe';
-  } | null>(null);
-  const [editingCellValue, setEditingCellValue] = useState('');
-  const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
+  const [commitOutsideTrigger, setCommitOutsideTrigger] = useState(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const scrollRef = useRef<ScrollView>(null);
-  const commitInProgressRef = useRef(false);
   const sessionRef = useRef<WorkoutSession | null>(null);
 
   useEffect(() => {
@@ -84,6 +77,7 @@ export default function WorkoutEditScreen() {
         const found = sessions.find((s) => s.id === sessionId);
         if (found) setSession(JSON.parse(JSON.stringify(found)));
         setWeightUnit(settings?.weightUnit ?? 'lb');
+        setRecentSessions(sessions.filter((s) => s.id !== sessionId).slice(0, 10));
       } catch (e) {
         console.error(e);
       } finally {
@@ -116,27 +110,6 @@ export default function WorkoutEditScreen() {
       return { ...prev, exercises: updatedExercises };
     });
   }, [weightUnit]);
-
-  const commitActiveField = useCallback((source: 'done' | 'outside' | 'blur') => {
-    if (!editingCell) return;
-    if (commitInProgressRef.current) return;
-    commitInProgressRef.current = true;
-    const { exerciseIndex, setIndex, field } = editingCell;
-    if (field === 'weight') {
-      const n = parseNumericInput(editingCellValue, 'float');
-      if (n !== null) updateSet(exerciseIndex, setIndex, { weight: n });
-    } else if (field === 'rpe') {
-      const n = parseNumericInput(editingCellValue, 'float');
-      if (n !== null) updateSet(exerciseIndex, setIndex, { rpe: Math.min(10, Math.max(1, n)) });
-    } else {
-      const n = parseNumericInput(editingCellValue, 'int');
-      if (n !== null) updateSet(exerciseIndex, setIndex, { reps: n });
-    }
-    setEditingCell(null);
-    setEditingCellValue('');
-    Keyboard.dismiss();
-    commitInProgressRef.current = false;
-  }, [editingCell, editingCellValue, updateSet]);
 
   const addSet = (exerciseIndex: number) => {
     setSession((prev) => {
@@ -249,7 +222,7 @@ export default function WorkoutEditScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <Pressable style={{ flex: 1 }} onPress={() => commitActiveField('outside')}>
+          <Pressable style={{ flex: 1 }} onPress={() => setCommitOutsideTrigger((t) => t + 1)}>
 
             {/* ─── TOP BAR ─── */}
             <View style={[styles.topBar, { paddingLeft: 4, paddingRight: insets.right + 4, paddingVertical: 8 }]}>
@@ -341,292 +314,33 @@ export default function WorkoutEditScreen() {
                   </View>
                 </View>
 
-                {/* Set table header */}
-                <View style={styles.setTableHeader}>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.set }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>SET</Text>
-                  </View>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.previous }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>PREVIOUS</Text>
-                  </View>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.weight }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>{weightUnit.toUpperCase()}</Text>
-                  </View>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.reps }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>REPS</Text>
-                  </View>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.rpe }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>RPE</Text>
-                  </View>
-                  <View style={[styles.setCell, { flex: SET_TABLE_FLEX.check }]}>
-                    <Text style={[styles.setHeaderLabel, { color: colors.primaryLight + '50' }]}>✓</Text>
-                  </View>
-                </View>
-
-                {/* Set rows */}
-                {exercise.sets.map((set, setIndex) => {
-                  const isCompleted = set.completed;
-                  const rowKey = `${exerciseIndex}-${setIndex}`;
-                  const prevSet = setIndex > 0 ? exercise.sets[setIndex - 1] : null;
-
+                {(() => {
+                  const { prevSets, ghostWeight, ghostReps } = buildPrevSetsAndGhost(exercise, {}, recentSessions, weightUnit);
                   return (
-                    <View key={set.id} style={styles.setBlock}>
-                      <Swipeable
-                        renderRightActions={() => (
-                          <Pressable
-                            style={({ pressed }) => [styles.swipeDeleteAction, pressed && { opacity: 0.8 }]}
-                            onPressIn={playIn}
-                            onPressOut={playOut}
-                            onPress={() => removeSet(exerciseIndex, setIndex)}
-                          >
-                            <Text style={styles.swipeDeleteText}>Delete</Text>
-                          </Pressable>
-                        )}
-                        friction={2}
-                        rightThreshold={40}
-                      >
-                        <View
-                          style={[
-                            styles.setRow,
-                            isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20' },
-                            pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
-                          ]}
-                        >
-                          {/* SET number */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.set }]}>
-                            <View style={[styles.setDot, { borderColor: colors.primaryLight + '30' }, isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight }]}>
-                              <Text style={[styles.setDotText, { color: colors.primaryLight + '80' }, isCompleted && { color: colors.primaryDark }]}>
-                                {setIndex + 1}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* PREVIOUS */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.previous }]}>
-                            <Text style={[styles.setCellDim, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">
-                              {prevSet && prevSet.weight > 0
-                                ? `${formatWeightDisplay(toDisplayWeight(prevSet.weight, weightUnit), weightUnit)}×${prevSet.reps}`
-                                : '—'}
-                            </Text>
-                          </View>
-
-                          {/* WEIGHT */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.weight }]}>
-                            <View style={styles.cellCenter}>
-                              {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
-                                <View style={[styles.inputCellActive, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]}>
-                                  <Input
-                                    value={editingCellValue}
-                                    onChangeText={setEditingCellValue}
-                                    onBlur={() => commitActiveField('blur')}
-                                    autoFocus
-                                    keyboardType="decimal-pad"
-                                    placeholder="—"
-                                    multiline={false}
-                                    maxLength={5}
-                                    containerStyle={styles.inputInner}
-                                    style={[styles.inputText, { color: colors.primaryLight, backgroundColor: 'transparent' }]}
-                                    placeholderTextColor={colors.primaryLight + '50'}
-                                    selectionColor={colors.primaryLight + '60'}
-                                    textAlignVertical="center"
-                                  />
-                                </View>
-                              ) : (
-                                <Pressable
-                                  onPressIn={playIn}
-                                  onPressOut={playOut}
-                                  onPress={() => {
-                                    const v = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                                    setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                                    setEditingCellValue(v);
-                                  }}
-                                  style={[styles.inputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                >
-                                  <Text style={[styles.inputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                    {set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '—'}
-                                  </Text>
-                                </Pressable>
-                              )}
-                            </View>
-                          </View>
-
-                          {/* REPS */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.reps }]}>
-                            <View style={styles.cellCenter}>
-                              {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
-                                <View style={[styles.inputCellActive, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]}>
-                                  <Input
-                                    value={editingCellValue}
-                                    onChangeText={setEditingCellValue}
-                                    onBlur={() => commitActiveField('blur')}
-                                    autoFocus
-                                    keyboardType="number-pad"
-                                    placeholder="—"
-                                    multiline={false}
-                                    maxLength={4}
-                                    containerStyle={styles.inputInner}
-                                    style={[styles.inputText, { color: colors.primaryLight, backgroundColor: 'transparent' }]}
-                                    placeholderTextColor={colors.primaryLight + '50'}
-                                    selectionColor={colors.primaryLight + '60'}
-                                    textAlignVertical="center"
-                                  />
-                                </View>
-                              ) : (
-                                <Pressable
-                                  onPressIn={playIn}
-                                  onPressOut={playOut}
-                                  onPress={() => {
-                                    const v = set.reps > 0 ? String(set.reps) : '';
-                                    setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                                    setEditingCellValue(v);
-                                  }}
-                                  style={[styles.inputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                >
-                                  <Text style={[styles.inputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : { color: colors.primaryLight + '40' }]}>
-                                    {set.reps > 0 ? String(set.reps) : '—'}
-                                  </Text>
-                                </Pressable>
-                              )}
-                            </View>
-                          </View>
-
-                          {/* RPE */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.rpe }]}>
-                            <View style={styles.cellCenter}>
-                              {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'rpe' ? (
-                                <View style={[styles.inputCellActive, styles.rpeInputOverride, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]}>
-                                  <Input
-                                    value={editingCellValue}
-                                    onChangeText={setEditingCellValue}
-                                    onBlur={() => commitActiveField('blur')}
-                                    autoFocus
-                                    keyboardType="decimal-pad"
-                                    placeholder="—"
-                                    multiline={false}
-                                    maxLength={4}
-                                    containerStyle={[styles.inputInner, styles.rpeInputOverride]}
-                                    style={[styles.inputText, { color: colors.primaryLight, backgroundColor: 'transparent' }]}
-                                    placeholderTextColor={colors.primaryLight + '50'}
-                                    selectionColor={colors.primaryLight + '60'}
-                                    textAlignVertical="center"
-                                  />
-                                </View>
-                              ) : (
-                                <Pressable
-                                  onPressIn={playIn}
-                                  onPressOut={playOut}
-                                  onPress={() => {
-                                    const v = set.rpe != null ? String(set.rpe) : '';
-                                    setEditingCell({ exerciseIndex, setIndex, field: 'rpe' });
-                                    setEditingCellValue(v);
-                                  }}
-                                  style={styles.rpePlaceholder}
-                                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                >
-                                  <Text style={[styles.inputPlaceholderText, set.rpe != null ? { color: colors.primaryLight } : { color: colors.primaryLight + '30' }]}>
-                                    {set.rpe != null ? String(set.rpe) : '—'}
-                                  </Text>
-                                </Pressable>
-                              )}
-                            </View>
-                          </View>
-
-                          {/* CHECK */}
-                          <View style={[styles.setCell, { flex: SET_TABLE_FLEX.check }]}>
-                            <View style={styles.cellCenter}>
-                              <Pressable
-                                style={[
-                                  styles.checkWrap,
-                                  { borderColor: colors.primaryLight + '30' },
-                                  isCompleted && { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
-                                ]}
-                                onPressIn={() => { playIn(); setPressedCheckRowKey(rowKey); }}
-                                onPressOut={() => { playOut(); setPressedCheckRowKey(null); }}
-                                onPress={() => {
-                                  const nextCompleted = !set.completed;
-                                  const isEditingThisSet = editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex;
-                                  if (isEditingThisSet && editingCell) {
-                                    const { field } = editingCell;
-                                    if (field === 'weight') {
-                                      const n = parseNumericInput(editingCellValue, 'float');
-                                      if (n !== null) updateSet(exerciseIndex, setIndex, { weight: n, completed: nextCompleted });
-                                      else updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                    } else if (field === 'rpe') {
-                                      const n = parseNumericInput(editingCellValue, 'float');
-                                      if (n !== null) updateSet(exerciseIndex, setIndex, { rpe: Math.min(10, Math.max(1, n)), completed: nextCompleted });
-                                      else updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                    } else {
-                                      const n = parseNumericInput(editingCellValue, 'int');
-                                      if (n !== null) updateSet(exerciseIndex, setIndex, { reps: n, completed: nextCompleted });
-                                      else updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                    }
-                                    setEditingCell(null);
-                                    setEditingCellValue('');
-                                    Keyboard.dismiss();
-                                  } else {
-                                    updateSet(exerciseIndex, setIndex, { completed: nextCompleted });
-                                  }
-                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                }}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                              >
-                                <Ionicons
-                                  name="checkmark"
-                                  size={24}
-                                  color={isCompleted ? colors.primaryDark : colors.primaryLight + '40'}
-                                />
-                              </Pressable>
-                            </View>
-                          </View>
-                        </View>
-                      </Swipeable>
-                    </View>
+                    <WorkoutSetTable
+                      exercise={exercise}
+                      exerciseIndex={exerciseIndex}
+                      prevSets={prevSets}
+                      ghostWeight={ghostWeight}
+                      ghostReps={ghostReps}
+                      weightUnit={weightUnit}
+                      colors={colors}
+                      updateSet={updateSet}
+                      onRemoveSet={removeSet}
+                      onAddSet={addSet}
+                      keyboardHeight={keyboardHeight}
+                      externalCommitTrigger={commitOutsideTrigger}
+                      playIn={playIn}
+                      playOut={playOut}
+                    />
                   );
-                })}
-
-                {/* Add Set */}
-                <Pressable
-                  style={({ pressed }) => [styles.addSetBtn, { backgroundColor: colors.primaryLight + '15' }, pressed && { opacity: 0.85 }]}
-                  onPressIn={playIn}
-                  onPressOut={playOut}
-                  onPress={() => addSet(exerciseIndex)}
-                >
-                  <Text style={[styles.addSetBtnText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
-                </Pressable>
+                })()}
               </View>
             ))}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Keyboard confirm pill */}
-      {editingCell && (
-        <View style={[styles.keyboardBar, { bottom: keyboardHeight }]}>
-          <Pressable
-            onPressIn={playIn}
-            onPressOut={playOut}
-            onPress={() => commitActiveField('done')}
-            style={styles.confirmPillTouchable}
-            hitSlop={8}
-          >
-            <View style={styles.confirmPill}>
-              <LinearGradient
-                colors={colors.tabBarBorder as [string, string]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-                style={[StyleSheet.absoluteFillObject, { borderRadius: 24 }]}
-              />
-              <View style={[styles.confirmPillShell, { backgroundColor: (colors.tabBarFill as [string, string])[1] }]}>
-                <View style={styles.confirmPillInner}>
-                  <Ionicons name="checkmark" size={24} color={colors.primaryLight} />
-                </View>
-              </View>
-            </View>
-          </Pressable>
-        </View>
-      )}
     </View>
   );
 }

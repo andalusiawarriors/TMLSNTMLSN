@@ -27,7 +27,8 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *(none — merged)* | Person 1 (nutrition) + Person 2 (workout) work merged | — | — | Mar 2 2026 |
+| *(none)* | — | — | — | — |
+*Just finished: Finish workout hardening — finalizeWorkoutSession in utils/storage.ts (single canonical finalize: persist session+exercises+sets, prescriptions, mark complete, idempotent); workout-save calls it on Save and uses activeWorkout when sessionId matches; Finish on workout tab only navigates to workout-save (no persist); supabaseStorage idempotency comment.*
 *Just finished: StickyGlassHeader + Progress Graph wiring — StickyGlassHeader.tsx (blur+gradient on scroll), progress-graph.tsx uses Animated.ScrollView + StickyGlassHeader (title, pills sticky; glass effect ramps 0→0.92 opacity as scrollY 0→140).*
 *Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
 *Just finished: Add Meal UI artist fix — BackButton asModal prop for 54px placement; Button gradient variant (FAB style); TMLSN label smaller than title (11px vs 20px); removed Cancel buttons; calories showcase (dataValue font, larger); meal type chip no blue; unit/amount controls (tbsp/tsp/cup/100g/1g + amount); main + obh synced (nutrition.tsx, search-food.tsx, BackButton, Button).*
@@ -69,6 +70,8 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `utils/rpe.ts`, `utils/workoutSetTable.ts`, `components/WorkoutSetTable.tsx`, `app/(tabs)/workout/index.tsx`, `app/workout-edit.tsx` – Zero-divergence set table: shared WorkoutSetTable (SET|PREVIOUS|KG/LB|REPS|RPE|✓), editing/RPE popup/ghost apply/swipe-to-delete inside component; buildPrevSetsAndGhost helper; active workout and edit past workout both use same component; no UI/design changes.
+- `utils/storage.ts`, `utils/supabaseStorage.ts`, `app/workout-save.tsx`, `app/(tabs)/workout/index.tsx` – Finish workout hardening: finalizeWorkoutSession, workout-save uses it + activeWorkout, Finish only navigates
 - `components/ProgressHub.tsx` – Reorder UX: blur+dark overlay, jiggle, long-press-to-drag (activateAfterLongPress), floating tile position, snap-into-place; fixed lint
 - `app/(tabs)/nutrition.tsx`, `components/ProgressHub.tsx` – Scroll fix: scrollViewLayer flex:1 so main ScrollView gets bounded height; ProgressHub root View no flex:1 so content sizes naturally
 - `components/ui/StickyGlassHeader.tsx`, `app/progress-graph.tsx` – Sticky filter header (Stoic-style): liquid glass on scroll, pills sticky, Animated.ScrollView

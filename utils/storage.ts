@@ -3,6 +3,7 @@ import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRo
 import { isSupabaseConfigured } from '../lib/supabase';
 import * as supabaseStorage from './supabaseStorage';
 import { DEFAULT_GOALS, DEFAULT_SETTINGS, DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
+import { logStreakWorkout } from './streak';
 
 // Current user ID for Supabase-backed storage (set by AuthContext on login/logout)
 let _storageUserId: string | null = null;
@@ -120,6 +121,44 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
     throw error;
   }
 };
+
+/**
+ * Single canonical finalize for finishing a workout. Persists session + exercises + sets once,
+ * runs progressive overload prescription compute + upserts to exercise_progress_state, then marks
+ * the session complete. Idempotent: calling again for the same sessionId (e.g. double-tap Save)
+ * re-persists the same data without duplicating rows (Supabase: upsert session, delete+reinsert
+ * exercises/sets for that sessionId; AsyncStorage: filter-by-id then push).
+ * Call this from workout-save Save button only; do not persist on Finish (Finish only navigates).
+ */
+export async function finalizeWorkoutSession(
+  session: WorkoutSession,
+  _opts?: { userId?: string | null }
+): Promise<string> {
+  const sessionId = session.id;
+  if (__DEV__) {
+    console.group('[Finalize] start sessionId=' + sessionId);
+  }
+  const duration =
+    session.duration != null && session.duration >= 0
+      ? session.duration
+      : Math.round((Date.now() - new Date(session.date).getTime()) / 60000);
+  const sessionCompleted: WorkoutSession = {
+    ...session,
+    isComplete: true,
+    duration,
+  };
+  await saveWorkoutSession(sessionCompleted);
+  if (__DEV__) {
+    console.log('[Finalize] saved session/exercises/sets');
+  }
+  await logStreakWorkout();
+  if (__DEV__) {
+    console.log('[Finalize] prescriptions updated (via saveWorkoutSession); streak logged');
+    console.log('[Finalize] complete');
+    console.groupEnd();
+  }
+  return sessionId;
+}
 
 /** Update the name of an existing workout session. */
 export const updateWorkoutSessionName = async (sessionId: string, name: string): Promise<void> => {

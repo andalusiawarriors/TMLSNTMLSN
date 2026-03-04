@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../constants/theme';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
-import { toDisplayVolume, toDisplayWeight, formatWeightDisplay } from '../utils/units';
+import { toDisplayVolume, toDisplayWeight, formatWeightDisplay, formatVolumeDisplay } from '../utils/units';
 
 // ── Layout ─────────────────────────────────────────────────────
 const { width: SW } = Dimensions.get('window');
@@ -215,7 +215,7 @@ export default function WorkoutLoggedScreen() {
       )
     : 0;
   const volumeStr  = rawVolume > 0
-    ? formatWeightDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit)
+    ? formatVolumeDisplay(toDisplayVolume(rawVolume, weightUnit), weightUnit)
     : '--';
 
   // ── PR detection ─────────────────────────────────────────────

@@ -13,10 +13,19 @@ const FL_OZ_PER_ML = 0.0338140227;
 export type WeightUnit = 'kg' | 'lb';
 export type VolumeUnit = 'oz' | 'ml';
 
-/** Stored weight is in lb. Convert to display value in the given unit. */
+/** Gym-typical weight increments: 0, 0.25, 0.5, 0.75, 1, 1.25, … (kg or lb). */
+const GYM_WEIGHT_INCREMENT = 0.25;
+
+/** Round weight to the nearest gym increment (0.25). */
+export function roundToGymWeight(value: number): number {
+  return Math.round(value / GYM_WEIGHT_INCREMENT) * GYM_WEIGHT_INCREMENT;
+}
+
+/** Stored weight is in lb. Convert to display value in the given unit. Kg rounded to 4 decimals to avoid lb→kg float noise while preserving e.g. 58.125. */
 export function toDisplayWeight(storedWeightLb: number, unit: WeightUnit): number {
   if (unit === 'lb') return storedWeightLb;
-  return storedWeightLb * KG_PER_LB;
+  const kg = storedWeightLb * KG_PER_LB;
+  return Math.round(kg * 10000) / 10000;
 }
 
 /** Display value is in the given unit. Convert to storage (lb). */
@@ -27,11 +36,12 @@ export function fromDisplayWeight(displayWeight: number, unit: WeightUnit): numb
 
 /**
  * Workout volume = weight * reps. Stored weight is in lb, so rawVolume is in lb.
- * Convert to display value in the given weight unit (same numeric unit as weight: lb or kg).
+ * Convert to display value in the given weight unit. Kg rounded to 4 decimals to avoid lb→kg float noise.
  */
 export function toDisplayVolume(rawVolumeLb: number, unit: WeightUnit): number {
   if (unit === 'lb') return rawVolumeLb;
-  return rawVolumeLb * KG_PER_LB;
+  const kg = rawVolumeLb * KG_PER_LB;
+  return Math.round(kg * 10000) / 10000;
 }
 
 /** Stored fluid is in oz (US fl oz). Convert to display value in the given unit. */
@@ -64,9 +74,20 @@ export function parseNumericInput(
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Format weight for display: nearest whole number. */
-export function formatWeightDisplay(value: number, unit: WeightUnit): string {
-  return String(Math.round(value));
+/**
+ * Format weight for display: round to nearest gym increment (0, 0.25, 0.5, 0.75, 1, …), then show with no trailing zeros (58 → "58", 58.25 → "58.25", 58.5 → "58.5").
+ */
+export function formatWeightDisplay(value: number, _unit: WeightUnit): string {
+  const rounded = roundToGymWeight(value);
+  if (rounded % 1 === 0) return String(Math.round(rounded));
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
+/** Format total volume for display: round to nearest gym increment (0.25), then show with no trailing zeros (1392 → "1392", 1392.5 → "1392.5"). */
+export function formatVolumeDisplay(value: number, _unit: WeightUnit): string {
+  const rounded = roundToGymWeight(value);
+  if (rounded % 1 === 0) return String(Math.round(rounded));
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
 }
 
 /** Format fluid for display: ml = integer, oz = 1 decimal. */
