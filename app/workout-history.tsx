@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,7 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
-import { getWorkoutSessions, getUserSettings } from '../utils/storage';
+import { getWorkoutSessions, getUserSettings, deleteWorkoutSession } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatWeightDisplay } from '../utils/units';
@@ -266,6 +267,43 @@ export default function WorkoutHistoryScreen() {
     </Pressable>
   );
 
+  const handleDelete = useCallback(async (sessionId: string) => {
+    try {
+      await deleteWorkoutSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Error', 'Failed to delete workout.');
+    }
+  }, []);
+
+  const showOptions = useCallback((item: WorkoutSession) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      getSessionDisplayName(item),
+      format(new Date(item.date), 'MMM d, yyyy'),
+      [
+        {
+          text: 'Edit Workout',
+          onPress: () => router.push({ pathname: '/workout-detail', params: { sessionId: item.id, edit: 'true' } }),
+        },
+        {
+          text: 'Delete Workout',
+          style: 'destructive',
+          onPress: () => Alert.alert(
+            'Delete Workout?',
+            'This action cannot be undone.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => handleDelete(item.id) },
+            ]
+          ),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, [router, handleDelete]);
+
   const renderSessionCard = (item: WorkoutSession) => {
     const rawVolume = item.exercises.reduce((acc, ex) =>
       acc + ex.sets.filter((s) => s.completed).reduce((sacc, set) => sacc + set.weight * set.reps, 0), 0);
@@ -303,9 +341,18 @@ export default function WorkoutHistoryScreen() {
               <Text style={[styles.cardName, { color: colors.primaryLight }]} numberOfLines={1}>
                 {getSessionDisplayName(item)}
               </Text>
-              <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
-                {format(new Date(item.date), 'MMM d, yyyy')}
-              </Text>
+              <View style={styles.cardTopRight}>
+                <Text style={[styles.cardDate, { color: colors.primaryLight + '50' }]}>
+                  {format(new Date(item.date), 'MMM d, yyyy')}
+                </Text>
+                <Pressable
+                  onPress={() => showOptions(item)}
+                  hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
+                  style={styles.dotsBtn}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={16} color={colors.primaryLight + '80'} />
+                </Pressable>
+              </View>
             </View>
             <View style={styles.cardStats}>
               <View style={[styles.statPill, { backgroundColor: colors.primaryLight + '10' }]}>
@@ -607,7 +654,14 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     flex: 1,
   },
+  cardTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   cardDate: { fontSize: 13, marginTop: 2 },
+  dotsBtn: { padding: 2 },
   cardStats: {
     flexDirection: 'row',
     gap: 8,

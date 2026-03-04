@@ -720,6 +720,14 @@ export async function supabaseUpdateWorkoutSessionName(
   }
 }
 
+export async function supabaseDeleteWorkoutSession(userId: string, sessionId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not configured');
+  await supabase.from('workout_sets').delete().eq('user_id', userId).eq('session_id', sessionId);
+  await supabase.from('workout_exercises').delete().eq('user_id', userId).eq('session_id', sessionId);
+  const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId).eq('id', sessionId);
+  if (error) throw error;
+}
+
 function groupBy<T extends Record<string, unknown>>(
   rows: T[],
   key: string
