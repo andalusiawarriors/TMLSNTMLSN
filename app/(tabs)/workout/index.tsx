@@ -344,6 +344,9 @@ export default function WorkoutScreen({
   const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
   /** Keyboard height for positioning the confirm bar above the keyboard. */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  /** Ghost value tooltip — shown on long-press of a ghost weight/reps cell. */
+  const [ghostTooltip, setGhostTooltip] = useState<{ lastText: string; targetText: string } | null>(null);
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set/Exercise-level notes editor state
   const [showSetNotesModal, setShowSetNotesModal] = useState(false);
@@ -1349,6 +1352,13 @@ export default function WorkoutScreen({
                             <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                           </View>
                           <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
+                          {(() => {
+                            const _exKey = exercise.exerciseDbId ?? exercise.name;
+                            const _p = _exKey ? prescriptions[_exKey] : null;
+                            if (!_p) return null;
+                            const _label = _p.goal === 'add_load' ? '↑ Load' : _p.goal === 'add_reps' ? '+ Reps' : _p.goal === 'reduce_load' ? '↓ 5%' : null;
+                            return _label ? <Text style={[styles.goalBadge, { color: colors.primaryLight + '50' }]}>{_label}</Text> : null;
+                          })()}
                         </View>
                         {reorder.activeIndex === exerciseIndex ? (
                           <View style={styles.reorderControls}>
@@ -1589,6 +1599,25 @@ export default function WorkoutScreen({
                                             setEditingCellValue(displayValue);
                                             if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'weight', draft: displayValue, displayValue });
                                           }}
+                                          onLongPress={set.weight === 0 && ghostWeight ? () => {
+                                            const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
+                                              ? prevSets[setIndex]
+                                              : prevSets.find((s) => s.weight > 0 && s.reps > 0) ?? null;
+                                            const _lastText = _prev
+                                              ? `${formatWeightDisplay(toDisplayWeight(_prev.weight, weightUnit), weightUnit)}×${_prev.reps}`
+                                              : '—';
+                                            const _targetWeight = prescription
+                                              ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
+                                              : (ghostWeight ?? '—');
+                                            const _targetReps = prescription
+                                              ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
+                                              : (ghostReps ?? '—');
+                                            const _targetText = `${_targetWeight}×${_targetReps}`;
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+                                            setGhostTooltip({ lastText: _lastText, targetText: _targetText });
+                                            tooltipTimerRef.current = setTimeout(() => setGhostTooltip(null), 2500);
+                                          } : undefined}
                                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                         >
@@ -1665,6 +1694,25 @@ export default function WorkoutScreen({
                                             setEditingCellValue(displayValue);
                                             if (__DEV__) console.log('[Workout Input] start edit', { setId: set.id, field: 'reps', draft: displayValue, displayValue });
                                           }}
+                                          onLongPress={set.reps === 0 && ghostReps ? () => {
+                                            const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
+                                              ? prevSets[setIndex]
+                                              : prevSets.find((s) => s.weight > 0 && s.reps > 0) ?? null;
+                                            const _lastText = _prev
+                                              ? `${formatWeightDisplay(toDisplayWeight(_prev.weight, weightUnit), weightUnit)}×${_prev.reps}`
+                                              : '—';
+                                            const _targetWeight = prescription
+                                              ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
+                                              : (ghostWeight ?? '—');
+                                            const _targetReps = prescription
+                                              ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
+                                              : (ghostReps ?? '—');
+                                            const _targetText = `${_targetWeight}×${_targetReps}`;
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                            if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+                                            setGhostTooltip({ lastText: _lastText, targetText: _targetText });
+                                            tooltipTimerRef.current = setTimeout(() => setGhostTooltip(null), 2500);
+                                          } : undefined}
                                           style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
                                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                                         >
@@ -2150,6 +2198,30 @@ export default function WorkoutScreen({
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* Ghost value tooltip — lightweight card on long-press */}
+      {ghostTooltip && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setGhostTooltip(null)}>
+          <Pressable
+            style={styles.ghostTooltipOverlay}
+            onPress={() => {
+              if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
+              setGhostTooltip(null);
+            }}
+          >
+            <Pressable style={[styles.ghostTooltipCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.ghostTooltipLine}>
+                <Text style={[styles.ghostTooltipLabel, { color: colors.primaryLight + '55' }]}>Last time: </Text>
+                <Text style={[styles.ghostTooltipValue, { color: colors.primaryLight + 'CC' }]}>{ghostTooltip.lastText}</Text>
+              </Text>
+              <Text style={styles.ghostTooltipLine}>
+                <Text style={[styles.ghostTooltipLabel, { color: colors.primaryLight + '55' }]}>Target: </Text>
+                <Text style={[styles.ghostTooltipValue, { color: colors.primaryLight + 'CC' }]}>{ghostTooltip.targetText}</Text>
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
 
     </View>
   );
@@ -3365,6 +3437,46 @@ const styles = StyleSheet.create({
   saveNotesButtonText: {
     fontSize: 16,
     fontWeight: '700' as const,
+    letterSpacing: -0.11,
+  },
+
+  // ─── Next goal badge (exercise header) ───────────────────────────────────────
+  goalBadge: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    letterSpacing: -0.11,
+    flexShrink: 0,
+  },
+
+  // ─── Ghost value tooltip card ─────────────────────────────────────────────
+  ghostTooltipOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingBottom: 130,
+    paddingHorizontal: 20,
+  },
+  ghostTooltipCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignSelf: 'center',
+    minWidth: 180,
+    ...Shadows.card,
+  },
+  ghostTooltipLine: {
+    fontSize: 13,
+    lineHeight: 20,
+    letterSpacing: -0.11,
+  },
+  ghostTooltipLabel: {
+    fontSize: 13,
+    fontWeight: '400' as const,
+    letterSpacing: -0.11,
+  },
+  ghostTooltipValue: {
+    fontSize: 13,
+    fontWeight: '600' as const,
     letterSpacing: -0.11,
   },
 });
