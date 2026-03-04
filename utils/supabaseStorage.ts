@@ -48,6 +48,21 @@ type PrescriptionSet = { weight: number; reps: number; rpe: number | null; compl
 
 type PrescriptionResult = { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load' };
 
+/**
+ * Hypertrophy double-progression algorithm:
+ *
+ * ADVANCE (add_load):
+ *   All completed sets hit repRangeHigh. If RPE is logged, require it's
+ *   not above the target (so a hard grind at the top doesn't auto-advance).
+ *
+ * DELOAD (reduce_load):
+ *   Any completed set falls below repRangeLow — the athlete couldn't stay
+ *   in the prescribed range. OR any set had RPE ≥ 9.5 indicating very close
+ *   to failure. Deload by 10 % (large enough to actually help recovery).
+ *
+ * STAY (add_reps):
+ *   Default: same weight, aim for more reps next session.
+ */
 function computeNextPrescription(meta: PrescriptionMeta, sets: PrescriptionSet[]): PrescriptionResult | null {
   const workSets = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
   if (workSets.length === 0) return null;
@@ -57,15 +72,20 @@ function computeNextPrescription(meta: PrescriptionMeta, sets: PrescriptionSet[]
   const { repRangeLow, repRangeHigh, smallestIncrement, defaultTargetRpe } = meta;
 
   const allHitRepRangeHigh = workSets.every((s) => s.reps >= repRangeHigh);
-  const lastRpe = lastSet.rpe ?? 0;
-  const anyRepsLow = workSets.some((s) => s.reps <= repRangeLow - 2);
+  const anyBelowRangeLow = workSets.some((s) => s.reps < repRangeLow);
+  const anyHighRpe = workSets.some((s) => (s.rpe ?? 0) >= 9.5);
 
-  if (allHitRepRangeHigh && lastRpe <= defaultTargetRpe + 0.5) {
+  // Advance: hit the top end of the rep range (and RPE is manageable if logged)
+  const rpeOkToAdvance = !workSets.some((s) => s.rpe != null && s.rpe > defaultTargetRpe + 0.5);
+  if (allHitRepRangeHigh && rpeOkToAdvance) {
     return { nextWeight: workingWeight + smallestIncrement, goal: 'add_load' };
   }
-  if (lastRpe >= 10 && anyRepsLow) {
-    return { nextWeight: workingWeight * 0.95, goal: 'reduce_load' };
+
+  // Deload: reps dropped below the range floor OR RPE signalled near-failure
+  if (anyBelowRangeLow || anyHighRpe) {
+    return { nextWeight: workingWeight * 0.90, goal: 'reduce_load' };
   }
+
   return { nextWeight: workingWeight, goal: 'add_reps' };
 }
 

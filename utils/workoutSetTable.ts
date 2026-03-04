@@ -12,13 +12,14 @@ export function buildPrevSetsAndGhost(
   prescriptions: Record<string, { nextWeight: number; goal: string }>,
   recentSessions: WorkoutSession[],
   weightUnit: 'kg' | 'lb'
-): { prevSets: PrevSet[]; ghostWeight: string | null; ghostReps: string | null } {
+): { prevSets: PrevSet[]; ghostWeight: string | null; ghostReps: string | null; loadChangePercent: number | null } {
   const exKey = exercise.exerciseDbId ?? exercise.name;
   const prescription = exKey ? prescriptions[exKey] : null;
 
   let ghostWeight: string | null = null;
   let ghostReps: string | null = null;
   let prevSets: PrevSet[] = [];
+  let loadChangePercent: number | null = null;
 
   if (prescription) {
     ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
@@ -46,6 +47,12 @@ export function buildPrevSetsAndGhost(
             const last = doneSets[doneSets.length - 1];
             ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
             ghostReps = String(last.reps);
+          } else if (prescription.goal === 'add_load' || prescription.goal === 'reduce_load') {
+            // Compute the actual % change vs last session's last set
+            const prevWeight = doneSets[doneSets.length - 1].weight;
+            if (prevWeight > 0) {
+              loadChangePercent = Math.round(((prescription.nextWeight - prevWeight) / prevWeight) * 1000) / 10;
+            }
           }
           break;
         }
@@ -53,5 +60,5 @@ export function buildPrevSetsAndGhost(
     }
   }
 
-  return { prevSets, ghostWeight, ghostReps };
+  return { prevSets, ghostWeight, ghostReps, loadChangePercent };
 }

@@ -137,6 +137,8 @@ export interface TrainingSettings {
   useRpeForOverload: boolean;
   rpMuscleTargets: Record<string, RpMuscleTarget>;
   rangeMuscleTargets: Record<string, RangeMuscleTarget>;
+  /** Primary training goal — drives the progressive overload algorithm defaults. */
+  trainingFocus?: 'hypertrophy' | 'strength';
 }
 
 // User Settings

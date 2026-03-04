@@ -1210,7 +1210,15 @@ export default function WorkoutScreen({
                             const _exKey = exercise.exerciseDbId ?? exercise.name;
                             const _p = _exKey ? prescriptions[_exKey] : null;
                             if (!_p) return null;
-                            const _label = _p.goal === 'add_load' ? '↑ Load' : _p.goal === 'add_reps' ? '+ Reps' : _p.goal === 'reduce_load' ? '↓ 5%' : null;
+                            const { loadChangePercent } = buildPrevSetsAndGhost(exercise, prescriptions, recentSessions, weightUnit);
+                            let _label: string | null = null;
+                            if (_p.goal === 'add_load') {
+                              _label = loadChangePercent != null ? `↑ ${loadChangePercent.toFixed(1)}%` : '↑ Load';
+                            } else if (_p.goal === 'add_reps') {
+                              _label = '+ Reps';
+                            } else if (_p.goal === 'reduce_load') {
+                              _label = loadChangePercent != null ? `↓ ${Math.abs(loadChangePercent).toFixed(1)}%` : '↓ Deload';
+                            }
                             return _label ? <Text style={[styles.goalBadge, { color: colors.primaryLight + '50' }]}>{_label}</Text> : null;
                           })()}
                         </View>

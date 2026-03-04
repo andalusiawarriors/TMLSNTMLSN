@@ -123,6 +123,30 @@ export default function AppSettingsScreen() {
           />
         </SettingsCard>
 
+        <SettingsSectionHeader label="Training" />
+        <SettingsCard>
+          <SettingsRow
+            icon="fitness-outline"
+            label="Training focus"
+            subtitle="shapes your progressive overload targets"
+            last
+            right={
+              <View style={styles.pillRow}>
+                <SegmentPill
+                  label="Hypertrophy"
+                  selected={(settings.training?.trainingFocus ?? 'hypertrophy') === 'hypertrophy'}
+                  onPress={() => updateSettings({ training: { ...(settings.training as any), trainingFocus: 'hypertrophy' } })}
+                />
+                <SegmentPill
+                  label="Strength"
+                  selected={settings.training?.trainingFocus === 'strength'}
+                  onPress={() => updateSettings({ training: { ...(settings.training as any), trainingFocus: 'strength' } })}
+                />
+              </View>
+            }
+          />
+        </SettingsCard>
+
         <SettingsSectionHeader label="Workout" />
         <SettingsCard>
           <SettingsToggleRow
