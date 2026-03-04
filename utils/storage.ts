@@ -174,6 +174,56 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
   }
 };
 
+export const deleteWorkoutSession = async (sessionId: string): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseDeleteWorkoutSession(uid, sessionId);
+      return;
+    } catch (error) {
+      console.error('Error deleting workout session:', error);
+      throw error;
+    }
+  }
+  try {
+    const existingSessions = await getWorkoutSessions();
+    const updatedSessions = existingSessions.filter((s) => s.id !== sessionId);
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+  } catch (error) {
+    console.error('Error deleting workout session:', error);
+    throw error;
+  }
+};
+
+export const updateWorkoutSession = async (session: WorkoutSession): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    console.warn('[storage] blocked write: no authenticated user');
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
+      return;
+    } catch (error) {
+      console.error('Error updating workout session:', error);
+      throw error;
+    }
+  }
+  try {
+    const existingSessions = await getWorkoutSessions();
+    const updatedSessions = existingSessions.map((s) => s.id === session.id ? session : s);
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+  } catch (error) {
+    console.error('Error updating workout session:', error);
+    throw error;
+  }
+};
+
 // Saved Routines (templates for My Routines)
 export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
   const uid = getStorageUserId();
