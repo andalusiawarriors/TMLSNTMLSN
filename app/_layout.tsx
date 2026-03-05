@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import type { ReactNode } from 'react';
@@ -217,6 +218,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
+      <BottomSheetModalProvider>
       <HapticProviderWrapper>
         <ThemeProvider>
           <AuthProvider>
@@ -226,6 +228,7 @@ export default function RootLayout() {
           </AuthProvider>
         </ThemeProvider>
       </HapticProviderWrapper>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

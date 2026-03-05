@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { getDefaultTmlsnExercises, uuidToExerciseName, workoutTypeToProtocolDay } from '@/lib/getTmlsnTemplate';
+import { getDefaultTmlsnExercises, uuidToExerciseName, workoutTypeToProtocolDay, type ProtocolDay, type TmlsnExercise } from '@/lib/getTmlsnTemplate';
 import { getLocalDayName, getLocalMondayYMD } from '@/lib/time';
 import * as supabaseStorage from '@/utils/supabaseStorage';
 
@@ -37,6 +37,15 @@ export interface ExerciseHistory {
   recentSets: ScheduledSet[];
 }
 
+export interface AllExerciseEntry {
+  exerciseId: string;
+  exerciseName: string;
+  recentSets: ScheduledSet[];
+}
+
+/** History for all TMLSN exercises keyed by ProtocolDay ('Upper A', 'Lower A', etc.) */
+export type AllExerciseHistory = Record<string, AllExerciseEntry[]>;
+
 export interface TodayPlan {
   dayOfWeek: string;
   workoutType: string | null;
@@ -61,9 +70,69 @@ export interface WorkoutContext {
   todayPlan: TodayPlan | null;
   /** null when today is a rest day or no schedule exists */
   exerciseHistory: ExerciseHistory[] | null;
+  /** Full history for all TMLSN exercises across all protocol days */
+  allExerciseHistory?: AllExerciseHistory;
   weeklyVolume: VolumeStatus[];
   /** When TMLSN protocol is selected: full weekly schedule for JARVIS */
   tmlsnProtocolSchedule?: typeof TMLSN_PROTOCOL_SCHEDULE;
+}
+
+// ─── All-exercise history fetch ───────────────────────────────────────────────
+
+async function fetchAllTmlsnExerciseHistory(
+  userId: string,
+  sb: NonNullable<typeof supabase>
+): Promise<AllExerciseHistory> {
+  const days: ProtocolDay[] = ['Upper A', 'Lower A', 'Upper B', 'Lower B'];
+  const exercisesByDay: Partial<Record<ProtocolDay, TmlsnExercise[]>> = {};
+  const idSet = new Set<string>();
+
+  for (const day of days) {
+    const exs = getDefaultTmlsnExercises(day);
+    exercisesByDay[day] = exs;
+    for (const e of exs) idSet.add(e.id);
+  }
+
+  const uniqueIds = [...idSet];
+  const { data } = await sb
+    .from('workout_logs')
+    .select('exercise_id, session_date, weight, reps, rpe, target_reps, target_weight')
+    .eq('user_id', userId)
+    .in('exercise_id', uniqueIds)
+    .order('session_date', { ascending: false })
+    .limit(600); // ~20 exercises × 3 sessions × 10 sets
+
+  // Group rows by exercise_id -> session_date
+  const byExercise = new Map<string, Map<string, ScheduledSet[]>>();
+  for (const row of (data ?? [])) {
+    const exId = row.exercise_id as string;
+    const date = row.session_date as string;
+    if (!byExercise.has(exId)) byExercise.set(exId, new Map());
+    const dateMap = byExercise.get(exId)!;
+    if (!dateMap.has(date)) dateMap.set(date, []);
+    dateMap.get(date)!.push({
+      weight: row.weight ?? null,
+      reps: row.reps ?? null,
+      rpe: row.rpe ?? null,
+      targetReps: row.target_reps ?? null,
+      targetWeight: row.target_weight ?? null,
+      sessionDate: date,
+    });
+  }
+
+  const result: AllExerciseHistory = {};
+  for (const day of days) {
+    const exs = exercisesByDay[day] ?? [];
+    result[day] = exs.map((ex) => {
+      const dateMap = byExercise.get(ex.id);
+      const recentSets = dateMap
+        ? Array.from(dateMap.values()).slice(0, 3).flat()
+        : [];
+      return { exerciseId: ex.id, exerciseName: ex.name, recentSets };
+    });
+  }
+
+  return result;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -157,6 +226,10 @@ export async function getTodayWorkoutContext(
     trainingSettings?.scheduleMode === 'tmlsn' ||
     trainingSettings?.volumeFramework === 'tmlsn_protocol';
 
+  const allExerciseHistory = isTmlsnProtocol && supabase
+    ? await fetchAllTmlsnExerciseHistory(userId, supabase)
+    : undefined;
+
   if (__DEV__) {
     if (settingsRes.error) console.warn('[getWorkoutContext] training_settings error:', settingsRes.error);
     if (scheduleRes.error) console.warn('[getWorkoutContext] workout_schedule error:', scheduleRes.error);
@@ -216,6 +289,7 @@ export async function getTodayWorkoutContext(
           trainingSettings,
           todayPlan,
           exerciseHistory: null,
+          allExerciseHistory,
           weeklyVolume,
           tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
         };
@@ -259,6 +333,7 @@ export async function getTodayWorkoutContext(
         trainingSettings,
         todayPlan,
         exerciseHistory,
+        allExerciseHistory,
         weeklyVolume,
         tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
       };
@@ -290,6 +365,7 @@ export async function getTodayWorkoutContext(
       trainingSettings,
       todayPlan,
       exerciseHistory: null,
+      allExerciseHistory,
       weeklyVolume,
       tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
     };
@@ -342,6 +418,7 @@ export async function getTodayWorkoutContext(
     trainingSettings,
     todayPlan,
     exerciseHistory,
+    allExerciseHistory,
     weeklyVolume,
     tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
   };

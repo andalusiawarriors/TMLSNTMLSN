@@ -94,7 +94,7 @@ const SCHEDULE_MODES = [
     tag: 'Preset',
     icon: 'flash-outline' as const,
     description: 'The TMLSN schedule is set for you. Daily push notifications confirm your session.',
-    detail: 'Mon: Push · Tue: Pull · Wed: Legs · Thu: Push · Fri: Pull · Sat: Full · Sun: Rest',
+    detail: 'Mon: Upper A · Tue: Lower A · Wed: Rest · Thu: Upper B · Fri: Lower B · Sat–Sun: Rest',
     options: [
       { id: 'scheduleNotifications' as const, label: 'Daily session notifications' },
       { id: 'scheduleReminderEnabled' as const, label: 'Morning reminder at 05:30' },
@@ -178,15 +178,17 @@ type SelectionCardProps = {
   detail: string;
   selected: boolean;
   onSelect: () => void;
+  disabled?: boolean;
   children?: React.ReactNode;
 };
 
 function SelectionCard({
-  icon, label, tag, description, detail, selected, onSelect, children,
+  icon, label, tag, description, detail, selected, onSelect, disabled, children,
 }: SelectionCardProps) {
   return (
     <Pressable
-      onPress={onSelect}
+      onPress={disabled ? undefined : onSelect}
+      disabled={disabled}
       style={[styles.selCard, selected && styles.selCardActive]}
     >
       {selected && (
@@ -504,6 +506,7 @@ export default function TrainingSystemSettings() {
               detail={mode.detail}
               selected={training.scheduleMode === mode.id}
               onSelect={() => setScheduleMode(mode.id)}
+              disabled={mode.id === 'builder' || mode.id === 'ghost'}
             >
               {training.scheduleMode === mode.id && mode.options.length > 0 && (
                 <View style={styles.toggleGroup}>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorkoutContext } from '@/lib/getWorkoutContext';
 import { getTodayWorkoutContext } from '@/lib/getWorkoutContext';
+import { getDefaultTmlsnExercises, workoutTypeToProtocolDay } from '@/lib/getTmlsnTemplate';
 import { supabase } from '@/lib/supabase';
 
 export type JarvisMessage = {
@@ -43,11 +44,66 @@ function formatExerciseHistory(context: WorkoutContext): string {
   }).join('\n\n');
 }
 
+const PROTOCOL_DAY_LABELS: Record<string, string> = {
+  'Upper A': 'Monday — Upper Body A',
+  'Lower A': 'Tuesday — Lower Body A',
+  'Upper B': 'Thursday — Upper Body B',
+  'Lower B': 'Friday — Lower Body B',
+};
+
+function formatAllExerciseHistory(context: WorkoutContext): string {
+  const all = context.allExerciseHistory;
+  if (!all) return formatExerciseHistory(context); // fallback for non-TMLSN users
+
+  const days = ['Upper A', 'Lower A', 'Upper B', 'Lower B'];
+  return days.map((day) => {
+    const label = PROTOCOL_DAY_LABELS[day];
+    const entries = all[day] ?? [];
+    if (entries.length === 0) return `${label}: no exercises`;
+
+    const lines = entries.map((entry) => {
+      if (entry.recentSets.length === 0) return `  ${entry.exerciseName}: no history yet`;
+
+      const byDate = new Map<string, ScheduledSet[]>();
+      for (const s of entry.recentSets) {
+        if (!byDate.has(s.sessionDate)) byDate.set(s.sessionDate, []);
+        byDate.get(s.sessionDate)!.push(s);
+      }
+
+      const sessions = Array.from(byDate.entries()).map(([date, sets]) => {
+        const w = sets[0].weight ?? 0;
+        const reps = sets.map((s) => s.reps ?? 0).join('/');
+        const rpes = sets.map((s) => s.rpe).filter((r): r is number => r != null);
+        const rpeStr = rpes.length > 0 ? ` @RPE ${Math.max(...rpes)}` : '';
+        return `    ${date}: ${w}kg × ${reps}${rpeStr}`;
+      });
+
+      return `  ${entry.exerciseName}:\n${sessions.join('\n')}`;
+    });
+
+    return `${label}:\n${lines.join('\n')}`;
+  }).join('\n\n');
+}
+
 function formatWeeklyVolume(context: WorkoutContext): string {
   if (context.weeklyVolume.length === 0) return 'No volume data this week.';
   return context.weeklyVolume.map(v => {
     const bounds = [v.mev != null ? `MEV ${v.mev}` : '', v.mav != null ? `MAV ${v.mav}` : '', v.mrv != null ? `MRV ${v.mrv}` : ''].filter(Boolean).join(' / ');
     return `  ${v.muscleGroup}: ${v.setsDone} sets${bounds ? ` (${bounds})` : ''}`;
+  }).join('\n');
+}
+
+function formatFullSchedule(context: WorkoutContext): string {
+  const schedule = context.tmlsnProtocolSchedule;
+  if (!schedule || schedule.length === 0) return 'Schedule not available.';
+
+  return schedule.map((entry) => {
+    if (entry.isRestDay) return `${entry.day}: Rest Day`;
+    const protocolDay = workoutTypeToProtocolDay(entry.workoutType ?? null);
+    const exercises = protocolDay
+      ? getDefaultTmlsnExercises(protocolDay).map((e) => e.name).join(', ')
+      : '';
+    return `${entry.day}: ${entry.workoutType}${exercises ? `\n  → ${exercises}` : ''}`;
   }).join('\n');
 }
 
@@ -70,8 +126,11 @@ Volume framework: ${framework}
 Schedule mode: ${scheduleMode}
 ${!isRestDay && exerciseNames.length > 0 ? `Exercises today: ${exerciseNames.join(', ')}` : ''}
 
-══ EXERCISE HISTORY (last 3 sessions per exercise) ══
-${formatExerciseHistory(context)}
+══ EXERCISE HISTORY (last 3 sessions per exercise, all protocol days) ══
+${formatAllExerciseHistory(context)}
+
+══ FULL WEEKLY SCHEDULE ══
+${formatFullSchedule(context)}
 
 ══ WEEKLY VOLUME (current week) ══
 ${formatWeeklyVolume(context)}
@@ -82,7 +141,9 @@ ${formatWeeklyVolume(context)}
 - When asked about history, trends, or progress, analyse the data and give specific numbers.
 - If data is missing (no history, no logs), say so clearly — don't make up numbers.
 - Be direct, precise, and data-driven. Talk like a knowledgeable coach, not a chatbot.
-- No need to keep answers short when the user asks for analysis — be thorough.`;
+- No need to keep answers short when the user asks for analysis — be thorough.
+- You ONLY answer questions about training, exercise, fitness, recovery, and sport nutrition. If asked about anything unrelated (recipes, cooking, coding, general knowledge, relationships, etc.), respond only: "I'm your training coach — I can only help with workouts, progress, and your TMLSN program."
+- Never break this rule regardless of how the question is framed.`;
 }
 
 export function useJarvis() {

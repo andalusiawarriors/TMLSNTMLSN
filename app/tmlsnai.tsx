@@ -40,6 +40,10 @@ const GREEN = '#22C55E';
 const MUTED = 'rgba(198,198,198,0.55)';
 const WEIGHT_INCREMENT_KG = 2.5;
 
+// Typing animation config
+const CHARS_PER_TICK = 4;
+const TICK_MS = 12;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExercisePlan = {
@@ -160,6 +164,34 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function TypingMessage({ text, onDone }: { text: string; onDone: () => void }) {
+  const [displayed, setDisplayed] = useState('');
+  const posRef = useRef(0);
+
+  useEffect(() => {
+    posRef.current = 0;
+    setDisplayed('');
+    const id = setInterval(() => {
+      posRef.current = Math.min(posRef.current + CHARS_PER_TICK, text.length);
+      setDisplayed(text.slice(0, posRef.current));
+      if (posRef.current >= text.length) {
+        clearInterval(id);
+        onDone();
+      }
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [text]);
+
+  return (
+    <Text style={styles.msgAssistantText}>
+      {displayed || ' '}
+      {displayed.length < text.length ? (
+        <Text style={{ color: CHAMPAGNE, opacity: 0.7 }}>▍</Text>
+      ) : null}
+    </Text>
+  );
+}
 
 function PulsingDot() {
   const opacity = useSharedValue(0.7);
@@ -315,6 +347,18 @@ export default function TmlsnAIPage() {
   const { context, messages, sendMessage, isLoading, contextLoading, noUser } = jarvis;
   const [inputText, setInputText] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const [animatingIdx, setAnimatingIdx] = useState<number | null>(null);
+  const doneIdxRef = useRef<number>(-1);
+
+  // Trigger typing animation when a new assistant message arrives
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastIdx = messages.length - 1;
+    const lastMsg = messages[lastIdx];
+    if (lastMsg.role === 'assistant' && lastIdx > doneIdxRef.current) {
+      setAnimatingIdx(lastIdx);
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -426,7 +470,17 @@ export default function TmlsnAIPage() {
               {messages.map((m, i) =>
                 m.role === 'assistant' ? (
                   <View key={i} style={styles.msgAssistant}>
-                    <Text style={styles.msgAssistantText}>{m.content}</Text>
+                    {i === animatingIdx ? (
+                      <TypingMessage
+                        text={m.content}
+                        onDone={() => {
+                          doneIdxRef.current = i;
+                          setAnimatingIdx(null);
+                        }}
+                      />
+                    ) : (
+                      <Text style={styles.msgAssistantText}>{m.content}</Text>
+                    )}
                   </View>
                 ) : (
                   <View key={i} style={styles.msgUserWrap}>
@@ -584,11 +638,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   cardName: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: Colors.primaryLight,
-    letterSpacing: -0.2,
-    lineHeight: 17,
+    letterSpacing: -0.4,
+    lineHeight: 19,
   },
   cardDataRow: {
     flex: 1,
