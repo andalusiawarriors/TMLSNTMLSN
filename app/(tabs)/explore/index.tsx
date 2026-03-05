@@ -71,9 +71,10 @@ export default function ExploreScreen() {
         Promise.all(
           data.map(async (p) => {
             if (!p.image_path) return null;
-            const { data: urlData } = await supabase.storage
+            const { data: urlData, error: urlErr } = await supabase.storage
               .from('workout-images')
               .createSignedUrl(p.image_path, 3600);
+            if (__DEV__ && urlErr) console.warn('[ExploreFeed] signedUrl error for', p.image_path, urlErr);
             return urlData?.signedUrl ?? null;
           })
         ),

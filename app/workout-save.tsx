@@ -154,14 +154,21 @@ export default function WorkoutSaveScreen() {
 
           if (imageUri && postId) {
             const imagePath = `${postId}/${Date.now()}.jpg`;
-            const blob = await (await fetch(imageUri)).blob();
-            const { error: uploadErr } = await supabase.storage.from('workout-images').upload(imagePath, blob, { upsert: true });
+            const arrayBuffer = await fetch(imageUri).then((r) => r.arrayBuffer());
+            const { error: uploadErr } = await supabase.storage
+              .from('workout-images')
+              .upload(imagePath, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
             if (uploadErr) {
+              if (__DEV__) console.warn('[workout-save] image upload error:', uploadErr);
               setUploadError('Image upload failed. Post saved. Tap Save again to retry.');
               setIsSaving(false);
               return;
             }
-            await supabase.from('workout_posts').update({ image_path: imagePath }).eq('id', postId);
+            const { error: updateErr } = await supabase
+              .from('workout_posts')
+              .update({ image_path: imagePath })
+              .eq('id', postId);
+            if (__DEV__ && updateErr) console.warn('[workout-save] image_path update error:', updateErr);
           }
         }
       }
