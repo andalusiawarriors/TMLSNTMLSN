@@ -3,19 +3,27 @@
 // Tile grid for the fitness. home tab.
 // ============================================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Dimensions,
+  Pressable,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import { Colors } from '../constants/theme';
+import { useAuth } from '../context/AuthContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import TiltPressable from './TiltPressable';
 
@@ -96,6 +104,14 @@ const tileStyles = StyleSheet.create({
 export function FitnessHub() {
   const [animTrigger, setAnimTrigger] = useState(0);
   const [favCount, setFavCount] = useState(0);
+  const { user } = useAuth();
+  const router = useRouter();
+  const dotOpacity = useSharedValue(0.7);
+
+  useEffect(() => {
+    dotOpacity.value = withRepeat(withTiming(1, { duration: 1200 }), -1, true);
+  }, [dotOpacity]);
+  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOpacity.value }));
 
   useFocusEffect(
     useCallback(() => {
@@ -114,21 +130,74 @@ export function FitnessHub() {
   };
 
   return (
-    <View style={styles.wrap}>
-      <TileCard item={exercisesTile} index={0} animTrigger={animTrigger}>
-        <View style={{ alignSelf: 'flex-start', gap: 5 }}>
-          <MiniStatRow value={String(EXERCISE_DATABASE.length)} label="total" />
-          {favCount > 0 && <MiniStatRow value={String(favCount)} label="starred" />}
+    <View style={styles.container}>
+      {user?.id && (
+        <View style={styles.aiRow}>
+          <Pressable style={styles.aiButton} onPress={() => router.push('/tmlsnai' as any)}>
+            <View style={styles.aiButtonBorder}>
+              <LinearGradient
+                colors={['#D4B896', '#A8895E']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[StyleSheet.absoluteFill, { borderRadius: 20 }]}
+              />
+              <View style={styles.aiButtonInner}>
+                <Text style={styles.aiButtonText}>tmlsnAI</Text>
+                <Animated.View style={[styles.aiDot, dotStyle]} />
+              </View>
+            </View>
+          </Pressable>
         </View>
-      </TileCard>
+      )}
+      <View style={styles.wrap}>
+        <TileCard item={exercisesTile} index={0} animTrigger={animTrigger}>
+          <View style={{ alignSelf: 'flex-start', gap: 5 }}>
+            <MiniStatRow value={String(EXERCISE_DATABASE.length)} label="total" />
+            {favCount > 0 && <MiniStatRow value={String(favCount)} label="starred" />}
+          </View>
+        </TileCard>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {},
   wrap: {
     flexDirection: 'row',
-    paddingTop: 8,
     paddingBottom: 24,
+  },
+  aiRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  aiButton: {},
+  aiButtonBorder: {
+    overflow: 'hidden' as const,
+    borderRadius: 20,
+    padding: 1,
+  },
+  aiButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 19,
+    backgroundColor: '#2f3031',
+  },
+  aiButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    color: Colors.primaryLight,
+  },
+  aiDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
   },
 });
