@@ -109,24 +109,35 @@ export function generateBriefing(context: WorkoutContext): string {
   }
 
   if (todayPlan.isRestDay) {
-    return `${day} — Week ${week} · ${protocolName || 'Rest'}\n\nRest day.`;
+    return `${day}  ·  Week ${week}\n${protocolName || 'Rest Day'}\n\nRest day. Recovery is training.`;
   }
 
   if (todayPlan.exerciseIds.length === 0) {
-    return `${day} — Week ${week} · ${protocolName || 'Training'}\n\nNo exercises configured. Add them in Training Settings → Protocol Templates.`;
+    return `${day}  ·  Week ${week}\n${protocolName || 'Training'}\n\nNo exercises configured. Add them in Training Settings → Protocol Templates.`;
   }
 
   const lines: string[] = [];
-  lines.push(`${day} — Week ${week} · ${protocolName || 'Training'}`);
+  lines.push(`${day}  ·  Week ${week}`);
+  lines.push(protocolName || 'Training');
   lines.push('');
 
   const history = exerciseHistory ?? [];
   const names = todayPlan.exerciseNames ?? [];
+
   for (let i = 0; i < todayPlan.exerciseIds.length; i++) {
     const displayName = names[i] ?? `Exercise ${i + 1}`;
     const hist = history[i];
     const recentSets = hist?.recentSets ?? [];
     const lastSets = getLastSessionSets(recentSets);
+    const hasHistory = lastSets.length > 0;
+
+    lines.push(displayName);
+
+    if (!hasHistory) {
+      lines.push('No workout data for this exercise');
+      lines.push('');
+      continue;
+    }
 
     const lastStr = lastSessionSummary(lastSets);
     let targetWeight: number;
@@ -178,27 +189,32 @@ export function generateBriefing(context: WorkoutContext): string {
       targetReps = baseReps;
     }
 
-    lines.push(displayName);
-    lines.push(`Last: ${lastStr}`);
-    lines.push(`Today: ${targetWeight} × ${targetReps}`);
+    lines.push(`Last    ${lastStr}`);
+    lines.push(`Target  ${targetWeight > 0 ? `${targetWeight} kg` : '—'}  ×  ${targetReps}`);
     if (note) lines.push(note);
     lines.push('');
   }
 
-  lines.push('──────────');
+  // Volume section
+  const volumeLines: string[] = [];
   if (framework === 'tmlsn_protocol' && weeklyVolume.length > 0) {
     for (const v of weeklyVolume) {
       const msg = volumeMessage(v, framework);
-      if (msg) lines.push(msg);
+      if (msg) volumeLines.push(msg);
     }
   } else if (weeklyVolume.length > 0) {
     for (const v of weeklyVolume) {
-      lines.push(`${v.muscleGroup}: ${v.setsDone} sets`);
+      volumeLines.push(`${v.muscleGroup}: ${v.setsDone} sets`);
     }
   }
 
-  lines.push('');
-  lines.push('Session ready. Execute.');
+  if (volumeLines.length > 0) {
+    lines.push('── Volume ──');
+    lines.push(...volumeLines);
+    lines.push('');
+  }
+
+  lines.push('Session ready.');
 
   return lines.join('\n').trim();
 }

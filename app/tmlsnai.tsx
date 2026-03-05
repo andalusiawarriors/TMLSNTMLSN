@@ -39,6 +39,7 @@ const WEIGHT_INCREMENT_KG = 2.5;
 
 type ExercisePlan = {
   name: string;
+  hasHistory: boolean;
   lastStr: string;
   targetWeight: number;
   targetReps: number;
@@ -153,7 +154,7 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
       }
     }
 
-    return { name, lastStr, targetWeight, targetReps, note };
+    return { name, hasHistory: lastSets.length > 0, lastStr, targetWeight, targetReps, note };
   });
 }
 
@@ -192,21 +193,27 @@ function ExerciseCard({ plan }: { plan: ExercisePlan }) {
 
         <View style={styles.cardContent}>
           <Text style={styles.cardExName} numberOfLines={1}>{plan.name}</Text>
-          <View style={styles.cardRow}>
-            <View style={styles.cardCol}>
-              <Text style={styles.cardColLabel}>LAST</Text>
-              <Text style={styles.cardColLast}>{plan.lastStr}</Text>
+
+          {plan.hasHistory ? (
+            <View style={styles.cardRow}>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardColLabel}>LAST</Text>
+                <Text style={styles.cardColLast}>{plan.lastStr}</Text>
+              </View>
+              <View style={styles.cardDivider} />
+              <View style={[styles.cardCol, styles.cardColRight]}>
+                <Text style={styles.cardColLabel}>TODAY</Text>
+                <Text style={styles.cardColToday}>
+                  {plan.targetWeight > 0 ? `${plan.targetWeight} kg` : '—'}
+                  {'  ×  '}
+                  {plan.targetReps}
+                </Text>
+              </View>
             </View>
-            <View style={styles.cardDivider} />
-            <View style={[styles.cardCol, styles.cardColRight]}>
-              <Text style={styles.cardColLabel}>TODAY</Text>
-              <Text style={styles.cardColToday}>
-                {plan.targetWeight > 0 ? `${plan.targetWeight} kg` : '—'}
-                {'  ×  '}
-                {plan.targetReps}
-              </Text>
-            </View>
-          </View>
+          ) : (
+            <Text style={styles.cardNoData}>No workout data for this exercise</Text>
+          )}
+
           {plan.note ? <Text style={styles.cardNote}>{plan.note}</Text> : null}
         </View>
       </View>
@@ -485,6 +492,7 @@ const styles = StyleSheet.create({
   },
   cardColLast: { fontSize: 13, color: CHAMPAGNE, fontWeight: '500' },
   cardColToday: { fontSize: 15, color: Colors.primaryLight, fontWeight: '700', letterSpacing: -0.3 },
+  cardNoData: { fontSize: 13, color: MUTED, fontStyle: 'italic', marginTop: 2 },
   cardNote: { marginTop: 10, fontSize: 12, color: CHAMPAGNE, fontStyle: 'italic' },
 
   // Volume chips
