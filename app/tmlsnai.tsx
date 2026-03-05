@@ -10,6 +10,7 @@ import {
   Platform,
   SafeAreaView,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -27,15 +28,19 @@ import { useJarvis } from '../hooks/useJarvis';
 import { Colors } from '../constants/theme';
 import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const H_PAD = 16;
+const CARD_GAP = 10;
+const CARD_SIZE = Math.floor((SCREEN_WIDTH - H_PAD * 2 - CARD_GAP) / 2);
+const CARD_RADIUS = 20;
 const CHAMPAGNE = '#D4B896';
 const GREEN = '#22C55E';
 const MUTED = 'rgba(198,198,198,0.55)';
-const CARD_RADIUS = 20;
 const WEIGHT_INCREMENT_KG = 2.5;
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExercisePlan = {
   name: string;
@@ -46,7 +51,7 @@ type ExercisePlan = {
   note: string | null;
 };
 
-// ─── Exercise plan computation (mirrors generateBriefing logic) ──────────────
+// ─── Exercise plan computation ────────────────────────────────────────────────
 
 function getLastSets(recentSets: ScheduledSet[]): ScheduledSet[] {
   if (recentSets.length === 0) return [];
@@ -95,9 +100,9 @@ function rpeTrend(recentSets: ScheduledSet[]): 'up' | 'down' | 'stable' | null {
 function lastSummary(lastSets: ScheduledSet[]): string {
   if (lastSets.length === 0) return '—';
   const w = lastSets[0].weight ?? 0;
-  const reps = lastSets.map((s) => s.reps ?? 0).join(',');
+  const reps = lastSets.map((s) => s.reps ?? 0).join('/');
   const rpe = maxRpe(lastSets);
-  return rpe != null ? `${w} × ${reps}  RPE ${rpe}` : `${w} × ${reps}`;
+  return rpe != null ? `${w}kg × ${reps}\nRPE ${rpe}` : `${w}kg × ${reps}`;
 }
 
 function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
@@ -115,25 +120,21 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
 
     const baseWeight =
       lastSets.find((s) => s.targetWeight != null)?.targetWeight ??
-      lastSets[0]?.weight ??
-      0;
+      lastSets[0]?.weight ?? 0;
     const baseReps =
       lastSets.find((s) => s.targetReps != null)?.targetReps ??
-      lastSets[0]?.reps ??
-      8;
+      lastSets[0]?.reps ?? 8;
 
     let targetWeight = baseWeight;
     let targetReps = baseReps;
     let note: string | null = null;
 
     if (framework === 'builder') {
-      const hitTarget =
-        lastSets.length > 0 &&
-        lastSets.every((s) => {
-          const r = s.reps ?? 0;
-          const t = s.targetReps ?? r;
-          return t > 0 && r >= t;
-        });
+      const hitTarget = lastSets.length > 0 && lastSets.every((s) => {
+        const r = s.reps ?? 0;
+        const t = s.targetReps ?? r;
+        return t > 0 && r >= t;
+      });
       const maxR = maxRpe(lastSets);
       if (maxR != null && maxR >= 9) {
         note = 'Autoregulate today.';
@@ -144,7 +145,7 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
       const trend = rpeTrend(recentSets);
       if (trend === 'up') {
         targetWeight = Math.max(0, baseWeight - WEIGHT_INCREMENT_KG);
-        note = 'RPE trending up. Reduce load.';
+        note = 'RPE up — reduce load.';
       } else if (trend === 'stable') {
         targetReps = baseReps + 1;
         note = 'Add a rep.';
@@ -158,7 +159,7 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
   });
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function PulsingDot() {
   const opacity = useSharedValue(0.7);
@@ -169,54 +170,130 @@ function PulsingDot() {
   return <Animated.View style={[styles.dot, style]} />;
 }
 
+function GlassCard({ children, style }: { children: React.ReactNode; style?: object }) {
+  return (
+    <View style={[styles.cardOuter, style]}>
+      <BlurView intensity={22} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]} />
+      <View style={[StyleSheet.absoluteFill, styles.cardFill, { borderRadius: CARD_RADIUS }]} />
+      <LinearGradient
+        colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.04)', 'transparent']}
+        start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
+        style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.20)']}
+        start={{ x: 0.5, y: 0.55 }} end={{ x: 0.5, y: 1 }}
+        style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
+        pointerEvents="none"
+      />
+      <View style={[StyleSheet.absoluteFill, styles.cardBorder, { borderRadius: CARD_RADIUS }]} pointerEvents="none" />
+      {children}
+    </View>
+  );
+}
+
 function ExerciseCard({ plan }: { plan: ExercisePlan }) {
   return (
-    <View style={styles.cardWrap}>
-      <View style={styles.cardShadow}>
-        <BlurView intensity={22} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]} />
-        <View style={[StyleSheet.absoluteFill, styles.cardFill, { borderRadius: CARD_RADIUS }]} />
-        <LinearGradient
-          colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.05)', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.85, y: 0.85 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
-          pointerEvents="none"
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.18)']}
-          start={{ x: 0.5, y: 0.55 }}
-          end={{ x: 0.5, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
-          pointerEvents="none"
-        />
-        <View style={[StyleSheet.absoluteFill, styles.cardBorder, { borderRadius: CARD_RADIUS }]} pointerEvents="none" />
+    <GlassCard style={styles.card}>
+      <View style={styles.cardInner}>
+        {/* Exercise name */}
+        <Text style={styles.cardName} numberOfLines={2}>{plan.name}</Text>
 
-        <View style={styles.cardContent}>
-          <Text style={styles.cardExName} numberOfLines={1}>{plan.name}</Text>
-
-          {plan.hasHistory ? (
-            <View style={styles.cardRow}>
-              <View style={styles.cardCol}>
-                <Text style={styles.cardColLabel}>LAST</Text>
-                <Text style={styles.cardColLast}>{plan.lastStr}</Text>
-              </View>
-              <View style={styles.cardDivider} />
-              <View style={[styles.cardCol, styles.cardColRight]}>
-                <Text style={styles.cardColLabel}>TODAY</Text>
-                <Text style={styles.cardColToday}>
-                  {plan.targetWeight > 0 ? `${plan.targetWeight} kg` : '—'}
-                  {'  ×  '}
-                  {plan.targetReps}
-                </Text>
-              </View>
+        {/* Data or no-data */}
+        {plan.hasHistory ? (
+          <View style={styles.cardDataRow}>
+            {/* LAST column */}
+            <View style={styles.cardDataCol}>
+              <Text style={styles.cardDataLabel}>LAST</Text>
+              <Text style={styles.cardDataLast}>{plan.lastStr}</Text>
             </View>
-          ) : (
-            <Text style={styles.cardNoData}>No workout data for this exercise</Text>
-          )}
 
-          {plan.note ? <Text style={styles.cardNote}>{plan.note}</Text> : null}
-        </View>
+            {/* Vertical divider */}
+            <View style={styles.cardVDivider} />
+
+            {/* TODAY column */}
+            <View style={[styles.cardDataCol, styles.cardDataColRight]}>
+              <Text style={styles.cardDataLabel}>TODAY</Text>
+              <Text style={styles.cardDataToday}>
+                {plan.targetWeight > 0 ? `${plan.targetWeight}` : '—'}
+                {'\n'}
+                <Text style={styles.cardDataTodayUnit}>
+                  {plan.targetWeight > 0 ? 'kg' : ''}{'  × '}{plan.targetReps}
+                </Text>
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.cardNoData}>No workout{'\n'}data yet</Text>
+        )}
+
+        {/* Note */}
+        {plan.note ? <Text style={styles.cardNote}>{plan.note}</Text> : null}
       </View>
+    </GlassCard>
+  );
+}
+
+function ExercisePager({ plans }: { plans: ExercisePlan[] }) {
+  const [page, setPage] = useState(0);
+
+  // Group into pages of 4
+  const pages: ExercisePlan[][] = [];
+  for (let i = 0; i < plans.length; i += 4) {
+    pages.push(plans.slice(i, i + 4));
+  }
+  const pageCount = pages.length;
+
+  return (
+    <View>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          const x = e.nativeEvent.contentOffset.x;
+          setPage(Math.round(x / SCREEN_WIDTH));
+        }}
+        style={styles.pagerScroll}
+      >
+        {pages.map((pagePlans, pi) => (
+          <View key={pi} style={styles.pagerPage}>
+            {/* Row 1 */}
+            <View style={styles.pagerRow}>
+              {([0, 1] as const).map((col) =>
+                pagePlans[col] ? (
+                  <ExerciseCard key={col} plan={pagePlans[col]!} />
+                ) : (
+                  <View key={col} style={styles.cardPlaceholder} />
+                )
+              )}
+            </View>
+            {/* Row 2 — only if we have exercises for it */}
+            {(pagePlans[2] || pagePlans[3]) ? (
+              <View style={[styles.pagerRow, { marginTop: CARD_GAP }]}>
+                {([2, 3] as const).map((col) =>
+                  pagePlans[col] ? (
+                    <ExerciseCard key={col} plan={pagePlans[col]!} />
+                  ) : (
+                    <View key={col} style={styles.cardPlaceholder} />
+                  )
+                )}
+              </View>
+            ) : null}
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Page dots */}
+      {pageCount > 1 && (
+        <View style={styles.pageDots}>
+          {Array.from({ length: pageCount }).map((_, i) => (
+            <View key={i} style={[styles.pageDot, i === page && styles.pageDotActive]} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -293,14 +370,14 @@ export default function TmlsnAIPage() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {/* ── Loading / no-user state ── */}
+              {/* ── States ── */}
               {contextLoading ? (
-                <View style={styles.centerRow}>
+                <View style={styles.stateWrap}>
                   <ActivityIndicator color={MUTED} size="small" />
                   <Text style={styles.stateText}>  Initialising...</Text>
                 </View>
               ) : noUser ? (
-                <View style={styles.centerRow}>
+                <View style={styles.stateWrap}>
                   <Text style={styles.stateText}>Sign in to use tmlsnAI</Text>
                 </View>
               ) : isRestDay ? (
@@ -308,19 +385,17 @@ export default function TmlsnAIPage() {
                   <Text style={styles.restDay}>{day} — Rest Day</Text>
                   <Text style={styles.restSub}>Recovery is training.</Text>
                 </View>
-              ) : exercisePlans.length === 0 && !contextLoading ? (
-                <View style={styles.centerRow}>
+              ) : exercisePlans.length === 0 ? (
+                <View style={styles.stateWrap}>
                   <Text style={styles.stateText}>
-                    No exercises configured. Add them in Training Settings → Protocol Templates.
+                    No exercises configured.{'\n'}Add them in Training Settings → Protocol Templates.
                   </Text>
                 </View>
               ) : (
                 <>
-                  {/* ── Exercise cards ── */}
+                  {/* ── 2×2 pager ── */}
                   <Text style={styles.sectionLabel}>TODAY'S SESSION</Text>
-                  {exercisePlans.map((plan, i) => (
-                    <ExerciseCard key={i} plan={plan} />
-                  ))}
+                  <ExercisePager plans={exercisePlans} />
 
                   {/* ── Volume chips ── */}
                   {weeklyVolume.length > 0 && (
@@ -331,11 +406,7 @@ export default function TmlsnAIPage() {
                           <VolumeChip
                             key={i}
                             label={v.muscleGroup ?? '—'}
-                            value={
-                              v.mrv != null
-                                ? `${v.setsDone}/${v.mrv}`
-                                : String(v.setsDone)
-                            }
+                            value={v.mrv != null ? `${v.setsDone}/${v.mrv}` : String(v.setsDone)}
                           />
                         ))}
                       </View>
@@ -351,7 +422,7 @@ export default function TmlsnAIPage() {
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* ── Chat messages ── */}
+              {/* ── Chat ── */}
               {messages.map((m, i) =>
                 m.role === 'assistant' ? (
                   <View key={i} style={styles.msgAssistant}>
@@ -403,7 +474,7 @@ export default function TmlsnAIPage() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#1a1a1a' },
@@ -414,12 +485,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: H_PAD,
     paddingTop: 8,
     paddingBottom: 6,
   },
   backBtn: { width: 40, alignItems: 'flex-start' },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  headerCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -432,18 +509,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     color: MUTED,
-    marginTop: 0,
     marginBottom: 8,
     letterSpacing: 0.2,
   },
 
   // Scroll
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
+  scrollContent: { paddingHorizontal: H_PAD, paddingTop: 8, paddingBottom: 32 },
 
   // States
-  centerRow: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
-  stateText: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 21 },
+  stateWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  stateText: { fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 22 },
   restCard: { paddingVertical: 32, alignItems: 'center' },
   restDay: { fontSize: 18, fontWeight: '600', color: Colors.primaryLight, letterSpacing: -0.3 },
   restSub: { fontSize: 13, color: MUTED, marginTop: 6 },
@@ -458,45 +534,118 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Exercise card
-  cardWrap: { marginBottom: 12 },
-  cardShadow: {
+  // Pager
+  pagerScroll: { marginHorizontal: -H_PAD },
+  pagerPage: {
+    width: SCREEN_WIDTH,
+    paddingHorizontal: H_PAD,
+  },
+  pagerRow: { flexDirection: 'row', gap: CARD_GAP },
+
+  // Page dots
+  pageDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 5,
+    marginTop: 12,
+  },
+  pageDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: 'rgba(198,198,198,0.25)',
+  },
+  pageDotActive: {
+    backgroundColor: CHAMPAGNE,
+    width: 14,
+  },
+
+  // Glass card base
+  cardOuter: {
+    width: CARD_SIZE,
+    height: CARD_SIZE,
     borderRadius: CARD_RADIUS,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
+    shadowOpacity: 0.30,
     shadowRadius: 14,
     elevation: 6,
     overflow: 'hidden',
   },
   cardFill: { backgroundColor: 'rgba(47,48,49,0.30)' },
   cardBorder: { borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
-  cardContent: { padding: 16, zIndex: 1 },
-  cardExName: {
-    fontSize: 15,
+  card: {},
+  cardPlaceholder: { width: CARD_SIZE, height: CARD_SIZE },
+
+  // Card content
+  cardInner: {
+    flex: 1,
+    padding: 13,
+    justifyContent: 'space-between',
+  },
+  cardName: {
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.primaryLight,
     letterSpacing: -0.2,
-    marginBottom: 12,
+    lineHeight: 17,
   },
-  cardRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  cardCol: { flex: 1 },
-  cardColRight: { alignItems: 'flex-end' },
-  cardDivider: { width: 1, backgroundColor: 'rgba(198,198,198,0.15)', marginHorizontal: 12, alignSelf: 'stretch' },
-  cardColLabel: {
-    fontSize: 9,
-    fontWeight: '600',
+  cardDataRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  cardDataCol: { flex: 1 },
+  cardDataColRight: { alignItems: 'flex-end' },
+  cardVDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(198,198,198,0.15)',
+    marginHorizontal: 10,
+  },
+  cardDataLabel: {
+    fontSize: 8,
+    fontWeight: '700',
     letterSpacing: 1.2,
     color: MUTED,
     marginBottom: 4,
   },
-  cardColLast: { fontSize: 13, color: CHAMPAGNE, fontWeight: '500' },
-  cardColToday: { fontSize: 15, color: Colors.primaryLight, fontWeight: '700', letterSpacing: -0.3 },
-  cardNoData: { fontSize: 13, color: MUTED, fontStyle: 'italic', marginTop: 2 },
-  cardNote: { marginTop: 10, fontSize: 12, color: CHAMPAGNE, fontStyle: 'italic' },
+  cardDataLast: {
+    fontSize: 11,
+    color: CHAMPAGNE,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  cardDataToday: {
+    fontSize: 16,
+    color: Colors.primaryLight,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    lineHeight: 20,
+    textAlign: 'right',
+  },
+  cardDataTodayUnit: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: MUTED,
+  },
+  cardNoData: {
+    fontSize: 11,
+    color: MUTED,
+    fontStyle: 'italic',
+    lineHeight: 16,
+    marginTop: 10,
+  },
+  cardNote: {
+    fontSize: 10,
+    color: CHAMPAGNE,
+    fontStyle: 'italic',
+    marginTop: 6,
+  },
 
   // Volume chips
-  chipsWrap: { marginTop: 8, marginBottom: 4 },
+  chipsWrap: { marginTop: 16, marginBottom: 4 },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     flexDirection: 'row',
@@ -505,7 +654,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: 'rgba(198,198,198,0.10)',
+    backgroundColor: 'rgba(198,198,198,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(198,198,198,0.18)',
   },
@@ -519,10 +668,10 @@ const styles = StyleSheet.create({
     marginVertical: 20,
     gap: 10,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(198,198,198,0.15)' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(198,198,198,0.12)' },
   dividerLabel: { fontSize: 11, color: MUTED, letterSpacing: 0.5 },
 
-  // Chat messages
+  // Chat
   msgAssistant: { marginBottom: 16, alignSelf: 'flex-start', maxWidth: '95%' },
   msgAssistantText: {
     fontSize: 14,
@@ -544,28 +693,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: H_PAD,
     paddingVertical: 12,
     paddingBottom: 20,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(198,198,198,0.10)',
+    borderTopColor: 'rgba(198,198,198,0.08)',
   },
   input: {
     flex: 1,
     height: 44,
     paddingHorizontal: 16,
     borderRadius: 22,
-    backgroundColor: 'rgba(198,198,198,0.10)',
+    backgroundColor: 'rgba(198,198,198,0.08)',
     color: Colors.primaryLight,
     fontSize: 15,
     borderWidth: 1,
-    borderColor: 'rgba(198,198,198,0.15)',
+    borderColor: 'rgba(198,198,198,0.14)',
   },
   sendBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(198,198,198,0.15)',
+    backgroundColor: 'rgba(198,198,198,0.13)',
     alignItems: 'center',
     justifyContent: 'center',
   },

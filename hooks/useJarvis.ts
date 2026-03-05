@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorkoutContext } from '@/lib/getWorkoutContext';
 import { getTodayWorkoutContext } from '@/lib/getWorkoutContext';
-import { generateBriefing } from '@/lib/generateBriefing';
 import { supabase } from '@/lib/supabase';
 
 export type JarvisMessage = {
@@ -130,9 +129,12 @@ export function useJarvis() {
 
   useEffect(() => {
     if (!context) return;
-    const briefing = generateBriefing(context);
     setMessages([
-      { role: 'assistant', content: briefing, timestamp: new Date() },
+      {
+        role: 'assistant',
+        content: "Ready. Ask me anything — today's session, your history, progression, or anything training related.",
+        timestamp: new Date(),
+      },
     ]);
     setError(null);
   }, [context?.userId, context?.fetchedAt]);
