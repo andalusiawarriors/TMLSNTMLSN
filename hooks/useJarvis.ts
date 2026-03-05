@@ -12,39 +12,78 @@ export type JarvisMessage = {
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'llama-3.3-70b-versatile';
-const MAX_TOKENS = 400;
+const MAX_TOKENS = 800;
 const TEMPERATURE = 0.4;
+
+function formatExerciseHistory(context: WorkoutContext): string {
+  const plan = context.todayPlan;
+  const history = context.exerciseHistory;
+  if (!plan || plan.isRestDay || !history || history.length === 0) return 'No exercise data for today.';
+
+  return plan.exerciseIds.map((_, i) => {
+    const name = plan.exerciseNames?.[i] ?? `Exercise ${i + 1}`;
+    const recentSets = history[i]?.recentSets ?? [];
+    if (recentSets.length === 0) return `${name}: no history`;
+
+    // Group by session date
+    const byDate = new Map<string, typeof recentSets>();
+    for (const s of recentSets) {
+      if (!byDate.has(s.sessionDate)) byDate.set(s.sessionDate, []);
+      byDate.get(s.sessionDate)!.push(s);
+    }
+
+    const sessions = Array.from(byDate.entries()).map(([date, sets]) => {
+      const w = sets[0].weight ?? 0;
+      const reps = sets.map(s => s.reps ?? 0).join('/');
+      const rpes = sets.map(s => s.rpe).filter((r): r is number => r != null);
+      const rpeStr = rpes.length > 0 ? ` @RPE ${Math.max(...rpes)}` : '';
+      return `  ${date}: ${w}kg × ${reps}${rpeStr}`;
+    });
+
+    return `${name}:\n${sessions.join('\n')}`;
+  }).join('\n\n');
+}
+
+function formatWeeklyVolume(context: WorkoutContext): string {
+  if (context.weeklyVolume.length === 0) return 'No volume data this week.';
+  return context.weeklyVolume.map(v => {
+    const bounds = [v.mev != null ? `MEV ${v.mev}` : '', v.mav != null ? `MAV ${v.mav}` : '', v.mrv != null ? `MRV ${v.mrv}` : ''].filter(Boolean).join(' / ');
+    return `  ${v.muscleGroup}: ${v.setsDone} sets${bounds ? ` (${bounds})` : ''}`;
+  }).join('\n');
+}
 
 function buildSystemPrompt(context: WorkoutContext): string {
   const today = context.todayPlan?.dayOfWeek ?? 'Unknown';
+  const week = context.trainingSettings?.currentWeek ?? '?';
+  const framework = context.trainingSettings?.volumeFramework ?? 'unknown';
+  const scheduleMode = context.trainingSettings?.scheduleMode ?? 'unknown';
   const workoutType = context.todayPlan?.workoutType ?? 'None';
   const isRestDay = context.todayPlan?.isRestDay ?? false;
-  const exerciseCount = context.todayPlan?.exerciseIds?.length ?? 0;
   const exerciseNames = context.todayPlan?.exerciseNames ?? [];
-  const week = context.trainingSettings?.currentWeek ?? 1;
 
-  return `You are tmlsnAI, the TMLSN training intelligence system.
+  return `You are tmlsnAI — the TMLSN personal training intelligence. You have full access to this user's real training data below. Use it to answer every question accurately.
 
-SOURCE OF TRUTH (must use):
-- TODAY_DAY: ${today}
-- WEEK: ${week}
-- WORKOUT_TYPE: ${workoutType}
-- IS_REST_DAY: ${isRestDay}
-- EXERCISE_COUNT: ${exerciseCount}
-- TODAY_EXERCISES: ${JSON.stringify(exerciseNames)}
+══ TODAY ══
+Day: ${today}
+Week: ${week}
+Workout: ${isRestDay ? 'REST DAY' : workoutType}
+Volume framework: ${framework}
+Schedule mode: ${scheduleMode}
+${!isRestDay && exerciseNames.length > 0 ? `Exercises today: ${exerciseNames.join(', ')}` : ''}
 
-RULES:
-- Never calculate the day yourself. Never infer Friday/Monday/etc. Only use TODAY_DAY above.
-- If TODAY_DAY is Unknown, respond: "I cannot determine today's day/schedule from your data."
-- If user asks what day it is, respond with TODAY_DAY in one sentence, then schedule in one sentence.
-- If WORKOUT_TYPE is set (e.g. TMLSN Upper Body B) but EXERCISE_COUNT is 0, respond: "Exercises are not configured for today. Add them in Training Settings → Protocol Templates."
-- If user asks what exercises to do today, list the exercises from TODAY_EXERCISES above.
+══ EXERCISE HISTORY (last 3 sessions per exercise) ══
+${formatExerciseHistory(context)}
 
-You have access to the user's training data. Be precise and data-driven. Reference their actual data.
-Keep answers under 100 words. No bullet points.
+══ WEEKLY VOLUME (current week) ══
+${formatWeeklyVolume(context)}
 
-USER CONTEXT:
-${JSON.stringify(context)}`;
+══ RULES ══
+- TODAY is ${today}. Never say a different day.
+- When asked what to do today, reference the exercises and history above.
+- When asked about history, trends, or progress, analyse the data and give specific numbers.
+- If data is missing (no history, no logs), say so clearly — don't make up numbers.
+- Be direct, precise, and data-driven. Talk like a knowledgeable coach, not a chatbot.
+- No need to keep answers short when the user asks for analysis — be thorough.`;
 }
 
 export function useJarvis() {
