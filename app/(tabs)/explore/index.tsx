@@ -215,7 +215,7 @@ export default function ExploreScreen() {
         >
           <Heart size={24} weight="regular" color="#C6C6C6" />
         </Pressable>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerTitle}>explore.</Text>
         <Pressable
           onPress={() => setShowProfile(true)}
           style={styles.headerIcon}
@@ -311,7 +311,14 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   headerIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerSpacer: { flex: 1 },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#C6C6C6',
+    letterSpacing: -0.11,
+  },
 
   listContent: { paddingHorizontal: 16 },
 
