@@ -27,7 +27,12 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *(none)* | — | — | — | — |
+| Workout nav | Fixed discard/start glitch: discardWorkout auto-navigates to origin; fitness-hub-* use router.replace; workout tab auto-redirects to home when empty | `context/ActiveWorkoutContext.tsx`, `app/fitness-hub-tmlsn-routines.tsx`, `app/fitness-hub-your-routines.tsx`, `app/fitness-hub-start-empty.tsx`, `app/workout-save.tsx`, `app/(tabs)/workout/index.tsx` | — | Mar 5 |
+*Just finished: Workout navigation overhaul — eliminated router.back()+setTimeout race in fitness-hub flat routes (now use router.dismiss()+router.navigate); fixed "Go to home" flash by guarding startEmpty param; fixed fallback paths in workout/tmlsn-routines and workout/your-routines to use /(tabs)/workout; fixed FitnessGraphWidget and progress-graph "Start workout" to go to /(tabs)/nutrition instead of /(tabs)/workout.*
+*Just finished: Workout home "Recent" screen removed — replaced with minimal "Go to home" redirect; removed exploreHeader, Recent list, settings/history links; unused imports (Gear, List, Clock, Database, ImageBackground) cleaned.*
+*Just finished: FitnessHub wrong-page fix + polish — WorkoutPill: replaced TiltPressable with Pressable (fixes Your workouts → Empty bug); pass route explicitly to onPress; collapsable={false}; hitSlop; PILL_GAP 14, PILL_HEIGHT 76; overlay modal card styling; CaretRight on pills; pill icon/label polish.*
+*Just finished: FitnessHub Back fix — use root-level modals (tmlsn-routines-modal, your-routines-modal, start-empty-workout-modal) instead of router.replace to workout tab; Back now returns to FitnessHub without crash.*
+*Just finished: JARVIS ghost/rep range/weight increment/kg-lb — getWorkoutContext: TodayExerciseDetail, buildTodayExerciseDetails, weightUnit, todayExerciseDetails; useJarvis: formatTodayExerciseDetails, TMLSN progressive overload block, WEIGHT_UNIT rules, formatExerciseHistory/formatAllExerciseHistory/formatHistorySummary use toDisplayWeight+formatWeightDisplay for correct kg/lb.*
 *Just finished: Finish workout hardening — finalizeWorkoutSession in utils/storage.ts (single canonical finalize: persist session+exercises+sets, prescriptions, mark complete, idempotent); workout-save calls it on Save and uses activeWorkout when sessionId matches; Finish on workout tab only navigates to workout-save (no persist); supabaseStorage idempotency comment.*
 *Just finished: StickyGlassHeader + Progress Graph wiring — StickyGlassHeader.tsx (blur+gradient on scroll), progress-graph.tsx uses Animated.ScrollView + StickyGlassHeader (title, pills sticky; glass effect ramps 0→0.92 opacity as scrollY 0→140).*
 *Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
@@ -70,6 +75,8 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `components/FitnessHub.tsx` – FitnessHub Back fix: use root modals instead of workout tab nav
+- `lib/getWorkoutContext.ts`, `hooks/useJarvis.ts` – JARVIS: ghost reps/sets, rep range low/high, weight increment (lb+kg), TMLSN progressive overload algorithm, WEIGHT_UNIT, todayExerciseDetails
 - `utils/rpe.ts`, `utils/workoutSetTable.ts`, `components/WorkoutSetTable.tsx`, `app/(tabs)/workout/index.tsx`, `app/workout-edit.tsx` – Zero-divergence set table: shared WorkoutSetTable (SET|PREVIOUS|KG/LB|REPS|RPE|✓), editing/RPE popup/ghost apply/swipe-to-delete inside component; buildPrevSetsAndGhost helper; active workout and edit past workout both use same component; no UI/design changes.
 - `utils/storage.ts`, `utils/supabaseStorage.ts`, `app/workout-save.tsx`, `app/(tabs)/workout/index.tsx` – Finish workout hardening: finalizeWorkoutSession, workout-save uses it + activeWorkout, Finish only navigates
 - `components/ProgressHub.tsx` – Reorder UX: blur+dark overlay, jiggle, long-press-to-drag (activateAfterLongPress), floating tile position, snap-into-place; fixed lint

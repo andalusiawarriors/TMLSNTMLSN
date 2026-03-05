@@ -10,7 +10,6 @@ import {
   Platform,
   SafeAreaView,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -18,8 +17,6 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Stack, useRouter } from 'expo-router';
 import { CaretLeft, CaretRight } from 'phosphor-react-native';
 
@@ -30,11 +27,7 @@ import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
 const H_PAD = 16;
-const CARD_GAP = 10;
-const CARD_SIZE = Math.floor((SCREEN_WIDTH - H_PAD * 2 - CARD_GAP) / 2);
-const CARD_RADIUS = 20;
 const CHAMPAGNE = '#D4B896';
 const GREEN = '#22C55E';
 const MUTED = 'rgba(198,198,198,0.55)';
@@ -202,134 +195,6 @@ function PulsingDot() {
   return <Animated.View style={[styles.dot, style]} />;
 }
 
-function GlassCard({ children, style }: { children: React.ReactNode; style?: object }) {
-  return (
-    <View style={[styles.cardOuter, style]}>
-      <BlurView intensity={22} tint="dark" style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]} />
-      <View style={[StyleSheet.absoluteFill, styles.cardFill, { borderRadius: CARD_RADIUS }]} />
-      <LinearGradient
-        colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.04)', 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 0.85, y: 0.85 }}
-        style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
-        pointerEvents="none"
-      />
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.20)']}
-        start={{ x: 0.5, y: 0.55 }} end={{ x: 0.5, y: 1 }}
-        style={[StyleSheet.absoluteFill, { borderRadius: CARD_RADIUS }]}
-        pointerEvents="none"
-      />
-      <View style={[StyleSheet.absoluteFill, styles.cardBorder, { borderRadius: CARD_RADIUS }]} pointerEvents="none" />
-      {children}
-    </View>
-  );
-}
-
-function ExerciseCard({ plan }: { plan: ExercisePlan }) {
-  return (
-    <GlassCard style={styles.card}>
-      <View style={styles.cardInner}>
-        {/* Exercise name */}
-        <Text style={styles.cardName} numberOfLines={2}>{plan.name}</Text>
-
-        {/* Data or no-data */}
-        {plan.hasHistory ? (
-          <View style={styles.cardDataRow}>
-            {/* LAST column */}
-            <View style={styles.cardDataCol}>
-              <Text style={styles.cardDataLabel}>LAST</Text>
-              <Text style={styles.cardDataLast}>{plan.lastStr}</Text>
-            </View>
-
-            {/* Vertical divider */}
-            <View style={styles.cardVDivider} />
-
-            {/* TODAY column */}
-            <View style={[styles.cardDataCol, styles.cardDataColRight]}>
-              <Text style={styles.cardDataLabel}>TODAY</Text>
-              <Text style={styles.cardDataToday}>
-                {plan.targetWeight > 0 ? `${plan.targetWeight}` : '—'}
-                {'\n'}
-                <Text style={styles.cardDataTodayUnit}>
-                  {plan.targetWeight > 0 ? 'kg' : ''}{'  × '}{plan.targetReps}
-                </Text>
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <Text style={styles.cardNoData}>No workout{'\n'}data yet</Text>
-        )}
-
-        {/* Note */}
-        {plan.note ? <Text style={styles.cardNote}>{plan.note}</Text> : null}
-      </View>
-    </GlassCard>
-  );
-}
-
-function ExercisePager({ plans }: { plans: ExercisePlan[] }) {
-  const [page, setPage] = useState(0);
-
-  // Group into pages of 4
-  const pages: ExercisePlan[][] = [];
-  for (let i = 0; i < plans.length; i += 4) {
-    pages.push(plans.slice(i, i + 4));
-  }
-  const pageCount = pages.length;
-
-  return (
-    <View>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={(e) => {
-          const x = e.nativeEvent.contentOffset.x;
-          setPage(Math.round(x / SCREEN_WIDTH));
-        }}
-        style={styles.pagerScroll}
-      >
-        {pages.map((pagePlans, pi) => (
-          <View key={pi} style={styles.pagerPage}>
-            {/* Row 1 */}
-            <View style={styles.pagerRow}>
-              {([0, 1] as const).map((col) =>
-                pagePlans[col] ? (
-                  <ExerciseCard key={col} plan={pagePlans[col]!} />
-                ) : (
-                  <View key={col} style={styles.cardPlaceholder} />
-                )
-              )}
-            </View>
-            {/* Row 2 — only if we have exercises for it */}
-            {(pagePlans[2] || pagePlans[3]) ? (
-              <View style={[styles.pagerRow, { marginTop: CARD_GAP }]}>
-                {([2, 3] as const).map((col) =>
-                  pagePlans[col] ? (
-                    <ExerciseCard key={col} plan={pagePlans[col]!} />
-                  ) : (
-                    <View key={col} style={styles.cardPlaceholder} />
-                  )
-                )}
-              </View>
-            ) : null}
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* Page dots */}
-      {pageCount > 1 && (
-        <View style={styles.pageDots}>
-          {Array.from({ length: pageCount }).map((_, i) => (
-            <View key={i} style={[styles.pageDot, i === page && styles.pageDotActive]} />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 function VolumeChip({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.chip}>
@@ -437,9 +302,7 @@ export default function TmlsnAIPage() {
                 </View>
               ) : (
                 <>
-                  {/* ── 2×2 pager ── */}
-                  <Text style={styles.sectionLabel}>TODAY'S SESSION</Text>
-                  <ExercisePager plans={exercisePlans} />
+                  {/* Today's Session moved to FitnessHub */}
 
                   {/* ── Volume chips ── */}
                   {weeklyVolume.length > 0 && (
@@ -586,116 +449,6 @@ const styles = StyleSheet.create({
     color: MUTED,
     marginBottom: 10,
     marginTop: 4,
-  },
-
-  // Pager
-  pagerScroll: { marginHorizontal: -H_PAD },
-  pagerPage: {
-    width: SCREEN_WIDTH,
-    paddingHorizontal: H_PAD,
-  },
-  pagerRow: { flexDirection: 'row', gap: CARD_GAP },
-
-  // Page dots
-  pageDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 5,
-    marginTop: 12,
-  },
-  pageDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(198,198,198,0.25)',
-  },
-  pageDotActive: {
-    backgroundColor: CHAMPAGNE,
-    width: 14,
-  },
-
-  // Glass card base
-  cardOuter: {
-    width: CARD_SIZE,
-    height: CARD_SIZE,
-    borderRadius: CARD_RADIUS,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.30,
-    shadowRadius: 14,
-    elevation: 6,
-    overflow: 'hidden',
-  },
-  cardFill: { backgroundColor: 'rgba(47,48,49,0.30)' },
-  cardBorder: { borderWidth: 1, borderColor: 'rgba(198,198,198,0.22)' },
-  card: {},
-  cardPlaceholder: { width: CARD_SIZE, height: CARD_SIZE },
-
-  // Card content
-  cardInner: {
-    flex: 1,
-    padding: 13,
-    justifyContent: 'space-between',
-  },
-  cardName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.primaryLight,
-    letterSpacing: -0.4,
-    lineHeight: 19,
-  },
-  cardDataRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  cardDataCol: { flex: 1 },
-  cardDataColRight: { alignItems: 'flex-end' },
-  cardVDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(198,198,198,0.15)',
-    marginHorizontal: 10,
-  },
-  cardDataLabel: {
-    fontSize: 8,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    color: MUTED,
-    marginBottom: 4,
-  },
-  cardDataLast: {
-    fontSize: 11,
-    color: CHAMPAGNE,
-    fontWeight: '500',
-    lineHeight: 16,
-  },
-  cardDataToday: {
-    fontSize: 16,
-    color: Colors.primaryLight,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    lineHeight: 20,
-    textAlign: 'right',
-  },
-  cardDataTodayUnit: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: MUTED,
-  },
-  cardNoData: {
-    fontSize: 11,
-    color: MUTED,
-    fontStyle: 'italic',
-    lineHeight: 16,
-    marginTop: 10,
-  },
-  cardNote: {
-    fontSize: 10,
-    color: CHAMPAGNE,
-    fontStyle: 'italic',
-    marginTop: 6,
   },
 
   // Volume chips

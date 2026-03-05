@@ -44,9 +44,7 @@ export default function WorkoutSaveScreen() {
           text: 'Discard',
           style: 'destructive',
           onPress: () => {
-            discardWorkout(() => {
-              router.replace('/(tabs)' as any);
-            });
+            discardWorkout(() => {});
           },
         },
       ]

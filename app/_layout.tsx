@@ -75,31 +75,26 @@ function RootLayoutInner() {
           }}
         />
         <Stack.Screen
-          name="tmlsn-routines-modal"
+          name="fitness-hub-tmlsn-routines"
           options={{
-            presentation: 'modal',
-            gestureEnabled: true,
-            gestureDirection: 'vertical',
             headerShown: false,
-            title: 'TMLSN routines',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
         <Stack.Screen
-          name="your-routines-modal"
+          name="fitness-hub-your-routines"
           options={{
-            presentation: 'modal',
             headerShown: false,
-            title: 'Your routines',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
         <Stack.Screen
-          name="start-empty-workout-modal"
+          name="fitness-hub-start-empty"
           options={{
-            presentation: 'modal',
             headerShown: false,
-            title: 'Workout',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />

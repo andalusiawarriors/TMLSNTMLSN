@@ -1,7 +1,11 @@
 import { supabase } from '@/lib/supabase';
-import { getDefaultTmlsnExercises, uuidToExerciseName, workoutTypeToProtocolDay, type ProtocolDay, type TmlsnExercise } from '@/lib/getTmlsnTemplate';
+import { getDefaultTmlsnExercises, uuidToExerciseName, workoutTypeToProtocolDay, toExerciseUuid, type ProtocolDay, type TmlsnExercise } from '@/lib/getTmlsnTemplate';
+import { getHistorySummary } from '@/lib/getHistorySummary';
 import { getLocalDayName, getLocalMondayYMD } from '@/lib/time';
 import * as supabaseStorage from '@/utils/supabaseStorage';
+import { resolveExerciseDbIdFromName } from '@/utils/workoutMuscles';
+import { toDisplayWeight, formatWeightDisplay } from '@/utils/units';
+import { KG_PER_LB } from '@/utils/units';
 
 // ─── TMLSN Protocol Schedule (when schedule mode is TMLSN) ─────────────────────
 export const TMLSN_PROTOCOL_SCHEDULE = [
@@ -63,6 +67,42 @@ export interface VolumeStatus {
   mrv: number | null;
 }
 
+/** Lightweight global history summary for JARVIS. */
+export interface RecentSession {
+  sessionDate: string;
+  exerciseCount: number;
+  totalSets: number;
+  topExercises: string[];
+}
+
+export interface ExerciseTrend {
+  exerciseId: string;
+  exerciseName: string;
+  lastSessionDate: string | null;
+  lastTopSet: { weight: number | null; reps: number | null; rpe: number | null } | null;
+  e1rmTrend: Array<{ sessionDate: string; e1rm: number }>;
+  setCount4w: number;
+}
+
+export interface Adherence {
+  sessions7d: number;
+  sessions28d: number;
+  lastWorkoutDate: string | null;
+}
+
+/** Per-exercise details for JARVIS: ghost, rep range, weight increment. */
+export interface TodayExerciseDetail {
+  exerciseName: string;
+  ghostWeight: string | null;
+  ghostReps: string | null;
+  repRangeLow: number;
+  repRangeHigh: number;
+  /** Stored in lb; use for both units with conversion when user uses kg */
+  smallestIncrementLb: number;
+  smallestIncrementKg: number;
+  goal: string | null;
+}
+
 export interface WorkoutContext {
   userId: string;
   fetchedAt: string;
@@ -75,13 +115,27 @@ export interface WorkoutContext {
   weeklyVolume: VolumeStatus[];
   /** When TMLSN protocol is selected: full weekly schedule for JARVIS */
   tmlsnProtocolSchedule?: typeof TMLSN_PROTOCOL_SCHEDULE;
+  /** Global history summary — always loaded even when todayPlan is null */
+  recentSessions?: RecentSession[];
+  exerciseTrends?: ExerciseTrend[];
+  adherence?: Adherence;
+  /** User's weight unit preference */
+  weightUnit?: 'kg' | 'lb';
+  /** Per-exercise ghost, rep range, increment for today's exercises */
+  todayExerciseDetails?: TodayExerciseDetail[];
 }
 
-// ─── All-exercise history fetch ───────────────────────────────────────────────
+// ─── All-exercise history fetch (from workout_sessions + workout_sets) ─────────
+
+function toCanonicalExUuid(dbId: string | undefined, name: string): string {
+  if (dbId) return toExerciseUuid(dbId);
+  const resolved = resolveExerciseDbIdFromName(name);
+  return resolved ? toExerciseUuid(resolved) : toExerciseUuid(name);
+}
 
 async function fetchAllTmlsnExerciseHistory(
   userId: string,
-  sb: NonNullable<typeof supabase>
+  _sb: NonNullable<typeof supabase>
 ): Promise<AllExerciseHistory> {
   const days: ProtocolDay[] = ['Upper A', 'Lower A', 'Upper B', 'Lower B'];
   const exercisesByDay: Partial<Record<ProtocolDay, TmlsnExercise[]>> = {};
@@ -93,31 +147,29 @@ async function fetchAllTmlsnExerciseHistory(
     for (const e of exs) idSet.add(e.id);
   }
 
-  const uniqueIds = [...idSet];
-  const { data } = await sb
-    .from('workout_logs')
-    .select('exercise_id, session_date, weight, reps, rpe, target_reps, target_weight')
-    .eq('user_id', userId)
-    .in('exercise_id', uniqueIds)
-    .order('session_date', { ascending: false })
-    .limit(600); // ~20 exercises × 3 sessions × 10 sets
-
-  // Group rows by exercise_id -> session_date
+  const sessions = await supabaseStorage.supabaseGetWorkoutSessions(userId);
   const byExercise = new Map<string, Map<string, ScheduledSet[]>>();
-  for (const row of (data ?? [])) {
-    const exId = row.exercise_id as string;
-    const date = row.session_date as string;
-    if (!byExercise.has(exId)) byExercise.set(exId, new Map());
-    const dateMap = byExercise.get(exId)!;
-    if (!dateMap.has(date)) dateMap.set(date, []);
-    dateMap.get(date)!.push({
-      weight: row.weight ?? null,
-      reps: row.reps ?? null,
-      rpe: row.rpe ?? null,
-      targetReps: row.target_reps ?? null,
-      targetWeight: row.target_weight ?? null,
-      sessionDate: date,
-    });
+
+  for (const session of sessions) {
+    const date = session.date?.slice(0, 10) ?? '';
+    if (!date) continue;
+    for (const ex of session.exercises ?? []) {
+      const canonicalId = toCanonicalExUuid(ex.exerciseDbId, ex.name);
+      if (!idSet.has(canonicalId)) continue;
+      if (!byExercise.has(canonicalId)) byExercise.set(canonicalId, new Map());
+      const dateMap = byExercise.get(canonicalId)!;
+      if (!dateMap.has(date)) dateMap.set(date, []);
+      for (const s of ex.sets ?? []) {
+        dateMap.get(date)!.push({
+          weight: s.weight ?? null,
+          reps: s.reps ?? null,
+          rpe: s.rpe ?? null,
+          targetReps: null,
+          targetWeight: null,
+          sessionDate: date,
+        });
+      }
+    }
   }
 
   const result: AllExerciseHistory = {};
@@ -126,13 +178,126 @@ async function fetchAllTmlsnExerciseHistory(
     result[day] = exs.map((ex) => {
       const dateMap = byExercise.get(ex.id);
       const recentSets = dateMap
-        ? Array.from(dateMap.values()).slice(0, 3).flat()
+        ? Array.from(dateMap.values()).sort((a, b) => (b[0]?.sessionDate ?? '').localeCompare(a[0]?.sessionDate ?? '')).slice(0, 3).flat()
         : [];
       return { exerciseId: ex.id, exerciseName: ex.name, recentSets };
     });
   }
 
   return result;
+}
+
+/** Build per-exercise details (ghost, rep range, increment) for JARVIS. */
+async function buildTodayExerciseDetails(
+  userId: string,
+  todayPlan: TodayPlan,
+  weightUnit: 'kg' | 'lb'
+): Promise<TodayExerciseDetail[]> {
+  const sessions = await supabaseStorage.supabaseGetWorkoutSessions(userId);
+  const prescriptions = await supabaseStorage.supabaseGetExercisePrescriptions(userId, todayPlan.exerciseIds);
+
+  const sortedSessions = [...sessions].sort((a, b) => {
+    const da = a.date?.slice(0, 10) ?? '';
+    const db = b.date?.slice(0, 10) ?? '';
+    return db.localeCompare(da);
+  });
+
+  return todayPlan.exerciseIds.map((exerciseId, i) => {
+    const exerciseName = todayPlan.exerciseNames?.[i] ?? uuidToExerciseName(exerciseId) ?? 'Unknown';
+
+    let repRangeLow = 8;
+    let repRangeHigh = 12;
+    let smallestIncrementLb = 2.5;
+
+    for (const session of sortedSessions) {
+      const matchEx = session.exercises?.find((e) => e.id === exerciseId || (e.exerciseDbId && toExerciseUuid(e.exerciseDbId) === exerciseId));
+      if (matchEx) {
+        repRangeLow = matchEx.repRangeLow ?? 8;
+        repRangeHigh = matchEx.repRangeHigh ?? 12;
+        smallestIncrementLb = matchEx.smallestIncrement ?? 2.5;
+        break;
+      }
+    }
+
+    const smallestIncrementKg = Math.round(smallestIncrementLb * KG_PER_LB * 100) / 100;
+
+    const prescription = prescriptions[exerciseId];
+    let ghostWeight: string | null = null;
+    let ghostReps: string | null = null;
+
+    if (prescription) {
+      ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
+      ghostReps = String(prescription.goal === 'add_load' ? repRangeLow : repRangeHigh);
+    }
+
+    if (!ghostWeight || !ghostReps) {
+      for (const session of sortedSessions) {
+        const matchEx = session.exercises?.find((e) => e.id === exerciseId || (e.exerciseDbId && toExerciseUuid(e.exerciseDbId) === exerciseId));
+        if (matchEx) {
+          const doneSets = (matchEx.sets ?? []).filter((s) => s.weight > 0 && s.reps > 0);
+          if (doneSets.length > 0) {
+            const last = doneSets[doneSets.length - 1];
+            if (!ghostWeight) ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
+            if (!ghostReps) ghostReps = String(last.reps);
+          }
+          break;
+        }
+      }
+    }
+
+    return {
+      exerciseName,
+      ghostWeight,
+      ghostReps,
+      repRangeLow,
+      repRangeHigh,
+      smallestIncrementLb,
+      smallestIncrementKg,
+      goal: prescription?.goal ?? null,
+    };
+  });
+}
+
+/** Fetch exercise history for given exercise UUIDs from workout_sessions/sets. */
+async function fetchExerciseHistoryFromSessions(
+  userId: string,
+  exerciseIds: string[]
+): Promise<ExerciseHistory[]> {
+  const sessions = await supabaseStorage.supabaseGetWorkoutSessions(userId);
+  const byExercise = new Map<string, Map<string, ScheduledSet[]>>();
+  for (const id of exerciseIds) byExercise.set(id, new Map());
+
+  for (const session of sessions) {
+    const date = session.date?.slice(0, 10) ?? '';
+    if (!date) continue;
+    for (const ex of session.exercises ?? []) {
+      const canonicalId = toCanonicalExUuid(ex.exerciseDbId, ex.name);
+      if (!byExercise.has(canonicalId)) continue;
+      const dateMap = byExercise.get(canonicalId)!;
+      if (!dateMap.has(date)) dateMap.set(date, []);
+      for (const s of ex.sets ?? []) {
+        dateMap.get(date)!.push({
+          weight: s.weight ?? null,
+          reps: s.reps ?? null,
+          rpe: s.rpe ?? null,
+          targetReps: null,
+          targetWeight: null,
+          sessionDate: date,
+        });
+      }
+    }
+  }
+
+  return exerciseIds.map((exerciseId) => {
+    const dateMap = byExercise.get(exerciseId);
+    const recentSets = dateMap
+      ? Array.from(dateMap.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .slice(0, 3)
+          .flatMap(([, sets]) => sets)
+      : [];
+    return { exerciseId, recentSets };
+  });
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -164,8 +329,8 @@ export async function getTodayWorkoutContext(
     };
   }
 
-  // Parallel: training_settings + today's schedule + weekly volume (all filtered by user_id)
-  const [settingsRes, scheduleRes, volumeRes] = await Promise.all([
+  // Parallel: training_settings + today's schedule + weekly volume + history summary
+  const [settingsRes, scheduleRes, volumeRes, historySummary] = await Promise.all([
     supabase
       .from('training_settings')
       .select('volume_framework, schedule_mode, current_week')
@@ -184,6 +349,8 @@ export async function getTodayWorkoutContext(
       .select('muscle_group, week_start, sets_done, mev, mav, mrv')
       .eq('user_id', userId)
       .eq('week_start', mondayYMD),
+
+    getHistorySummary(userId),
   ]);
 
 
@@ -292,40 +459,18 @@ export async function getTodayWorkoutContext(
           allExerciseHistory,
           weeklyVolume,
           tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
+          recentSessions: historySummary.recentSessions,
+          exerciseTrends: historySummary.exerciseTrends,
+          adherence: historySummary.adherence,
         };
       }
 
-      // Fetch exercise history for template exercises
-      const historyResults = await Promise.all(
-        exerciseIds.map((exerciseId) =>
-          supabase!
-            .from('workout_logs')
-            .select('session_date, weight, reps, rpe, target_reps, target_weight')
-            .eq('user_id', userId)
-            .eq('exercise_id', exerciseId)
-            .order('session_date', { ascending: false })
-            .limit(3 * 10)
-        )
-      );
-
-      const exerciseHistory: ExerciseHistory[] = exerciseIds.map((exerciseId, idx) => {
-        const rows = historyResults[idx].data ?? [];
-        const dateMap = new Map<string, ScheduledSet[]>();
-        for (const row of rows) {
-          const date = row.session_date as string;
-          if (!dateMap.has(date)) dateMap.set(date, []);
-          dateMap.get(date)!.push({
-            weight: row.weight ?? null,
-            reps: row.reps ?? null,
-            rpe: row.rpe ?? null,
-            targetReps: row.target_reps ?? null,
-            targetWeight: row.target_weight ?? null,
-            sessionDate: date,
-          });
-        }
-        const recentSets = Array.from(dateMap.values()).slice(0, 3).flat();
-        return { exerciseId, recentSets };
-      });
+      const [exerciseHistory, userSettings] = await Promise.all([
+        fetchExerciseHistoryFromSessions(userId, exerciseIds),
+        supabaseStorage.supabaseGetUserSettings(userId),
+      ]);
+      const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+      const todayExerciseDetails = await buildTodayExerciseDetails(userId, todayPlan, weightUnit);
 
       return {
         userId,
@@ -336,6 +481,11 @@ export async function getTodayWorkoutContext(
         allExerciseHistory,
         weeklyVolume,
         tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
+        recentSessions: historySummary.recentSessions,
+        exerciseTrends: historySummary.exerciseTrends,
+        adherence: historySummary.adherence,
+        weightUnit,
+        todayExerciseDetails,
       };
     }
     return {
@@ -346,6 +496,9 @@ export async function getTodayWorkoutContext(
       exerciseHistory: null,
       weeklyVolume,
       tmlsnProtocolSchedule: undefined,
+      recentSessions: historySummary.recentSessions,
+      exerciseTrends: historySummary.exerciseTrends,
+      adherence: historySummary.adherence,
     };
   }
 
@@ -368,49 +521,18 @@ export async function getTodayWorkoutContext(
       allExerciseHistory,
       weeklyVolume,
       tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
+      recentSessions: historySummary.recentSessions,
+      exerciseTrends: historySummary.exerciseTrends,
+      adherence: historySummary.adherence,
     };
   }
 
-  // Fetch last 3 sessions for each exercise in parallel
-  const historyResults = await Promise.all(
-    todayPlan.exerciseIds.map((exerciseId) =>
-      supabase!
-        .from('workout_logs')
-        .select('session_date, weight, reps, rpe, target_reps, target_weight')
-        .eq('user_id', userId)
-        .eq('exercise_id', exerciseId)
-        .order('session_date', { ascending: false })
-        .limit(3 * 10) // up to 10 sets per session × 3 sessions
-    )
-  );
-
-  const exerciseHistory: ExerciseHistory[] = todayPlan.exerciseIds.map(
-    (exerciseId, idx) => {
-      const rows = historyResults[idx].data ?? [];
-
-      // Group by session_date, keep newest 3 distinct dates
-      const dateMap = new Map<string, ScheduledSet[]>();
-      for (const row of rows) {
-        const date = row.session_date as string;
-        if (!dateMap.has(date)) dateMap.set(date, []);
-        dateMap.get(date)!.push({
-          weight: row.weight ?? null,
-          reps: row.reps ?? null,
-          rpe: row.rpe ?? null,
-          targetReps: row.target_reps ?? null,
-          targetWeight: row.target_weight ?? null,
-          sessionDate: date,
-        });
-      }
-
-      // Newest first, max 3 sessions
-      const recentSets = Array.from(dateMap.values())
-        .slice(0, 3)
-        .flat();
-
-      return { exerciseId, recentSets };
-    }
-  );
+  const [exerciseHistory, userSettings] = await Promise.all([
+    fetchExerciseHistoryFromSessions(userId, todayPlan.exerciseIds),
+    supabaseStorage.supabaseGetUserSettings(userId),
+  ]);
+  const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+  const todayExerciseDetails = await buildTodayExerciseDetails(userId, todayPlan, weightUnit);
 
   return {
     userId,
@@ -421,6 +543,11 @@ export async function getTodayWorkoutContext(
     allExerciseHistory,
     weeklyVolume,
     tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
+    recentSessions: historySummary.recentSessions,
+    exerciseTrends: historySummary.exerciseTrends,
+    adherence: historySummary.adherence,
+    weightUnit,
+    todayExerciseDetails,
   };
 }
 

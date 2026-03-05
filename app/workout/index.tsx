@@ -127,9 +127,6 @@ const SET_INPUT_BORDER_WIDTH = 1;
 const SET_INPUT_BORDER_RADIUS = 10;
 const SET_INPUT_PADDING_H = 6;
 const SET_CHECK_BUTTON_SIZE = 36;
-if (__DEV__) {
-  console.log('[Workout Set Table] column flex:', SET_TABLE_FLEX, 'input maxWidth=', SET_INPUT_MAX_WIDTH);
-}
 
 export type WorkoutScreenModalProps = {
   asModal?: boolean;

@@ -57,13 +57,15 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   const discardWorkout = useCallback(
     (onDiscarded: () => void) => {
+      const returnTo = originRoute && originRoute !== '/(tabs)/workout' ? originRoute : '/(tabs)/nutrition';
       setActiveWorkoutRaw(null);
       setCurrentExerciseIndex(0);
       setMinimized(false);
       setOriginRoute(null);
+      router.replace(returnTo as any);
       onDiscarded();
     },
-    []
+    [originRoute, router]
   );
 
   const value: ActiveWorkoutContextValue = {

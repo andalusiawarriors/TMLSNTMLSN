@@ -9,7 +9,6 @@ import {
   Modal,
   Alert,
   Dimensions,
-  ImageBackground,
   NativeSyntheticEvent,
   NativeScrollEvent,
   KeyboardAvoidingView,
@@ -53,7 +52,7 @@ import { AnimatedFadeInUp } from '../../../components/AnimatedFadeInUp';
 import { Card } from '../../../components/Card';
 import { ExercisePickerModal } from '../../../components/ExercisePickerModal';
 import { BlurView } from 'expo-blur';
-import { UserPlus, At, Gear, List, Clock, Database } from 'phosphor-react-native';
+import { UserPlus, At } from 'phosphor-react-native';
 import { format } from 'date-fns';
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
@@ -67,6 +66,14 @@ import { useExerciseReorder } from '../../../components/DraggableExerciseList';
 import { WorkoutSetTable } from '../../../components/WorkoutSetTable';
 import { buildPrevSetsAndGhost } from '../../../utils/workoutSetTable';
 
+
+function WorkoutTabRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/(tabs)/nutrition' as any);
+  }, [router]);
+  return null;
+}
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -135,9 +142,6 @@ const SET_INPUT_BORDER_WIDTH = 1;
 const SET_INPUT_BORDER_RADIUS = 10;
 const SET_INPUT_PADDING_H = 6;
 const SET_CHECK_BUTTON_SIZE = 36;
-if (__DEV__) {
-  console.log('[Workout Set Table] column flex:', SET_TABLE_FLEX, 'input maxWidth=', SET_INPUT_MAX_WIDTH);
-}
 
 export type WorkoutScreenModalProps = {
   asModal?: boolean;
@@ -167,8 +171,8 @@ export default function WorkoutScreen({
     startEmpty?: string;
   }>();
 
-  // Sync initialActiveWorkout (e.g. from modal) into context
-  useEffect(() => {
+  // Sync initialActiveWorkout (e.g. from modal) into context — useLayoutEffect so overlay shows on first paint (no blank screen)
+  useLayoutEffect(() => {
     if (initialActiveWorkout) {
       setActiveWorkout(initialActiveWorkout);
       setCurrentExerciseIndex(0);
@@ -829,15 +833,6 @@ export default function WorkoutScreen({
     console.log('[Workout Stats]', { completedSets: completed, totalVolumeRawLb: vol });
   }, [activeWorkout]);
 
-  const goBackToMainMenu = () => {
-    setActiveWorkout(null);
-    setShowExerciseEntry(false);
-    setCurrentExerciseIndex(0);
-    setRestTimerActive(false);
-    setRestTimeRemaining(0);
-    onCloseModal?.();
-  };
-
   const handleMinimize = () => {
     setShowExerciseEntry(false);
     setRestTimerActive(false);
@@ -894,100 +889,9 @@ export default function WorkoutScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      {/* Workout home – background, header (settings | history), three start buttons */}
-      {!asModal && !activeWorkout && (
-        <>
-          <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-            <ImageBackground
-              source={require('../../../assets/home-background.png')}
-              style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
-              resizeMode="cover"
-            >
-              <LinearGradient
-                colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-                locations={[0, 0.2, 0.35, 0.45, 0.65]}
-                style={StyleSheet.absoluteFill}
-              />
-            </ImageBackground>
-          </View>
-          <View
-            style={[
-              styles.exploreHeader,
-              styles.exploreHeaderOverlay,
-              { paddingTop: 54, paddingHorizontal: Spacing.md + (insets.left || 0), paddingRight: Spacing.md + (insets.right || 0) },
-            ]}
-          >
-            <Pressable onPress={() => router.push('/workout/settings')} style={styles.exploreHeaderIconWrap} hitSlop={12}>
-              <Gear size={24} weight="regular" color={colors.primaryLight} />
-            </Pressable>
-            <View style={styles.exploreHeaderSpacer} />
-            <Pressable onPress={() => router.push('/workout-history')} style={styles.exploreHeaderIconWrap} hitSlop={12}>
-              <List size={24} weight="regular" color={colors.primaryLight} />
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={{
-              paddingTop: 54 + 48,
-              paddingBottom: Math.max(Spacing.xl, insets.bottom + 100),
-              paddingHorizontal: Spacing.lg,
-            }}
-            showsVerticalScrollIndicator={false}
-          >
-            {recentSessions.length === 0 ? (
-              <View style={{ alignItems: 'center', marginTop: 60 }}>
-                <Text style={{ color: colors.primaryLight + '60', fontSize: 14, textAlign: 'center', lineHeight: 22 }}>
-                  {'Start a workout using\nthe + button below'}
-                </Text>
-              </View>
-            ) : (
-              <>
-                <Text style={{ color: colors.primaryLight + '80', fontSize: 14, fontWeight: '600', marginBottom: 12, marginTop: 4 }}>Recent</Text>
-                {recentSessions.map((session) => {
-                  const rawVolume = session.exercises.reduce((acc: number, ex: any) =>
-                    acc + ex.sets.filter((s: any) => s.completed).reduce((sacc: number, set: any) => sacc + (set.weight * set.reps), 0), 0);
-                  const volumeDisplay = toDisplayVolume(rawVolume, weightUnit);
-                  return (
-                    <Pressable
-                      key={session.id}
-                      style={{
-                        backgroundColor: colors.primaryLight + '08',
-                        borderRadius: 14,
-                        padding: Spacing.md,
-                        marginBottom: Spacing.sm + 4,
-                      }}
-                      onPress={() => router.push({ pathname: '/workout-detail', params: { sessionId: session.id } })}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ fontSize: 16, fontWeight: '600', letterSpacing: -0.2, color: colors.primaryLight }}>{session.name}</Text>
-                        <Text style={{ fontSize: 13, color: colors.primaryLight + '50' }}>
-                          {format(new Date(session.date), 'MMM d, yyyy')}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}>
-                          <Clock size={13} color={colors.primaryLight + '80'} />
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primaryLight + 'CC' }}>{session.duration}m</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}>
-                          <Database size={13} color={colors.primaryLight + '80'} />
-                          <Text style={{ fontSize: 13, fontWeight: '500', color: colors.primaryLight + 'CC' }}>{formatWeightDisplay(volumeDisplay, weightUnit)}</Text>
-                        </View>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-                <Pressable
-                  onPress={() => router.push('/workout-history')}
-                  style={{ alignItems: 'center', marginTop: 8, paddingVertical: 8 }}
-                >
-                  <Text style={{ color: colors.primaryLight + '60', fontSize: 14, fontWeight: '500' }}>
-                    View all history
-                  </Text>
-                </Pressable>
-              </>
-            )}
-          </ScrollView>
-        </>
+      {/* No active workout and no pending start params → redirect to home */}
+      {!asModal && !activeWorkout && !startSplitId && !startRoutineId && startEmpty !== '1' && (
+        <WorkoutTabRedirect />
       )}
 
       {/* Workout log overlay – entrance animation + minimize on down arrow */}
@@ -1587,29 +1491,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
     color: Colors.primaryLight,
     textAlign: 'center',
-  },
-  exploreHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: Spacing.sm,
-    zIndex: 1,
-  },
-  exploreHeaderOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-  },
-  exploreHeaderIconWrap: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exploreHeaderSpacer: {
-    flex: 1,
   },
   exploreFeedList: {
     flex: 1,

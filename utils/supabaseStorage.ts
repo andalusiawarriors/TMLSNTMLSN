@@ -798,6 +798,10 @@ function assembleWorkoutSession(
         restTimer: er.rest_timer != null ? Number(er.rest_timer) : undefined,
         notes: er.notes != null ? String(er.notes) : undefined,
         exerciseDbId: er.exercise_db_id != null ? String(er.exercise_db_id) : undefined,
+        repRangeLow: er.rep_range_low != null ? Number(er.rep_range_low) : undefined,
+        repRangeHigh: er.rep_range_high != null ? Number(er.rep_range_high) : undefined,
+        smallestIncrement: er.smallest_increment != null ? Number(er.smallest_increment) : undefined,
+        defaultTargetRpe: er.default_target_rpe != null ? Number(er.default_target_rpe) : undefined,
       };
     });
   return {

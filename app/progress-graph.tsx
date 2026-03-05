@@ -1033,7 +1033,7 @@ export default function ProgressGraphScreen() {
               {/* Glass-prominent CTA — bright fill, dark text, specular rim */}
               <Pressable
                 style={({ pressed }) => [p.emptyBtn, pressed && { transform: [{ scale: 0.97 }], opacity: 0.88 }]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/workout' as any); }}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/nutrition' as any); }}
               >
                 {/* Bright base fill */}
                 <LinearGradient

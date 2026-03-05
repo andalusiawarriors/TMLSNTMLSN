@@ -192,9 +192,9 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
       return;
     }
     router.replace({
-      pathname: '/workout',
+      pathname: '/(tabs)/workout',
       params: { startRoutineId: routine.id },
-    });
+    } as any);
   };
 
   return (

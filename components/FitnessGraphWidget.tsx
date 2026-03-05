@@ -888,7 +888,7 @@ export function FitnessGraphWidget() {
               style={({ pressed }) => [styles.emptyBtn, pressed && styles.emptyBtnPressed]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                router.push('/(tabs)/workout' as any);
+                router.push('/(tabs)/nutrition' as any);
               }}
             >
               <Text style={styles.emptyBtnText}>Start workout</Text>

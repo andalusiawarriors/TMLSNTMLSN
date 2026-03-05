@@ -1,10 +1,21 @@
 import { Stack, useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Pressable, Text } from 'react-native';
 import { Colors } from '../../../constants/theme';
 
 export default function WorkoutLayout() {
   const router = useRouter();
+  const navigation = useNavigation();
+
+  const goToNutrition = () => {
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.navigate('nutrition');
+    } else {
+      router.replace({ pathname: '/(tabs)/nutrition' } as any);
+    }
+  };
 
   return (
     <Stack
@@ -23,6 +34,8 @@ export default function WorkoutLayout() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (params?.returnTo === 'profile') {
                   router.replace('/(tabs)/(profile)');
+                } else if (params?.returnTo === 'nutrition') {
+                  goToNutrition();
                 } else {
                   router.back();
                 }
