@@ -111,6 +111,12 @@ export interface Prompt {
 }
 
 // Training System Settings
+export type TrainingArchetype =
+  | 'bodybuilder'
+  | 'athlete'
+  | 'powerlifter'
+  | 'mdj'
+  | 'general';
 export type VolumeFramework = 'rp' | 'range' | 'custom';
 export type ScheduleMode = 'builder' | 'tmlsn' | 'ghost';
 export type WeekReset = 'monday' | 'rolling' | 'custom_day';
@@ -127,6 +133,7 @@ export interface RangeMuscleTarget {
 }
 
 export interface TrainingSettings {
+  archetype: TrainingArchetype;
   volumeFramework: VolumeFramework;
   scheduleMode: ScheduleMode;
   weekReset: WeekReset;
@@ -152,6 +159,8 @@ export interface UserSettings {
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
   /** Progress Hub widget order (ids). Saved per account. */
   progressHubOrder?: string[];
+  /** Training system settings (volume framework, schedule, archetype, etc.). */
+  training?: TrainingSettings;
 }
 
 // Saved Food (for quick re-logging)

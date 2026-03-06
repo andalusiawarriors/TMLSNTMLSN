@@ -38,6 +38,9 @@ import { BarbellIcon, PlayIcon, CaretRight } from 'phosphor-react-native';
 
 import { EXERCISE_DATABASE } from '../utils/exerciseDb/exerciseDatabase';
 import { getAllExerciseSettings } from '../utils/exerciseSettings';
+import { getUserSettings } from '../utils/storage';
+import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
+import type { TrainingSettings, TrainingArchetype } from '../types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const PARENT_PAD = 19;
@@ -171,10 +174,26 @@ const pillStyles = StyleSheet.create({
   pillSubtitle: { fontSize: 12, fontWeight: '500', color: 'rgba(198,198,198,0.6)', marginTop: 3, letterSpacing: -0.1 },
 });
 
+function getToolsForArchetype(archetype: TrainingArchetype) {
+  switch (archetype) {
+    case 'athlete':
+      return { primaryPill: 'scan', showTmlsn: false };
+    case 'powerlifter':
+      return { primaryPill: 'routines', showTmlsn: false };
+    case 'mdj':
+      return { primaryPill: 'tmlsn', showTmlsn: true };
+    case 'bodybuilder':
+    case 'general':
+    default:
+      return { primaryPill: 'tmlsn', showTmlsn: true };
+  }
+}
+
 export function FitnessHub() {
   const [animTrigger, setAnimTrigger] = useState(0);
   const [favCount, setFavCount] = useState(0);
   const [showWorkoutBlockOverlay, setShowWorkoutBlockOverlay] = useState(false);
+  const [training, setTraining] = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
   const { user } = useAuth();
   const { activeWorkout } = useActiveWorkout();
   const router = useRouter();
@@ -188,8 +207,13 @@ export function FitnessHub() {
   useFocusEffect(
     useCallback(() => {
       setAnimTrigger((t) => t + 1);
+
       getAllExerciseSettings().then((settings) => {
         setFavCount(Object.values(settings).filter((s) => s.favorite).length);
+      });
+
+      getUserSettings().then((s) => {
+        setTraining(s.training ?? DEFAULT_TRAINING_SETTINGS);
       });
     }, []),
   );
@@ -231,6 +255,8 @@ export function FitnessHub() {
     route: '/fitness-hub-start-empty',
   };
 
+  const archetypeTools = getToolsForArchetype(training.archetype ?? 'general');
+
   return (
     <View style={styles.container}>
       {/* 1) tmlsnAI pill — above all */}
@@ -268,9 +294,37 @@ export function FitnessHub() {
         </View>
         <View style={styles.pillsCenter}>
           <View style={styles.pillsColumn}>
-            <WorkoutPill item={tmlsnTile} index={1} animTrigger={animTrigger} icon={<Image source={require('../assets/tmlsn-routines-star.png')} style={{ width: 24, height: 24, tintColor: Colors.primaryLight }} resizeMode="contain" />} route={tmlsnTile.route} onPress={handleWorkoutPress} />
-            <WorkoutPill item={yourRoutinesTile} index={2} animTrigger={animTrigger} icon={<BarbellIcon size={24} color={Colors.primaryLight} weight="regular" />} route={yourRoutinesTile.route} onPress={handleWorkoutPress} />
-            <WorkoutPill item={emptyWorkoutTile} index={3} animTrigger={animTrigger} icon={<PlayIcon size={24} color={Colors.primaryLight} weight="regular" />} route={emptyWorkoutTile.route} onPress={handleWorkoutPress} />
+            {/* TMLSN Routines — shown for bodybuilder, mdj, general */}
+            {archetypeTools.showTmlsn && (
+              <WorkoutPill
+                item={tmlsnTile}
+                index={1}
+                animTrigger={animTrigger}
+                icon={<Image source={require('../assets/tmlsn-routines-star.png')} style={{ width: 24, height: 24, tintColor: Colors.primaryLight }} resizeMode="contain" />}
+                route={tmlsnTile.route}
+                onPress={handleWorkoutPress}
+              />
+            )}
+
+            {/* Your Routines — always shown */}
+            <WorkoutPill
+              item={yourRoutinesTile}
+              index={archetypeTools.showTmlsn ? 2 : 1}
+              animTrigger={animTrigger}
+              icon={<BarbellIcon size={24} color={Colors.primaryLight} weight="regular" />}
+              route={yourRoutinesTile.route}
+              onPress={handleWorkoutPress}
+            />
+
+            {/* Empty Workout — always shown */}
+            <WorkoutPill
+              item={emptyWorkoutTile}
+              index={archetypeTools.showTmlsn ? 3 : 2}
+              animTrigger={animTrigger}
+              icon={<PlayIcon size={24} color={Colors.primaryLight} weight="regular" />}
+              route={emptyWorkoutTile.route}
+              onPress={handleWorkoutPress}
+            />
           </View>
         </View>
       </View>
