@@ -84,7 +84,13 @@ export function buildPrevSetsAndGhost(
       sets: workingSets,
       repRangeLow,
       repRangeHigh,
-      incrementKg,
+      overloadCategory: 'compound_small',
+      currentBand: 'easy',
+      consecutiveSuccess: 0,
+      consecutiveFailure: 0,
+      isCalibrating: false,
+      isDeloadWeek: false,
+      blitzMode: false,
     });
 
     // [AUDIT] Temporary debug – remove after verification

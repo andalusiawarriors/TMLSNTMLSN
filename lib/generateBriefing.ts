@@ -86,7 +86,6 @@ export function generateBriefing(context: WorkoutContext): string {
     const exDetail = details[i];
     const repRangeLow = exDetail?.repRangeLow ?? 8;
     const repRangeHigh = exDetail?.repRangeHigh ?? 12;
-    const incrementKg = exDetail?.smallestIncrementKg ?? 2.5;
 
     const workingSets = lastSets.map((s) => ({
       weight: s.weight ?? 0,
@@ -99,7 +98,13 @@ export function generateBriefing(context: WorkoutContext): string {
       sets: workingSets,
       repRangeLow,
       repRangeHigh,
-      incrementKg,
+      overloadCategory: 'compound_small',
+      currentBand: 'easy',
+      consecutiveSuccess: 0,
+      consecutiveFailure: 0,
+      isCalibrating: false,
+      isDeloadWeek: false,
+      blitzMode: false,
     });
 
     const targetWeight =
