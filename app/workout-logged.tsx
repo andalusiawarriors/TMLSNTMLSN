@@ -428,6 +428,7 @@ export default function WorkoutLoggedScreen() {
         <DynamicIslandRPEWarning
           visible={rpeWarning.visible}
           rpe={rpeWarning.rpe}
+          context="post"
           isInjured={isInjured}
           onInjuredChange={setIsInjured}
           onDismiss={() => setRpeWarning({ visible: false, rpe: 0 })}

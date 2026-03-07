@@ -61,6 +61,7 @@ import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
 import { BackButton } from '../../components/BackButton';
 import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
+import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarning';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -311,6 +312,10 @@ export default function WorkoutScreen({
   const [pressedCheckRowKey, setPressedCheckRowKey] = useState<string | null>(null);
   /** Keyboard height for positioning the confirm bar above the keyboard. */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Dynamic Island RPE notification (fires when a set's RPE < 7 is committed)
+  const [rpeWarning, setRpeWarning]   = useState<{ visible: boolean; rpe: number; exerciseName: string }>({ visible: false, rpe: 0, exerciseName: '' });
+  const [isInjured,  setIsInjured]    = useState(false);
 
   // Set/Exercise-level notes editor state
   const [showSetNotesModal, setShowSetNotesModal] = useState(false);
@@ -698,6 +703,12 @@ export default function WorkoutScreen({
         const clamped = Math.min(10, Math.max(1, n));
         updateSet(exerciseIndex, setIndex, { rpe: clamped });
         if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'rpe', parsed: clamped, source });
+
+        // Fire Dynamic Island notification for low RPE (below 7)
+        if (clamped < 7) {
+          const exName = activeWorkout?.exercises[exerciseIndex]?.name ?? '';
+          setTimeout(() => setRpeWarning({ visible: true, rpe: Math.round(clamped), exerciseName: exName }), 150);
+        }
       }
     } else {
       const n = parseNumericInput(editingCellValue, 'int');
@@ -1850,6 +1861,17 @@ export default function WorkoutScreen({
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      {/* ── Dynamic Island RPE notification (active workout) ── */}
+      <DynamicIslandRPEWarning
+        visible={rpeWarning.visible}
+        rpe={rpeWarning.rpe}
+        exerciseName={rpeWarning.exerciseName}
+        context="active"
+        isInjured={isInjured}
+        onInjuredChange={setIsInjured}
+        onDismiss={() => setRpeWarning(prev => ({ ...prev, visible: false }))}
+      />
 
     </View>
   );
