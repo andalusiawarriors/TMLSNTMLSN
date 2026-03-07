@@ -262,7 +262,7 @@ export function ExplorePostDetailModal({ visible, onClose, post }: Props) {
                     })}
                   </>
                 ) : (
-                  <Text style={styles.emptyState}>No exercises recorded.</Text>
+                  <Text style={styles.emptyState}>Workout no longer available.</Text>
                 )
               ) : (
                 <Text style={styles.emptyState}>No workout data attached.</Text>

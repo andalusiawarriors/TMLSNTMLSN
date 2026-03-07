@@ -121,6 +121,13 @@ export type VolumeFramework = 'rp' | 'range' | 'custom';
 export type ScheduleMode = 'builder' | 'tmlsn' | 'ghost';
 export type WeekReset = 'monday' | 'rolling' | 'custom_day';
 
+export type WeekDayEntry = {
+  sessionName?: string;   // display label e.g. "Upper A"
+  isRest?: boolean;
+  splitId?: string;       // references a TMLSN split id
+  routineId?: string;     // references a saved routine id
+};
+
 export interface RpMuscleTarget {
   mev: number;
   mav: number;
@@ -146,6 +153,10 @@ export interface TrainingSettings {
   rangeMuscleTargets: Record<string, RangeMuscleTarget>;
   /** Primary training goal — drives the progressive overload algorithm defaults. */
   trainingFocus?: 'hypertrophy' | 'strength';
+  /** Builder mode week plan — 7 entries indexed 0=Mon … 6=Sun. */
+  weekPlan?: WeekDayEntry[];
+  /** Builder mode target session count per week. */
+  weeklySessionTarget?: number;
 }
 
 // User Settings

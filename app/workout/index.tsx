@@ -36,6 +36,9 @@ import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDispla
 import { logStreakWorkout } from '../../utils/streak';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../types';
 import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../utils/helpers';
+import { resolveExerciseDbIdFromName } from '../../utils/workoutMuscles';
+import { toExerciseUuid } from '../../lib/getTmlsnTemplate';
+import { getAllExerciseSettings } from '../../utils/exerciseSettings';
 import { scheduleRestTimerNotification, cancelNotification } from '../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../hooks/useButtonSound';
@@ -438,13 +441,27 @@ export default function WorkoutScreen({
     return () => clearInterval(interval);
   }, [restTimerActive, restTimeRemaining]);
 
-  const startWorkoutFromSplit = (split: WorkoutSplit) => {
-    const exercises: Exercise[] = split.exercises.map((template) => ({
-      id: generateId(),
-      name: template.name,
-      sets: [],
-      restTimer: template.restTimer,
-    }));
+  const startWorkoutFromSplit = async (split: WorkoutSplit) => {
+    const allSettings = await getAllExerciseSettings();
+    const exercises: Exercise[] = split.exercises.map((template) => {
+      const exerciseDbId = resolveExerciseDbIdFromName(template.name) ?? undefined;
+      const exerciseId = exerciseDbId ? toExerciseUuid(exerciseDbId) : toExerciseUuid(template.name);
+      const manual = (exerciseId in allSettings ? allSettings[exerciseId] : exerciseDbId && exerciseDbId in allSettings ? allSettings[exerciseDbId] : null) ?? null;
+      const built = buildExerciseFromRoutineTemplate({
+        name: template.name,
+        targetSets: template.targetSets,
+        targetReps: template.targetReps,
+        restTimer: template.restTimer,
+        suggestedWeight: template.suggestedWeight ?? 0,
+      }, 120);
+      return {
+        ...built,
+        exerciseDbId,
+        repRangeLow: manual?.repRangeLow ?? template.targetReps,
+        repRangeHigh: manual?.repRangeHigh ?? template.targetReps,
+        smallestIncrement: manual?.smallestIncrement ?? 2.5,
+      };
+    });
 
     const newWorkout: WorkoutSession = {
       id: generateId(),
@@ -462,10 +479,21 @@ export default function WorkoutScreen({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const startWorkoutFromSavedRoutine = (routine: SavedRoutine, defaultRestTimer: number = 120) => {
-    const exercises: Exercise[] = routine.exercises.map((ex) =>
-      buildExerciseFromRoutineTemplate(ex, defaultRestTimer)
-    );
+  const startWorkoutFromSavedRoutine = async (routine: SavedRoutine, defaultRestTimer: number = 120) => {
+    const allSettings = await getAllExerciseSettings();
+    const exercises: Exercise[] = routine.exercises.map((ex) => {
+      const built = buildExerciseFromRoutineTemplate(ex, defaultRestTimer);
+      const exerciseDbId = ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? undefined;
+      const exerciseId = exerciseDbId ? toExerciseUuid(exerciseDbId) : toExerciseUuid(ex.name);
+      const manual = (exerciseId in allSettings ? allSettings[exerciseId] : exerciseDbId && exerciseDbId in allSettings ? allSettings[exerciseDbId] : null) ?? null;
+      return {
+        ...built,
+        exerciseDbId,
+        repRangeLow: manual?.repRangeLow ?? ex.targetReps,
+        repRangeHigh: manual?.repRangeHigh ?? ex.targetReps,
+        smallestIncrement: manual?.smallestIncrement ?? 2.5,
+      };
+    });
 
     const newWorkout: WorkoutSession = {
       id: generateId(),

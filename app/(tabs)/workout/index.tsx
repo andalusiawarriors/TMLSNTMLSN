@@ -34,6 +34,9 @@ import {
 import { toDisplayWeight, fromDisplayWeight, toDisplayVolume, formatWeightDisplay } from '../../../utils/units';
 import { WorkoutSession, Exercise, Set, WorkoutSplit, SavedRoutine } from '../../../types';
 import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '../../../utils/helpers';
+import { resolveExerciseDbIdFromName } from '../../../utils/workoutMuscles';
+import { toExerciseUuid } from '../../../lib/getTmlsnTemplate';
+import { getAllExerciseSettings } from '../../../utils/exerciseSettings';
 import { scheduleRestTimerNotification, cancelNotification } from '../../../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../../../hooks/useButtonSound';
@@ -424,13 +427,27 @@ export default function WorkoutScreen({
     return () => clearInterval(interval);
   }, [restTimerActive, restTimeRemaining]);
 
-  const startWorkoutFromSplit = (split: WorkoutSplit) => {
-    const exercises: Exercise[] = split.exercises.map((template) => ({
-      id: generateId(),
-      name: template.name,
-      sets: [],
-      restTimer: template.restTimer,
-    }));
+  const startWorkoutFromSplit = async (split: WorkoutSplit) => {
+    const allSettings = await getAllExerciseSettings();
+    const exercises: Exercise[] = split.exercises.map((template) => {
+      const exerciseDbId = resolveExerciseDbIdFromName(template.name) ?? undefined;
+      const exerciseId = exerciseDbId ? toExerciseUuid(exerciseDbId) : toExerciseUuid(template.name);
+      const manual = (exerciseId in allSettings ? allSettings[exerciseId] : exerciseDbId && exerciseDbId in allSettings ? allSettings[exerciseDbId] : null) ?? null;
+      const built = buildExerciseFromRoutineTemplate({
+        name: template.name,
+        targetSets: template.targetSets,
+        targetReps: template.targetReps,
+        restTimer: template.restTimer,
+        suggestedWeight: template.suggestedWeight ?? 0,
+      }, 120);
+      return {
+        ...built,
+        exerciseDbId,
+        repRangeLow: manual?.repRangeLow ?? template.targetReps,
+        repRangeHigh: manual?.repRangeHigh ?? template.targetReps,
+        smallestIncrement: manual?.smallestIncrement ?? 2.5,
+      };
+    });
 
     const newWorkout: WorkoutSession = {
       id: generateId(),
@@ -448,10 +465,21 @@ export default function WorkoutScreen({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const startWorkoutFromSavedRoutine = (routine: SavedRoutine, defaultRestTimer: number = 120) => {
-    const exercises: Exercise[] = routine.exercises.map((ex) =>
-      buildExerciseFromRoutineTemplate(ex, defaultRestTimer)
-    );
+  const startWorkoutFromSavedRoutine = async (routine: SavedRoutine, defaultRestTimer: number = 120) => {
+    const allSettings = await getAllExerciseSettings();
+    const exercises: Exercise[] = routine.exercises.map((ex) => {
+      const built = buildExerciseFromRoutineTemplate(ex, defaultRestTimer);
+      const exerciseDbId = ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? undefined;
+      const exerciseId = exerciseDbId ? toExerciseUuid(exerciseDbId) : toExerciseUuid(ex.name);
+      const manual = (exerciseId in allSettings ? allSettings[exerciseId] : exerciseDbId && exerciseDbId in allSettings ? allSettings[exerciseDbId] : null) ?? null;
+      return {
+        ...built,
+        exerciseDbId,
+        repRangeLow: manual?.repRangeLow ?? ex.targetReps,
+        repRangeHigh: manual?.repRangeHigh ?? ex.targetReps,
+        smallestIncrement: manual?.smallestIncrement ?? 2.5,
+      };
+    });
 
     const newWorkout: WorkoutSession = {
       id: generateId(),
@@ -1111,17 +1139,16 @@ export default function WorkoutScreen({
                           </View>
                           <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
                           {(() => {
-                            const _exKey = exercise.exerciseDbId ?? exercise.name;
-                            const _p = _exKey ? prescriptions[_exKey] : null;
-                            if (!_p) return null;
-                            const { loadChangePercent } = buildPrevSetsAndGhost(exercise, prescriptions, recentSessions, weightUnit);
+                            const sessionsForProgression = activeWorkout ? recentSessions.filter((s) => s.id !== activeWorkout.id) : recentSessions;
+                            const ghost = buildPrevSetsAndGhost(exercise, prescriptions, sessionsForProgression, weightUnit);
+                            if (!ghost.ghostWeight && !ghost.ghostReps) return null;
                             let _label: string | null = null;
-                            if (_p.goal === 'add_load') {
-                              _label = loadChangePercent != null ? `↑ ${loadChangePercent.toFixed(1)}%` : '↑ Load';
-                            } else if (_p.goal === 'add_reps') {
+                            if (ghost.ghostReason === 'Add weight') {
+                              _label = ghost.loadChangePercent != null ? `↑ ${ghost.loadChangePercent.toFixed(1)}%` : '↑ Load';
+                            } else if (ghost.ghostReason === 'Build reps') {
                               _label = '+ Reps';
-                            } else if (_p.goal === 'reduce_load') {
-                              _label = loadChangePercent != null ? `↓ ${Math.abs(loadChangePercent).toFixed(1)}%` : '↓ Deload';
+                            } else if (ghost.ghostReason === 'Deload') {
+                              _label = ghost.loadChangePercent != null ? `↓ ${Math.abs(ghost.loadChangePercent).toFixed(1)}%` : '↓ Deload';
                             }
                             return _label ? <Text style={[styles.goalBadge, { color: colors.primaryLight + '50' }]}>{_label}</Text> : null;
                           })()}
@@ -1186,7 +1213,8 @@ export default function WorkoutScreen({
 
                       {(() => {
                         const exKey = exercise.exerciseDbId ?? exercise.name;
-                        const { prevSets, ghostWeight, ghostReps } = buildPrevSetsAndGhost(exercise, prescriptions, recentSessions, weightUnit);
+                        const sessionsForProgression = activeWorkout ? recentSessions.filter((s) => s.id !== activeWorkout.id) : recentSessions;
+                        const { prevSets, ghostWeight, ghostReps, ghostReason } = buildPrevSetsAndGhost(exercise, prescriptions, sessionsForProgression, weightUnit);
                         return (
                           <WorkoutSetTable
                             exercise={exercise}
@@ -1194,6 +1222,7 @@ export default function WorkoutScreen({
                             prevSets={prevSets}
                             ghostWeight={ghostWeight}
                             ghostReps={ghostReps}
+                            ghostReason={ghostReason}
                             prescription={exKey ? (prescriptions[exKey] ?? null) : null}
                             weightUnit={weightUnit}
                             colors={colors}

@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
-import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState, onHomeTab } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import Animated, {
@@ -174,6 +174,9 @@ export default function NutritionScreen({
   const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [homeTab, setHomeTab] = useState<'calories' | 'progress' | 'fitness'>('calories');
+  useEffect(() => {
+    return onHomeTab((tab) => setHomeTab(tab));
+  }, []);
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);

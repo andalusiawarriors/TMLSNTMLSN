@@ -169,6 +169,22 @@ function RootLayoutInner() {
           name="exercises"
           options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
         />
+        <Stack.Screen
+          name="week-builder"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="tmlsnai"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
       </Stack>
       {/* Active workout pill at root — visible above modals and overlay */}
       <ActiveWorkoutPill />

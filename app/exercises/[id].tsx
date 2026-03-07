@@ -20,7 +20,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Svg, { Polyline, Line, Rect, Text as SvgText, Circle } from 'react-native-svg';
 import { EXERCISE_MAP } from '../../utils/exerciseDb/exerciseDatabase';
-import { getWorkoutSessions } from '../../utils/storage';
+import { getWorkoutSessions, getUserSettings } from '../../utils/storage';
 import {
   getExerciseSettings,
   saveExerciseSettings,
@@ -319,6 +319,7 @@ export default function ExerciseDetailScreen() {
       ? INCREMENT_OPTIONS.indexOf(DEFAULT_EXERCISE_SETTINGS.smallestIncrement)
       : 1,
   );
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
   const [saveState,  setSaveState]  = useState<'idle' | 'saved'>('idle');
 
   const increment = INCREMENT_OPTIONS[incIdx];
@@ -330,13 +331,17 @@ export default function ExerciseDetailScreen() {
 
     (async () => {
       // Settings
-      const settings = await getExerciseSettings(id);
+      const [settings, userSettings] = await Promise.all([
+        getExerciseSettings(id),
+        getUserSettings(),
+      ]);
       if (!active) return;
       setIsFav(settings.favorite);
       setRepLow(settings.repRangeLow);
       setRepHigh(settings.repRangeHigh);
       const idx = INCREMENT_OPTIONS.indexOf(settings.smallestIncrement);
       setIncIdx(idx !== -1 ? idx : 1);
+      setWeightUnit((userSettings.weightUnit ?? 'kg') as 'kg' | 'lb');
 
       // Chart
       try {
@@ -514,7 +519,7 @@ export default function ExerciseDetailScreen() {
           <Text style={styles.algoExplain}>
             The TMLSN algorithm uses your rep range to decide when to increase weight.
             Once you hit all sets within the target rep range, it bumps the load by your
-            smallest increment.
+            weight increase.
           </Text>
 
           <View style={styles.stepperSection}>
@@ -531,9 +536,9 @@ export default function ExerciseDetailScreen() {
               onIncrement={() => setRepHigh((v) => v + 1)}
             />
             <Stepper
-              label="Smallest Increment"
+              label="Weight Increase"
               value={INCREMENT_OPTIONS[incIdx]}
-              display={`${INCREMENT_OPTIONS[incIdx]} lbs`}
+              display={`${INCREMENT_OPTIONS[incIdx]} ${weightUnit === 'kg' ? 'kg' : 'lbs'}`}
               onDecrement={() => setIncIdx((i) => Math.max(0, i - 1))}
               onIncrement={() => setIncIdx((i) => Math.min(INCREMENT_OPTIONS.length - 1, i + 1))}
             />

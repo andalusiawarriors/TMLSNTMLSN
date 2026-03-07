@@ -22,7 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
-import { BarcodeIcon, ClipboardText, MagnifyingGlass, UserCircle } from 'phosphor-react-native';
+import { BarcodeIcon, ClipboardText, MagnifyingGlass, Robot, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
 
@@ -406,9 +406,11 @@ export default function TabsLayout() {
   const popupCard0Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard1Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard2Anim = useRef(new RNAnimated.Value(0)).current;
+  const popupCard3Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCardPress0 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress1 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress2 = useRef(new RNAnimated.Value(1)).current;
+  const popupCardPress3 = useRef(new RNAnimated.Value(1)).current;
 
   // ══════════════════════════════════════════
   // SOUNDS — FAB + Popup (expo-audio)
@@ -528,8 +530,8 @@ export default function TabsLayout() {
   const openPopup = useCallback(() => {
     popupOverlayAnim.setValue(0);
     popupContentAnim.setValue(0);
-    [popupCard0Anim, popupCard1Anim, popupCard2Anim].forEach((a) => a.setValue(0));
-    [popupCardPress0, popupCardPress1, popupCardPress2].forEach((p) => p.setValue(1));
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim].forEach((a) => a.setValue(0));
+    [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3].forEach((p) => p.setValue(1));
 
     setShowPopup(true);
 
@@ -547,7 +549,7 @@ export default function TabsLayout() {
       useNativeDriver: true,
     }).start();
 
-    [popupCard0Anim, popupCard1Anim, popupCard2Anim].forEach((anim, i) => {
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim].forEach((anim, i) => {
       setTimeout(() => {
         RNAnimated.timing(anim, {
           toValue: 1,
@@ -631,21 +633,21 @@ export default function TabsLayout() {
   // ══════════════════════════════════════════
   // Popup card press animation
   // ══════════════════════════════════════════
-  const popupCardPressRefs = [popupCardPress0, popupCardPress1, popupCardPress2];
-  const cardPressIn = useCallback((card: 0 | 1 | 2) => {
+  const popupCardPressRefs = [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3];
+  const cardPressIn = useCallback((card: 0 | 1 | 2 | 3) => {
     const sv = popupCardPressRefs[card];
     if (sv) RNAnimated.timing(sv, { toValue: 0.92, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2]);
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3]);
 
-  const cardPressOut = useCallback((card: 0 | 1 | 2) => {
+  const cardPressOut = useCallback((card: 0 | 1 | 2 | 3) => {
     const sv = popupCardPressRefs[card];
     if (sv) RNAnimated.timing(sv, { toValue: 1, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2]);
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3]);
 
   // ══════════════════════════════════════════
   // Popup card select handlers
   // ══════════════════════════════════════════
-  const handleCardSelect = useCallback((card: 'saved' | 'search' | 'scan') => {
+  const handleCardSelect = useCallback((card: 'saved' | 'search' | 'scan' | 'tmlsnai') => {
     stopPopupAmbient();
     rotateTo(false);
 
@@ -663,7 +665,9 @@ export default function TabsLayout() {
       // list food: emit on nutrition tab (opens List Food modal); from other tabs use food-action-modal.
       // search food: always push to full search-food page.
       // scan: emit on nutrition (camera overlay); from other tabs use food-action-modal.
-      if (card === 'saved') {
+      if (card === 'tmlsnai') {
+        router.push('/tmlsnai');
+      } else if (card === 'saved') {
         if (isNutritionSelected) emitCardSelect('saved');
         else router.push({ pathname: '/food-action-modal', params: { card: 'saved' } });
       } else if (card === 'search') {
@@ -713,6 +717,7 @@ export default function TabsLayout() {
   const card0Style = makeCardStyle(popupCard0Anim, popupCardPress0);
   const card1Style = makeCardStyle(popupCard1Anim, popupCardPress1);
   const card2Style = makeCardStyle(popupCard2Anim, popupCardPress2);
+  const card3Style = makeCardStyle(popupCard3Anim, popupCardPress3);
 
   // ══════════════════════════════════════════════════════════════
   // CUSTOM TAB BAR — 3 layers: background, sliding pill, icons
@@ -1154,7 +1159,7 @@ export default function TabsLayout() {
                 />
               </RNAnimated.View>
               <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
-              <View style={{ width: '100%', maxWidth: 220, gap: POPUP_PILL_ROW_GAP }}>
+              <View style={{ width: '100%', maxWidth: 220, flexDirection: 'row', flexWrap: 'wrap', gap: POPUP_PILL_ROW_GAP, justifyContent: 'center' }}>
                 <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
@@ -1194,6 +1199,19 @@ export default function TabsLayout() {
                     </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
+                <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('tmlsnai')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
+                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
+                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
+                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
+                        <View style={popupStyles.pillInner}>
+                          <Robot size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>TMLSN AI</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                </RNAnimated.View>
               </View>
             </View>
             </View>
@@ -1209,8 +1227,9 @@ export default function TabsLayout() {
 
 const popupStyles = StyleSheet.create({
   pillRow: {
-    alignSelf: 'stretch',
-    minWidth: 0,
+    flex: 1,
+    minWidth: 95,
+    maxWidth: 120,
     height: POPUP_PILL_HEIGHT,
   },
   pillTouchable: {

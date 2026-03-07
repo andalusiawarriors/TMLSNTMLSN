@@ -99,9 +99,11 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   if (isSupabaseConfigured() && !uid) {
     return;
   }
+  const { resolveRepRangesForSession } = await import('@/lib/progression/resolveRepRange');
+  const sessionResolved = await resolveRepRangesForSession(session);
   if (uid && isSupabaseConfigured()) {
     try {
-      await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
+      await supabaseStorage.supabaseSaveWorkoutSession(uid, sessionResolved);
       return;
     } catch (error) {
       console.error('Error saving workout session:', error);
@@ -111,7 +113,7 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   try {
     const existingSessions = await getWorkoutSessions();
     // Upsert by id: replace existing session with same id (e.g. user edits then re-finishes)
-    const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== session.id), session];
+    const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== sessionResolved.id), sessionResolved];
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
   } catch (error) {
     console.error('Error saving workout session:', error);
@@ -191,7 +193,9 @@ export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
   }
   try {
     const data = await AsyncStorage.getItem(KEYS.WORKOUT_SESSIONS);
-    return data ? JSON.parse(data) : [];
+    const sessions: WorkoutSession[] = data ? JSON.parse(data) : [];
+    // Match Supabase order: most recent first (progression uses first match as "last session")
+    return sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   } catch (error) {
     console.error('Error getting workout sessions:', error);
     return [];
@@ -230,6 +234,28 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
   } catch (error) {
     console.error('Error deleting workout session:', error);
+    throw error;
+  }
+};
+
+export const deleteAllWorkoutSessions = async (): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseDeleteAllWorkoutSessions(uid);
+      return;
+    } catch (error) {
+      console.error('Error deleting all workout sessions:', error);
+      throw error;
+    }
+  }
+  try {
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify([]));
+  } catch (error) {
+    console.error('Error deleting all workout sessions:', error);
     throw error;
   }
 };

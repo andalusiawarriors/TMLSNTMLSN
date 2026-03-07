@@ -73,8 +73,10 @@ export type WorkoutSetTableProps = {
   onSetRowLayout?: (exerciseIndex: number, setIndex: number, y: number) => void;
   playIn: () => void;
   playOut: () => void;
-  /** Prescription for this exercise — used to power the ghost tooltip's Target line. */
+  /** Legacy: prescription from DB. Ghost values (ghostWeight/ghostReps) are canonical; prescription is fallback when no history. */
   prescription?: { nextWeight: number; goal: string } | null;
+  /** Human-readable reason for the ghost (e.g. "Add weight", "Build reps", "Deload"). Optional, for future tooltip. */
+  ghostReason?: string | null;
 };
 
 function AnimatedSetNoteRow({
@@ -144,6 +146,7 @@ export function WorkoutSetTable({
   playIn,
   playOut,
   prescription = null,
+  ghostReason,
 }: WorkoutSetTableProps) {
   const [editingCell, setEditingCell] = useState<{
     exerciseIndex: number;
@@ -306,12 +309,8 @@ export function WorkoutSetTable({
                             const _lastText = _prev
                               ? `${formatWeightDisplay(toDisplayWeight(_prev.weight, weightUnit), weightUnit)}×${_prev.reps}`
                               : '—';
-                            const _tw = prescription
-                              ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
-                              : (effectiveGhostWeight ?? '—');
-                            const _tr = prescription
-                              ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
-                              : (effectiveGhostReps ?? '—');
+                            const _tw = effectiveGhostWeight ?? '—';
+                            const _tr = effectiveGhostReps ?? '—';
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });
@@ -367,12 +366,8 @@ export function WorkoutSetTable({
                             const _lastText = _prev
                               ? `${formatWeightDisplay(toDisplayWeight(_prev.weight, weightUnit), weightUnit)}×${_prev.reps}`
                               : '—';
-                            const _tw = prescription
-                              ? formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit)
-                              : (effectiveGhostWeight ?? '—');
-                            const _tr = prescription
-                              ? (prescription.goal === 'add_load' ? (exercise.repRangeLow ?? 8) : (exercise.repRangeHigh ?? 12))
-                              : (effectiveGhostReps ?? '—');
+                            const _tw = effectiveGhostWeight ?? '—';
+                            const _tr = effectiveGhostReps ?? '—';
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current);
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });

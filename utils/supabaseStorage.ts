@@ -31,11 +31,12 @@ import {
 } from '../types';
 import { DEFAULT_SETTINGS } from '../constants/storageDefaults';
 import { resolveExerciseDbIdFromName } from './workoutMuscles';
+import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
 
 // workout_sets column for set ordering (DB may use set_number, set_order, order, etc.)
 const SET_ORDER_COLUMN = 'set_number';
 
-// --- Progressive overload (RPE-based prescription) ---
+// --- Progressive overload (canonical engine) ---
 
 type PrescriptionMeta = {
   repRangeLow: number;
@@ -46,47 +47,21 @@ type PrescriptionMeta = {
 
 type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
 
-type PrescriptionResult = { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load' };
-
-/**
- * Hypertrophy double-progression algorithm:
- *
- * ADVANCE (add_load):
- *   All completed sets hit repRangeHigh. If RPE is logged, require it's
- *   not above the target (so a hard grind at the top doesn't auto-advance).
- *
- * DELOAD (reduce_load):
- *   Any completed set falls below repRangeLow — the athlete couldn't stay
- *   in the prescribed range. OR any set had RPE ≥ 9.5 indicating very close
- *   to failure. Deload by 10 % (large enough to actually help recovery).
- *
- * STAY (add_reps):
- *   Default: same weight, aim for more reps next session.
- */
-function computeNextPrescription(meta: PrescriptionMeta, sets: PrescriptionSet[]): PrescriptionResult | null {
-  const workSets = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
-  if (workSets.length === 0) return null;
-
-  const lastSet = workSets[workSets.length - 1];
-  const workingWeight = lastSet.weight;
-  const { repRangeLow, repRangeHigh, smallestIncrement, defaultTargetRpe } = meta;
-
-  const allHitRepRangeHigh = workSets.every((s) => s.reps >= repRangeHigh);
-  const anyBelowRangeLow = workSets.some((s) => s.reps < repRangeLow);
-  const anyHighRpe = workSets.some((s) => (s.rpe ?? 0) >= 9.5);
-
-  // Advance: hit the top end of the rep range (and RPE is manageable if logged)
-  const rpeOkToAdvance = !workSets.some((s) => s.rpe != null && s.rpe > defaultTargetRpe + 0.5);
-  if (allHitRepRangeHigh && rpeOkToAdvance) {
-    return { nextWeight: workingWeight + smallestIncrement, goal: 'add_load' };
-  }
-
-  // Deload: reps dropped below the range floor OR RPE signalled near-failure
-  if (anyBelowRangeLow || anyHighRpe) {
-    return { nextWeight: workingWeight * 0.90, goal: 'reduce_load' };
-  }
-
-  return { nextWeight: workingWeight, goal: 'add_reps' };
+/** Uses canonical progression engine. meta.smallestIncrement in kg (e.g. 2.5). */
+function computeNextPrescription(
+  meta: PrescriptionMeta,
+  sets: PrescriptionSet[],
+  _weightUnit: 'kg' | 'lb'
+): { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load' } | null {
+  const incrementKg = Math.max(0.5, meta.smallestIncrement);
+  const decision = decideNextPrescription({
+    sets,
+    repRangeLow: meta.repRangeLow,
+    repRangeHigh: meta.repRangeHigh,
+    incrementKg,
+  });
+  if (!decision) return null;
+  return { nextWeight: decision.nextWeightLb, goal: decision.goal };
 }
 
 async function saveExercisePrescription(params: {
@@ -663,6 +638,9 @@ export async function supabaseSaveWorkoutSession(
         throw insertSetsError;
       }
 
+      const userSettings = await supabaseGetUserSettings(userId);
+      const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+
       for (const ex of session.exercises) {
         if (!ex.sets?.length) continue;
         const meta: PrescriptionMeta = {
@@ -677,7 +655,7 @@ export async function supabaseSaveWorkoutSession(
           rpe: s.rpe ?? null,
           completed: Boolean(s.completed ?? false),
         }));
-        const prescription = computeNextPrescription(meta, prescriptionSets);
+        const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
         if (!prescription) continue;
         const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
         const exerciseId = toExerciseProgressId(canonicalId);
@@ -751,6 +729,14 @@ export async function supabaseDeleteWorkoutSession(userId: string, sessionId: st
   await supabase.from('workout_sets').delete().eq('user_id', userId).eq('session_id', sessionId);
   await supabase.from('workout_exercises').delete().eq('user_id', userId).eq('session_id', sessionId);
   const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId).eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function supabaseDeleteAllWorkoutSessions(userId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not configured');
+  await supabase.from('workout_sets').delete().eq('user_id', userId);
+  await supabase.from('workout_exercises').delete().eq('user_id', userId);
+  const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId);
   if (error) throw error;
 }
 

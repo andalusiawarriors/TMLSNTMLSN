@@ -509,20 +509,28 @@ export default function TrainingSystemSettings() {
 
         {/* ── Training Archetype ── */}
         <SectionLabel>TRAINING ARCHETYPE</SectionLabel>
-        <View style={styles.cardGroup}>
-          {ARCHETYPES.map(arch => (
-            <SelectionCard
-              key={arch.id}
-              icon={arch.icon}
-              label={arch.label}
-              tag={arch.tag}
-              description={arch.description}
-              detail={arch.detail}
-              selected={training.archetype === arch.id}
-              onSelect={() => setArchetype(arch.id)}
-            />
-          ))}
+        {/* Only Bodybuilder is active — other archetypes are displayed but locked */}
+        <View style={[styles.cardGroup, { marginBottom: 4 }]}>
+          {ARCHETYPES.map(arch => {
+            const isLocked = arch.id !== 'bodybuilder';
+            return (
+              <SelectionCard
+                key={arch.id}
+                icon={arch.icon}
+                label={arch.label}
+                tag={isLocked ? 'Soon' : arch.tag}
+                description={arch.description}
+                detail={arch.detail}
+                selected={training.archetype === arch.id}
+                onSelect={isLocked ? () => {} : () => setArchetype(arch.id)}
+                disabled={isLocked}
+              />
+            );
+          })}
         </View>
+        <Text style={styles.archetypeLockNote}>
+          Only the Bodybuilder archetype is available in this build. Others are coming soon.
+        </Text>
 
         <View style={styles.divider} />
 
@@ -578,7 +586,7 @@ export default function TrainingSystemSettings() {
               detail={mode.detail}
               selected={training.scheduleMode === mode.id}
               onSelect={() => setScheduleMode(mode.id)}
-              disabled={mode.id === 'builder' || mode.id === 'ghost'}
+              disabled={false}
             >
               {training.scheduleMode === mode.id && mode.options.length > 0 && (
                 <View style={styles.toggleGroup}>
@@ -687,6 +695,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 4,
     paddingHorizontal: 2,
+  },
+
+  // Archetype lock note
+  archetypeLockNote: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    marginBottom: 12,
+    marginTop: 6,
+    paddingHorizontal: 2,
+    letterSpacing: 0.1,
+    lineHeight: 16,
   },
 
   // Card group

@@ -8,6 +8,21 @@ import { uuidToExerciseName, toExerciseUuid } from '@/lib/getTmlsnTemplate';
 import { resolveExerciseDbIdFromName } from '@/utils/workoutMuscles';
 import type { RecentSession, ExerciseTrend, Adherence } from './getWorkoutContext';
 
+const EMPTY_SUMMARY = {
+  recentSessions: [] as RecentSession[],
+  exerciseTrends: [] as ExerciseTrend[],
+  adherence: { sessions7d: 0, sessions28d: 0, lastWorkoutDate: null } as Adherence,
+  recentSessionCount: 0,
+  lastSessionDate: null as string | null,
+};
+
+function safeAwait<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 const EPLEY_E1RM = (weight: number, reps: number): number =>
   weight * (1 + reps / 30);
 
@@ -50,16 +65,33 @@ type SessionRow = { id: string; workout_time: string };
 type ExerciseRow = { id: string; session_id: string; exercise_db_id: string | null; name: string };
 type SetRow = { session_id: string; exercise_id: string; weight: number; reps: number; rpe: number | null };
 
+type TrainingSettingsFilter = { scheduleMode?: string | null; volumeFramework?: string } | null;
+
 /** Fetch raw workout data from workout_sessions + workout_exercises + workout_sets. */
-async function fetchWorkoutData(userId: string, limitSessions = 80) {
+async function fetchWorkoutData(
+  userId: string,
+  limitSessions = 30,
+  trainingSettings?: TrainingSettingsFilter
+) {
   if (!supabase) return { sessions: [] as SessionRow[], exercises: [] as ExerciseRow[], sets: [] as SetRow[] };
 
-  const { data: sessionsData } = await supabase
+  const isTmlsn =
+    trainingSettings?.scheduleMode === 'tmlsn' ||
+    trainingSettings?.scheduleMode === 'tmlsn_protocol' ||
+    trainingSettings?.volumeFramework === 'tmlsn_protocol';
+
+  let query = supabase
     .from('workout_sessions')
     .select('id, workout_time')
     .eq('user_id', userId)
     .order('workout_time', { ascending: false })
     .limit(limitSessions);
+
+  if (isTmlsn) {
+    query = query.eq('schedule_mode', 'tmlsn_protocol') as typeof query;
+  }
+
+  const { data: sessionsData } = await query;
 
   const sessions = (sessionsData ?? []) as SessionRow[];
   if (sessions.length === 0) return { sessions, exercises: [] as ExerciseRow[], sets: [] as SetRow[] };
@@ -101,8 +133,11 @@ function toSessionDate(workoutTime: string): string {
 }
 
 /** Last 14 distinct session dates, set counts + unique exercise count per date. */
-export async function getRecentSessions(userId: string): Promise<RecentSession[]> {
-  const { sessions, exercises, sets, exIdToCanonical } = await fetchWorkoutData(userId);
+export async function getRecentSessions(
+  userId: string,
+  trainingSettings?: TrainingSettingsFilter
+): Promise<RecentSession[]> {
+  const { sessions, exercises, sets, exIdToCanonical } = await fetchWorkoutData(userId, 30, trainingSettings);
   if (sessions.length === 0) return [];
 
   const sessionById = new Map(sessions.map((s) => [s.id, s]));
@@ -149,8 +184,11 @@ export async function getRecentSessions(userId: string): Promise<RecentSession[]
 }
 
 /** Top ~8 most trained exercises in last 28 days; e1rm trend (last 6 points), set count. */
-export async function getExerciseTrends(userId: string): Promise<ExerciseTrend[]> {
-  const { sessions, exercises, sets, exIdToCanonical } = await fetchWorkoutData(userId);
+export async function getExerciseTrends(
+  userId: string,
+  trainingSettings?: TrainingSettingsFilter
+): Promise<ExerciseTrend[]> {
+  const { sessions, exercises, sets, exIdToCanonical } = await fetchWorkoutData(userId, 30, trainingSettings);
   if (sessions.length === 0) return [];
 
   const cutoff = new Date();
@@ -219,8 +257,11 @@ export async function getExerciseTrends(userId: string): Promise<ExerciseTrend[]
 }
 
 /** Sessions in last 7 and 28 days, last workout date. */
-export async function getAdherence(userId: string): Promise<Adherence> {
-  const { sessions } = await fetchWorkoutData(userId, 200);
+export async function getAdherence(
+  userId: string,
+  trainingSettings?: TrainingSettingsFilter
+): Promise<Adherence> {
+  const { sessions } = await fetchWorkoutData(userId, 30, trainingSettings);
   if (sessions.length === 0) {
     return { sessions7d: 0, sessions28d: 0, lastWorkoutDate: null };
   }
@@ -246,13 +287,39 @@ export interface HistorySummary {
   recentSessions: RecentSession[];
   exerciseTrends: ExerciseTrend[];
   adherence: Adherence;
+  recentSessionCount: number;
+  lastSessionDate: string | null;
 }
 
-export async function getHistorySummary(userId: string): Promise<HistorySummary> {
-  const [recentSessions, exerciseTrends, adherence] = await Promise.all([
-    getRecentSessions(userId),
-    getExerciseTrends(userId),
-    getAdherence(userId),
-  ]);
-  return { recentSessions, exerciseTrends, adherence };
+export async function getHistorySummary(
+  userId: string | null,
+  trainingSettings?: TrainingSettingsFilter
+): Promise<HistorySummary> {
+  if (userId == null || userId === '') {
+    return { ...EMPTY_SUMMARY };
+  }
+  try {
+    const result = await safeAwait(
+      (async () => {
+        const [recentSessions, exerciseTrends, adherence] = await Promise.all([
+          getRecentSessions(userId, trainingSettings),
+          getExerciseTrends(userId, trainingSettings),
+          getAdherence(userId, trainingSettings),
+        ]);
+        const lastSessionDate = adherence.lastWorkoutDate ?? recentSessions[0]?.sessionDate ?? null;
+        return {
+          recentSessions,
+          exerciseTrends,
+          adherence,
+          recentSessionCount: recentSessions.length,
+          lastSessionDate,
+        };
+      })().catch(() => null),
+      4000
+    );
+    if (result == null) return { ...EMPTY_SUMMARY };
+    return result;
+  } catch {
+    return { ...EMPTY_SUMMARY };
+  }
 }

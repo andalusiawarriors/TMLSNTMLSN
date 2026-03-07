@@ -45,6 +45,8 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
     glutes:     { min: 4,  max: 16 },
     core:       { min: 6,  max: 20 },
   },
+  weekPlan: [],
+  weeklySessionTarget: 4,
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {

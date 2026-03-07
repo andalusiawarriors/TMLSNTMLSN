@@ -13,7 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, getYear, getMonth, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subWeeks, addWeeks } from 'date-fns';
-import { Clock, ChartBar, Barbell } from 'phosphor-react-native';
+import { Clock, ChartBar, Barbell, Trash } from 'phosphor-react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -25,7 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
-import { getWorkoutSessions, getUserSettings, deleteWorkoutSession } from '../utils/storage';
+import { getWorkoutSessions, getUserSettings, deleteWorkoutSession, deleteAllWorkoutSessions } from '../utils/storage';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
@@ -277,6 +277,32 @@ export default function WorkoutHistoryScreen() {
     }
   }, []);
 
+  const handleDeleteAll = useCallback(() => {
+    const count = sessions.filter((s) => s.isComplete).length;
+    if (count === 0) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      'Delete All Workouts?',
+      `This will permanently delete all ${count} workout${count !== 1 ? 's' : ''}. This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAllWorkoutSessions();
+              setSessions([]);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch {
+              Alert.alert('Error', 'Failed to delete all workouts.');
+            }
+          },
+        },
+      ]
+    );
+  }, [sessions]);
+
   const showOptions = useCallback((item: WorkoutSession) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
@@ -482,6 +508,18 @@ export default function WorkoutHistoryScreen() {
             <View>
               <Text style={styles.sectionTitle}>history.</Text>
               <Text style={styles.sectionSub}>{headerSubtitle}</Text>
+              {sessions.filter((s) => s.isComplete).length > 0 && (
+                <Pressable
+                  onPress={handleDeleteAll}
+                  style={({ pressed }) => [styles.deleteAllBtn, pressed && styles.deleteAllBtnPressed]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <View style={styles.deleteAllBtnInner}>
+                    <Trash size={15} color="rgba(255,107,107,0.95)" />
+                    <Text style={styles.deleteAllText}>Delete all workouts</Text>
+                  </View>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -608,6 +646,31 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   titleRowScroll: { alignSelf: 'flex-start', marginBottom: 12 },
+  deleteAllBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,107,0.28)',
+    backgroundColor: 'rgba(255,107,107,0.08)',
+  },
+  deleteAllBtnPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
+  },
+  deleteAllBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  deleteAllText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,107,107,0.95)',
+  },
   sectionTitle: {
     fontSize: 28,
     fontWeight: '700',

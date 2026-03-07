@@ -4,8 +4,8 @@ import type {
   VolumeStatus,
   TrainingSettings,
 } from './getWorkoutContext';
-
-const WEIGHT_INCREMENT_KG = 2.5;
+import { decideNextPrescription } from './progression/decideNextPrescription';
+import { toDisplayWeight } from '../utils/units';
 
 function getLastSessionSets(recentSets: ScheduledSet[]): ScheduledSet[] {
   if (recentSets.length === 0) return [];
@@ -13,74 +13,15 @@ function getLastSessionSets(recentSets: ScheduledSet[]): ScheduledSet[] {
   return recentSets.filter((s) => s.sessionDate === firstDate);
 }
 
-function hitTargetRepsAcrossAllSets(lastSets: ScheduledSet[]): boolean {
-  if (lastSets.length === 0) return false;
-  return lastSets.every((s) => {
-    const reps = s.reps ?? 0;
-    const target = s.targetReps ?? reps;
-    return target > 0 && reps >= target;
-  });
-}
-
-function maxRpeFromSets(sets: ScheduledSet[]): number | null {
-  const rpes = sets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
-  return rpes.length > 0 ? Math.max(...rpes) : null;
-}
-
-function avgRpeFromSets(sets: ScheduledSet[]): number | null {
-  const rpes = sets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
-  if (rpes.length === 0) return null;
-  return rpes.reduce((a, b) => a + b, 0) / rpes.length;
-}
-
-function getSessionGroups(recentSets: ScheduledSet[]): ScheduledSet[][] {
-  const groups: ScheduledSet[][] = [];
-  let current: ScheduledSet[] = [];
-  let lastDate: string | null = null;
-  for (const s of recentSets) {
-    if (lastDate !== s.sessionDate) {
-      if (current.length > 0) groups.push(current);
-      current = [];
-      lastDate = s.sessionDate;
-    }
-    current.push(s);
-  }
-  if (current.length > 0) groups.push(current);
-  return groups;
-}
-
-type RpeTrend = 'up' | 'down' | 'stable';
-
-function getRpeTrend(recentSets: ScheduledSet[]): RpeTrend | null {
-  const groups = getSessionGroups(recentSets).slice(0, 3);
-  if (groups.length < 2) return null;
-  const avgs = groups.map((g) => avgRpeFromSets(g)).filter((a): a is number => a != null);
-  if (avgs.length < 2) return null;
-  const newest = avgs[0];
-  const oldest = avgs[avgs.length - 1];
-  const diff = newest - oldest;
-  if (diff >= 0.5) return 'up';
-  if (diff <= -0.5) return 'down';
-  return 'stable';
-}
-
-function lastSessionSummary(lastSets: ScheduledSet[]): string {
+function lastSessionSummary(lastSets: ScheduledSet[], weightUnit: 'kg' | 'lb'): string {
   if (lastSets.length === 0) return '—';
-  const w = lastSets[0].weight ?? 0;
+  const wLb = lastSets[0].weight ?? 0;
+  const w = toDisplayWeight(wLb, weightUnit);
   const reps = lastSets.map((s) => s.reps ?? 0).join(',');
-  const rpe = maxRpeFromSets(lastSets);
-  if (rpe != null) return `${w}×${reps} (RPE ${rpe})`;
-  return `${w}×${reps}`;
-}
-
-function lastSessionTargetWeight(lastSets: ScheduledSet[]): number | null {
-  const w = lastSets.find((s) => s.targetWeight != null)?.targetWeight ?? lastSets[0]?.weight;
-  return w != null ? w : null;
-}
-
-function lastSessionTargetReps(lastSets: ScheduledSet[]): number | null {
-  const r = lastSets.find((s) => s.targetReps != null)?.targetReps ?? lastSets[0]?.reps;
-  return r != null ? r : null;
+  const rpeVals = lastSets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
+  const rpe = rpeVals.length > 0 ? Math.max(...rpeVals) : null;
+  if (rpe != null) return `${w} ${weightUnit} × ${reps} (RPE ${rpe})`;
+  return `${w} ${weightUnit} × ${reps}`;
 }
 
 function volumeMessage(
@@ -123,6 +64,8 @@ export function generateBriefing(context: WorkoutContext): string {
 
   const history = exerciseHistory ?? [];
   const names = todayPlan.exerciseNames ?? [];
+  const details = context.todayExerciseDetails ?? [];
+  const weightUnit = (context.weightUnit ?? 'lb') as 'kg' | 'lb';
 
   for (let i = 0; i < todayPlan.exerciseIds.length; i++) {
     const displayName = names[i] ?? `Exercise ${i + 1}`;
@@ -139,58 +82,35 @@ export function generateBriefing(context: WorkoutContext): string {
       continue;
     }
 
-    const lastStr = lastSessionSummary(lastSets);
-    let targetWeight: number;
-    let targetReps: number;
-    let note: string | null = null;
+    const lastStr = lastSessionSummary(lastSets, weightUnit);
+    const exDetail = details[i];
+    const repRangeLow = exDetail?.repRangeLow ?? 8;
+    const repRangeHigh = exDetail?.repRangeHigh ?? 12;
+    const incrementKg = exDetail?.smallestIncrementKg ?? 2.5;
 
-    if (framework === 'builder') {
-      const baseWeight = lastSessionTargetWeight(lastSets) ?? 0;
-      const baseReps = lastSessionTargetReps(lastSets) ?? 8;
-      const hitTarget = hitTargetRepsAcrossAllSets(lastSets);
-      const maxRpe = maxRpeFromSets(lastSets);
+    const workingSets = lastSets.map((s) => ({
+      weight: s.weight ?? 0,
+      reps: s.reps ?? 0,
+      rpe: s.rpe ?? null,
+      completed: true,
+    }));
 
-      if (maxRpe != null && maxRpe >= 9) {
-        targetWeight = baseWeight;
-        targetReps = baseReps;
-        note = 'Autoregulate today.';
-      } else if (hitTarget) {
-        targetWeight = baseWeight + WEIGHT_INCREMENT_KG;
-        targetReps = baseReps;
-      } else {
-        targetWeight = baseWeight;
-        targetReps = baseReps;
-      }
-    } else if (framework === 'ghost') {
-      const baseWeight = lastSessionTargetWeight(lastSets) ?? 0;
-      const baseReps = lastSessionTargetReps(lastSets) ?? 8;
-      const trend = getRpeTrend(recentSets);
+    const decision = decideNextPrescription({
+      sets: workingSets,
+      repRangeLow,
+      repRangeHigh,
+      incrementKg,
+    });
 
-      if (trend === 'up') {
-        targetWeight = Math.max(0, baseWeight - WEIGHT_INCREMENT_KG);
-        targetReps = baseReps;
-        note = 'RPE trending up. Reduce load.';
-      } else if (trend === 'stable') {
-        targetWeight = baseWeight;
-        targetReps = baseReps + 1;
-        note = 'Add a rep.';
-      } else if (trend === 'down') {
-        targetWeight = baseWeight + WEIGHT_INCREMENT_KG;
-        targetReps = baseReps;
-        note = 'Add weight.';
-      } else {
-        targetWeight = baseWeight;
-        targetReps = baseReps;
-      }
-    } else {
-      const baseWeight = lastSessionTargetWeight(lastSets) ?? 0;
-      const baseReps = lastSessionTargetReps(lastSets) ?? 8;
-      targetWeight = baseWeight;
-      targetReps = baseReps;
-    }
+    const targetWeight =
+      weightUnit === 'kg' ? (decision?.nextWeightKg ?? 0) : (decision?.nextWeightLb ?? 0);
+    const targetReps = decision?.nextRepTarget ?? repRangeLow;
+    const note = decision?.reason ?? null;
 
     lines.push(`Last    ${lastStr}`);
-    lines.push(`Target  ${targetWeight > 0 ? `${targetWeight} kg` : '—'}  ×  ${targetReps}`);
+    lines.push(
+      `Target  ${targetWeight > 0 ? `${targetWeight} ${weightUnit}` : '—'}  ×  ${targetReps}`
+    );
     if (note) lines.push(note);
     lines.push('');
   }

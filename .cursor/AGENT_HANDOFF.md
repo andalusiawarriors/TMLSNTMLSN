@@ -27,7 +27,9 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| Workout nav | Fixed discard/start glitch: discardWorkout auto-navigates to origin; fitness-hub-* use router.replace; workout tab auto-redirects to home when empty | `context/ActiveWorkoutContext.tsx`, `app/fitness-hub-tmlsn-routines.tsx`, `app/fitness-hub-your-routines.tsx`, `app/fitness-hub-start-empty.tsx`, `app/workout-save.tsx`, `app/(tabs)/workout/index.tsx` | — | Mar 5 |
+| | None | | | |
+*Just finished: tmlsnAI prescription explanation tightening — structured prescription with workingSetsAnalyzed/allSetsAtTopRange; strict EXERCISE_EXPLANATION_TEMPLATE for build_reps; precise wording rules; no single-set attribution.*
+*Just finished: Progressive overload canonical engine — generateBriefing + tmlsnai now use decideNextPrescription; removed builder/ghost framework-specific logic from both.*
 *Just finished: Workout navigation overhaul — eliminated router.back()+setTimeout race in fitness-hub flat routes (now use router.dismiss()+router.navigate); fixed "Go to home" flash by guarding startEmpty param; fixed fallback paths in workout/tmlsn-routines and workout/your-routines to use /(tabs)/workout; fixed FitnessGraphWidget and progress-graph "Start workout" to go to /(tabs)/nutrition instead of /(tabs)/workout.*
 *Just finished: Workout home "Recent" screen removed — replaced with minimal "Go to home" redirect; removed exploreHeader, Recent list, settings/history links; unused imports (Gear, List, Clock, Database, ImageBackground) cleaned.*
 *Just finished: FitnessHub wrong-page fix + polish — WorkoutPill: replaced TiltPressable with Pressable (fixes Your workouts → Empty bug); pass route explicitly to onPress; collapsable={false}; hitSlop; PILL_GAP 14, PILL_HEIGHT 76; overlay modal card styling; CaretRight on pills; pill icon/label polish.*
@@ -75,6 +77,9 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+- `hooks/useJarvis.ts` – tmlsnAI prescription: formatExercisePrescriptionForQuestion (workingSetsAnalyzed, allSetsAtTopRange, lastSessionDate); EXERCISE_EXPLANATION_TEMPLATE; strict build_reps wording
+- `supabase/migrations/010_workout_posts_no_cascade.sql`, `components/explore/ExplorePostDetailModal.tsx` – Deleting workouts no longer deletes posts: migration drops CASCADE FK; modal shows "Workout no longer available" when post has session_id but workout data is gone
+- `components/ShinyText.tsx`, `components/TodaysSessionCarousel.tsx` – ShinyText: Customize settings (speed 5s, delay 0s, spread 120°, #b5b5b5/#ffffff, left, no yoyo) + silver-gradient style
 - `components/FitnessHub.tsx` – FitnessHub Back fix: use root modals instead of workout tab nav
 - `lib/getWorkoutContext.ts`, `hooks/useJarvis.ts` – JARVIS: ghost reps/sets, rep range low/high, weight increment (lb+kg), TMLSN progressive overload algorithm, WEIGHT_UNIT, todayExerciseDetails
 - `utils/rpe.ts`, `utils/workoutSetTable.ts`, `components/WorkoutSetTable.tsx`, `app/(tabs)/workout/index.tsx`, `app/workout-edit.tsx` – Zero-divergence set table: shared WorkoutSetTable (SET|PREVIOUS|KG/LB|REPS|RPE|✓), editing/RPE popup/ghost apply/swipe-to-delete inside component; buildPrevSetsAndGhost helper; active workout and edit past workout both use same component; no UI/design changes.

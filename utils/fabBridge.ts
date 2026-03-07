@@ -137,3 +137,17 @@ export function onHomeSearchState(fn: BoolCb): VoidCb {
     if (i >= 0) homeSearchListeners.splice(i, 1);
   };
 }
+
+// ── Home tab switch (FitnessHub → nutrition.tsx) ──
+type HomeTab = 'calories' | 'progress' | 'fitness';
+const homeTabListeners: ((tab: HomeTab) => void)[] = [];
+export function emitHomeTab(tab: HomeTab) {
+  homeTabListeners.forEach(fn => fn(tab));
+}
+export function onHomeTab(fn: (tab: HomeTab) => void): () => void {
+  homeTabListeners.push(fn);
+  return () => {
+    const i = homeTabListeners.indexOf(fn);
+    if (i >= 0) homeTabListeners.splice(i, 1);
+  };
+}

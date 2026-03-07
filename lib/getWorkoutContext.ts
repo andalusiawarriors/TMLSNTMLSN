@@ -5,7 +5,10 @@ import { getLocalDayName, getLocalMondayYMD } from '@/lib/time';
 import * as supabaseStorage from '@/utils/supabaseStorage';
 import { resolveExerciseDbIdFromName } from '@/utils/workoutMuscles';
 import { toDisplayWeight, formatWeightDisplay } from '@/utils/units';
-import { KG_PER_LB } from '@/utils/units';
+import { KG_PER_LB, LB_PER_KG } from '@/utils/units';
+import { resolveRepRangesForExercises, type ResolveRepRangeInputFull } from '@/lib/progression/resolveRepRange';
+import { decideNextPrescription } from '@/lib/progression/decideNextPrescription';
+import { TMLSN_SPLITS } from '@/constants/workoutSplits';
 
 // ─── TMLSN Protocol Schedule (when schedule mode is TMLSN) ─────────────────────
 export const TMLSN_PROTOCOL_SCHEDULE = [
@@ -90,16 +93,33 @@ export interface Adherence {
   lastWorkoutDate: string | null;
 }
 
-/** Per-exercise details for JARVIS: ghost, rep range, weight increment. */
+/** Human-readable action for JARVIS prompts. Never leak enum strings. */
+export type PrescriptionActionPhrase = 'build reps' | 'increase weight' | 'deload';
+
+/** Basis for the prescription (from last session analysis). */
+export interface PrescriptionBasedOn {
+  lastSessionDate: string | null;
+  workingSetsAnalyzed: number;
+  maxRpe: number | null;
+  hitTopRange: boolean;
+}
+
+/** Per-exercise details for JARVIS: exact computed prescription from canonical engine. */
 export interface TodayExerciseDetail {
   exerciseName: string;
   ghostWeight: string | null;
   ghostReps: string | null;
   repRangeLow: number;
   repRangeHigh: number;
-  /** Stored in lb; use for both units with conversion when user uses kg */
-  smallestIncrementLb: number;
+  /** Increment in kg (for engine). */
   smallestIncrementKg: number;
+  /** Increment in user's display unit (e.g. "2.5 kg" or "5.5 lb") */
+  incrementDisplay: string;
+  /** Human phrase: "build reps" | "increase weight" | "deload" — never add_reps/add_load/reduce_load */
+  action: PrescriptionActionPhrase | null;
+  reason: string | null;
+  basedOn: PrescriptionBasedOn | null;
+  /** Legacy; prefer action. Kept for backwards compat. */
   goal: string | null;
 }
 
@@ -123,6 +143,22 @@ export interface WorkoutContext {
   weightUnit?: 'kg' | 'lb';
   /** Per-exercise ghost, rep range, increment for today's exercises */
   todayExerciseDetails?: TodayExerciseDetail[];
+  /** Extended fields for JARVIS coaching */
+  scheduleMode?: string | null;
+  archetype?: string;
+  volumeFramework?: string;
+  todaySessionLabel?: string;
+  trainedToday?: boolean;
+  lastSession?: string | null;
+  totalKcal?: number;
+  carbsG?: number;
+  proteinG?: number;
+  carbsLow?: boolean;
+  hasNutritionData?: boolean;
+  recentSessionCount?: number;
+  lastSessionDate?: string | null;
+  coachingSignal?: 'empty' | 'pre_workout_carbs_low' | 'post_workout_carbs_low' | 'session_complete' | 'session_upcoming' | 'neutral';
+  hasEnoughDataForCoaching?: boolean;
 }
 
 // ─── All-exercise history fetch (from workout_sessions + workout_sets) ─────────
@@ -187,7 +223,11 @@ async function fetchAllTmlsnExerciseHistory(
   return result;
 }
 
-/** Build per-exercise details (ghost, rep range, increment) for JARVIS. */
+function actionToPhrase(action: 'deload' | 'add_weight' | 'build_reps'): PrescriptionActionPhrase {
+  return action === 'deload' ? 'deload' : action === 'add_weight' ? 'increase weight' : 'build reps';
+}
+
+/** Build per-exercise details from canonical progression engine. Single source of truth for JARVIS. */
 async function buildTodayExerciseDetails(
   userId: string,
   todayPlan: TodayPlan,
@@ -202,46 +242,108 @@ async function buildTodayExerciseDetails(
     return db.localeCompare(da);
   });
 
-  return todayPlan.exerciseIds.map((exerciseId, i) => {
-    const exerciseName = todayPlan.exerciseNames?.[i] ?? uuidToExerciseName(exerciseId) ?? 'Unknown';
+  const split = TMLSN_SPLITS.find((s) => s.name === (todayPlan.workoutType ?? ''));
 
-    let repRangeLow = 8;
-    let repRangeHigh = 12;
-    let smallestIncrementLb = 2.5;
+  const resolveItems: ResolveRepRangeInputFull[] = todayPlan.exerciseIds.map((exerciseId, i) => {
+    const exerciseName = todayPlan.exerciseNames?.[i] ?? uuidToExerciseName(exerciseId) ?? 'Unknown';
+    const splitEx = split?.exercises.find((e) => e.name.toLowerCase() === exerciseName.toLowerCase());
+    let historyRepRangeLow: number | undefined;
+    let historyRepRangeHigh: number | undefined;
+    let historySmallestIncrement: number | undefined;
 
     for (const session of sortedSessions) {
-      const matchEx = session.exercises?.find((e) => e.id === exerciseId || (e.exerciseDbId && toExerciseUuid(e.exerciseDbId) === exerciseId));
+      const matchEx = session.exercises?.find(
+        (e) => toCanonicalExUuid(e.exerciseDbId, e.name) === exerciseId
+      );
       if (matchEx) {
-        repRangeLow = matchEx.repRangeLow ?? 8;
-        repRangeHigh = matchEx.repRangeHigh ?? 12;
-        smallestIncrementLb = matchEx.smallestIncrement ?? 2.5;
+        historyRepRangeLow = matchEx.repRangeLow ?? undefined;
+        historyRepRangeHigh = matchEx.repRangeHigh ?? undefined;
+        historySmallestIncrement = matchEx.smallestIncrement ?? undefined;
         break;
       }
     }
 
-    const smallestIncrementKg = Math.round(smallestIncrementLb * KG_PER_LB * 100) / 100;
+    return {
+      exerciseId,
+      splitTargetReps: splitEx?.targetReps,
+      historyRepRangeLow,
+      historyRepRangeHigh,
+      historySmallestIncrement,
+    };
+  });
 
-    const prescription = prescriptions[exerciseId];
+  const resolved = await resolveRepRangesForExercises(resolveItems);
+
+  return todayPlan.exerciseIds.map((exerciseId, i) => {
+    const exerciseName = todayPlan.exerciseNames?.[i] ?? uuidToExerciseName(exerciseId) ?? 'Unknown';
+    const r = resolved.get(exerciseId) ?? { repRangeLow: 8, repRangeHigh: 12, smallestIncrement: 2.5 };
+    const repRangeLow = r.repRangeLow;
+    const repRangeHigh = r.repRangeHigh;
+    const incrementKg = r.smallestIncrement;
+    const incrementLb = Math.round(incrementKg * LB_PER_KG * 100) / 100;
+    const incrementDisplay = weightUnit === 'kg' ? `${incrementKg} kg` : `${incrementLb} lb`;
+
     let ghostWeight: string | null = null;
     let ghostReps: string | null = null;
+    let action: PrescriptionActionPhrase | null = null;
+    let reason: string | null = null;
+    let basedOn: PrescriptionBasedOn | null = null;
+    let goal: string | null = null;
 
-    if (prescription) {
-      ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
-      ghostReps = String(prescription.goal === 'add_load' ? repRangeLow : repRangeHigh);
+    // Find last session with this exercise and run canonical engine
+    for (const session of sortedSessions) {
+      const matchEx = session.exercises?.find(
+        (e) => toCanonicalExUuid(e.exerciseDbId, e.name) === exerciseId
+      );
+      if (!matchEx) continue;
+
+      const doneSets = (matchEx.sets ?? []).filter((s) => (s.weight ?? 0) > 0 && (s.reps ?? 0) > 0);
+      if (doneSets.length === 0) continue;
+
+      const sessionDate = session.date?.slice(0, 10) ?? '';
+      const workingSets = doneSets.map((s) => ({
+        weight: s.weight ?? 0,
+        reps: s.reps ?? 0,
+        rpe: s.rpe ?? null,
+        completed: true,
+      }));
+
+      const decision = decideNextPrescription({
+        sets: workingSets,
+        repRangeLow,
+        repRangeHigh,
+        incrementKg,
+      });
+
+      if (decision) {
+        ghostWeight = formatWeightDisplay(toDisplayWeight(decision.nextWeightLb, weightUnit), weightUnit);
+        ghostReps = String(decision.nextRepTarget);
+        action = actionToPhrase(decision.action);
+        reason = decision.reason;
+        goal = decision.goal;
+        const rpeVals = workingSets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
+        basedOn = {
+          lastSessionDate: sessionDate,
+          workingSetsAnalyzed: workingSets.length,
+          maxRpe: rpeVals.length > 0 ? Math.max(...rpeVals) : null,
+          hitTopRange: decision.debug.hitTopRange,
+        };
+      } else {
+        const last = doneSets[doneSets.length - 1];
+        ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
+        ghostReps = String(last.reps);
+      }
+      break;
     }
 
+    // Fallback when no history: use DB prescription
     if (!ghostWeight || !ghostReps) {
-      for (const session of sortedSessions) {
-        const matchEx = session.exercises?.find((e) => e.id === exerciseId || (e.exerciseDbId && toExerciseUuid(e.exerciseDbId) === exerciseId));
-        if (matchEx) {
-          const doneSets = (matchEx.sets ?? []).filter((s) => s.weight > 0 && s.reps > 0);
-          if (doneSets.length > 0) {
-            const last = doneSets[doneSets.length - 1];
-            if (!ghostWeight) ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
-            if (!ghostReps) ghostReps = String(last.reps);
-          }
-          break;
-        }
+      const prescription = prescriptions[exerciseId];
+      if (prescription) {
+        ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
+        ghostReps = String(prescription.goal === 'add_load' ? repRangeLow : repRangeHigh);
+        goal = prescription.goal;
+        action = prescription.goal === 'add_load' ? 'increase weight' : prescription.goal === 'reduce_load' ? 'deload' : 'build reps';
       }
     }
 
@@ -251,9 +353,12 @@ async function buildTodayExerciseDetails(
       ghostReps,
       repRangeLow,
       repRangeHigh,
-      smallestIncrementLb,
-      smallestIncrementKg,
-      goal: prescription?.goal ?? null,
+      smallestIncrementKg: incrementKg,
+      incrementDisplay,
+      action,
+      reason,
+      basedOn,
+      goal,
     };
   });
 }
@@ -300,254 +405,387 @@ async function fetchExerciseHistoryFromSessions(
   });
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getTodaySessionLabel(
+  scheduleMode: string | null | undefined,
+  volumeFramework: string | undefined,
+  todayPlan: TodayPlan | null,
+  schedule: readonly { day: string; workoutType: string | null; isRestDay: boolean }[]
+): string {
+  const dayName = getLocalDayName();
+  const entry = Array.isArray(schedule) ? schedule.find((e) => e?.day === dayName) : null;
+
+  if (scheduleMode === 'tmlsn' || scheduleMode === 'tmlsn_protocol' || volumeFramework === 'tmlsn_protocol') {
+    if (entry?.isRestDay) return 'Rest Day';
+    return entry?.workoutType ?? todayPlan?.workoutType ?? 'Today';
+  }
+  if (scheduleMode === 'builder' && entry) {
+    if (entry.isRestDay) return 'Rest Day';
+    return entry.workoutType ?? todayPlan?.workoutType ?? 'Today';
+  }
+  return todayPlan?.workoutType ?? 'Today';
+}
+
+function buildDegradedContext(userId: string): WorkoutContext {
+  return {
+    userId,
+    fetchedAt: new Date().toISOString(),
+    trainingSettings: null,
+    todayPlan: null,
+    exerciseHistory: null,
+    weeklyVolume: [],
+    tmlsnProtocolSchedule: undefined,
+    recentSessionCount: 0,
+    lastSessionDate: null,
+    coachingSignal: 'empty',
+    hasEnoughDataForCoaching: false,
+  };
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function getTodayWorkoutContext(
   userId: string
 ): Promise<WorkoutContext> {
-  if (!userId || typeof userId !== 'string') {
-    throw new Error('getTodayWorkoutContext requires a non-empty userId');
-  }
-
+  const effectiveUserId = userId && typeof userId === 'string' ? userId : '';
   const dayName = getLocalDayName();
   const mondayYMD = getLocalMondayYMD();
   const lookupDay = dayName;
 
-  if (__DEV__) {
-    console.log('[getWorkoutContext] userId=', userId.slice(0, 8) + '...', 'dayName=', dayName, 'lookupDay=', lookupDay, 'mondayYMD=', mondayYMD);
+  if (__DEV__ && effectiveUserId) {
+    console.log('[getWorkoutContext] userId=', effectiveUserId.slice(0, 8) + '...', 'dayName=', dayName, 'lookupDay=', lookupDay, 'mondayYMD=', mondayYMD);
+  }
+
+  if (!effectiveUserId) {
+    return buildDegradedContext(effectiveUserId || 'anonymous');
   }
 
   if (!supabase) {
-    return {
-      userId,
-      fetchedAt: new Date().toISOString(),
-      trainingSettings: null,
-      todayPlan: null,
-      exerciseHistory: null,
-      weeklyVolume: [],
-      tmlsnProtocolSchedule: undefined,
-    };
+    return buildDegradedContext(effectiveUserId);
   }
 
-  // Parallel: training_settings + today's schedule + weekly volume + history summary
-  const [settingsRes, scheduleRes, volumeRes, historySummary] = await Promise.all([
-    supabase
-      .from('training_settings')
-      .select('volume_framework, schedule_mode, current_week')
-      .eq('user_id', userId)
-      .maybeSingle(),
+  try {
+    // Parallel: training_settings + today's schedule + weekly volume (history fetched after we have trainingSettings)
+    const [settingsRes, scheduleRes, volumeRes] = await Promise.all([
+      supabase
+        .from('training_settings')
+        .select('volume_framework, schedule_mode, current_week')
+        .eq('user_id', effectiveUserId)
+        .maybeSingle(),
 
-    supabase
-      .from('workout_schedule')
-      .select('day_of_week, workout_type, exercise_ids, is_rest_day')
-      .eq('user_id', userId)
-      .eq('day_of_week', lookupDay)
-      .maybeSingle(),
+      supabase
+        .from('workout_schedule')
+        .select('day_of_week, workout_type, exercise_ids, is_rest_day')
+        .eq('user_id', effectiveUserId)
+        .eq('day_of_week', lookupDay)
+        .maybeSingle(),
 
-    supabase
-      .from('weekly_volume_summary')
-      .select('muscle_group, week_start, sets_done, mev, mav, mrv')
-      .eq('user_id', userId)
-      .eq('week_start', mondayYMD),
-
-    getHistorySummary(userId),
-  ]);
-
-
-  // Debug: if schedule/settings null with no error, confirm rows exist
-  if (__DEV__ && !settingsRes.error && !scheduleRes.error && (!settingsRes.data || !scheduleRes.data)) {
-    const [tsCount, wsCount] = await Promise.all([
-      supabase.from('training_settings').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      supabase.from('workout_schedule').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      supabase
+        .from('weekly_volume_summary')
+        .select('muscle_group, week_start, sets_done, mev, mav, mrv')
+        .eq('user_id', effectiveUserId)
+        .eq('week_start', mondayYMD),
     ]);
-    console.log('[getWorkoutContext] debug: training_settings count=', tsCount.count, 'tsError=', tsCount.error);
-    console.log('[getWorkoutContext] debug: workout_schedule count=', wsCount.count, 'wsError=', wsCount.error);
-  }
 
-  // Map training settings (fallback to user_settings when training_settings table is empty)
-  let trainingSettings: TrainingSettings | null = null;
-  if (settingsRes.data) {
-    const r = settingsRes.data;
-    trainingSettings = {
-      volumeFramework: r.volume_framework as TrainingSettings['volumeFramework'],
-      scheduleMode: r.schedule_mode ?? null,
-      currentWeek: r.current_week,
-    };
-  } else {
-    try {
-      const userSettings = await supabaseStorage.supabaseGetUserSettings(userId);
-      const t = userSettings.training;
-      if (t) {
-        trainingSettings = {
-          volumeFramework: 'builder' as const,
-          scheduleMode: t.scheduleMode ?? null,
-          currentWeek: 1,
-        };
+    // Map training settings first (needed for getHistorySummary filter)
+    let trainingSettings: TrainingSettings | null = null;
+    if (settingsRes.data) {
+      const r = settingsRes.data;
+      trainingSettings = {
+        volumeFramework: r.volume_framework as TrainingSettings['volumeFramework'],
+        scheduleMode: r.schedule_mode ?? null,
+        currentWeek: r.current_week,
+      };
+    } else {
+      try {
+        const userSettings = await supabaseStorage.supabaseGetUserSettings(effectiveUserId);
+        const t = userSettings.training;
+        if (t) {
+          trainingSettings = {
+            volumeFramework: (t.volumeFramework as TrainingSettings['volumeFramework']) ?? 'builder',
+            scheduleMode: t.scheduleMode ?? null,
+            currentWeek: 1,
+          };
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
-  }
 
-  const isTmlsnProtocol =
+    // History summary with schedule_mode filter applied inside (4s timeout, never throws)
+    const historySummary = await getHistorySummary(effectiveUserId, trainingSettings);
+
+
+    // Debug: if schedule/settings null with no error, confirm rows exist
+    if (__DEV__ && !settingsRes.error && !scheduleRes.error && (!settingsRes.data || !scheduleRes.data)) {
+      const [tsCount, wsCount] = await Promise.all([
+        supabase.from('training_settings').select('id', { count: 'exact', head: true }).eq('user_id', effectiveUserId),
+        supabase.from('workout_schedule').select('id', { count: 'exact', head: true }).eq('user_id', effectiveUserId),
+      ]);
+      console.log('[getWorkoutContext] debug: training_settings count=', tsCount.count, 'tsError=', tsCount.error);
+      console.log('[getWorkoutContext] debug: workout_schedule count=', wsCount.count, 'wsError=', wsCount.error);
+    }
+
+    const isTmlsnProtocol =
     trainingSettings?.scheduleMode === 'tmlsn' ||
+    trainingSettings?.scheduleMode === 'tmlsn_protocol' ||
     trainingSettings?.volumeFramework === 'tmlsn_protocol';
 
-  const allExerciseHistory = isTmlsnProtocol && supabase
-    ? await fetchAllTmlsnExerciseHistory(userId, supabase)
-    : undefined;
+    const allExerciseHistory = isTmlsnProtocol && supabase
+      ? await fetchAllTmlsnExerciseHistory(effectiveUserId, supabase)
+      : undefined;
 
-  if (__DEV__) {
-    if (settingsRes.error) console.warn('[getWorkoutContext] training_settings error:', settingsRes.error);
-    if (scheduleRes.error) console.warn('[getWorkoutContext] workout_schedule error:', scheduleRes.error);
-    if (volumeRes.error) console.warn('[getWorkoutContext] weekly_volume_summary error:', volumeRes.error);
-    const scheduleRow = scheduleRes.data ? 'YES' : 'NO';
-    console.log('[getWorkoutContext] dayName=', dayName, 'scheduleRow=', scheduleRow, 'isTmlsnProtocol=', isTmlsnProtocol);
-  }
+    if (__DEV__) {
+      if (settingsRes.error) console.warn('[getWorkoutContext] training_settings error:', settingsRes.error);
+      if (scheduleRes.error) console.warn('[getWorkoutContext] workout_schedule error:', scheduleRes.error);
+      if (volumeRes.error) console.warn('[getWorkoutContext] weekly_volume_summary error:', volumeRes.error);
+      const scheduleRow = scheduleRes.data ? 'YES' : 'NO';
+      console.log('[getWorkoutContext] dayName=', dayName, 'scheduleRow=', scheduleRow, 'isTmlsnProtocol=', isTmlsnProtocol);
+    }
 
-  // Map weekly volume
-  const weeklyVolume: VolumeStatus[] = (volumeRes.data ?? []).map((row) => ({
-    muscleGroup: row.muscle_group ?? '',
-    weekStart: row.week_start ?? '',
-    setsDone: Number(row.sets_done ?? 0),
-    mev: row.mev ?? null,
-    mav: row.mav ?? null,
-    mrv: row.mrv ?? null,
-  }));
+    // Map weekly volume
+    const weeklyVolume: VolumeStatus[] = (volumeRes.data ?? []).map((row: { muscle_group?: string; week_start?: string; sets_done?: number; mev?: number; mav?: number; mrv?: number }) => ({
+      muscleGroup: row.muscle_group ?? '',
+      weekStart: row.week_start ?? '',
+      setsDone: Number(row.sets_done ?? 0),
+      mev: row.mev ?? null,
+      mav: row.mav ?? null,
+      mrv: row.mrv ?? null,
+    }));
 
-  // No schedule row from DB — use TMLSN fallback when on TMLSN protocol
-  const rawSchedule = scheduleRes.data;
-  if (!rawSchedule) {
-    if (isTmlsnProtocol) {
-      if (__DEV__) {
-        console.log('[getWorkoutContext] falling back to TMLSN_PROTOCOL_SCHEDULE for', lookupDay);
-      }
-      const entry = TMLSN_PROTOCOL_SCHEDULE.find((e) => e.day === lookupDay);
-      const workoutType = entry?.workoutType ?? null;
-      const isRestDay = entry?.isRestDay ?? true;
+    const todayYMD = new Date().toISOString().slice(0, 10);
+    const trainedToday = (historySummary.recentSessions ?? []).some((s) => s.sessionDate === todayYMD);
+    const lastSession = historySummary.lastSessionDate ?? historySummary.adherence?.lastWorkoutDate ?? null;
 
-      let exerciseIds: string[] = [];
-      let exerciseNames: string[] = [];
-      if (!isRestDay && workoutType) {
-        const protocolDay = workoutTypeToProtocolDay(workoutType);
-        if (protocolDay) {
-          const exercises = getDefaultTmlsnExercises(protocolDay);
-          exerciseIds = exercises.map((e) => e.id);
-          exerciseNames = exercises.map((e) => e.name);
-        }
-      }
-
-      const todayPlan: TodayPlan = {
-        dayOfWeek: lookupDay,
-        workoutType,
-        exerciseIds,
-        exerciseNames,
-        isRestDay,
+    const extendWithCoaching = (ctx: WorkoutContext, plan: TodayPlan | null): WorkoutContext => {
+      const hasSession = (plan?.exerciseIds?.length ?? 0) > 0 && !plan?.isRestDay;
+      let coachingSignal: WorkoutContext['coachingSignal'] = 'neutral';
+      if (!plan && (historySummary.recentSessionCount ?? 0) === 0) coachingSignal = 'empty';
+      else if (hasSession) coachingSignal = 'session_upcoming';
+      else if (trainedToday) coachingSignal = 'session_complete';
+      return {
+        ...ctx,
+        scheduleMode: trainingSettings?.scheduleMode ?? null,
+        archetype: (trainingSettings as { archetype?: string })?.archetype,
+        volumeFramework: trainingSettings?.volumeFramework,
+        todaySessionLabel: getTodaySessionLabel(
+          trainingSettings?.scheduleMode,
+          trainingSettings?.volumeFramework,
+          plan,
+          TMLSN_PROTOCOL_SCHEDULE
+        ),
+        trainedToday,
+        lastSession: lastSession ?? undefined,
+        totalKcal: 0,
+        carbsG: 0,
+        proteinG: 0,
+        carbsLow: false,
+        hasNutritionData: false,
+        recentSessionCount: historySummary.recentSessionCount ?? 0,
+        lastSessionDate: lastSession ?? undefined,
+        coachingSignal,
+        hasEnoughDataForCoaching: (historySummary.recentSessionCount ?? 0) > 0,
       };
+    };
 
-      if (__DEV__) {
-        console.log('[getWorkoutContext] dayName=', lookupDay, 'workoutType=', workoutType, 'exerciseIds count=', exerciseIds.length);
-      }
+    // No schedule row from DB — use TMLSN fallback when on TMLSN protocol
+    const rawSchedule = scheduleRes.data;
+    if (!rawSchedule) {
+      if (isTmlsnProtocol) {
+        if (__DEV__) {
+          console.log('[getWorkoutContext] falling back to TMLSN_PROTOCOL_SCHEDULE for', lookupDay);
+        }
+        const entry = TMLSN_PROTOCOL_SCHEDULE.find((e) => e.day === lookupDay);
+        const workoutType = entry?.workoutType ?? null;
+        const isRestDay = entry?.isRestDay ?? true;
 
-      if (isRestDay || exerciseIds.length === 0) {
-        return {
-          userId,
+        let exerciseIds: string[] = [];
+        let exerciseNames: string[] = [];
+        if (!isRestDay && workoutType) {
+          const protocolDay = workoutTypeToProtocolDay(workoutType);
+          if (protocolDay) {
+            const exercises = getDefaultTmlsnExercises(protocolDay);
+            exerciseIds = exercises.map((e) => e.id);
+            exerciseNames = exercises.map((e) => e.name);
+          }
+        }
+
+        const todayPlan: TodayPlan = {
+          dayOfWeek: lookupDay,
+          workoutType,
+          exerciseIds,
+          exerciseNames,
+          isRestDay,
+        };
+
+        if (__DEV__) {
+          console.log('[getWorkoutContext] dayName=', lookupDay, 'workoutType=', workoutType, 'exerciseIds count=', exerciseIds.length);
+        }
+
+        if (isRestDay || exerciseIds.length === 0) {
+          return extendWithCoaching({
+            userId: effectiveUserId,
+            fetchedAt: new Date().toISOString(),
+            trainingSettings,
+            todayPlan,
+            exerciseHistory: null,
+            allExerciseHistory,
+            weeklyVolume,
+            tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
+            recentSessions: historySummary.recentSessions,
+            exerciseTrends: historySummary.exerciseTrends,
+            adherence: historySummary.adherence,
+          }, todayPlan);
+        }
+
+        const [exerciseHistory, userSettings] = await Promise.all([
+          fetchExerciseHistoryFromSessions(effectiveUserId, exerciseIds),
+          supabaseStorage.supabaseGetUserSettings(effectiveUserId),
+        ]);
+        const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+        const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
+
+        return extendWithCoaching({
+          userId: effectiveUserId,
           fetchedAt: new Date().toISOString(),
           trainingSettings,
           todayPlan,
-          exerciseHistory: null,
+          exerciseHistory,
           allExerciseHistory,
           weeklyVolume,
           tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
           recentSessions: historySummary.recentSessions,
           exerciseTrends: historySummary.exerciseTrends,
           adherence: historySummary.adherence,
-        };
+          weightUnit,
+          todayExerciseDetails,
+        }, todayPlan);
       }
+      // ── Fallback: derive today's plan from user_settings.data.training.weekPlan ──
+      // Used when workout_schedule table doesn't exist (migration 008 not yet applied).
+      const DAY_INDEX: Record<string, number> = {
+        Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3,
+        Friday: 4, Saturday: 5, Sunday: 6,
+      };
+      try {
+        const us = await supabaseStorage.supabaseGetUserSettings(effectiveUserId);
+        const plan = (us.training?.weekPlan ?? []) as Array<{ sessionName?: string; isRest?: boolean } | null>;
+        const dayIdx = DAY_INDEX[lookupDay] ?? -1;
+        const entry = dayIdx >= 0 ? (plan[dayIdx] ?? null) : null;
+        if (entry && (entry.sessionName || entry.isRest)) {
+          const sessionName = entry.sessionName ?? null;
+          const isRestDay = entry.isRest ?? false;
+          let exerciseIds: string[] = [];
+          let exerciseNames: string[] = [];
+          if (!isRestDay && sessionName) {
+            const protocolDay = workoutTypeToProtocolDay(sessionName);
+            if (protocolDay) {
+              const exercises = getDefaultTmlsnExercises(protocolDay);
+              exerciseIds = exercises.map((e) => e.id);
+              exerciseNames = exercises.map((e) => e.name);
+            }
+          }
+          const todayPlanFromSettings: TodayPlan = {
+            dayOfWeek: lookupDay,
+            workoutType: sessionName,
+            exerciseIds,
+            exerciseNames,
+            isRestDay,
+          };
+          if (__DEV__) {
+            console.log('[getWorkoutContext] weekPlan fallback: sessionName=', sessionName, 'exerciseIds=', exerciseIds.length);
+          }
+          const weightUnit = (us.weightUnit ?? 'lb') as 'kg' | 'lb';
+          const [exerciseHistory, todayExerciseDetails] = await Promise.all([
+            exerciseIds.length > 0
+              ? fetchExerciseHistoryFromSessions(effectiveUserId, exerciseIds)
+              : Promise.resolve(null),
+            exerciseIds.length > 0
+              ? buildTodayExerciseDetails(effectiveUserId, todayPlanFromSettings, weightUnit)
+              : Promise.resolve([] as TodayExerciseDetail[]),
+          ]);
+          return extendWithCoaching({
+            userId: effectiveUserId,
+            fetchedAt: new Date().toISOString(),
+            trainingSettings,
+            todayPlan: todayPlanFromSettings,
+            exerciseHistory,
+            weeklyVolume,
+            tmlsnProtocolSchedule: undefined,
+            recentSessions: historySummary.recentSessions,
+            exerciseTrends: historySummary.exerciseTrends,
+            adherence: historySummary.adherence,
+            weightUnit,
+            todayExerciseDetails: todayExerciseDetails.length > 0 ? todayExerciseDetails : undefined,
+          }, todayPlanFromSettings);
+        }
+      } catch { /* ignore, fall through to no-plan */ }
 
-      const [exerciseHistory, userSettings] = await Promise.all([
-        fetchExerciseHistoryFromSessions(userId, exerciseIds),
-        supabaseStorage.supabaseGetUserSettings(userId),
-      ]);
-      const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
-      const todayExerciseDetails = await buildTodayExerciseDetails(userId, todayPlan, weightUnit);
-
-      return {
-        userId,
+      return extendWithCoaching({
+        userId: effectiveUserId,
         fetchedAt: new Date().toISOString(),
         trainingSettings,
-        todayPlan,
-        exerciseHistory,
-        allExerciseHistory,
+        todayPlan: null,
+        exerciseHistory: null,
         weeklyVolume,
-        tmlsnProtocolSchedule: TMLSN_PROTOCOL_SCHEDULE,
+        tmlsnProtocolSchedule: undefined,
         recentSessions: historySummary.recentSessions,
         exerciseTrends: historySummary.exerciseTrends,
         adherence: historySummary.adherence,
-        weightUnit,
-        todayExerciseDetails,
-      };
+      }, null);
     }
-    return {
-      userId,
-      fetchedAt: new Date().toISOString(),
-      trainingSettings,
-      todayPlan: null,
-      exerciseHistory: null,
-      weeklyVolume,
-      tmlsnProtocolSchedule: undefined,
-      recentSessions: historySummary.recentSessions,
-      exerciseTrends: historySummary.exerciseTrends,
-      adherence: historySummary.adherence,
+
+    const rawIds = (rawSchedule.exercise_ids as string[]) ?? [];
+    const todayPlan: TodayPlan = {
+      dayOfWeek: rawSchedule.day_of_week,
+      workoutType: rawSchedule.workout_type ?? null,
+      exerciseIds: rawIds,
+      exerciseNames: rawIds.map((id) => uuidToExerciseName(id)),
+      isRestDay: rawSchedule.is_rest_day ?? false,
     };
-  }
 
-  const rawIds = (rawSchedule.exercise_ids as string[]) ?? [];
-  const todayPlan: TodayPlan = {
-    dayOfWeek: rawSchedule.day_of_week,
-    workoutType: rawSchedule.workout_type ?? null,
-    exerciseIds: rawIds,
-    exerciseNames: rawIds.map((id) => uuidToExerciseName(id)),
-    isRestDay: rawSchedule.is_rest_day ?? false,
-  };
+    if (todayPlan.isRestDay || todayPlan.exerciseIds.length === 0) {
+      return extendWithCoaching({
+        userId: effectiveUserId,
+        fetchedAt: new Date().toISOString(),
+        trainingSettings,
+        todayPlan,
+        exerciseHistory: null,
+        allExerciseHistory,
+        weeklyVolume,
+        tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
+        recentSessions: historySummary.recentSessions,
+        exerciseTrends: historySummary.exerciseTrends,
+        adherence: historySummary.adherence,
+      }, todayPlan);
+    }
 
-  if (todayPlan.isRestDay || todayPlan.exerciseIds.length === 0) {
-    return {
-      userId,
+    const [exerciseHistory, userSettings] = await Promise.all([
+      fetchExerciseHistoryFromSessions(effectiveUserId, todayPlan.exerciseIds),
+      supabaseStorage.supabaseGetUserSettings(effectiveUserId),
+    ]);
+    const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+    const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
+
+    return extendWithCoaching({
+      userId: effectiveUserId,
       fetchedAt: new Date().toISOString(),
       trainingSettings,
       todayPlan,
-      exerciseHistory: null,
+      exerciseHistory,
       allExerciseHistory,
       weeklyVolume,
       tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
       recentSessions: historySummary.recentSessions,
       exerciseTrends: historySummary.exerciseTrends,
       adherence: historySummary.adherence,
-    };
+      weightUnit,
+      todayExerciseDetails,
+    }, todayPlan);
+  } catch (e) {
+    if (__DEV__) console.warn('[getWorkoutContext] error:', e);
+    return buildDegradedContext(effectiveUserId || 'anonymous');
   }
-
-  const [exerciseHistory, userSettings] = await Promise.all([
-    fetchExerciseHistoryFromSessions(userId, todayPlan.exerciseIds),
-    supabaseStorage.supabaseGetUserSettings(userId),
-  ]);
-  const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
-  const todayExerciseDetails = await buildTodayExerciseDetails(userId, todayPlan, weightUnit);
-
-  return {
-    userId,
-    fetchedAt: new Date().toISOString(),
-    trainingSettings,
-    todayPlan,
-    exerciseHistory,
-    allExerciseHistory,
-    weeklyVolume,
-    tmlsnProtocolSchedule: isTmlsnProtocol ? TMLSN_PROTOCOL_SCHEDULE : undefined,
-    recentSessions: historySummary.recentSessions,
-    exerciseTrends: historySummary.exerciseTrends,
-    adherence: historySummary.adherence,
-    weightUnit,
-    todayExerciseDetails,
-  };
 }
 

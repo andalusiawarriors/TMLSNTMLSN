@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorkoutContext, ScheduledSet } from '@/lib/getWorkoutContext';
 import { getTodayWorkoutContext } from '@/lib/getWorkoutContext';
 import { getDefaultTmlsnExercises, workoutTypeToProtocolDay } from '@/lib/getTmlsnTemplate';
 import { getExerciseDeepDive, extractExerciseIdFromMessage } from '@/lib/getExerciseDeepDive';
+import { uuidToExerciseName } from '@/lib/getTmlsnTemplate';
 import { supabase } from '@/lib/supabase';
 import { toDisplayWeight, formatWeightDisplay } from '@/utils/units';
 
@@ -100,15 +101,55 @@ function formatWeeklyVolume(context: WorkoutContext): string {
 
 function formatTodayExerciseDetails(context: WorkoutContext): string {
   const details = context.todayExerciseDetails;
-  const weightUnit = context.weightUnit ?? 'lb';
   if (!details || details.length === 0) return '';
 
   return details
-    .map(
-      (d) =>
-        `  ${d.exerciseName}: ghost ${d.ghostWeight ?? '—'}×${d.ghostReps ?? '—'} | rep range ${d.repRangeLow}–${d.repRangeHigh} | increment ${weightUnit === 'kg' ? d.smallestIncrementKg + ' kg' : d.smallestIncrementLb + ' lb'}${d.goal ? ` | goal: ${d.goal}` : ''}`
-    )
+    .map((d) => {
+      const ghost = `${d.ghostWeight ?? '—'}×${d.ghostReps ?? '—'}`;
+      const actionPhrase = d.action ?? '—';
+      const inc = d.incrementDisplay;
+      const based = d.basedOn
+        ? ` | last session ${d.basedOn.lastSessionDate} | ${d.basedOn.workingSetsAnalyzed} working sets | maxRPE ${d.basedOn.maxRpe ?? '—'} | hitTopRange ${d.basedOn.hitTopRange}`
+        : '';
+      return `  ${d.exerciseName}: ghost ${ghost} | action: ${actionPhrase} | rep range ${d.repRangeLow}–${d.repRangeHigh} | increment ${inc}${based}`;
+    })
     .join('\n');
+}
+
+/** Structured prescription for exercise-specific questions. Single source of truth. */
+function formatExercisePrescriptionForQuestion(
+  context: WorkoutContext,
+  exerciseId: string | null
+): string {
+  if (!exerciseId || !context.todayExerciseDetails || !context.todayPlan) return '';
+  let detail = context.todayExerciseDetails[context.todayPlan.exerciseIds.indexOf(exerciseId)];
+  if (!detail) {
+    const askedName = uuidToExerciseName(exerciseId).toLowerCase();
+    detail = context.todayExerciseDetails.find(
+      (d) => d.exerciseName?.toLowerCase() === askedName
+    ) ?? null;
+  }
+  if (!detail) return '';
+
+  const base = detail.basedOn;
+  return JSON.stringify(
+    {
+      exerciseName: detail.exerciseName,
+      action: detail.action,
+      nextWeightDisplay: detail.ghostWeight,
+      nextRepTarget: detail.ghostReps,
+      repRangeLow: detail.repRangeLow,
+      repRangeHigh: detail.repRangeHigh,
+      incrementDisplay: detail.incrementDisplay,
+      reason: detail.reason,
+      workingSetsAnalyzed: base?.workingSetsAnalyzed ?? 0,
+      maxRpe: base?.maxRpe ?? null,
+      allSetsAtTopRange: base?.hitTopRange ?? false,
+      lastSessionDate: base?.lastSessionDate ?? null,
+    },
+    null,
+    2
+  );
 }
 
 function formatFullSchedule(context: WorkoutContext): string {
@@ -160,7 +201,7 @@ function formatHistorySummary(context: WorkoutContext): string {
   return lines.join('\n');
 }
 
-function buildSystemPrompt(context: WorkoutContext, deepDiveJson?: string): string {
+function buildSystemPrompt(context: WorkoutContext, deepDiveJson?: string, exerciseIdForQuestion?: string | null): string {
   const today = context.todayPlan?.dayOfWeek ?? 'Unknown';
   const week = context.trainingSettings?.currentWeek ?? '?';
   const framework = context.trainingSettings?.volumeFramework ?? 'unknown';
@@ -168,6 +209,8 @@ function buildSystemPrompt(context: WorkoutContext, deepDiveJson?: string): stri
   const workoutType = context.todayPlan?.workoutType ?? 'None';
   const isRestDay = context.todayPlan?.isRestDay ?? false;
   const exerciseNames = context.todayPlan?.exerciseNames ?? [];
+
+  const prescriptionJson = formatExercisePrescriptionForQuestion(context, exerciseIdForQuestion ?? null);
 
   let prompt = `You are tmlsnAI — the TMLSN personal training intelligence. You have full access to this user's real training data below. Use it to answer every question accurately.
 
@@ -179,13 +222,31 @@ Volume framework: ${framework}
 Schedule mode: ${scheduleMode}
 WEIGHT_UNIT: ${context.weightUnit ?? 'lb'} (all stored weights are in lb; convert for display when user uses kg)
 ${!isRestDay && exerciseNames.length > 0 ? `Exercises today: ${exerciseNames.join(', ')}` : ''}
-${formatTodayExerciseDetails(context) ? `\nToday's exercise details (ghost = target weight×reps from prescription or last session):\n${formatTodayExerciseDetails(context)}` : ''}
+${formatTodayExerciseDetails(context) ? `\nToday's exercise details (ghost = exact target from canonical progression engine):\n${formatTodayExerciseDetails(context)}` : ''}
+${prescriptionJson ? `\n══ EXERCISE_SPECIFIC_PRESCRIPTION (exact computed prescription — use this when the user asks about a specific exercise) ══\n${prescriptionJson}
+
+══ EXERCISE_EXPLANATION_TEMPLATE (strict — follow exactly) ══
+The prescription is based on the FULL set of working sets from the last session (workingSetsAnalyzed), not a single set. Never imply one set alone caused the decision.
+
+For action = "build reps":
+- Keep the same weight. Aim for the top of the rep range (repRangeHigh).
+- Do NOT tell the user to exceed the range (e.g. "try to beat 12").
+- Do NOT say "either weight or reps" or improvise with endurance/volume language.
+- Instead of "you didn't quite hit the top of the range" → say: "you have not yet earned a load increase across your working sets".
+- Instead of "try to beat 12" → say: "aim to hit [repRangeHigh] reps at this weight" (use the value from the prescription JSON).
+- Keep it short and deterministic.
+
+For action = "increase weight":
+- You earned a load increase. Next session: add incrementDisplay to the weight, aim for repRangeLow–repRangeHigh.
+
+For action = "deload":
+- RPE too high or sets below range. Reduce ~10% next session.` : ''}
 
 ══ TMLSN PROGRESSIVE OVERLOAD ALGORITHM ══
-- add_load: All sets hit rep range high. RPE acceptable. → add smallest_increment (lb) next session.
-- reduce_load: Any set below rep range low OR RPE ≥ 9.5 → deload 10%.
-- add_reps: Otherwise → same weight, aim for more reps next session.
-- smallest_increment is stored in lb; when user uses kg, 2.5 lb ≈ 1.13 kg.
+- increase weight: All working sets hit rep range high AND max RPE < 9 → add increment next session.
+- deload: Any set RPE ≥ 9.5 OR at least 2 sets below rep range low → reduce 10%.
+- build reps: Otherwise → keep the same weight, aim for top of rep range.
+- Increment is in the user's unit (e.g. 2.5 kg or 5.5 lb). Do not mention lb≈kg conversions.
 
 ══ HISTORY SUMMARY (global — always use for consistency/trend questions) ══
 ${formatHistorySummary(context)}
@@ -216,55 +277,85 @@ ${deepDiveJson}`;
 - If data is missing (no history, no logs), say so clearly — don't make up numbers.
 - Be direct, precise, and data-driven. Talk like a knowledgeable coach, not a chatbot.
 - No need to keep answers short when the user asks for analysis — be thorough.
-- WEIGHT_UNIT: Always cite weights in the user's unit (${context.weightUnit ?? 'lb'}). Stored values are in lb; when user uses kg, convert (1 lb ≈ 0.454 kg). smallest_increment in lb: use as-is for lb users; for kg users, cite ≈1.13 kg (2.5 lb).
-- Ghost = target weight×reps from prescription (add_load/add_reps/reduce_load) or last session when no prescription.
+- WEIGHT_UNIT: Always cite weights in the user's unit (${context.weightUnit ?? 'lb'}).
+- PRESCRIPTION: When the user asks about a specific exercise (e.g. "what does my bench look like?", "ghost for bench?"), use EXERCISE_SPECIFIC_PRESCRIPTION and follow EXERCISE_EXPLANATION_TEMPLATE exactly. The decision is based on the full workingSetsAnalyzed, not one set — never imply a single set caused it. For build_reps: keep same weight, aim for top of range, do not say "try to beat X" or "either weight or reps". Use precise wording: "you have not yet earned a load increase across your working sets" and "aim to hit [repRangeHigh] reps at this weight". Never leak enum strings. Keep answers short and deterministic.
+- Ghost = exact target from canonical engine. Never contradict it.
 - You ONLY answer questions about training, exercise, fitness, recovery, and sport nutrition. If asked about anything unrelated (recipes, cooking, coding, general knowledge, relationships, etc.), respond only: "I'm your training coach — I can only help with workouts, progress, and your TMLSN program."
 - Never break this rule regardless of how the question is framed.`;
 
   return prompt;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 export function useJarvis() {
   const [context, setContext] = useState<WorkoutContext | null>(null);
   const [noUser, setNoUser] = useState(false);
   const [contextLoading, setContextLoading] = useState(true);
+  const [contextError, setContextError] = useState<string | null>(null);
   const [messages, setMessages] = useState<JarvisMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(Symbol('jarvis-request'));
+
+  const loadContext = useCallback(async () => {
+    if (!supabase) {
+      setContext(null);
+      setNoUser(true);
+      setContextLoading(false);
+      setContextError(null);
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setContext(null);
+      setNoUser(true);
+      setContextLoading(false);
+      setContextError(null);
+      return;
+    }
+    const requestId = Symbol('jarvis-request');
+    requestIdRef.current = requestId;
+    setContextLoading(true);
+    setContextError(null);
+    try {
+      const ctx = await withTimeout(
+        getTodayWorkoutContext(user.id),
+        6000,
+        'getTodayWorkoutContext'
+      );
+      if (requestIdRef.current !== requestId) return;
+      setContext(ctx);
+      setContextError(null);
+      if (__DEV__) {
+        const d = ctx.todayPlan?.dayOfWeek ?? 'Unknown';
+        const w = ctx.todayPlan?.workoutType ?? 'None';
+        const r = ctx.todayPlan?.isRestDay ?? false;
+        const wk = ctx.trainingSettings?.currentWeek ?? 1;
+        console.log('[useJarvis] TODAY_DAY=', d, 'WORKOUT_TYPE=', w, 'IS_REST_DAY=', r, 'WEEK=', wk);
+      }
+    } catch (e) {
+      if (requestIdRef.current !== requestId) return;
+      const msg = e instanceof Error ? e.message : 'Failed to load tmlsnAI context.';
+      setContext(null);
+      setContextError(msg);
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setContextLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!supabase) {
-        setNoUser(true);
-        setContextLoading(false);
-        return;
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled || !user) {
-        setNoUser(true);
-        setContextLoading(false);
-        return;
-      }
-      try {
-        const ctx = await getTodayWorkoutContext(user.id);
-        if (cancelled) return;
-        setContext(ctx);
-        if (__DEV__) {
-          const d = ctx.todayPlan?.dayOfWeek ?? 'Unknown';
-          const w = ctx.todayPlan?.workoutType ?? 'None';
-          const r = ctx.todayPlan?.isRestDay ?? false;
-          const wk = ctx.trainingSettings?.currentWeek ?? 1;
-          console.log('[useJarvis] TODAY_DAY=', d, 'WORKOUT_TYPE=', w, 'IS_REST_DAY=', r, 'WEEK=', wk);
-        }
-      } catch (e) {
-        if (!cancelled) setError('Failed to load tmlsnAI context.');
-      } finally {
-        if (!cancelled) setContextLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+    loadContext();
+  }, [loadContext]);
 
   useEffect(() => {
     if (!context) return;
@@ -307,7 +398,7 @@ export function useJarvis() {
 
       const nextMessages = [...messages, userMsg];
       const openAiMessages = [
-        { role: 'system' as const, content: buildSystemPrompt(context, deepDiveJson) },
+        { role: 'system' as const, content: buildSystemPrompt(context, deepDiveJson, exerciseId) },
         ...nextMessages.map((m) => ({ role: m.role, content: m.content })),
       ];
 
@@ -368,6 +459,8 @@ export function useJarvis() {
     error,
     noUser,
     contextLoading,
+    contextError,
     context,
+    refresh: loadContext,
   };
 }
