@@ -49,8 +49,10 @@ function useDeviceKind() {
   const hasDI = insets.top >= 51;
   // iPhone 16 Pro Max has a wider pill (140pt) vs 126pt on all others
   const pillW = SW >= 440 ? 140 : 126;
-  // On DI devices the island starts at y≈6 from the top of the screen
-  const pillTop = hasDI ? 6 : Math.max(insets.top - 20, 4);
+  // DI hardware: y=6 → y=43 (6 + PILL_H=37). Position at the DI bottom so
+  // the pill hangs from the island and NEVER overlaps the time or battery.
+  // On non-DI phones sit just below the status bar.
+  const pillTop = hasDI ? 43 : insets.top;
   return { hasDI, pillW, pillTop };
 }
 
@@ -58,9 +60,8 @@ function useDeviceKind() {
 
 const PILL_H  = 37;
 const PILL_BR = 20;
-// Card stays within the DI centre column — doesn't reach time (left) or battery (right).
-// 66% of screen width:  393pt → ~259pt,  430pt → ~284pt,  440pt → ~290pt
-const CARD_W  = Math.round(SW * 0.66);
+// Card is below the status bar so width can fill most of the screen.
+const CARD_W  = SW - 40;
 const CARD_H  = 148;
 const CARD_BR = 26;
 
