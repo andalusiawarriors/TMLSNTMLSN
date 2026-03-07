@@ -705,9 +705,13 @@ export default function WorkoutScreen({
         updateSet(exerciseIndex, setIndex, { rpe: clamped });
         if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'rpe', parsed: clamped, source });
 
-        // Fire Dynamic Island notification for low RPE (below 7)
-        if (clamped < 7) {
-          const exName = activeWorkout?.exercises[exerciseIndex]?.name ?? '';
+        // Fire Dynamic Island notification for low RPE (below 7) only when
+        // there is a next set to actually act on — if this is the last set
+        // of the exercise the user can't change anything right now.
+        const exercise = activeWorkout?.exercises[exerciseIndex];
+        const hasNextSet = (exercise?.sets.length ?? 0) > setIndex + 1;
+        if (clamped < 7 && hasNextSet) {
+          const exName = exercise?.name ?? '';
           const roundedRpe = Math.round(clamped);
           // Real iOS Live Activity (appears inside the DI hardware + lock screen)
           startRPEActivity(roundedRpe, exName, 'active');
