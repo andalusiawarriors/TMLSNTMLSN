@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,12 @@ import { Colors } from '../constants/theme';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { toDisplayVolume, toDisplayWeight, formatWeightDisplay, formatVolumeDisplay } from '../utils/units';
+import { supabaseGetExercisePrescriptions } from '../utils/supabaseStorage';
+import { useSupabaseUser } from '../hooks/useSupabaseUser';
+import { PostSessionSummary, type ExerciseSummaryItem } from '../components/PostSessionSummary';
+import { DynamicIslandRPEWarning } from '../components/DynamicIslandRPEWarning';
+import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
+import { isDeloadWeek } from '../lib/progression/decideNextPrescription';
 
 // ── Layout ─────────────────────────────────────────────────────
 const { width: SW } = Dimensions.get('window');
@@ -183,9 +189,20 @@ export default function WorkoutLoggedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const user = useSupabaseUser();
+
   const [session, setSession] = useState<any>(null);
   const [allSessions, setAllSessions] = useState<any[]>([]);
   const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
+
+  // Post-session summary state
+  const [summaryItems, setSummaryItems] = useState<ExerciseSummaryItem[]>([]);
+  const [showSummary, setShowSummary] = useState(false);
+  const [nextIsDeload, setNextIsDeload] = useState(false);
+
+  // Dynamic Island RPE warning state
+  const [rpeWarning, setRpeWarning] = useState<{ visible: boolean; rpe: number }>({ visible: false, rpe: 0 });
+  const [isInjured, setIsInjured] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -197,9 +214,60 @@ export default function WorkoutLoggedScreen() {
       setSession(found || null);
       setAllSessions(sessions.filter((s: any) => s.id !== sessionId));
       setWeightUnit(settings.weightUnit);
+
+      // Load prescriptions from Supabase for post-session summary
+      if (found && user?.id) {
+        const canonicalIds = (found.exercises ?? []).map(
+          (ex: any) => ex.exerciseDbId ?? ex.name ?? ex.id
+        );
+        const prescriptions = await supabaseGetExercisePrescriptions(user.id, canonicalIds);
+
+        const items: ExerciseSummaryItem[] = (found.exercises ?? []).map((ex: any) => {
+          const key = ex.exerciseDbId ?? ex.name ?? ex.id;
+          const p   = prescriptions[key];
+
+          // Average RPE across completed sets in this session
+          const rpeVals = (ex.sets ?? [])
+            .filter((s: any) => s.completed && s.rpe != null && s.rpe > 0)
+            .map((s: any) => Number(s.rpe));
+          const avgRpe = rpeVals.length > 0
+            ? rpeVals.reduce((a: number, b: number) => a + b, 0) / rpeVals.length
+            : null;
+
+          return {
+            exerciseName:       ex.name ?? 'Exercise',
+            action:             (p?.goal === 'add_load' ? 'add_weight' : p?.goal === 'reduce_load' ? 'deload' : 'build_reps') as ExerciseSummaryItem['action'],
+            nextWeightDisplay:  p?.nextWeight ? Number(p.nextWeight.toFixed(1)) : 0,
+            weightUnit:         settings.weightUnit as 'kg' | 'lb',
+            nextBand:           ((p as any)?.difficulty_band ?? 'easy') as DifficultyBand,
+            reason:             (p as any)?.reason ?? '',
+            isCalibrating:      Boolean((p as any)?.is_calibrating),
+            avgRpe,
+            repRangeLow:        ex.repRangeLow ?? 8,
+            repRangeHigh:       ex.repRangeHigh ?? 12,
+          };
+        });
+
+        setSummaryItems(items);
+
+        // Check if next week is deload (counter was incremented by supabaseSaveWorkoutSession)
+        const { data: ts } = await import('../lib/supabase').then(m =>
+          m.supabase?.from('training_settings').select('deload_week_counter').eq('user_id', user.id).maybeSingle() ?? Promise.resolve({ data: null })
+        );
+        if (ts) setNextIsDeload(isDeloadWeek(Number(ts.deload_week_counter ?? 0)));
+
+        // Trigger Dynamic Island RPE warning if any exercise had RPE < 7
+        const lowRpe = items.find(i => i.avgRpe != null && i.avgRpe < 7);
+        if (lowRpe && lowRpe.avgRpe != null) {
+          setTimeout(() => setRpeWarning({ visible: true, rpe: Math.round(lowRpe.avgRpe!) }), 800);
+        }
+
+        // Show post-session summary after a short delay
+        setTimeout(() => setShowSummary(true), 1200);
+      }
     }
     if (sessionId) load();
-  }, [sessionId]);
+  }, [sessionId, user?.id]);
 
   // ── Stats ──────────────────────────────────────────────────
   const duration   = session?.duration ?? 0;
@@ -343,7 +411,25 @@ export default function WorkoutLoggedScreen() {
             </Pressable>
           </View>
         </ScrollView>
+
+        {/* ── Dynamic Island RPE Warning (absolute overlay at top) ── */}
+        <DynamicIslandRPEWarning
+          visible={rpeWarning.visible}
+          rpe={rpeWarning.rpe}
+          isInjured={isInjured}
+          onInjuredChange={setIsInjured}
+          onDismiss={() => setRpeWarning({ visible: false, rpe: 0 })}
+        />
       </View>
+
+      {/* ── Post-session summary bottom sheet ─────────────────── */}
+      {showSummary && (
+        <PostSessionSummary
+          items={summaryItems}
+          isDeloadWeek={nextIsDeload}
+          onClose={() => setShowSummary(false)}
+        />
+      )}
     </>
   );
 }

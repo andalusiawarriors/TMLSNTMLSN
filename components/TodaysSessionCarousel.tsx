@@ -39,6 +39,8 @@ import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
 import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
 import type { WeightUnit } from '../utils/units';
 import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
+import { EXERCISE_MAP } from '../utils/exerciseDb/exerciseDatabase';
+import type { OverloadCategory } from '../lib/progression/decideNextPrescription';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const PAD    = 16;
@@ -115,7 +117,10 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
     }
 
     // ── Canonical progression engine ─────────────────────────────────────────
-    const incrementKg = exDetail?.smallestIncrementKg ?? 2.5;
+    const dbId = exDetail?.exerciseDbId;
+    const overloadCategory: OverloadCategory =
+      (dbId ? EXERCISE_MAP.get(dbId)?.overloadCategory : undefined) ?? 'compound_small';
+
     const decision = decideNextPrescription({
       sets: lastSets.map((s) => ({
         weight: s.weight ?? 0,
@@ -125,7 +130,14 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
       })),
       repRangeLow,
       repRangeHigh,
-      incrementKg,
+      overloadCategory,
+      // Preview context: use defaults — real band state lives in Supabase
+      currentBand: 'easy',
+      consecutiveSuccess: 0,
+      consecutiveFailure: 0,
+      isCalibrating: false,
+      isDeloadWeek: false,
+      blitzMode: false,
     });
 
     const targetWeightDisplay = weightUnit === 'kg'
