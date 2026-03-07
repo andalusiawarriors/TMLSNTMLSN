@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { useRouter } from 'expo-router';
 import type { WorkoutSession } from '../types';
 import { onWorkoutOriginRoute } from '../utils/fabBridge';
+import { startWorkoutActivity, stopWorkoutActivity } from '../lib/liveActivity';
 
 type ActiveWorkoutContextValue = {
   activeWorkout: WorkoutSession | null;
@@ -33,7 +34,13 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   const setActiveWorkout = useCallback((w: WorkoutSession | null) => {
     setActiveWorkoutRaw(w);
-    if (w) setMinimized(false);
+    if (w) {
+      setMinimized(false);
+      // Start a persistent Dynamic Island Live Activity for the workout
+      startWorkoutActivity(w.name, new Date(w.date).getTime());
+    } else {
+      stopWorkoutActivity();
+    }
   }, []);
 
   const currentExerciseName =
@@ -58,6 +65,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const discardWorkout = useCallback(
     (onDiscarded: () => void) => {
       const returnTo = originRoute && originRoute !== '/(tabs)/workout' ? originRoute : '/(tabs)/nutrition';
+      stopWorkoutActivity();
       setActiveWorkoutRaw(null);
       setCurrentExerciseIndex(0);
       setMinimized(false);
