@@ -1,13 +1,15 @@
 /**
  * DynamicIslandRPEWarning
  *
- * Mimics the Dynamic Island expanding from the top of the screen.
- * Triggered when the user logs RPE below 7 after a set/session.
+ * Mimics the real Dynamic Island: pure black pill that springs open
+ * from the top of the screen after a workout, if avg RPE was below target.
  *
- * On iPhone 14 Pro+: the pill sits exactly over the Dynamic Island.
- * On all other devices: it appears as a floating pill at the top.
- *
- * Design: glass morphism (matches workout-logged.tsx / TodaysSessionCarousel.tsx).
+ * Design rules (matching Apple's actual DI behaviour):
+ *  • Pure #000 — no glass, no blur, no gradient
+ *  • White text only, secondary at 55% opacity
+ *  • Springs from exact pill dimensions → wider card
+ *  • Content fades in after expansion settles
+ *  • Sits at the real DI position (centred, just inside safe area)
  */
 
 import React, { useEffect, useCallback } from 'react';
@@ -25,39 +27,35 @@ import Animated, {
   withSpring,
   withTiming,
   withDelay,
-  withSequence,
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 const { width: SW } = Dimensions.get('window');
 
-// ─── Design tokens (matches app design system) ────────────────────────────────
-const C_TEXT     = '#edf0f2';
-const C_DIM      = 'rgba(198,198,198,0.55)';
-const C_AMBER    = '#FFB340';   // warning yellow-amber
-const C_AMBER_BG = 'rgba(255,179,64,0.12)';
-const C_AMBER_BD = 'rgba(255,179,64,0.30)';
+// ─── Tokens ───────────────────────────────────────────────────────────────────
+const BLACK       = '#000000';
+const WHITE       = '#ffffff';
+const WHITE_DIM   = 'rgba(255,255,255,0.55)';
+const WHITE_FAINT = 'rgba(255,255,255,0.12)';
+const ACCENT      = '#FF9F0A';   // iOS system orange — matches Apple's DI live-activity tint
 
-// Pill dimensions (matches real Dynamic Island proportions)
-const PILL_W     = 126;
-const PILL_H     = 37;
-const PILL_BR    = 20;
+// ─── Pill → card geometry ─────────────────────────────────────────────────────
+// Real Dynamic Island on 14 Pro: ~126 × 37 pt
+const PILL_W  = 126;
+const PILL_H  = 37;
+const PILL_BR = 20;
 
-// Expanded card dimensions
-const CARD_W     = SW - 32;
-const CARD_H     = 148;
-const CARD_BR    = 28;
+const CARD_W  = SW - 40;
+const CARD_H  = 136;
+const CARD_BR = 26;   // Apple uses ~26 on expanded DI
 
-const SPRING = { damping: 22, stiffness: 260, mass: 0.9 };
-const AUTO_DISMISS_MS = 5000;
+const SPRING         = { damping: 24, stiffness: 280, mass: 0.85 };
+const AUTO_DISMISS_MS = 6000;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
-
 export type DynamicIslandRPEWarningProps = {
   visible: boolean;
   rpe: number;
@@ -67,7 +65,6 @@ export type DynamicIslandRPEWarningProps = {
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
-
 export function DynamicIslandRPEWarning({
   visible,
   rpe,
@@ -77,13 +74,12 @@ export function DynamicIslandRPEWarning({
 }: DynamicIslandRPEWarningProps) {
   const insets = useSafeAreaInsets();
 
-  // Animated values
-  const width      = useSharedValue(PILL_W);
-  const height     = useSharedValue(PILL_H);
-  const radius     = useSharedValue(PILL_BR);
-  const opacity    = useSharedValue(0);
-  const contentOp  = useSharedValue(0);
-  const scale      = useSharedValue(0.85);
+  const width     = useSharedValue(PILL_W);
+  const height    = useSharedValue(PILL_H);
+  const radius    = useSharedValue(PILL_BR);
+  const opacity   = useSharedValue(0);
+  const contentOp = useSharedValue(0);
+  const scale     = useSharedValue(0.88);
 
   const triggerHaptic = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -91,47 +87,43 @@ export function DynamicIslandRPEWarning({
 
   const expand = useCallback(() => {
     runOnJS(triggerHaptic)();
-
-    // Container expands from pill → card
     width.value   = withSpring(CARD_W,  SPRING);
     height.value  = withSpring(CARD_H,  SPRING);
     radius.value  = withSpring(CARD_BR, SPRING);
-    opacity.value = withSpring(1,        SPRING);
-    scale.value   = withSpring(1,        SPRING);
-
-    // Content fades in after expansion settles
-    contentOp.value = withDelay(180, withTiming(1, { duration: 220, easing: Easing.out(Easing.ease) }));
-  }, [width, height, radius, opacity, contentOp, scale, triggerHaptic]);
+    scale.value   = withSpring(1,       SPRING);
+    contentOp.value = withDelay(200, withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) }));
+  }, [width, height, radius, scale, contentOp, triggerHaptic]);
 
   const collapse = useCallback(() => {
-    contentOp.value = withTiming(0, { duration: 120 });
-    width.value     = withDelay(80, withSpring(PILL_W, SPRING));
-    height.value    = withDelay(80, withSpring(PILL_H, SPRING));
+    contentOp.value = withTiming(0, { duration: 100 });
+    width.value     = withDelay(80, withSpring(PILL_W,  SPRING));
+    height.value    = withDelay(80, withSpring(PILL_H,  SPRING));
     radius.value    = withDelay(80, withSpring(PILL_BR, SPRING));
-    opacity.value   = withDelay(260, withTiming(0, { duration: 160 }));
-    scale.value     = withDelay(80, withSpring(0.88, SPRING));
+    scale.value     = withDelay(80, withSpring(0.88,    SPRING));
+    opacity.value   = withDelay(300, withTiming(0, { duration: 180 }));
   }, [width, height, radius, opacity, contentOp, scale]);
 
   useEffect(() => {
     if (visible) {
-      // Brief pause so the user sees the pill first, then it blooms open
-      opacity.value = withTiming(1, { duration: 200 });
-      scale.value   = 1;
-      width.value   = PILL_W;
-      height.value  = PILL_H;
-      radius.value  = PILL_BR;
+      // Reset to pill first, then bloom open after a beat
+      width.value     = PILL_W;
+      height.value    = PILL_H;
+      radius.value    = PILL_BR;
+      scale.value     = 0.88;
       contentOp.value = 0;
+      opacity.value   = withTiming(1, { duration: 180 });
 
-      const t = setTimeout(expand, 320);
-      const dismiss = setTimeout(() => {
+      const expandTimer  = setTimeout(expand, 350);
+      const dismissTimer = setTimeout(() => {
         collapse();
         setTimeout(onDismiss, 500);
       }, AUTO_DISMISS_MS);
 
-      return () => { clearTimeout(t); clearTimeout(dismiss); };
+      return () => { clearTimeout(expandTimer); clearTimeout(dismissTimer); };
     } else {
       collapse();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   const containerStyle = useAnimatedStyle(() => ({
@@ -146,13 +138,13 @@ export function DynamicIslandRPEWarning({
     opacity: contentOp.value,
   }));
 
-  // Pill-state icon (visible before expansion)
+  // Pill-state icon fades out as content fades in
   const pillIconStyle = useAnimatedStyle(() => ({
     opacity: 1 - contentOp.value,
   }));
 
-  // Top offset: sit just inside/over the Dynamic Island / status bar area
-  const topOffset = Math.max(insets.top - 6, 8);
+  // Sit just inside the safe area — matches real DI placement
+  const topOffset = Math.max(insets.top - 4, 6);
 
   return (
     <View
@@ -160,74 +152,49 @@ export function DynamicIslandRPEWarning({
       pointerEvents={visible ? 'box-none' : 'none'}
     >
       <Pressable onPress={() => { collapse(); setTimeout(onDismiss, 420); }}>
-        <Animated.View style={[styles.container, containerStyle]}>
-          {/* Glass layers */}
-          <BlurView
-            intensity={40}
-            tint="dark"
-            style={[StyleSheet.absoluteFillObject, { borderRadius: CARD_BR }]}
-          />
-          <View style={[StyleSheet.absoluteFillObject, styles.fillOverlay]} />
-          <LinearGradient
-            colors={['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.05)', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.85, y: 0.85 }}
-            style={[StyleSheet.absoluteFillObject, { borderRadius: CARD_BR }]}
-            pointerEvents="none"
-          />
-          <LinearGradient
-            colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.04)', 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 0.18 }}
-            style={[StyleSheet.absoluteFillObject, { borderRadius: CARD_BR }]}
-            pointerEvents="none"
-          />
-          {/* Amber accent rim at top */}
-          <LinearGradient
-            colors={['rgba(255,179,64,0.35)', 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 0.12 }}
-            style={[StyleSheet.absoluteFillObject, { borderRadius: CARD_BR }]}
-            pointerEvents="none"
-          />
-          <View
-            style={[StyleSheet.absoluteFillObject, styles.border]}
-            pointerEvents="none"
-          />
+        <Animated.View style={[styles.island, containerStyle]}>
 
-          {/* ── Pill icon (visible while collapsed) ── */}
-          <Animated.View style={[StyleSheet.absoluteFillObject, styles.pillIcon, pillIconStyle]}>
-            <Text style={styles.pillEmoji}>⚡</Text>
+          {/* ── Pill state: tiny icon centred in the pill ── */}
+          <Animated.View style={[StyleSheet.absoluteFillObject, styles.pillCenter, pillIconStyle]}>
+            <View style={styles.pillDot} />
+            <Text style={styles.pillRpe}>{rpe}</Text>
           </Animated.View>
 
           {/* ── Expanded content ── */}
           <Animated.View style={[styles.content, contentStyle]}>
-            {/* Header row */}
-            <View style={styles.headerRow}>
-              <View style={styles.rpeTag}>
-                <Text style={styles.rpeTagText}>RPE {rpe}</Text>
+
+            {/* Top row: RPE badge + dismiss hint */}
+            <View style={styles.row}>
+              <View style={styles.rpeBadge}>
+                <View style={styles.rpeDot} />
+                <Text style={styles.rpeBadgeText}>RPE {rpe}</Text>
               </View>
-              <Text style={styles.dismiss}>tap to dismiss</Text>
+              <Text style={styles.dismissHint}>tap to dismiss</Text>
             </View>
 
-            {/* Warning message */}
-            <Text style={styles.message}>
-              Try to reach{' '}
-              <Text style={styles.accentText}>RPE 7 or higher</Text>
-              {' '}— you're leaving progress on the table.
+            {/* Message */}
+            <Text style={styles.headline}>
+              Aim for{' '}
+              <Text style={styles.accent}>RPE 7+</Text>
+              {' '}next session
+            </Text>
+            <Text style={styles.subtext}>
+              You're leaving gains on the table. Push closer to your limit.
             </Text>
 
             {/* Injured toggle */}
+            <View style={styles.divider} />
             <View style={styles.injuredRow}>
-              <Text style={styles.injuredLabel}>I'm injured</Text>
+              <Text style={styles.injuredLabel}>Going easy (injury / recovery)</Text>
               <Switch
                 value={isInjured}
                 onValueChange={onInjuredChange}
-                trackColor={{ false: 'rgba(198,198,198,0.20)', true: C_AMBER }}
-                thumbColor={C_TEXT}
-                ios_backgroundColor="rgba(198,198,198,0.20)"
+                trackColor={{ false: WHITE_FAINT, true: ACCENT }}
+                thumbColor={WHITE}
+                ios_backgroundColor={WHITE_FAINT}
               />
             </View>
+
           </Animated.View>
         </Animated.View>
       </Pressable>
@@ -236,7 +203,6 @@ export function DynamicIslandRPEWarning({
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
@@ -245,94 +211,112 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 999,
   },
-  container: {
+
+  // The island itself — pure black, no glass
+  island: {
+    backgroundColor: BLACK,
     overflow: 'hidden',
-    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Subtle shadow so it reads against dark workout backgrounds
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 24,
-    elevation: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fillOverlay: {
-    backgroundColor: 'rgba(28,28,30,0.82)',
-    borderRadius: CARD_BR,
-  },
-  border: {
-    borderRadius: CARD_BR,
-    borderWidth: 1,
-    borderColor: C_AMBER_BD,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.55,
+    shadowRadius: 20,
+    elevation: 24,
   },
 
-  // Collapsed pill state
-  pillIcon: {
+  // ── Pill state ──────────────────────────────────────────────────────────────
+  pillCenter: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
   },
-  pillEmoji: {
-    fontSize: 17,
+  pillDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: ACCENT,
+  },
+  pillRpe: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: WHITE,
+    letterSpacing: -0.2,
   },
 
-  // Expanded content
+  // ── Expanded content ────────────────────────────────────────────────────────
   content: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     width: '100%',
     justifyContent: 'space-between',
   },
-  headerRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
   },
-  rpeTag: {
+  rpeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: C_AMBER_BG,
-    borderWidth: 1,
-    borderColor: C_AMBER_BD,
+    backgroundColor: 'rgba(255,159,10,0.15)',
   },
-  rpeTagText: {
+  rpeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: ACCENT,
+  },
+  rpeBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: C_AMBER,
-    letterSpacing: 0.2,
-  },
-  dismiss: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: C_DIM,
+    color: ACCENT,
     letterSpacing: 0.1,
   },
-  message: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: C_TEXT,
-    lineHeight: 20,
-    letterSpacing: -0.1,
-    flex: 1,
+  dismissHint: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: WHITE_DIM,
   },
-  accentText: {
-    color: C_AMBER,
+  headline: {
+    fontSize: 15,
     fontWeight: '600',
+    color: WHITE,
+    letterSpacing: -0.3,
+    marginTop: 8,
+  },
+  accent: {
+    color: ACCENT,
+  },
+  subtext: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: WHITE_DIM,
+    letterSpacing: -0.1,
+    marginTop: 3,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    marginTop: 10,
   },
   injuredRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(198,198,198,0.12)',
+    marginTop: 8,
   },
   injuredLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: C_DIM,
+    fontSize: 12,
+    fontWeight: '400',
+    color: WHITE_DIM,
     letterSpacing: -0.1,
   },
 });
