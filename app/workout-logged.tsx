@@ -234,17 +234,29 @@ export default function WorkoutLoggedScreen() {
             ? rpeVals.reduce((a: number, b: number) => a + b, 0) / rpeVals.length
             : null;
 
+          // Map goal → ExerciseSummaryItem action
+          let action: ExerciseSummaryItem['action'] = 'build_reps';
+          if (p?.isCalibrating)           action = 'calibrate';
+          else if (p?.goal === 'add_load')   action = 'add_weight';
+          else if (p?.goal === 'reduce_load') action = 'deload';
+
+          // Convert stored weight (always kg) to display unit
+          const nextWeightKg   = p?.nextWeight ?? 0;
+          const nextWeightDisp = settings.weightUnit === 'lb'
+            ? Number((nextWeightKg * 2.20462).toFixed(1))
+            : Number(nextWeightKg.toFixed(1));
+
           return {
-            exerciseName:       ex.name ?? 'Exercise',
-            action:             (p?.goal === 'add_load' ? 'add_weight' : p?.goal === 'reduce_load' ? 'deload' : 'build_reps') as ExerciseSummaryItem['action'],
-            nextWeightDisplay:  p?.nextWeight ? Number(p.nextWeight.toFixed(1)) : 0,
-            weightUnit:         settings.weightUnit as 'kg' | 'lb',
-            nextBand:           ((p as any)?.difficulty_band ?? 'easy') as DifficultyBand,
-            reason:             (p as any)?.reason ?? '',
-            isCalibrating:      Boolean((p as any)?.is_calibrating),
+            exerciseName:      ex.name ?? 'Exercise',
+            action,
+            nextWeightDisplay: nextWeightDisp,
+            weightUnit:        settings.weightUnit as 'kg' | 'lb',
+            nextBand:          (p?.difficultyBand ?? 'easy') as DifficultyBand,
+            reason:            p?.reason ?? '',
+            isCalibrating:     p?.isCalibrating ?? false,
             avgRpe,
-            repRangeLow:        ex.repRangeLow ?? 8,
-            repRangeHigh:       ex.repRangeHigh ?? 12,
+            repRangeLow:       ex.repRangeLow  ?? 8,
+            repRangeHigh:      ex.repRangeHigh ?? 12,
           };
         });
 

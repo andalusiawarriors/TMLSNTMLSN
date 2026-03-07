@@ -241,11 +241,12 @@ export function PostSessionSummary({
     []
   );
 
-  // Does any exercise have low RPE?
+  // "Push harder?" only when RPE was low AND it's not a deload week
+  // (during deload, easy effort is expected — don't nag the user)
   const lowRpeExercises = items.filter(
     (i) => i.avgRpe != null && i.avgRpe < 8
   );
-  const showPushHarder = lowRpeExercises.length > 0 && onPushHarder != null;
+  const showPushHarder = !isDeloadWeek && lowRpeExercises.length > 0 && onPushHarder != null;
 
   return (
     <BottomSheet
@@ -284,9 +285,19 @@ export function PostSessionSummary({
           contentContainerStyle={sheet.listContent}
           showsVerticalScrollIndicator={false}
         >
-          {items.map((item, idx) => (
-            <ExerciseRow key={`${item.exerciseName}-${idx}`} item={item} />
-          ))}
+          {items.length === 0 ? (
+            <View style={sheet.emptyState}>
+              <Text style={sheet.emptyIcon}>📊</Text>
+              <Text style={sheet.emptyTitle}>No prescriptions yet</Text>
+              <Text style={sheet.emptySub}>
+                Complete a few sets with weight and RPE data — your progression plan will appear here next session.
+              </Text>
+            </View>
+          ) : (
+            items.map((item, idx) => (
+              <ExerciseRow key={`${item.exerciseName}-${idx}`} item={item} />
+            ))
+          )}
 
           {/* ── "Push harder?" prompt ──────────────── */}
           {showPushHarder && (
@@ -432,6 +443,33 @@ const sheet = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 4,
+  },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 48,
+    paddingBottom: 24,
+    paddingHorizontal: 16,
+  },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: C_TEXT,
+    letterSpacing: -0.3,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: C_DIM,
+    lineHeight: 20,
+    textAlign: 'center',
   },
 
   // Push harder card

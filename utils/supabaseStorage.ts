@@ -189,6 +189,7 @@ async function saveExercisePrescription(params: {
   consecutiveSuccess: number;
   consecutiveFailure: number;
   isCalibrating: boolean;
+  reason: string;
 }): Promise<void> {
   if (!supabase) return;
   const { error } = await supabase.from('exercise_progress_state').upsert(
@@ -202,6 +203,7 @@ async function saveExercisePrescription(params: {
       consecutive_success: params.consecutiveSuccess,
       consecutive_failure: params.consecutiveFailure,
       is_calibrating: params.isCalibrating,
+      progression_reason: params.reason,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,exercise_id,variant_key' }
@@ -824,8 +826,8 @@ export async function supabaseSaveWorkoutSession(
         const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
         if (!prescription) continue;
 
-        // After a calibration session, mark as no longer calibrating
-        const nextIsCalibrating = isCalibrating ? false : isCalibrating;
+        // Exit calibration mode after the first real session (1 set of data is enough for a baseline)
+        const nextIsCalibrating = false;
 
         await saveExercisePrescription({
           userId,
@@ -836,6 +838,7 @@ export async function supabaseSaveWorkoutSession(
           consecutiveSuccess: prescription.goal === 'add_load' ? consecutiveSuccess + 1 : 0,
           consecutiveFailure: prescription.goal === 'add_reps' && !isCalibrating ? consecutiveFailure + 1 : 0,
           isCalibrating: nextIsCalibrating,
+          reason: prescription.reason ?? '',
         });
       }
     }
@@ -850,10 +853,20 @@ export async function supabaseSaveWorkoutSession(
  * canonical exercise IDs.  Returns a map keyed by the same canonical ID that
  * was passed in (exerciseDbId ?? exercise.name).
  */
+export type ExercisePrescriptionRow = {
+  nextWeight: number;
+  goal: string;
+  difficultyBand: string;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  isCalibrating: boolean;
+  reason: string;
+};
+
 export async function supabaseGetExercisePrescriptions(
   userId: string,
   canonicalIds: string[]
-): Promise<Record<string, { nextWeight: number; goal: string }>> {
+): Promise<Record<string, ExercisePrescriptionRow>> {
   if (!supabase || canonicalIds.length === 0) return {};
   const progressIds = canonicalIds.map((id) => toExerciseProgressId(id));
   const progressToCanonical: Record<string, string> = {};
@@ -861,19 +874,26 @@ export async function supabaseGetExercisePrescriptions(
 
   const { data, error } = await supabase
     .from('exercise_progress_state')
-    .select('exercise_id, next_target_weight, next_goal_type')
+    .select(
+      'exercise_id, next_target_weight, next_goal_type, difficulty_band, consecutive_success, consecutive_failure, is_calibrating, progression_reason'
+    )
     .eq('user_id', userId)
     .in('exercise_id', progressIds);
 
   if (error || !data) return {};
 
-  const result: Record<string, { nextWeight: number; goal: string }> = {};
+  const result: Record<string, ExercisePrescriptionRow> = {};
   for (const row of data) {
     if (row.next_target_weight == null) continue;
     const canonical = progressToCanonical[row.exercise_id] ?? row.exercise_id;
     result[canonical] = {
-      nextWeight: row.next_target_weight,
-      goal: row.next_goal_type ?? 'add_reps',
+      nextWeight:         row.next_target_weight,
+      goal:               row.next_goal_type         ?? 'add_reps',
+      difficultyBand:     row.difficulty_band         ?? 'easy',
+      consecutiveSuccess: row.consecutive_success     ?? 0,
+      consecutiveFailure: row.consecutive_failure     ?? 0,
+      isCalibrating:      row.is_calibrating          ?? false,
+      reason:             row.progression_reason      ?? '',
     };
   }
   return result;
