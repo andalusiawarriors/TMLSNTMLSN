@@ -58,8 +58,10 @@ function useDeviceKind() {
 
 const PILL_H  = 37;
 const PILL_BR = 20;
-const CARD_W  = SW - 40;
-const CARD_H  = 130;
+// Card stays within the DI centre column — doesn't reach time (left) or battery (right).
+// 66% of screen width:  393pt → ~259pt,  430pt → ~284pt,  440pt → ~290pt
+const CARD_W  = Math.round(SW * 0.66);
+const CARD_H  = 148;
 const CARD_BR = 26;
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -115,14 +117,14 @@ export function DynamicIslandRPEWarning({
 
   const expand = useCallback(() => {
     runOnJS(triggerHaptic)();
-    width.value     = withSpring(CARD_W,  SPRING);
-    height.value    = withSpring(CARD_H,  SPRING);
-    radius.value    = withSpring(CARD_BR, SPRING);
-    scale.value     = withSpring(1,       SPRING);
-    contentOp.value = withDelay(
-      200,
-      withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) })
-    );
+    // 1. Drop DOWN first — grows from DI pill like a raindrop forming below it
+    height.value = withSpring(CARD_H, { damping: 26, stiffness: 300, mass: 0.8 });
+    radius.value = withSpring(CARD_BR, SPRING);
+    scale.value  = withSpring(1, SPRING);
+    // 2. Spread WIDTH after a beat — symmetric from centre, stays in DI column
+    width.value  = withDelay(100, withSpring(CARD_W, SPRING));
+    // 3. Content fades in as the card settles
+    contentOp.value = withDelay(220, withTiming(1, { duration: 180, easing: Easing.out(Easing.ease) }));
   }, [width, height, radius, scale, contentOp, triggerHaptic]);
 
   const collapse = useCallback(() => {
