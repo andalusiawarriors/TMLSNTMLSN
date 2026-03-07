@@ -312,13 +312,22 @@ async function buildTodayExerciseDetails(
         sets: workingSets,
         repRangeLow,
         repRangeHigh,
-        incrementKg,
+        // Context preview — real band state lives in Supabase exercise_progress_state.
+        // These defaults keep the ghost weight accurate for coaching while avoiding
+        // a runtime crash from missing required fields.
+        overloadCategory: 'compound_small',
+        currentBand: 'easy',
+        consecutiveSuccess: 0,
+        consecutiveFailure: 0,
+        isCalibrating: false,
+        isDeloadWeek: false,
+        blitzMode: false,
       });
 
       if (decision) {
         ghostWeight = formatWeightDisplay(toDisplayWeight(decision.nextWeightLb, weightUnit), weightUnit);
         ghostReps = String(decision.nextRepTarget);
-        action = actionToPhrase(decision.action);
+        action = actionToPhrase(decision.action as 'deload' | 'add_weight' | 'build_reps');
         reason = decision.reason;
         goal = decision.goal;
         const rpeVals = workingSets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
@@ -326,7 +335,7 @@ async function buildTodayExerciseDetails(
           lastSessionDate: sessionDate,
           workingSetsAnalyzed: workingSets.length,
           maxRpe: rpeVals.length > 0 ? Math.max(...rpeVals) : null,
-          hitTopRange: decision.debug.hitTopRange,
+          hitTopRange: decision.debug.hitThreshold,
         };
       } else {
         const last = doneSets[doneSets.length - 1];
