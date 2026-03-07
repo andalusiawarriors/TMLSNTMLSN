@@ -19,6 +19,7 @@ import { supabaseGetExercisePrescriptions } from '../utils/supabaseStorage';
 import { useSupabaseUser } from '../hooks/useSupabaseUser';
 import { PostSessionSummary, type ExerciseSummaryItem } from '../components/PostSessionSummary';
 import { DynamicIslandRPEWarning } from '../components/DynamicIslandRPEWarning';
+import { startRPEActivity, stopRPEActivity } from '../lib/liveActivity';
 import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 import { isDeloadWeek } from '../lib/progression/decideNextPrescription';
 
@@ -271,7 +272,12 @@ export default function WorkoutLoggedScreen() {
         // Trigger Dynamic Island RPE warning if any exercise had RPE < 7
         const lowRpe = items.find(i => i.avgRpe != null && i.avgRpe < 7);
         if (lowRpe && lowRpe.avgRpe != null) {
-          setTimeout(() => setRpeWarning({ visible: true, rpe: Math.round(lowRpe.avgRpe!) }), 800);
+          const roundedRpe = Math.round(lowRpe.avgRpe!);
+          const worstEx    = lowRpe.exerciseName ?? '';
+          // Real iOS Live Activity (DI hardware + lock screen)
+          startRPEActivity(roundedRpe, worstEx, 'post', 12000);
+          // RN overlay fallback for non-DI / Expo Go
+          setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe }), 800);
         }
 
         // Show post-session summary after a short delay
@@ -431,7 +437,7 @@ export default function WorkoutLoggedScreen() {
           context="post"
           isInjured={isInjured}
           onInjuredChange={setIsInjured}
-          onDismiss={() => setRpeWarning({ visible: false, rpe: 0 })}
+          onDismiss={() => { setRpeWarning({ visible: false, rpe: 0 }); stopRPEActivity(); }}
         />
       </View>
 

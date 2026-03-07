@@ -62,6 +62,7 @@ import { BackButton } from '../../components/BackButton';
 import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
 import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarning';
+import { startRPEActivity, stopRPEActivity } from '../../lib/liveActivity';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -707,7 +708,11 @@ export default function WorkoutScreen({
         // Fire Dynamic Island notification for low RPE (below 7)
         if (clamped < 7) {
           const exName = activeWorkout?.exercises[exerciseIndex]?.name ?? '';
-          setTimeout(() => setRpeWarning({ visible: true, rpe: Math.round(clamped), exerciseName: exName }), 150);
+          const roundedRpe = Math.round(clamped);
+          // Real iOS Live Activity (appears inside the DI hardware + lock screen)
+          startRPEActivity(roundedRpe, exName, 'active');
+          // RN overlay fallback for non-DI / Expo Go
+          setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exName }), 150);
         }
       }
     } else {
@@ -1870,7 +1875,7 @@ export default function WorkoutScreen({
         context="active"
         isInjured={isInjured}
         onInjuredChange={setIsInjured}
-        onDismiss={() => setRpeWarning(prev => ({ ...prev, visible: false }))}
+        onDismiss={() => { setRpeWarning(prev => ({ ...prev, visible: false })); stopRPEActivity(); }}
       />
 
     </View>
