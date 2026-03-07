@@ -83,11 +83,16 @@ export type ProgressionInput = {
 // ─── Increment table ──────────────────────────────────────────────────────────
 // Matches the document exactly (values in kg).
 
-const INCREMENTS: Record<OverloadCategory, Record<DifficultyBand, number>> = {
+export const INCREMENTS: Record<OverloadCategory, Record<DifficultyBand, number>> = {
   compound_big:   { easy: 2.5,  medium: 5,   hard: 7.5, extreme: 10  },
   compound_small: { easy: 1.25, medium: 2.5, hard: 5,   extreme: 7.5 },
   isolation:      { easy: 0.5,  medium: 1,   hard: 1.5, extreme: 2.5 },
 };
+
+/** Return the kg increment for a given category + band. */
+export function getIncrementKg(category: OverloadCategory, band: DifficultyBand): number {
+  return INCREMENTS[category][band];
+}
 
 const BANDS: DifficultyBand[] = ['easy', 'medium', 'hard', 'extreme'];
 

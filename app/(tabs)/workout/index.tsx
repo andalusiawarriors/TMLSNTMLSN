@@ -60,7 +60,7 @@ import { format } from 'date-fns';
 import { useTheme } from '../../../context/ThemeContext';
 import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { useAuth } from '../../../context/AuthContext';
-import { supabaseGetExercisePrescriptions } from '../../../utils/supabaseStorage';
+import { supabaseGetExercisePrescriptions, ExercisePrescriptionRow } from '../../../utils/supabaseStorage';
 import { BackButton } from '../../../components/BackButton';
 import Slider from '@react-native-community/slider';
 import { StickyWorkoutHeader } from '../../../components/StickyWorkoutHeader';
@@ -264,7 +264,7 @@ export default function WorkoutScreen({
    * Progressive overload prescriptions keyed by exercise canonical ID
    * (exerciseDbId ?? exercise.name).  Loaded once per workout session start.
    */
-  const [prescriptions, setPrescriptions] = useState<Record<string, { nextWeight: number; goal: string }>>({});
+  const [prescriptions, setPrescriptions] = useState<Record<string, ExercisePrescriptionRow>>({});
   /** Keyboard height for positioning the confirm bar above the keyboard (passed to WorkoutSetTable). */
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 

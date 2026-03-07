@@ -171,7 +171,7 @@ function computeNextPrescription(
 }
 
 /** Resolve overload category from exercise DB id or name. Defaults to compound_small. */
-function resolveOverloadCategory(exerciseDbId: string | null | undefined, exerciseName: string): OverloadCategory {
+export function resolveOverloadCategory(exerciseDbId: string | null | undefined, exerciseName: string): OverloadCategory {
   const id = exerciseDbId ?? resolveExerciseDbIdFromName(exerciseName);
   if (id) {
     const ex = EXERCISE_MAP.get(id);

@@ -87,6 +87,13 @@ export type DynamicIslandRPEWarningProps = {
   exerciseName?: string;
   /** 'active' = shown mid-workout after a set; 'post' = shown after session ends. */
   context?: 'active' | 'post';
+  /**
+   * When the progression engine bumped remaining set weights in-session, pass the
+   * new display weight here (e.g. "85 kg") so the subtext reflects the change.
+   */
+  weightBumpDisplay?: string | null;
+  /** Weight unit for the bump label ('kg' | 'lb'). */
+  weightUnit?: 'kg' | 'lb';
   isInjured: boolean;
   onInjuredChange: (val: boolean) => void;
   onDismiss: () => void;
@@ -99,6 +106,8 @@ export function DynamicIslandRPEWarning({
   rpe,
   exerciseName,
   context = 'post',
+  weightBumpDisplay,
+  weightUnit = 'kg',
   isInjured,
   onInjuredChange,
   onDismiss,
@@ -178,7 +187,9 @@ export function DynamicIslandRPEWarning({
     : `Aim higher next session`;
 
   const subtext = context === 'active'
-    ? `RPE ${rpe} is below target — drive to RPE 7+`
+    ? weightBumpDisplay
+      ? `RPE ${rpe} — next sets bumped to ${weightBumpDisplay} ${weightUnit}`
+      : `RPE ${rpe} is below target — drive to RPE 7+`
     : `Average RPE of ${rpe} — leave less in the tank`;
 
   return (

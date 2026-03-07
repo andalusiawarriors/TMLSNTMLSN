@@ -6,6 +6,9 @@
 import type { Exercise, WorkoutSession } from '../types';
 import { toDisplayWeight, formatWeightDisplay } from './units';
 import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
+import type { ExercisePrescriptionRow } from './supabaseStorage';
+import { resolveOverloadCategory } from './supabaseStorage';
+import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 
 export type PrevSet = { weight: number; reps: number };
 
@@ -46,15 +49,32 @@ function findLastSessionWithExercise(
  * Build prevSets and ghost from canonical progression engine.
  * When history exists: run decideNextPrescription and use its output.
  * When no history: fallback to DB prescription or last set; ghostReason indicates "No history yet".
+ *
+ * Prescriptions map accepts the full ExercisePrescriptionRow so the engine
+ * uses the real difficulty band and consecutive-success counters rather than
+ * defaulting to easy/compound_small for every exercise.
  */
 export function buildPrevSetsAndGhost(
   exercise: Exercise,
-  prescriptions: Record<string, { nextWeight: number; goal: string }>,
+  prescriptions: Record<string, ExercisePrescriptionRow | { nextWeight: number; goal: string }>,
   recentSessions: WorkoutSession[],
   weightUnit: 'kg' | 'lb'
 ): GhostResult {
   const exKey = exercise.exerciseDbId ?? exercise.name;
-  const prescription = exKey ? prescriptions[exKey] : null;
+  const prescription = exKey ? (prescriptions[exKey] ?? null) : null;
+
+  // Pull progression-state fields if the full row is available
+  const difficultyBand: DifficultyBand =
+    (prescription && 'difficultyBand' in prescription ? prescription.difficultyBand : 'easy') as DifficultyBand;
+  const consecutiveSuccess =
+    prescription && 'consecutiveSuccess' in prescription ? prescription.consecutiveSuccess : 0;
+  const consecutiveFailure =
+    prescription && 'consecutiveFailure' in prescription ? prescription.consecutiveFailure : 0;
+  const isCalibrating =
+    prescription && 'isCalibrating' in prescription ? prescription.isCalibrating : false;
+
+  // Resolve the correct overload category from the exercise database
+  const overloadCategory = resolveOverloadCategory(exercise.exerciseDbId, exercise.name ?? '');
 
   let ghostWeight: string | null = null;
   let ghostReps: string | null = null;
@@ -71,7 +91,6 @@ export function buildPrevSetsAndGhost(
 
     const repRangeLow = exercise.repRangeLow ?? 8;
     const repRangeHigh = exercise.repRangeHigh ?? 12;
-    const incrementKg = (exercise.smallestIncrement ?? 2.5) as number;
 
     const workingSets = doneSets.map((s) => ({
       weight: s.weight,
@@ -84,22 +103,24 @@ export function buildPrevSetsAndGhost(
       sets: workingSets,
       repRangeLow,
       repRangeHigh,
-      overloadCategory: 'compound_small',
-      currentBand: 'easy',
-      consecutiveSuccess: 0,
-      consecutiveFailure: 0,
-      isCalibrating: false,
+      overloadCategory,
+      currentBand: difficultyBand,
+      consecutiveSuccess,
+      consecutiveFailure,
+      isCalibrating,
       isDeloadWeek: false,
       blitzMode: false,
     });
 
-    // [AUDIT] Temporary debug – remove after verification
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
       console.log('[buildPrevSetsAndGhost AUDIT]', {
         exerciseName: exercise.name,
+        overloadCategory,
+        difficultyBand,
+        consecutiveSuccess,
+        consecutiveFailure,
         repRangeLow,
         repRangeHigh,
-        incrementKg,
         doneSetsCount: doneSets.length,
         fromProgressionEngine: !!decision,
         usedPrescriptionFallback: !decision && !!prescription,

@@ -63,6 +63,11 @@ import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
 import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarning';
 import { startRPEActivity, stopRPEActivity } from '../../lib/liveActivity';
+import { useAuth } from '../../context/AuthContext';
+import { supabaseGetExercisePrescriptions, ExercisePrescriptionRow, resolveOverloadCategory } from '../../utils/supabaseStorage';
+import { LB_PER_KG } from '../../utils/units';
+import { getIncrementKg } from '../../lib/progression/decideNextPrescription';
+import type { DifficultyBand } from '../../lib/progression/decideNextPrescription';
 
 
 const formatRoutineTitle = (name: string) => {
@@ -214,6 +219,7 @@ export default function WorkoutScreen({
     minimized,
     minimizeWorkout,
   } = useActiveWorkout();
+  const { user } = useAuth();
   const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
     startRoutineId?: string;
@@ -227,6 +233,19 @@ export default function WorkoutScreen({
       setCurrentExerciseIndex(0);
     }
   }, [initialActiveWorkout, setActiveWorkout, setCurrentExerciseIndex]);
+
+  // Load progression prescriptions (band, consecutive counters) for in-session RPE bump.
+  useEffect(() => {
+    if (!activeWorkout || !user) { setPrescriptions({}); return; }
+    const canonicalIds = activeWorkout.exercises
+      .map((ex) => ex.exerciseDbId ?? ex.name)
+      .filter(Boolean) as string[];
+    supabaseGetExercisePrescriptions(user.id, canonicalIds).then(setPrescriptions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkout?.id, user?.id]);
+  /** Full prescription row per exercise (exerciseDbId ?? name), loaded on workout start. */
+  const [prescriptions, setPrescriptions] = useState<Record<string, ExercisePrescriptionRow>>({});
+
   const [showSplitSelection, setShowSplitSelection] = useState(false);
   const [showExerciseEntry, setShowExerciseEntry] = useState(false);
   const [showExercisePicker, setShowExercisePicker] = useState(false);
@@ -315,7 +334,7 @@ export default function WorkoutScreen({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Dynamic Island RPE notification (fires when a set's RPE < 7 is committed)
-  const [rpeWarning, setRpeWarning]   = useState<{ visible: boolean; rpe: number; exerciseName: string }>({ visible: false, rpe: 0, exerciseName: '' });
+  const [rpeWarning, setRpeWarning]   = useState<{ visible: boolean; rpe: number; exerciseName: string; weightBumpDisplay?: string | null }>({ visible: false, rpe: 0, exerciseName: '' });
   const [isInjured,  setIsInjured]    = useState(false);
 
   // Set/Exercise-level notes editor state
@@ -682,6 +701,42 @@ export default function WorkoutScreen({
     setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
   };
 
+  /**
+   * Apply a weight bump (in lb) to all remaining uncompleted sets of an exercise
+   * that haven't been manually changed from the current set's weight.
+   * Returns the bumped weight in display units (for the warning message), or null
+   * if there was nothing to bump.
+   */
+  const bumpRemainingSetWeights = useCallback((
+    exerciseIndex: number,
+    completedSetIndex: number,
+    bumpedWeightLb: number,
+  ): number | null => {
+    if (!activeWorkout) return null;
+    const exercise = activeWorkout.exercises[exerciseIndex];
+    if (!exercise) return null;
+
+    const currentWeightLb = exercise.sets[completedSetIndex]?.weight ?? 0;
+    if (currentWeightLb === 0) return null;
+
+    let anyBumped = false;
+    const updatedSets = exercise.sets.map((s, i) => {
+      // Only touch uncompleted sets after the current one whose weight matches (not manually overridden)
+      if (i <= completedSetIndex) return s;
+      if (s.completed) return s;
+      if (s.weight !== 0 && s.weight !== currentWeightLb) return s;
+      anyBumped = true;
+      return { ...s, weight: bumpedWeightLb };
+    });
+
+    if (!anyBumped) return null;
+
+    const updatedExercises = [...activeWorkout.exercises];
+    updatedExercises[exerciseIndex] = { ...exercise, sets: updatedSets };
+    setActiveWorkout({ ...activeWorkout, exercises: updatedExercises });
+    return toDisplayWeight(bumpedWeightLb, weightUnit);
+  }, [activeWorkout, weightUnit, setActiveWorkout]);
+
   /** Field commit only: save typed value into set. Does NOT set completed or update top stats. */
   const commitActiveFieldIfNeeded = useCallback((source: 'done' | 'outside' | 'blur') => {
     if (!editingCell) return;
@@ -713,10 +768,29 @@ export default function WorkoutScreen({
         if (clamped < 7 && hasNextSet) {
           const exName = exercise?.name ?? '';
           const roundedRpe = Math.round(clamped);
+
+          // ── In-session progressive overload bump ──────────────────────────
+          // Use the exercise's real band + category to compute the same increment
+          // the progression engine would apply post-session, then pre-fill it on
+          // remaining uncompleted sets whose weight hasn't been manually changed.
+          const exKey = exercise?.exerciseDbId ?? exercise?.name;
+          const prescription = exKey ? prescriptions[exKey] : null;
+          const band = ((prescription?.difficultyBand ?? 'easy') as DifficultyBand);
+          const category = resolveOverloadCategory(exercise?.exerciseDbId, exName);
+          const incrementKg = getIncrementKg(category, band);
+          const currentWeightLb = exercise?.sets[setIndex]?.weight ?? 0;
+          const bumpedWeightLb = currentWeightLb > 0
+            ? currentWeightLb + incrementKg * LB_PER_KG
+            : 0;
+          const weightBumpDisplay = bumpedWeightLb > 0
+            ? bumpRemainingSetWeights(exerciseIndex, setIndex, bumpedWeightLb)
+            : null;
+          // ─────────────────────────────────────────────────────────────────
+
           // Real iOS Live Activity (appears inside the DI hardware + lock screen)
           startRPEActivity(roundedRpe, exName, 'active');
           // RN overlay fallback for non-DI / Expo Go
-          setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exName }), 150);
+          setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exName, weightBumpDisplay }), 150);
         }
       }
     } else {
@@ -1877,6 +1951,8 @@ export default function WorkoutScreen({
         rpe={rpeWarning.rpe}
         exerciseName={rpeWarning.exerciseName}
         context="active"
+        weightBumpDisplay={rpeWarning.weightBumpDisplay}
+        weightUnit={weightUnit}
         isInjured={isInjured}
         onInjuredChange={setIsInjured}
         onDismiss={() => { setRpeWarning(prev => ({ ...prev, visible: false })); stopRPEActivity(); }}
