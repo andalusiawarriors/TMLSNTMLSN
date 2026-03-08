@@ -27,6 +27,7 @@ import { getRpeLabel } from '../utils/rpe';
 import { Input } from './Input';
 import { Colors, Typography } from '../constants/theme';
 import Slider from '@react-native-community/slider';
+import { updateToRPEWarning, sendRPENotification } from '../lib/liveActivity';
 
 const SET_TABLE_FLEX = {
   set: 0.85,
@@ -452,6 +453,15 @@ export function WorkoutSetTable({
                             onRestTimerStart(exerciseIndex, setIndex, set.id, exercise.restTimer);
                           } else if (!nextCompleted && onRestTimerSkip) {
                             onRestTimerSkip(set.id);
+                          }
+                          if (nextCompleted) {
+                            const finalRpe = setUpdates.rpe ?? set.rpe;
+                            const hasNextSet = exercise.sets.length > setIndex + 1;
+                            if (finalRpe != null && finalRpe < 7 && hasNextSet) {
+                              const roundedRpe = Math.round(finalRpe);
+                              updateToRPEWarning(roundedRpe, exercise.name);
+                              sendRPENotification(roundedRpe, exercise.name, 'active');
+                            }
                           }
                         }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

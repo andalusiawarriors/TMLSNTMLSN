@@ -65,6 +65,9 @@ let workoutActivityId:  string | null = null;
 let currentWorkoutName: string        = '';
 let revertTimer: ReturnType<typeof setTimeout> | null = null;
 
+// When a rest timer is active, remember its state so the RPE warning can revert to it
+let pendingRestTimer: { exerciseName: string; setNumber: number; endTimeMs: number } | null = null;
+
 // Post-session only (fired after workout ends)
 let postRPEActivityId:     string | null = null;
 let autoDismissPostRPETimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,6 +143,7 @@ export async function startWorkoutActivity(workoutName: string): Promise<void> {
 /** Stop the workout Live Activity (session complete or discarded). */
 export async function stopWorkoutActivity(): Promise<void> {
   clearRevertTimer();
+  pendingRestTimer = null;
   const mod = getModule();
   if (!mod || !workoutActivityId) return;
   try {
@@ -164,6 +168,7 @@ export function updateToRestTimer(
   if (!mod || !workoutActivityId) return;
 
   const endTimeMs = Date.now() + durationSec * 1000;
+  pendingRestTimer = { exerciseName, setNumber, endTimeMs };
   try {
     mod.updateActivity(workoutActivityId, {
       title:    exerciseName,
@@ -172,14 +177,19 @@ export function updateToRestTimer(
     });
   } catch (e) {
     console.warn('[LiveActivity] updateToRestTimer failed:', e);
+    pendingRestTimer = null;
     return;
   }
 
-  revertTimer = setTimeout(revertToWorkoutState, durationSec * 1000 + 500);
+  revertTimer = setTimeout(() => {
+    pendingRestTimer = null;
+    revertToWorkoutState();
+  }, durationSec * 1000 + 500);
 }
 
 /** Cancel rest timer or RPE animation early and revert to workout state. */
 export function cancelRestTimerActivity(): void {
+  pendingRestTimer = null;
   revertToWorkoutState();
 }
 
@@ -210,7 +220,35 @@ export function updateToRPEWarning(
     return;
   }
 
-  revertTimer = setTimeout(revertToWorkoutState, durationMs);
+  revertTimer = setTimeout(() => {
+    // If a rest timer is still running, revert to it instead of workout state
+    const rest = pendingRestTimer;
+    const remainingMs = rest ? rest.endTimeMs - Date.now() : 0;
+    if (rest && remainingMs > 1000) {
+      const mod2 = getModule();
+      if (mod2 && workoutActivityId) {
+        try {
+          mod2.updateActivity(workoutActivityId, {
+            title:    rest.exerciseName,
+            subtitle: `Rest · Set ${rest.setNumber} complete`,
+            progressBar: { date: rest.endTimeMs },
+          });
+        } catch (e) {
+          console.warn('[LiveActivity] revert-to-rest failed:', e);
+          pendingRestTimer = null;
+          revertToWorkoutState();
+          return;
+        }
+        revertTimer = setTimeout(() => {
+          pendingRestTimer = null;
+          revertToWorkoutState();
+        }, remainingMs + 500);
+        return;
+      }
+    }
+    pendingRestTimer = null;
+    revertToWorkoutState();
+  }, durationMs);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

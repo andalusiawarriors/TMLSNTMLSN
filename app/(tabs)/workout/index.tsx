@@ -16,6 +16,7 @@ import {
   Platform,
   TextInput,
   Image,
+  AppState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,7 +69,7 @@ import ExerciseStatsModal from '../../../components/ExerciseStatsModal';
 import { useExerciseReorder } from '../../../components/DraggableExerciseList';
 import { WorkoutSetTable } from '../../../components/WorkoutSetTable';
 import { buildPrevSetsAndGhost } from '../../../utils/workoutSetTable';
-import { startRestTimerActivity, stopRestTimerActivity, updateWorkoutActivity } from '../../../lib/liveActivity';
+import { updateToRestTimer, cancelRestTimerActivity, updateToRPEWarning, sendRPENotification } from '../../../lib/liveActivity';
 
 
 function WorkoutTabRedirect() {
@@ -311,6 +312,8 @@ export default function WorkoutScreen({
   const lastProcessedRoutineId = useRef<string | null>(null);
   const activeWorkoutRef = useRef<WorkoutSession | null>(null);
   const workoutScrollRef = useRef<any>(null);
+  // Stores the epoch ms when the rest timer expires so we can resync after backgrounding
+  const restTimerEndRef = useRef<number | null>(null);
 
   // ── Scroll-aware sticky header ──────────────────────────────────────────────
   const scrollYShared = useSharedValue(0);
@@ -427,6 +430,26 @@ export default function WorkoutScreen({
     }
     return () => clearInterval(interval);
   }, [restTimerActive, restTimeRemaining]);
+
+  // Resync rest timer when app comes back to foreground (JS timers pause in background)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && restTimerEndRef.current !== null) {
+        const remaining = Math.round((restTimerEndRef.current - Date.now()) / 1000);
+        if (remaining <= 0) {
+          restTimerEndRef.current = null;
+          setRestTimerActive(false);
+          setRestTimerContext(null);
+          setRestTimeRemaining(0);
+          cancelRestTimerActivity();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else {
+          setRestTimeRemaining(remaining);
+        }
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const startWorkoutFromSplit = async (split: WorkoutSplit) => {
     const allSettings = await getAllExerciseSettings();
@@ -698,6 +721,7 @@ export default function WorkoutScreen({
       if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled (replacing)', { setId, notificationId: restTimerNotificationId });
       setRestTimerNotificationId(null);
     }
+    restTimerEndRef.current = Date.now() + seconds * 1000;
     setRestTimeRemaining(seconds);
     setRestTimerActive(true);
     const idx = exerciseIdx ?? currentExerciseIndex;
@@ -705,7 +729,7 @@ export default function WorkoutScreen({
     const setNumberDisplay = setNumber + 1;
     setRestTimerContext({ exerciseName, setNumberDisplay });
     // Show countdown in Dynamic Island compact trailing
-    startRestTimerActivity(exerciseName, setNumberDisplay, seconds);
+    updateToRestTimer(exerciseName, setNumberDisplay, seconds);
     try {
       const notificationId = await scheduleRestTimerNotification(
         exerciseName,
@@ -725,7 +749,8 @@ export default function WorkoutScreen({
       if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled', { setId, notificationId: restTimerNotificationId });
       setRestTimerNotificationId(null);
     }
-    stopRestTimerActivity();
+    restTimerEndRef.current = null;
+    cancelRestTimerActivity();
     setRestTimerContext(null);
     setRestTimerActive(false);
     setRestTimeRemaining(0);
@@ -742,7 +767,8 @@ export default function WorkoutScreen({
         await cancelNotification(restTimerNotificationId);
         setRestTimerNotificationId(null);
       }
-      stopRestTimerActivity();
+      restTimerEndRef.current = null;
+      cancelRestTimerActivity();
       setRestTimerContext(null);
       setRestTimerActive(false);
       setRestTimeRemaining(0);
@@ -750,6 +776,7 @@ export default function WorkoutScreen({
       return;
     }
 
+    restTimerEndRef.current = Date.now() + after * 1000;
     setRestTimeRemaining(after);
     if (restTimerNotificationId) {
       await cancelNotification(restTimerNotificationId);
@@ -780,10 +807,6 @@ export default function WorkoutScreen({
 
     if (currentExerciseIndex < activeWorkout.exercises.length - 1) {
       const nextIdx = currentExerciseIndex + 1;
-      const nextEx = activeWorkout.exercises[nextIdx];
-      if (nextEx) {
-        updateWorkoutActivity(nextEx.name, 1, nextEx.sets.length || nextEx.targetSets || 1);
-      }
       setCurrentExerciseIndex(nextIdx);
     } else {
       // All exercises complete
