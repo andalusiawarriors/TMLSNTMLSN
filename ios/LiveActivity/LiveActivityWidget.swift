@@ -91,6 +91,16 @@ struct LiveActivityWidget: Widget {
           resizableImage(imageName: dynamicIslandImageName)
             .frame(maxWidth: 23, maxHeight: 23)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
+        } else {
+          // Fallback: title text (exercise / workout name)
+          Text(context.state.title)
+            .font(.caption2)
+            .fontWeight(.bold)
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: 80)
+            .applyWidgetURL(from: context.attributes.deepLinkUrl)
         }
       } compactTrailing: {
         if let date = context.state.timerEndDateInMilliseconds {
@@ -104,6 +114,14 @@ struct LiveActivityWidget: Widget {
           // Elapsed (count-up) timer (active workout session)
           elapsedTimer(startDate: startDate)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
+        } else if let subtitle = context.state.subtitle {
+          // Fallback: subtitle text (e.g. "Set 2 of 4")
+          Text(subtitle)
+            .font(.caption2)
+            .foregroundStyle(.white.opacity(0.75))
+            .lineLimit(1)
+            .frame(maxWidth: 60)
+            .applyWidgetURL(from: context.attributes.deepLinkUrl)
         }
       } minimal: {
         if let date = context.state.timerEndDateInMilliseconds {
@@ -114,6 +132,13 @@ struct LiveActivityWidget: Widget {
           ).applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
           elapsedTimer(startDate: startDate)
+            .applyWidgetURL(from: context.attributes.deepLinkUrl)
+        } else {
+          Text(context.state.title)
+            .font(.caption2)
+            .fontWeight(.bold)
+            .foregroundStyle(.white)
+            .lineLimit(1)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
         }
       }

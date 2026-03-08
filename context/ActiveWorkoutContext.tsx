@@ -37,7 +37,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     if (w) {
       setMinimized(false);
       // Start a persistent Dynamic Island Live Activity for the workout
-      startWorkoutActivity(w.name, new Date(w.date).getTime());
+      startWorkoutActivity(w.name);
     } else {
       stopWorkoutActivity();
     }
