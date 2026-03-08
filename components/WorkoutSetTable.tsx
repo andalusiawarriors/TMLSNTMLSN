@@ -23,6 +23,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from '
 import type { Exercise } from '../types';
 import type { PrevSet } from '../utils/workoutSetTable';
 import { toDisplayWeight, formatWeightDisplay, parseNumericInput } from '../utils/units';
+import { updateToRPEWarning, sendRPENotification } from '../lib/liveActivity';
 import { getRpeLabel } from '../utils/rpe';
 import { Input } from './Input';
 import { Colors, Typography } from '../constants/theme';
@@ -452,6 +453,15 @@ export function WorkoutSetTable({
                             onRestTimerStart(exerciseIndex, setIndex, set.id, exercise.restTimer);
                           } else if (!nextCompleted && onRestTimerSkip) {
                             onRestTimerSkip(set.id);
+                          }
+                          if (nextCompleted) {
+                            const finalRpe = setUpdates.rpe ?? set.rpe;
+                            const hasNextSet = exercise.sets.length > setIndex + 1;
+                            if (finalRpe != null && finalRpe < 7 && hasNextSet) {
+                              const roundedRpe = Math.round(finalRpe);
+                              updateToRPEWarning(roundedRpe, exercise.name);
+                              sendRPENotification(roundedRpe, exercise.name, 'active');
+                            }
                           }
                         }}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
