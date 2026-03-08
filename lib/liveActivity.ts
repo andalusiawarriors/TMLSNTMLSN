@@ -160,7 +160,7 @@ export async function startWorkoutActivity(workoutName: string): Promise<void> {
     if (workoutActivityId) {
       await AsyncStorage.setItem(ACTIVITY_ID_KEY, workoutActivityId);
     }
-    console.log('[LiveActivity] startWorkoutActivity → id:', workoutActivityId);
+    console.log('[LiveActivity] startWorkoutActivity → id:', workoutActivityId, 'raw:', id);
   } catch (e) {
     console.warn('[LiveActivity] startWorkoutActivity failed:', e);
   }
@@ -192,6 +192,7 @@ export function updateToRestTimer(
 ): void {
   clearRevertTimer();
   const mod = getModule();
+  console.log('[LiveActivity] updateToRestTimer', { exerciseName, setNumber, durationSec, workoutActivityId, hasMod: !!mod });
   if (!mod || !workoutActivityId) return;
 
   const endTimeMs = Date.now() + durationSec * 1000;
