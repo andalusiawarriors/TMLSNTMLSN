@@ -171,6 +171,11 @@ export default function WorkoutScreen({
     minimizeWorkout,
     expandWorkout,
   } = useActiveWorkout();
+
+  // Ref so useFocusEffect can read current minimized without being in its deps
+  // (avoids re-running the effect — and calling expandWorkout — when minimize fires)
+  const minimizedRef = useRef(minimized);
+  useEffect(() => { minimizedRef.current = minimized; }, [minimized]);
   const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
     startRoutineId?: string;
@@ -305,9 +310,11 @@ export default function WorkoutScreen({
       setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => setWeightUnit(s.weightUnit));
       getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 10)));
-      // If the pill was pressed to navigate here, minimized may still be true — reset it
-      if (activeWorkout && minimized) expandWorkout();
-    }, [activeWorkout, minimized, expandWorkout])
+      // If the pill was tapped to navigate here, minimized may still be true — expand.
+      // Use a ref (not state) so this callback doesn't re-run when minimized changes,
+      // which would immediately undo a minimize press while the screen is still focused.
+      if (activeWorkout && minimizedRef.current) expandWorkout();
+    }, [activeWorkout, expandWorkout]) // minimized intentionally omitted — use ref above
   );
 
   const lastProcessedStartEmpty = useRef(false);
