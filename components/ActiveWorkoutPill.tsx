@@ -18,7 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { usePathname, useSegments } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { emitWorkoutExpandOrigin, emitWorkoutOriginRoute, emitClosePopup } from '../utils/fabBridge';
 import { useTheme } from '../context/ThemeContext';
@@ -71,6 +71,7 @@ function GreenPulsingDot() {
 
 export function ActiveWorkoutPill() {
   const pathname = usePathname();
+  const router = useRouter();
   const segments = useSegments();
   const { colors } = useTheme();
   const {
@@ -147,7 +148,9 @@ export function ActiveWorkoutPill() {
         : '/(tabs)/nutrition';
       emitWorkoutExpandOrigin(route);
       emitWorkoutOriginRoute(route);
+      // expandWorkout only sets minimized=false; navigation is owned here
       expandWorkout();
+      router.replace('/(tabs)/workout');
     }
   };
 

@@ -65,8 +65,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   const expandWorkout = useCallback(() => {
     setMinimized(false);
-    router.replace('/(tabs)/workout');
-  }, [router]);
+  }, []);
 
   const discardWorkout = useCallback(
     (onDiscarded: () => void) => {

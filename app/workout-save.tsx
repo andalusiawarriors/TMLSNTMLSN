@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { format } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
@@ -170,6 +171,12 @@ export default function WorkoutSaveScreen() {
           }
         }
       }
+
+      // Mark today's recommended session as done so carousel shows "All caught up"
+      await AsyncStorage.setItem(
+        'TMLSN_session_completed_date',
+        new Date().toISOString().split('T')[0],
+      );
 
       // Clear the active workout now that the user has confirmed the save
       setActiveWorkout(null);

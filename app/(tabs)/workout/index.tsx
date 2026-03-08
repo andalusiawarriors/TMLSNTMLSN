@@ -22,7 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Input } from '../../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../../constants/theme';
@@ -169,6 +169,7 @@ export default function WorkoutScreen({
     setCurrentExerciseIndex,
     minimized,
     minimizeWorkout,
+    expandWorkout,
   } = useActiveWorkout();
   const { startSplitId, startRoutineId, startEmpty } = useLocalSearchParams<{
     startSplitId?: string;
@@ -304,7 +305,9 @@ export default function WorkoutScreen({
       setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => setWeightUnit(s.weightUnit));
       getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 10)));
-    }, [])
+      // If the pill was pressed to navigate here, minimized may still be true — reset it
+      if (activeWorkout && minimized) expandWorkout();
+    }, [activeWorkout, minimized, expandWorkout])
   );
 
   const lastProcessedStartEmpty = useRef(false);
@@ -966,13 +969,15 @@ export default function WorkoutScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+      {/* Disable edge swipe-back while a workout is in progress */}
+      <Stack.Screen options={{ gestureEnabled: !activeWorkout }} />
       {/* No active workout and no pending start params → redirect to home */}
       {!asModal && !activeWorkout && !startSplitId && !startRoutineId && startEmpty !== '1' && (
         <WorkoutTabRedirect />
       )}
 
       {/* Workout log overlay – entrance animation + minimize on down arrow */}
-      {activeWorkout && !minimized && (
+      {activeWorkout && (
         <AnimatedReanimated.View
           style={[
             styles.workoutOverlay,

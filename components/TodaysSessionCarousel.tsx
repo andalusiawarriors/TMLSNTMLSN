@@ -18,6 +18,7 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -370,6 +371,20 @@ export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: numbe
   const { activeWorkout }   = useActiveWorkout();
   const { context, contextLoading, refresh } = useJarvis();
   const [showAll, setShowAll] = useState(false);
+  const [sessionDoneToday, setSessionDoneToday] = useState(false);
+
+  // Check if user already completed today's recommended session
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem('TMLSN_session_completed_date');
+        const today  = new Date().toISOString().split('T')[0];
+        setSessionDoneToday(stored === today);
+      } catch {
+        setSessionDoneToday(false);
+      }
+    })();
+  }, [animTrigger]); // re-check every time the tab is focused
 
   // Refresh Jarvis context every time the Fitness tab is focused
   const firstMountRef = useRef(false);
@@ -380,6 +395,27 @@ export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: numbe
   const liftRows    = computeLiftRows(context);
   const isRestDay   = context?.todayPlan?.isRestDay ?? false;
   const scheduleMode = context?.trainingSettings?.scheduleMode ?? 'ghost';
+
+  // ── Session already done today ──
+  if (sessionDoneToday && !activeWorkout && !contextLoading) {
+    return (
+      <View style={S.hero}>
+        <ShinyText
+          text="all caught up."
+          speed={5}
+          delay={0}
+          spread={120}
+          yoyo={false}
+          color="#b5b5b5"
+          shineColor="#ffffff"
+          direction="right"
+          style={S.sessionName}
+          containerStyle={{ marginBottom: 0, marginLeft: -(PAD + 4) }}
+        />
+        <Text style={S.eyebrow}>see you tomorrow</Text>
+      </View>
+    );
+  }
 
   // ── Loading ──
   if (contextLoading) {

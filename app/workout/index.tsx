@@ -28,6 +28,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Input } from '../../components/Input';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, Font } from '../../constants/theme';
 import { TMLSN_SPLITS } from '../../constants/workoutSplits';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   saveWorkoutSession,
   getSavedRoutines,
@@ -987,6 +988,12 @@ export default function WorkoutScreen({
 
       await saveWorkoutSession(payload);
       await logStreakWorkout();
+
+      // Mark today's recommended session as done so carousel shows "All caught up"
+      await AsyncStorage.setItem(
+        'TMLSN_session_completed_date',
+        new Date().toISOString().split('T')[0],
+      );
 
       setActiveWorkout(null);
       setShowExerciseEntry(false);
