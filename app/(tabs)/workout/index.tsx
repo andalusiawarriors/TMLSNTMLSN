@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -396,6 +396,21 @@ export default function WorkoutScreen({
     supabaseGetExercisePrescriptions(user.id, canonicalIds).then(setPrescriptions);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkout?.id, user?.id]);
+
+  // Memoize progression data so it doesn't recompute on every elapsed-timer tick.
+  // Only recalculates when exercises, prescriptions, sessions, or unit actually change.
+  const exerciseProgressionMap = useMemo(() => {
+    if (!activeWorkout) return new Map<string, ReturnType<typeof buildPrevSetsAndGhost>>();
+    const sessionsForProgression = recentSessions.filter((s) => s.id !== activeWorkout.id);
+    return new Map(
+      activeWorkout.exercises.map((exercise) => [
+        exercise.id,
+        buildPrevSetsAndGhost(exercise, prescriptions, sessionsForProgression, weightUnit),
+      ])
+    );
+  // activeWorkout.exercises reference changes whenever a set is completed — that's the right granularity
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkout?.exercises, prescriptions, recentSessions, weightUnit]);
 
   useEffect(() => {
     if (!activeWorkout) {
@@ -1149,9 +1164,8 @@ export default function WorkoutScreen({
                           </View>
                           <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
                           {(() => {
-                            const sessionsForProgression = activeWorkout ? recentSessions.filter((s) => s.id !== activeWorkout.id) : recentSessions;
-                            const ghost = buildPrevSetsAndGhost(exercise, prescriptions, sessionsForProgression, weightUnit);
-                            if (!ghost.ghostWeight && !ghost.ghostReps) return null;
+                            const ghost = exerciseProgressionMap.get(exercise.id);
+                            if (!ghost || (!ghost.ghostWeight && !ghost.ghostReps)) return null;
                             let _label: string | null = null;
                             if (ghost.ghostReason === 'Add weight') {
                               _label = ghost.loadChangePercent != null ? `↑ ${ghost.loadChangePercent.toFixed(1)}%` : '↑ Load';
@@ -1223,8 +1237,7 @@ export default function WorkoutScreen({
 
                       {(() => {
                         const exKey = exercise.exerciseDbId ?? exercise.name;
-                        const sessionsForProgression = activeWorkout ? recentSessions.filter((s) => s.id !== activeWorkout.id) : recentSessions;
-                        const { prevSets, ghostWeight, ghostReps, ghostReason } = buildPrevSetsAndGhost(exercise, prescriptions, sessionsForProgression, weightUnit);
+                        const { prevSets, ghostWeight, ghostReps, ghostReason } = exerciseProgressionMap.get(exercise.id) ?? { prevSets: [], ghostWeight: null, ghostReps: null, ghostReason: null };
                         return (
                           <WorkoutSetTable
                             exercise={exercise}
