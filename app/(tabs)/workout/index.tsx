@@ -977,7 +977,7 @@ export default function WorkoutScreen({
       )}
 
       {/* Workout log overlay – entrance animation + minimize on down arrow */}
-      {activeWorkout && (
+      {activeWorkout && !minimized && (
         <AnimatedReanimated.View
           style={[
             styles.workoutOverlay,

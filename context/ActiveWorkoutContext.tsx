@@ -58,9 +58,12 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   const minimizeWorkout = useCallback(() => {
     setMinimized(true);
-    if (originRoute && originRoute !== '/(tabs)/workout') {
-      router.replace(originRoute as any);
-    }
+    // Always navigate away from workout — if origin is workout tab itself, go to nutrition (fitness hub)
+    const dest =
+      originRoute && originRoute !== '/(tabs)/workout'
+        ? originRoute
+        : '/(tabs)/nutrition';
+    router.replace(dest as any);
   }, [originRoute, router]);
 
   const expandWorkout = useCallback(() => {
