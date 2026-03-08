@@ -21,7 +21,10 @@
  */
 
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+
+const ACTIVITY_ID_KEY = 'workout_live_activity_id';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,7 +125,18 @@ export async function startWorkoutActivity(workoutName: string): Promise<void> {
   const mod = getModule();
   if (!mod) return;
 
+  // Stop in-memory activity (current session)
   await stopWorkoutActivity();
+
+  // Also stop any stale activity from a previous JS load (survives hot reloads)
+  try {
+    const storedId = await AsyncStorage.getItem(ACTIVITY_ID_KEY);
+    if (storedId && storedId !== workoutActivityId) {
+      try { mod.stopActivity(storedId, { title: 'Workout ended' }); } catch {}
+    }
+    await AsyncStorage.removeItem(ACTIVITY_ID_KEY);
+  } catch {}
+
   currentWorkoutName = workoutName;
 
   try {
@@ -131,6 +145,9 @@ export async function startWorkoutActivity(workoutName: string): Promise<void> {
       { backgroundColor: '#000000', titleColor: '#FFFFFF', subtitleColor: 'rgba(255,255,255,0.65)' },
     );
     workoutActivityId = id ?? null;
+    if (workoutActivityId) {
+      await AsyncStorage.setItem(ACTIVITY_ID_KEY, workoutActivityId);
+    }
     console.log('[LiveActivity] startWorkoutActivity → id:', workoutActivityId);
   } catch (e) {
     console.warn('[LiveActivity] startWorkoutActivity failed:', e);
@@ -141,13 +158,15 @@ export async function startWorkoutActivity(workoutName: string): Promise<void> {
 export async function stopWorkoutActivity(): Promise<void> {
   clearRevertTimer();
   const mod = getModule();
-  if (!mod || !workoutActivityId) return;
-  try {
-    mod.stopActivity(workoutActivityId, { title: 'Workout complete' });
-  } catch (e) {
-    console.warn('[LiveActivity] stopWorkoutActivity error:', e);
+  if (mod && workoutActivityId) {
+    try {
+      mod.stopActivity(workoutActivityId, { title: 'Workout complete' });
+    } catch (e) {
+      console.warn('[LiveActivity] stopWorkoutActivity error:', e);
+    }
+    workoutActivityId = null;
   }
-  workoutActivityId = null;
+  try { await AsyncStorage.removeItem(ACTIVITY_ID_KEY); } catch {}
 }
 
 /**
