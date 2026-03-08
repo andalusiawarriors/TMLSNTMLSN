@@ -68,6 +68,18 @@ let workoutActivityId:  string | null = null;
 let currentWorkoutName: string        = '';
 let revertTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Restore activity ID from AsyncStorage on module load so mid-workout
+// calls (updateToRestTimer, updateToRPEWarning) survive JS hot reloads.
+(async () => {
+  try {
+    const storedId = await AsyncStorage.getItem(ACTIVITY_ID_KEY);
+    if (storedId && !workoutActivityId) {
+      workoutActivityId = storedId;
+      console.log('[LiveActivity] restored ID from storage:', storedId);
+    }
+  } catch {}
+})();
+
 // Post-session only (fired after workout ends)
 let postRPEActivityId:     string | null = null;
 let autoDismissPostRPETimer: ReturnType<typeof setTimeout> | null = null;
