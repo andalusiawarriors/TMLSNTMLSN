@@ -6,7 +6,11 @@ struct LiveActivityAttributes: ActivityAttributes {
   struct ContentState: Codable, Hashable {
     var title: String
     var subtitle: String?
+    /// Epoch ms for a countdown timer (set by progressBar.date in JS)
     var timerEndDateInMilliseconds: Double?
+    /// Epoch ms for a count-up elapsed timer (set by progressBar.elapsedTimer.startDate in JS)
+    var elapsedTimerStartDateInMilliseconds: Double?
+    /// 0–1 static progress (set by progressBar.progress in JS)
     var progress: Double?
     var imageName: String?
     var dynamicIslandImageName: String?
@@ -71,11 +75,15 @@ struct LiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.bottom) {
           if let date = context.state.timerEndDateInMilliseconds {
-            dynamicIslandExpandedBottom(
+            dynamicIslandExpandedCountdownBottom(
               endDate: date, progressViewTint: context.attributes.progressViewTint
             )
             .padding(.horizontal, 5)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
+          } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
+            dynamicIslandExpandedElapsedBottom(startDate: startDate)
+              .padding(.horizontal, 5)
+              .applyWidgetURL(from: context.attributes.deepLinkUrl)
           }
         }
       } compactLeading: {
@@ -86,11 +94,16 @@ struct LiveActivityWidget: Widget {
         }
       } compactTrailing: {
         if let date = context.state.timerEndDateInMilliseconds {
+          // Countdown timer (rest timer, RPE warning)
           compactTimer(
             endDate: date,
             timerType: context.attributes.timerType ?? .circular,
             progressViewTint: context.attributes.progressViewTint
           ).applyWidgetURL(from: context.attributes.deepLinkUrl)
+        } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
+          // Elapsed (count-up) timer (active workout session)
+          elapsedTimer(startDate: startDate)
+            .applyWidgetURL(from: context.attributes.deepLinkUrl)
         }
       } minimal: {
         if let date = context.state.timerEndDateInMilliseconds {
@@ -99,10 +112,15 @@ struct LiveActivityWidget: Widget {
             timerType: context.attributes.timerType ?? .circular,
             progressViewTint: context.attributes.progressViewTint
           ).applyWidgetURL(from: context.attributes.deepLinkUrl)
+        } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
+          elapsedTimer(startDate: startDate)
+            .applyWidgetURL(from: context.attributes.deepLinkUrl)
         }
       }
     }
   }
+
+  // MARK: - Compact trailing helpers
 
   @ViewBuilder
   private func compactTimer(
@@ -122,6 +140,23 @@ struct LiveActivityWidget: Widget {
         .tint(progressViewTint.map { Color(hex: $0) })
     }
   }
+
+  /// Count-up elapsed timer for Dynamic Island compact trailing (active workout).
+  private func elapsedTimer(startDate: Double) -> some View {
+    let start = Date(timeIntervalSince1970: startDate / 1000)
+    return Text(
+      timerInterval: start...Date.distantFuture,
+      countsDown: false
+    )
+    .font(.system(size: 14))
+    .minimumScaleFactor(0.7)
+    .fontWeight(.semibold)
+    .frame(maxWidth: 60)
+    .multilineTextAlignment(.trailing)
+    .monospacedDigit()
+  }
+
+  // MARK: - Expanded DI region helpers
 
   private func dynamicIslandExpandedLeading(title: String, subtitle: String?) -> some View {
     VStack(alignment: .leading) {
@@ -148,11 +183,32 @@ struct LiveActivityWidget: Widget {
     }
   }
 
-  private func dynamicIslandExpandedBottom(endDate: Double, progressViewTint: String?) -> some View {
+  /// Countdown progress bar for expanded DI bottom (rest timer).
+  private func dynamicIslandExpandedCountdownBottom(endDate: Double, progressViewTint: String?) -> some View {
     ProgressView(timerInterval: Date.toTimerInterval(miliseconds: endDate))
       .foregroundStyle(.white)
       .tint(progressViewTint.map { Color(hex: $0) })
       .padding(.top, 5)
+  }
+
+  /// Elapsed time text for expanded DI bottom (workout).
+  private func dynamicIslandExpandedElapsedBottom(startDate: Double) -> some View {
+    let start = Date(timeIntervalSince1970: startDate / 1000)
+    return HStack {
+      Text("Elapsed")
+        .font(.caption)
+        .foregroundStyle(.white.opacity(0.65))
+      Spacer()
+      Text(
+        timerInterval: start...Date.distantFuture,
+        countsDown: false
+      )
+      .font(.system(size: 14))
+      .fontWeight(.semibold)
+      .foregroundStyle(.white)
+      .monospacedDigit()
+    }
+    .padding(.top, 5)
   }
 
   private func circularTimer(endDate: Double) -> some View {

@@ -30,15 +30,31 @@
 
 import { Platform } from 'react-native';
 
-// ─── Types (mirrors expo-live-activity ContentState + Attributes) ─────────────
+// ─── Types (mirrors expo-live-activity 0.4.x JS API) ─────────────────────────
+//
+// IMPORTANT: expo-live-activity maps JS -> Swift like this:
+//   state.progressBar.date         -> ContentState.timerEndDateInMilliseconds
+//   state.progressBar.progress     -> ContentState.progress
+//   state.progressBar.elapsedTimer.startDate -> ContentState.elapsedTimerStartDateInMilliseconds
+//
+// Do NOT pass timerEndDateInMilliseconds or progress at the top level of state —
+// the native bridge ignores unknown top-level fields. Use progressBar.* instead.
+
+type ProgressBar = {
+  /** Epoch ms for countdown end — drives compact-trailing countdown timer */
+  date?: number;
+  /** 0–1 progress for static progress bar */
+  progress?: number;
+  /** Elapsed (count-up) timer — drives compact-trailing elapsed timer */
+  elapsedTimer?: { startDate: number };
+};
 
 type LiveActivityState = {
   title: string;
   subtitle?: string;
-  /** Millisecond epoch for countdown end — drives compact-trailing timer */
-  timerEndDateInMilliseconds?: number;
-  /** 0–1 progress shown in expanded bottom bar */
-  progress?: number;
+  progressBar?: ProgressBar;
+  imageName?: string;
+  dynamicIslandImageName?: string;
 };
 
 type LiveActivityConfig = {
@@ -46,7 +62,7 @@ type LiveActivityConfig = {
   titleColor?: string;
   subtitleColor?: string;
   progressViewTint?: string;
-  /** 'circular' (default ring) | 'digital' (HH:MM text) */
+  /** 'circular' (ring) | 'digital' (HH:MM text) */
   timerType?: 'circular' | 'digital';
 };
 
@@ -59,20 +75,31 @@ type LiveActivityModule = {
 // ─── Lazy-load the native module (only available after a dev build) ───────────
 
 function getModule(): LiveActivityModule | null {
-  if (Platform.OS !== 'ios') return null;
+  if (Platform.OS !== 'ios') {
+    console.log('[LiveActivity] Skipping: not iOS (platform=' + Platform.OS + ')');
+    return null;
+  }
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('expo-live-activity') as LiveActivityModule;
-  } catch {
+    const mod = require('expo-live-activity') as LiveActivityModule;
+    if (!mod || typeof mod.startActivity !== 'function') {
+      console.warn('[LiveActivity] Module loaded but startActivity is not a function. Check expo-live-activity installation.');
+      return null;
+    }
+    return mod;
+  } catch (e) {
+    console.warn('[LiveActivity] Failed to load expo-live-activity native module:', e);
+    console.warn('[LiveActivity] Make sure you built with Xcode (not Expo Go) and ran pod install.');
     return null;
   }
 }
 
 // ─── Activity IDs ────────────────────────────────────────────────────────────
 
-let rpeActivityId:      string | null = null;
-let workoutActivityId:  string | null = null;
+let rpeActivityId:       string | null = null;
+let workoutActivityId:   string | null = null;
 let restTimerActivityId: string | null = null;
+let workoutStartTimeMs:  number | null = null;  // stored so updates can re-include it
 
 let autoDismissRPETimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -94,6 +121,8 @@ export async function startRPEActivity(
   context: 'active' | 'post',
   durationMs = 8000,
 ): Promise<void> {
+  console.log('[LiveActivity] startRPEActivity called:', { rpe, exerciseName, context, durationMs });
+
   const mod = getModule();
   if (!mod) return;
 
@@ -104,18 +133,30 @@ export async function startRPEActivity(
     ? `${exerciseName} · RPE ${rpe}  —  drive to 7+`
     : `Avg RPE ${rpe} on ${exerciseName}  —  leave less in the tank`;
 
+  // Use a countdown equal to the auto-dismiss duration so the DI compact
+  // trailing shows a shrinking ring/timer instead of an empty pill.
+  const endTimeMs = Date.now() + durationMs;
+
   try {
     const id = mod.startActivity(
-      { title, subtitle },
+      {
+        title,
+        subtitle,
+        // progressBar.date drives the compact-trailing countdown timer in Swift.
+        progressBar: { date: endTimeMs },
+      },
       {
         backgroundColor: '#000000',
         titleColor:      '#FFFFFF',
         subtitleColor:   '#FF9F0A',
+        progressViewTint: '#FF9F0A',
+        timerType:       'circular',
       },
     );
     rpeActivityId = id ?? null;
+    console.log('[LiveActivity] startRPEActivity → id:', rpeActivityId);
   } catch (e) {
-    if (__DEV__) console.warn('[liveActivity] startRPEActivity failed:', e);
+    console.warn('[LiveActivity] startRPEActivity failed:', e);
     return;
   }
 
@@ -126,6 +167,8 @@ export async function startRPEActivity(
  * Stop the current RPE Live Activity.
  */
 export async function stopRPEActivity(): Promise<void> {
+  console.log('[LiveActivity] stopRPEActivity called, id:', rpeActivityId);
+
   if (autoDismissRPETimer !== null) {
     clearTimeout(autoDismissRPETimer);
     autoDismissRPETimer = null;
@@ -136,8 +179,9 @@ export async function stopRPEActivity(): Promise<void> {
 
   try {
     mod.stopActivity(rpeActivityId, { title: '' });
-  } catch {
-    // already ended by system
+    console.log('[LiveActivity] stopRPEActivity: stopped', rpeActivityId);
+  } catch (e) {
+    console.warn('[LiveActivity] stopRPEActivity error (may already have ended):', e);
   }
   rpeActivityId = null;
 }
@@ -148,7 +192,8 @@ export async function stopRPEActivity(): Promise<void> {
 
 /**
  * Start a persistent workout Live Activity when the user begins a session.
- * Shown in Dynamic Island compact/expanded while the app is in background.
+ * Shows an elapsed timer in Dynamic Island compact trailing while the workout
+ * is active (visible when app is backgrounded or on lock screen).
  *
  * @param workoutName   Name displayed as the DI title (e.g. "Push A")
  * @param startTimeMs   epoch ms of when workout started (Date.now())
@@ -157,33 +202,42 @@ export async function startWorkoutActivity(
   workoutName: string,
   startTimeMs: number,
 ): Promise<void> {
+  console.log('[LiveActivity] startWorkoutActivity called:', { workoutName, startTimeMs });
+
   const mod = getModule();
   if (!mod) return;
 
   // Stop any previous workout activity
   await stopWorkoutActivity();
 
+  workoutStartTimeMs = startTimeMs;
+
   try {
     const id = mod.startActivity(
       {
         title:    workoutName,
         subtitle: 'Workout in progress',
-        // No timerEndDateInMilliseconds — elapsed display handled by subtitle updates
+        // elapsedTimer drives the elapsed count-up timer in DI compact trailing.
+        // The Swift widget reads this as elapsedTimerStartDateInMilliseconds
+        // and shows a count-up timer so the athlete can see session duration.
+        progressBar: { elapsedTimer: { startDate: startTimeMs } },
       },
       {
         backgroundColor: '#000000',
         titleColor:      '#FFFFFF',
         subtitleColor:   'rgba(255,255,255,0.65)',
+        timerType:       'digital',
       },
     );
     workoutActivityId = id ?? null;
+    console.log('[LiveActivity] startWorkoutActivity → id:', workoutActivityId);
   } catch (e) {
-    if (__DEV__) console.warn('[liveActivity] startWorkoutActivity failed:', e);
+    console.warn('[LiveActivity] startWorkoutActivity failed:', e);
   }
 }
 
 /**
- * Update the workout Live Activity subtitle with the current exercise name.
+ * Update the workout Live Activity with the current exercise name and set info.
  * Call when the user moves to a new exercise.
  *
  * @param exerciseName  Current exercise being performed
@@ -195,16 +249,26 @@ export async function updateWorkoutActivity(
   setNumber: number,
   totalSets: number,
 ): Promise<void> {
+  console.log('[LiveActivity] updateWorkoutActivity called:', { exerciseName, setNumber, totalSets, workoutActivityId });
+
   const mod = getModule();
-  if (!mod || !workoutActivityId) return;
+  if (!mod || !workoutActivityId) {
+    console.log('[LiveActivity] updateWorkoutActivity: skipping — mod:', !!mod, 'id:', workoutActivityId);
+    return;
+  }
 
   try {
     mod.updateActivity(workoutActivityId, {
       title:    exerciseName,
       subtitle: `Set ${setNumber} of ${totalSets}`,
+      // Re-include the elapsed timer so it persists after update.
+      progressBar: workoutStartTimeMs != null
+        ? { elapsedTimer: { startDate: workoutStartTimeMs } }
+        : undefined,
     });
+    console.log('[LiveActivity] updateWorkoutActivity: updated', workoutActivityId);
   } catch (e) {
-    if (__DEV__) console.warn('[liveActivity] updateWorkoutActivity failed:', e);
+    console.warn('[LiveActivity] updateWorkoutActivity failed:', e);
   }
 }
 
@@ -212,15 +276,19 @@ export async function updateWorkoutActivity(
  * Stop the workout Live Activity (called on discard or session complete).
  */
 export async function stopWorkoutActivity(): Promise<void> {
+  console.log('[LiveActivity] stopWorkoutActivity called, id:', workoutActivityId);
+
   const mod = getModule();
   if (!mod || !workoutActivityId) return;
 
   try {
     mod.stopActivity(workoutActivityId, { title: 'Workout complete' });
-  } catch {
-    // already ended
+    console.log('[LiveActivity] stopWorkoutActivity: stopped', workoutActivityId);
+  } catch (e) {
+    console.warn('[LiveActivity] stopWorkoutActivity error (may already have ended):', e);
   }
-  workoutActivityId = null;
+  workoutActivityId  = null;
+  workoutStartTimeMs = null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,7 +297,7 @@ export async function stopWorkoutActivity(): Promise<void> {
 
 /**
  * Start a countdown Live Activity for the rest period between sets.
- * Shows a circular countdown in DI compact trailing.
+ * Shows a circular countdown ring in DI compact trailing.
  *
  * @param exerciseName  Exercise name shown in expanded DI view
  * @param setNumber     1-based set number just completed
@@ -240,6 +308,8 @@ export async function startRestTimerActivity(
   setNumber: number,
   durationSec: number,
 ): Promise<void> {
+  console.log('[LiveActivity] startRestTimerActivity called:', { exerciseName, setNumber, durationSec });
+
   const mod = getModule();
   if (!mod) return;
 
@@ -252,7 +322,10 @@ export async function startRestTimerActivity(
       {
         title:    exerciseName,
         subtitle: `Rest · Set ${setNumber} complete`,
-        timerEndDateInMilliseconds: endTimeMs,
+        // progressBar.date is the CORRECT field for a countdown timer.
+        // The native bridge maps this to Swift ContentState.timerEndDateInMilliseconds.
+        // Do NOT pass timerEndDateInMilliseconds directly — the bridge ignores it.
+        progressBar: { date: endTimeMs },
       },
       {
         backgroundColor:  '#000000',
@@ -263,11 +336,12 @@ export async function startRestTimerActivity(
       },
     );
     restTimerActivityId = id ?? null;
+    console.log('[LiveActivity] startRestTimerActivity → id:', restTimerActivityId, 'endTimeMs:', endTimeMs);
 
     // Auto-stop when the countdown ends (add 500 ms buffer for system latency)
     setTimeout(stopRestTimerActivity, durationSec * 1000 + 500);
   } catch (e) {
-    if (__DEV__) console.warn('[liveActivity] startRestTimerActivity failed:', e);
+    console.warn('[LiveActivity] startRestTimerActivity failed:', e);
   }
 }
 
@@ -275,13 +349,16 @@ export async function startRestTimerActivity(
  * Stop the rest timer Live Activity early (user skipped or adjusted to 0).
  */
 export async function stopRestTimerActivity(): Promise<void> {
+  console.log('[LiveActivity] stopRestTimerActivity called, id:', restTimerActivityId);
+
   const mod = getModule();
   if (!mod || !restTimerActivityId) return;
 
   try {
     mod.stopActivity(restTimerActivityId, { title: 'Rest complete' });
-  } catch {
-    // already ended
+    console.log('[LiveActivity] stopRestTimerActivity: stopped', restTimerActivityId);
+  } catch (e) {
+    console.warn('[LiveActivity] stopRestTimerActivity error (may already have ended):', e);
   }
   restTimerActivityId = null;
 }

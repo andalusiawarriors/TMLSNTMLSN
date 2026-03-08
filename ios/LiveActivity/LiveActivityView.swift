@@ -212,6 +212,15 @@ import WidgetKit
                 ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
                   .tint(progressViewTint)
                   .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
+              } else if let startDate = contentState.elapsedTimerStartDateInMilliseconds {
+                Text(
+                  timerInterval: Date(timeIntervalSince1970: startDate / 1000)...Date.distantFuture,
+                  countsDown: false
+                )
+                .font(.system(size: 14))
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
               } else if let progress = contentState.progress {
                 ProgressView(value: progress)
                   .tint(progressViewTint)
@@ -233,6 +242,15 @@ import WidgetKit
             ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
               .tint(progressViewTint)
               .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
+          } else if let startDate = contentState.elapsedTimerStartDateInMilliseconds {
+            Text(
+              timerInterval: Date(timeIntervalSince1970: startDate / 1000)...Date.distantFuture,
+              countsDown: false
+            )
+            .font(.system(size: 14))
+            .fontWeight(.semibold)
+            .monospacedDigit()
+            .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
           } else if let progress = contentState.progress {
             ProgressView(value: progress)
               .tint(progressViewTint)
