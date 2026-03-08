@@ -62,7 +62,7 @@ import { BackButton } from '../../components/BackButton';
 import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
 import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarning';
-import { startRPEActivity, stopRPEActivity, sendRPENotification } from '../../lib/liveActivity';
+import { updateToRPEWarning, updateToRestTimer, cancelRestTimerActivity, revertWorkoutActivity, sendRPENotification } from '../../lib/liveActivity';
 import { useAuth } from '../../context/AuthContext';
 import { supabaseGetExercisePrescriptions, ExercisePrescriptionRow, resolveOverloadCategory } from '../../utils/supabaseStorage';
 import { LB_PER_KG } from '../../utils/units';
@@ -844,6 +844,7 @@ export default function WorkoutScreen({
     const exerciseName = activeWorkout?.exercises[idx]?.name || 'Exercise';
     const setNumberDisplay = setNumber + 1;
     setRestTimerContext({ exerciseName, setNumberDisplay });
+    updateToRestTimer(exerciseName, setNumberDisplay, seconds);
     try {
       const notificationId = await scheduleRestTimerNotification(
         exerciseName,
@@ -858,6 +859,7 @@ export default function WorkoutScreen({
   };
 
   const skipRestTimer = (setId?: string) => {
+    cancelRestTimerActivity();
     if (restTimerNotificationId) {
       cancelNotification(restTimerNotificationId);
       if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled', { setId, notificationId: restTimerNotificationId });
@@ -1682,7 +1684,7 @@ export default function WorkoutScreen({
                                             const hasNextSet = (exercise?.sets.length ?? 0) > setIndex + 1;
                                             if (finalRpe != null && finalRpe < 7 && hasNextSet) {
                                               const roundedRpe = Math.round(finalRpe);
-                                              startRPEActivity(roundedRpe, exercise.name, 'active');
+                                              updateToRPEWarning(roundedRpe, exercise.name);
                                               sendRPENotification(roundedRpe, exercise.name, 'active');
                                               setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exercise.name, weightBumpDisplay: null }), 150);
                                             }
@@ -1960,7 +1962,7 @@ export default function WorkoutScreen({
         weightUnit={weightUnit}
         isInjured={isInjured}
         onInjuredChange={setIsInjured}
-        onDismiss={() => { setRpeWarning(prev => ({ ...prev, visible: false })); stopRPEActivity(); }}
+        onDismiss={() => { setRpeWarning(prev => ({ ...prev, visible: false })); revertWorkoutActivity(); }}
       />
 
     </View>
