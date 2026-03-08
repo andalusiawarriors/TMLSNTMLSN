@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import type { WorkoutSession } from '../types';
 import { onWorkoutOriginRoute } from '../utils/fabBridge';
@@ -27,6 +27,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [minimized, setMinimized] = useState(false);
   const [originRoute, setOriginRoute] = useState<string | null>(null);
+  const workoutActivityStartedRef = useRef(false);
 
   useEffect(() => {
     return onWorkoutOriginRoute((route) => setOriginRoute(route));
@@ -36,9 +37,14 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     setActiveWorkoutRaw(w);
     if (w) {
       setMinimized(false);
-      // Start a persistent Dynamic Island Live Activity for the workout
-      startWorkoutActivity(w.name);
+      // Only start the Live Activity when a workout is first started, not on
+      // every set update — otherwise a new activity is created on every tap.
+      if (!workoutActivityStartedRef.current) {
+        workoutActivityStartedRef.current = true;
+        startWorkoutActivity(w.name);
+      }
     } else {
+      workoutActivityStartedRef.current = false;
       stopWorkoutActivity();
     }
   }, []);
@@ -65,6 +71,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const discardWorkout = useCallback(
     (onDiscarded: () => void) => {
       const returnTo = originRoute && originRoute !== '/(tabs)/workout' ? originRoute : '/(tabs)/nutrition';
+      workoutActivityStartedRef.current = false;
       stopWorkoutActivity();
       setActiveWorkoutRaw(null);
       setCurrentExerciseIndex(0);
