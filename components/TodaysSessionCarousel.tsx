@@ -600,10 +600,8 @@ const S = StyleSheet.create({
     paddingBottom: 24,
   },
 
-  // Eyebrow — 96×16, 4px from left, SF Pro 16, -5% tracking, #979798
+  // Eyebrow — auto width, SF Pro 16, -5% tracking, #979798
   eyebrow: {
-    width: 96,
-    height: 16,
     fontSize: 16,
     fontWeight: '600',
     color: '#979798',
