@@ -95,7 +95,7 @@ export function ZoneOneCard() {
   const [training,    setTraining]    = useState<TrainingSettings | null>(null);
   const [lastSession, setLastSession] = useState<WorkoutSession | null>(null);
   const [hasHistory,  setHasHistory]  = useState(false);
-  const { context, contextLoading }   = useJarvis();
+  const { context, contextLoading, contextError, refresh } = useJarvis();
   const router                        = useRouter();
 
   // Hide when TodaysSessionCarousel is handling it (full session, named session, or rest day)
@@ -210,6 +210,27 @@ export function ZoneOneCard() {
 
   // ── TMLSN mode (no plan yet) ──
   if (scheduleMode === 'tmlsn') {
+    // Context failed to load — show error with retry rather than infinite "loading"
+    if (contextError || context === null) {
+      return (
+        <View style={S.hero}>
+          <ShinyText
+            text="couldn't load session."
+            speed={5} delay={0} spread={120} yoyo={false}
+            color="#b5b5b5" shineColor="#ffffff" direction="right"
+            style={titleStyle} containerStyle={titleContainerStyle}
+          />
+          <Text style={S.eyebrow}>today's session</Text>
+          <Text style={S.sub}>Check your connection and try again.</Text>
+          <Pressable
+            style={({ pressed }) => [S.setupBtn, pressed && { opacity: 0.75 }]}
+            onPress={refresh}
+          >
+            <Text style={S.setupBtnText}>Retry</Text>
+          </Pressable>
+        </View>
+      );
+    }
     return (
       <View style={S.hero}>
         <ShinyText
