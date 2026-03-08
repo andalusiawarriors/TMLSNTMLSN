@@ -19,7 +19,7 @@
  *   await stopRPEActivity();
  *
  *   // Workout
- *   await startWorkoutActivity('Push A', Date.now());
+ *   await startWorkoutActivity('Push A');
  *   await updateWorkoutActivity('Bench Press', 3, 4);
  *   await stopWorkoutActivity();
  *
@@ -99,7 +99,6 @@ function getModule(): LiveActivityModule | null {
 let rpeActivityId:       string | null = null;
 let workoutActivityId:   string | null = null;
 let restTimerActivityId: string | null = null;
-let workoutStartTimeMs:  number | null = null;  // stored so updates can re-include it
 
 let autoDismissRPETimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -192,17 +191,14 @@ export async function stopRPEActivity(): Promise<void> {
 
 /**
  * Start a persistent workout Live Activity when the user begins a session.
- * Shows an elapsed timer in Dynamic Island compact trailing while the workout
- * is active (visible when app is backgrounded or on lock screen).
+ * Shows workout name + "Workout in progress" in Dynamic Island compact slots.
  *
  * @param workoutName   Name displayed as the DI title (e.g. "Push A")
- * @param startTimeMs   epoch ms of when workout started (Date.now())
  */
 export async function startWorkoutActivity(
   workoutName: string,
-  startTimeMs: number,
 ): Promise<void> {
-  console.log('[LiveActivity] startWorkoutActivity called:', { workoutName, startTimeMs });
+  console.log('[LiveActivity] startWorkoutActivity called:', { workoutName });
 
   const mod = getModule();
   if (!mod) return;
@@ -210,23 +206,18 @@ export async function startWorkoutActivity(
   // Stop any previous workout activity
   await stopWorkoutActivity();
 
-  workoutStartTimeMs = startTimeMs;
-
   try {
     const id = mod.startActivity(
       {
         title:    workoutName,
         subtitle: 'Workout in progress',
-        // elapsedTimer drives the elapsed count-up timer in DI compact trailing.
-        // The Swift widget reads this as elapsedTimerStartDateInMilliseconds
-        // and shows a count-up timer so the athlete can see session duration.
-        progressBar: { elapsedTimer: { startDate: startTimeMs } },
+        // expo-live-activity bridge does not support elapsedTimer —
+        // DI compact trailing shows the subtitle text fallback instead.
       },
       {
         backgroundColor: '#000000',
         titleColor:      '#FFFFFF',
         subtitleColor:   'rgba(255,255,255,0.65)',
-        timerType:       'digital',
       },
     );
     workoutActivityId = id ?? null;
@@ -261,10 +252,6 @@ export async function updateWorkoutActivity(
     mod.updateActivity(workoutActivityId, {
       title:    exerciseName,
       subtitle: `Set ${setNumber} of ${totalSets}`,
-      // Re-include the elapsed timer so it persists after update.
-      progressBar: workoutStartTimeMs != null
-        ? { elapsedTimer: { startDate: workoutStartTimeMs } }
-        : undefined,
     });
     console.log('[LiveActivity] updateWorkoutActivity: updated', workoutActivityId);
   } catch (e) {
@@ -287,8 +274,7 @@ export async function stopWorkoutActivity(): Promise<void> {
   } catch (e) {
     console.warn('[LiveActivity] stopWorkoutActivity error (may already have ended):', e);
   }
-  workoutActivityId  = null;
-  workoutStartTimeMs = null;
+  workoutActivityId = null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
