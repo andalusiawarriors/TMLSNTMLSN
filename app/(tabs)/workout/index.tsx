@@ -68,7 +68,7 @@ import ExerciseStatsModal from '../../../components/ExerciseStatsModal';
 import { useExerciseReorder } from '../../../components/DraggableExerciseList';
 import { WorkoutSetTable } from '../../../components/WorkoutSetTable';
 import { buildPrevSetsAndGhost } from '../../../utils/workoutSetTable';
-import { startRestTimerActivity, stopRestTimerActivity, updateWorkoutActivity } from '../../../lib/liveActivity';
+import { updateToRestTimer, cancelRestTimerActivity } from '../../../lib/liveActivity';
 
 
 function WorkoutTabRedirect() {
@@ -720,7 +720,7 @@ export default function WorkoutScreen({
     const setNumberDisplay = setNumber + 1;
     setRestTimerContext({ exerciseName, setNumberDisplay });
     // Show countdown in Dynamic Island compact trailing
-    startRestTimerActivity(exerciseName, setNumberDisplay, seconds);
+    updateToRestTimer(exerciseName, setNumberDisplay, seconds);
     try {
       const notificationId = await scheduleRestTimerNotification(
         exerciseName,
@@ -740,7 +740,7 @@ export default function WorkoutScreen({
       if (__DEV__ && setId) console.log('[Workout RestTimer] cancelled', { setId, notificationId: restTimerNotificationId });
       setRestTimerNotificationId(null);
     }
-    stopRestTimerActivity();
+    cancelRestTimerActivity();
     setRestTimerContext(null);
     setRestTimerActive(false);
     setRestTimeRemaining(0);
@@ -757,7 +757,7 @@ export default function WorkoutScreen({
         await cancelNotification(restTimerNotificationId);
         setRestTimerNotificationId(null);
       }
-      stopRestTimerActivity();
+      cancelRestTimerActivity();
       setRestTimerContext(null);
       setRestTimerActive(false);
       setRestTimeRemaining(0);
@@ -795,10 +795,6 @@ export default function WorkoutScreen({
 
     if (currentExerciseIndex < activeWorkout.exercises.length - 1) {
       const nextIdx = currentExerciseIndex + 1;
-      const nextEx = activeWorkout.exercises[nextIdx];
-      if (nextEx) {
-        updateWorkoutActivity(nextEx.name, 1, nextEx.sets.length || nextEx.targetSets || 1);
-      }
       setCurrentExerciseIndex(nextIdx);
     } else {
       // All exercises complete
