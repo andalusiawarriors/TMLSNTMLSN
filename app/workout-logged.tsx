@@ -19,7 +19,7 @@ import { supabaseGetExercisePrescriptions } from '../utils/supabaseStorage';
 import { useSupabaseUser } from '../hooks/useSupabaseUser';
 import { PostSessionSummary, type ExerciseSummaryItem } from '../components/PostSessionSummary';
 import { DynamicIslandRPEWarning } from '../components/DynamicIslandRPEWarning';
-import { startRPEActivity, stopRPEActivity } from '../lib/liveActivity';
+import { startRPEActivity, stopRPEActivity, sendRPENotification } from '../lib/liveActivity';
 import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 import { isDeloadWeek } from '../lib/progression/decideNextPrescription';
 
@@ -274,9 +274,8 @@ export default function WorkoutLoggedScreen() {
         if (lowRpe && lowRpe.avgRpe != null) {
           const roundedRpe = Math.round(lowRpe.avgRpe!);
           const worstEx    = lowRpe.exerciseName ?? '';
-          // Real iOS Live Activity (DI hardware + lock screen)
           startRPEActivity(roundedRpe, worstEx, 'post', 12000);
-          // RN overlay fallback for non-DI / Expo Go
+          sendRPENotification(roundedRpe, worstEx, 'post');
           setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe }), 800);
         }
 

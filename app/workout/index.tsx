@@ -62,7 +62,7 @@ import { BackButton } from '../../components/BackButton';
 import { PillButton } from '../../components/ui/PillButton';
 import Slider from '@react-native-community/slider';
 import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarning';
-import { startRPEActivity, stopRPEActivity } from '../../lib/liveActivity';
+import { startRPEActivity, stopRPEActivity, sendRPENotification } from '../../lib/liveActivity';
 import { useAuth } from '../../context/AuthContext';
 import { supabaseGetExercisePrescriptions, ExercisePrescriptionRow, resolveOverloadCategory } from '../../utils/supabaseStorage';
 import { LB_PER_KG } from '../../utils/units';
@@ -1683,6 +1683,7 @@ export default function WorkoutScreen({
                                             if (finalRpe != null && finalRpe < 7 && hasNextSet) {
                                               const roundedRpe = Math.round(finalRpe);
                                               startRPEActivity(roundedRpe, exercise.name, 'active');
+                                              sendRPENotification(roundedRpe, exercise.name, 'active');
                                               setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exercise.name, weightBumpDisplay: null }), 150);
                                             }
                                           } else {

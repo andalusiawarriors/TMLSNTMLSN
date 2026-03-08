@@ -29,6 +29,7 @@
  */
 
 import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 
 // ─── Types (mirrors expo-live-activity 0.4.x JS API) ─────────────────────────
 //
@@ -101,6 +102,33 @@ let workoutActivityId:   string | null = null;
 let restTimerActivityId: string | null = null;
 
 let autoDismissRPETimer: ReturnType<typeof setTimeout> | null = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local notification helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fire a local notification for RPE warning (appears as banner + in notification centre).
+ */
+export async function sendRPENotification(
+  rpe: number,
+  exerciseName: string,
+  context: 'active' | 'post',
+): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    const title = context === 'active' ? 'Push Harder 💪' : 'Aim Higher Next Session';
+    const body  = context === 'active'
+      ? `${exerciseName} · RPE ${rpe} — drive to 7+ next set`
+      : `Avg RPE ${rpe} on ${exerciseName} — leave less in the tank`;
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: true },
+      trigger: null, // fire immediately
+    });
+  } catch (e) {
+    console.warn('[LiveActivity] sendRPENotification failed:', e);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. RPE Warning
