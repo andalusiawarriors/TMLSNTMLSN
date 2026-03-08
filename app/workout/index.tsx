@@ -760,19 +760,13 @@ export default function WorkoutScreen({
         updateSet(exerciseIndex, setIndex, { rpe: clamped });
         if (__DEV__) console.log('[Workout Field Commit]', { setId: set?.id, field: 'rpe', parsed: clamped, source });
 
-        // Fire Dynamic Island notification for low RPE (below 7) only when
-        // there is a next set to actually act on — if this is the last set
-        // of the exercise the user can't change anything right now.
+        // ── In-session progressive overload bump ──────────────────────────
+        // Pre-fill remaining set weights when RPE < 7. Warning fires later
+        // when the user taps the checkmark to complete the set.
         const exercise = activeWorkout?.exercises[exerciseIndex];
         const hasNextSet = (exercise?.sets.length ?? 0) > setIndex + 1;
         if (clamped < 7 && hasNextSet) {
           const exName = exercise?.name ?? '';
-          const roundedRpe = Math.round(clamped);
-
-          // ── In-session progressive overload bump ──────────────────────────
-          // Use the exercise's real band + category to compute the same increment
-          // the progression engine would apply post-session, then pre-fill it on
-          // remaining uncompleted sets whose weight hasn't been manually changed.
           const exKey = exercise?.exerciseDbId ?? exercise?.name;
           const prescription = exKey ? prescriptions[exKey] : null;
           const band = ((prescription?.difficultyBand ?? 'easy') as DifficultyBand);
@@ -782,16 +776,11 @@ export default function WorkoutScreen({
           const bumpedWeightLb = currentWeightLb > 0
             ? currentWeightLb + incrementKg * LB_PER_KG
             : 0;
-          const weightBumpDisplay = bumpedWeightLb > 0
-            ? bumpRemainingSetWeights(exerciseIndex, setIndex, bumpedWeightLb)
-            : null;
-          // ─────────────────────────────────────────────────────────────────
-
-          // Real iOS Live Activity (appears inside the DI hardware + lock screen)
-          startRPEActivity(roundedRpe, exName, 'active');
-          // RN overlay fallback for non-DI / Expo Go
-          setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exName, weightBumpDisplay }), 150);
+          if (bumpedWeightLb > 0) {
+            bumpRemainingSetWeights(exerciseIndex, setIndex, bumpedWeightLb);
+          }
         }
+        // ─────────────────────────────────────────────────────────────────
       }
     } else {
       const n = parseNumericInput(editingCellValue, 'int');
@@ -1680,6 +1669,21 @@ export default function WorkoutScreen({
                                           if (nextCompleted === true) {
                                             if (exercise.restTimer) {
                                               startRestTimer(exercise.restTimer, setIndex, exerciseIndex, set.id);
+                                            }
+                                            // RPE warning when completing a set with low RPE and next set exists
+                                            const finalRpe = (() => {
+                                              const isEditingRpe = editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'rpe';
+                                              if (isEditingRpe) {
+                                                const n = parseNumericInput(editingCellValue, 'float');
+                                                return n !== null ? Math.min(10, Math.max(1, n)) : set.rpe;
+                                              }
+                                              return set.rpe;
+                                            })();
+                                            const hasNextSet = (exercise?.sets.length ?? 0) > setIndex + 1;
+                                            if (finalRpe != null && finalRpe < 7 && hasNextSet) {
+                                              const roundedRpe = Math.round(finalRpe);
+                                              startRPEActivity(roundedRpe, exercise.name, 'active');
+                                              setTimeout(() => setRpeWarning({ visible: true, rpe: roundedRpe, exerciseName: exercise.name, weightBumpDisplay: null }), 150);
                                             }
                                           } else {
                                             skipRestTimer(set.id);
