@@ -1,13 +1,13 @@
 import { supabase } from '@/lib/supabase';
 import { getDefaultTmlsnExercises, uuidToExerciseName, workoutTypeToProtocolDay, toExerciseUuid, type ProtocolDay, type TmlsnExercise } from '@/lib/getTmlsnTemplate';
 import { getHistorySummary } from '@/lib/getHistorySummary';
-import { getLocalDayName, getLocalMondayYMD } from '@/lib/time';
+import { formatLocalYMD, getLocalDayName, getLocalMondayYMD } from '@/lib/time';
 import * as supabaseStorage from '@/utils/supabaseStorage';
 import { resolveExerciseDbIdFromName } from '@/utils/workoutMuscles';
 import { toDisplayWeight, formatWeightDisplay } from '@/utils/units';
 import { KG_PER_LB, LB_PER_KG } from '@/utils/units';
 import { resolveRepRangesForExercises, type ResolveRepRangeInputFull } from '@/lib/progression/resolveRepRange';
-import { decideNextPrescription } from '@/lib/progression/decideNextPrescription';
+import { decideNextPrescription, didHitRepThreshold } from '@/lib/progression/decideNextPrescription';
 import { TMLSN_SPLITS } from '@/constants/workoutSplits';
 
 // ─── TMLSN Protocol Schedule (when schedule mode is TMLSN) ─────────────────────
@@ -109,6 +109,12 @@ export interface TodayExerciseDetail {
   exerciseName: string;
   ghostWeight: string | null;
   ghostReps: string | null;
+  /** Raw next weight in lb (for carousel percentChange). */
+  nextWeightLb?: number | null;
+  /** Progression state used for engine input (for carousel fallback). */
+  currentBand?: 'easy' | 'medium' | 'hard' | 'extreme';
+  consecutiveSuccess?: number;
+  consecutiveFailure?: number;
   repRangeLow: number;
   repRangeHigh: number;
   /** Increment in kg (for engine). */
@@ -159,6 +165,35 @@ export interface WorkoutContext {
   lastSessionDate?: string | null;
   coachingSignal?: 'empty' | 'pre_workout_carbs_low' | 'post_workout_carbs_low' | 'session_complete' | 'session_upcoming' | 'neutral';
   hasEnoughDataForCoaching?: boolean;
+}
+
+const TODAY_WORKOUT_CONTEXT_CACHE_TTL_MS = 60_000;
+
+type TodayWorkoutContextCacheEntry = {
+  key: string;
+  cachedAt: number;
+  value: WorkoutContext;
+};
+
+let todayWorkoutContextCache: TodayWorkoutContextCacheEntry | null = null;
+const todayWorkoutContextInFlight = new Map<string, Promise<WorkoutContext>>();
+
+export function invalidateTodayWorkoutContextCache(userId?: string): void {
+  if (!userId) {
+    todayWorkoutContextCache = null;
+    todayWorkoutContextInFlight.clear();
+    return;
+  }
+
+  const keyPrefix = `${userId}:`;
+  if (todayWorkoutContextCache?.key.startsWith(keyPrefix)) {
+    todayWorkoutContextCache = null;
+  }
+  for (const key of todayWorkoutContextInFlight.keys()) {
+    if (key.startsWith(keyPrefix)) {
+      todayWorkoutContextInFlight.delete(key);
+    }
+  }
 }
 
 // ─── All-exercise history fetch (from workout_sessions + workout_sets) ─────────
@@ -285,12 +320,14 @@ async function buildTodayExerciseDetails(
 
     let ghostWeight: string | null = null;
     let ghostReps: string | null = null;
+    let nextWeightLb: number | null = null;
     let action: PrescriptionActionPhrase | null = null;
     let reason: string | null = null;
     let basedOn: PrescriptionBasedOn | null = null;
     let goal: string | null = null;
 
-    // Find last session with this exercise and run canonical engine
+    // Find last session with this exercise; use stored prescription when available, else run engine
+    const prescription = prescriptions[exerciseId];
     for (const session of sortedSessions) {
       const matchEx = session.exercises?.find(
         (e) => toCanonicalExUuid(e.exerciseDbId, e.name) === exerciseId
@@ -308,23 +345,27 @@ async function buildTodayExerciseDetails(
         completed: true,
       }));
 
+      // Always run engine with state from exercise_progress_state; engine output is source of truth
+      const currentBand = (prescription?.difficultyBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy';
+      const consecutiveSuccess = prescription?.consecutiveSuccess ?? 0;
+      const consecutiveFailure = prescription?.consecutiveFailure ?? 0;
+      const isCalibrating = prescription?.isCalibrating ?? false;
+
       const decision = decideNextPrescription({
         sets: workingSets,
         repRangeLow,
         repRangeHigh,
-        // Context preview — real band state lives in Supabase exercise_progress_state.
-        // These defaults keep the ghost weight accurate for coaching while avoiding
-        // a runtime crash from missing required fields.
         overloadCategory: 'compound_small',
-        currentBand: 'easy',
-        consecutiveSuccess: 0,
-        consecutiveFailure: 0,
-        isCalibrating: false,
+        currentBand,
+        consecutiveSuccess,
+        consecutiveFailure,
+        isCalibrating,
         isDeloadWeek: false,
         blitzMode: false,
       });
 
       if (decision) {
+        nextWeightLb = decision.nextWeightLb;
         ghostWeight = formatWeightDisplay(toDisplayWeight(decision.nextWeightLb, weightUnit), weightUnit);
         ghostReps = String(decision.nextRepTarget);
         action = actionToPhrase(decision.action as 'deload' | 'add_weight' | 'build_reps');
@@ -339,20 +380,22 @@ async function buildTodayExerciseDetails(
         };
       } else {
         const last = doneSets[doneSets.length - 1];
+        nextWeightLb = last.weight;
         ghostWeight = formatWeightDisplay(toDisplayWeight(last.weight, weightUnit), weightUnit);
         ghostReps = String(last.reps);
       }
       break;
     }
 
-    // Fallback when no history: use DB prescription
+    // Fallback when no history: use DB prescription only when it has a valid target
     if (!ghostWeight || !ghostReps) {
-      const prescription = prescriptions[exerciseId];
-      if (prescription) {
-        ghostWeight = formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit);
-        ghostReps = String(prescription.goal === 'add_load' ? repRangeLow : repRangeHigh);
-        goal = prescription.goal;
-        action = prescription.goal === 'add_load' ? 'increase weight' : prescription.goal === 'reduce_load' ? 'deload' : 'build reps';
+      const fallbackRx = prescriptions[exerciseId];
+      if (fallbackRx?.nextWeight != null) {
+        nextWeightLb = fallbackRx.nextWeight;
+        ghostWeight = formatWeightDisplay(toDisplayWeight(fallbackRx.nextWeight, weightUnit), weightUnit);
+        ghostReps = String(fallbackRx.goal === 'add_load' ? repRangeLow : repRangeHigh);
+        goal = fallbackRx.goal;
+        action = fallbackRx.goal === 'add_load' ? 'increase weight' : fallbackRx.goal === 'reduce_load' ? 'deload' : 'build reps';
       }
     }
 
@@ -360,6 +403,10 @@ async function buildTodayExerciseDetails(
       exerciseName,
       ghostWeight,
       ghostReps,
+      nextWeightLb: nextWeightLb ?? undefined,
+      currentBand: (prescription?.difficultyBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy',
+      consecutiveSuccess: prescription?.consecutiveSuccess ?? 0,
+      consecutiveFailure: prescription?.consecutiveFailure ?? 0,
       repRangeLow,
       repRangeHigh,
       smallestIncrementKg: incrementKg,
@@ -459,8 +506,10 @@ export async function getTodayWorkoutContext(
 ): Promise<WorkoutContext> {
   const effectiveUserId = userId && typeof userId === 'string' ? userId : '';
   const dayName = getLocalDayName();
+  const todayYMD = formatLocalYMD(new Date());
   const mondayYMD = getLocalMondayYMD();
   const lookupDay = dayName;
+  const cacheKey = `${effectiveUserId}:${todayYMD}:${lookupDay}:${mondayYMD}`;
 
   if (__DEV__ && effectiveUserId) {
     console.log('[getWorkoutContext] userId=', effectiveUserId.slice(0, 8) + '...', 'dayName=', dayName, 'lookupDay=', lookupDay, 'mondayYMD=', mondayYMD);
@@ -474,7 +523,30 @@ export async function getTodayWorkoutContext(
     return buildDegradedContext(effectiveUserId);
   }
 
-  try {
+  if (
+    todayWorkoutContextCache &&
+    todayWorkoutContextCache.key === cacheKey &&
+    Date.now() - todayWorkoutContextCache.cachedAt < TODAY_WORKOUT_CONTEXT_CACHE_TTL_MS
+  ) {
+    return todayWorkoutContextCache.value;
+  }
+
+  const inFlight = todayWorkoutContextInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const remember = (ctx: WorkoutContext): WorkoutContext => {
+    todayWorkoutContextCache = {
+      key: cacheKey,
+      cachedAt: Date.now(),
+      value: ctx,
+    };
+    return ctx;
+  };
+
+  const loadPromise = (async (): Promise<WorkoutContext> => {
+    try {
     // Parallel: training_settings + today's schedule + weekly volume (history fetched after we have trainingSettings)
     const [settingsRes, scheduleRes, volumeRes] = await Promise.all([
       supabase
@@ -563,7 +635,6 @@ export async function getTodayWorkoutContext(
       mrv: row.mrv ?? null,
     }));
 
-    const todayYMD = new Date().toISOString().slice(0, 10);
     const trainedToday = (historySummary.recentSessions ?? []).some((s) => s.sessionDate === todayYMD);
     const lastSession = historySummary.lastSessionDate ?? historySummary.adherence?.lastWorkoutDate ?? null;
 
@@ -633,7 +704,7 @@ export async function getTodayWorkoutContext(
         }
 
         if (isRestDay || exerciseIds.length === 0) {
-          return extendWithCoaching({
+          return remember(extendWithCoaching({
             userId: effectiveUserId,
             fetchedAt: new Date().toISOString(),
             trainingSettings,
@@ -645,7 +716,7 @@ export async function getTodayWorkoutContext(
             recentSessions: historySummary.recentSessions,
             exerciseTrends: historySummary.exerciseTrends,
             adherence: historySummary.adherence,
-          }, todayPlan);
+          }, todayPlan));
         }
 
         const [exerciseHistory, userSettings] = await Promise.all([
@@ -655,7 +726,7 @@ export async function getTodayWorkoutContext(
         const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
         const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
 
-        return extendWithCoaching({
+        return remember(extendWithCoaching({
           userId: effectiveUserId,
           fetchedAt: new Date().toISOString(),
           trainingSettings,
@@ -669,7 +740,7 @@ export async function getTodayWorkoutContext(
           adherence: historySummary.adherence,
           weightUnit,
           todayExerciseDetails,
-        }, todayPlan);
+        }, todayPlan));
       }
       // ── Fallback: derive today's plan from user_settings.data.training.weekPlan ──
       // Used when workout_schedule table doesn't exist (migration 008 not yet applied).
@@ -714,7 +785,7 @@ export async function getTodayWorkoutContext(
               ? buildTodayExerciseDetails(effectiveUserId, todayPlanFromSettings, weightUnit)
               : Promise.resolve([] as TodayExerciseDetail[]),
           ]);
-          return extendWithCoaching({
+          return remember(extendWithCoaching({
             userId: effectiveUserId,
             fetchedAt: new Date().toISOString(),
             trainingSettings,
@@ -727,11 +798,11 @@ export async function getTodayWorkoutContext(
             adherence: historySummary.adherence,
             weightUnit,
             todayExerciseDetails: todayExerciseDetails.length > 0 ? todayExerciseDetails : undefined,
-          }, todayPlanFromSettings);
+          }, todayPlanFromSettings));
         }
       } catch { /* ignore, fall through to no-plan */ }
 
-      return extendWithCoaching({
+      return remember(extendWithCoaching({
         userId: effectiveUserId,
         fetchedAt: new Date().toISOString(),
         trainingSettings,
@@ -742,7 +813,7 @@ export async function getTodayWorkoutContext(
         recentSessions: historySummary.recentSessions,
         exerciseTrends: historySummary.exerciseTrends,
         adherence: historySummary.adherence,
-      }, null);
+      }, null));
     }
 
     const rawIds = (rawSchedule.exercise_ids as string[]) ?? [];
@@ -755,7 +826,7 @@ export async function getTodayWorkoutContext(
     };
 
     if (todayPlan.isRestDay || todayPlan.exerciseIds.length === 0) {
-      return extendWithCoaching({
+      return remember(extendWithCoaching({
         userId: effectiveUserId,
         fetchedAt: new Date().toISOString(),
         trainingSettings,
@@ -767,7 +838,7 @@ export async function getTodayWorkoutContext(
         recentSessions: historySummary.recentSessions,
         exerciseTrends: historySummary.exerciseTrends,
         adherence: historySummary.adherence,
-      }, todayPlan);
+      }, todayPlan));
     }
 
     const [exerciseHistory, userSettings] = await Promise.all([
@@ -777,7 +848,7 @@ export async function getTodayWorkoutContext(
     const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
     const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
 
-    return extendWithCoaching({
+    return remember(extendWithCoaching({
       userId: effectiveUserId,
       fetchedAt: new Date().toISOString(),
       trainingSettings,
@@ -791,10 +862,19 @@ export async function getTodayWorkoutContext(
       adherence: historySummary.adherence,
       weightUnit,
       todayExerciseDetails,
-    }, todayPlan);
-  } catch (e) {
-    if (__DEV__) console.warn('[getWorkoutContext] error:', e);
-    return buildDegradedContext(effectiveUserId || 'anonymous');
+    }, todayPlan));
+    } catch (e) {
+      if (__DEV__) console.warn('[getWorkoutContext] error:', e);
+      return buildDegradedContext(effectiveUserId || 'anonymous');
+    }
+  })();
+
+  todayWorkoutContextInFlight.set(cacheKey, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    if (todayWorkoutContextInFlight.get(cacheKey) === loadPromise) {
+      todayWorkoutContextInFlight.delete(cacheKey);
+    }
   }
 }
-

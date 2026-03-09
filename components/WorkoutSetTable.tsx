@@ -22,9 +22,16 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import type { Exercise } from '../types';
 import type { PrevSet } from '../utils/workoutSetTable';
-import { toDisplayWeight, formatWeightDisplay, parseNumericInput } from '../utils/units';
+import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
+import {
+  parseAndValidateWeight,
+  parseAndValidateReps,
+  parseAndValidateRpe,
+  sanitizeRpe,
+  isValidCompletedSet,
+} from '../utils/workoutSetValidation';
 import { updateToRPEWarning, sendRPENotification } from '../lib/liveActivity';
-import { getRpeLabel } from '../utils/rpe';
+import { getRpeLabel, shouldTriggerLowRpeWarning } from '../utils/rpe';
 import { Input } from './Input';
 import { Colors, Typography } from '../constants/theme';
 import Slider from '@react-native-community/slider';
@@ -78,6 +85,10 @@ export type WorkoutSetTableProps = {
   prescription?: { nextWeight: number; goal: string } | null;
   /** Human-readable reason for the ghost (e.g. "Add weight", "Build reps", "Deload"). Optional, for future tooltip. */
   ghostReason?: string | null;
+  /** Called when user commits RPE via popup Done (e.g. for in-session weight bump on low RPE). */
+  onRpeCommit?: (exerciseIndex: number, setIndex: number, rpe: number) => void;
+  /** Called when user completes a set (check) with low RPE and has next set (for Dynamic Island warning). */
+  onRpeCheckComplete?: (rpe: number, exerciseName: string, exerciseIndex: number, setIndex: number) => void;
 };
 
 function AnimatedSetNoteRow({
@@ -148,6 +159,8 @@ export function WorkoutSetTable({
   playOut,
   prescription = null,
   ghostReason,
+  onRpeCommit,
+  onRpeCheckComplete,
 }: WorkoutSetTableProps) {
   const [editingCell, setEditingCell] = useState<{
     exerciseIndex: number;
@@ -169,15 +182,14 @@ export function WorkoutSetTable({
       if (commitInProgressRef.current) return;
       commitInProgressRef.current = true;
       const { exerciseIndex: exIdx, setIndex, field } = editingCell;
-      const set = exercise.sets[setIndex];
       if (field === 'weight') {
-        const n = parseNumericInput(editingCellValue, 'float');
+        const n = parseAndValidateWeight(editingCellValue);
         if (n !== null) updateSet(exIdx, setIndex, { weight: n });
       } else if (field === 'rpe') {
-        const n = parseNumericInput(editingCellValue, 'float');
-        if (n !== null) updateSet(exIdx, setIndex, { rpe: Math.min(10, Math.max(1, n)) });
+        const parsed = parseAndValidateRpe(editingCellValue);
+        if (parsed !== null) updateSet(exIdx, setIndex, { rpe: parsed });
       } else {
-        const n = parseNumericInput(editingCellValue, 'int');
+        const n = parseAndValidateReps(editingCellValue);
         if (n !== null) updateSet(exIdx, setIndex, { reps: n });
       }
       setEditingCell(null);
@@ -185,7 +197,7 @@ export function WorkoutSetTable({
       Keyboard.dismiss();
       commitInProgressRef.current = false;
     },
-    [editingCell, editingCellValue, exercise.sets, updateSet]
+    [editingCell, editingCellValue, weightUnit, updateSet]
   );
 
   const commitActiveFieldRef = useRef(commitActiveFieldIfNeeded);
@@ -416,13 +428,13 @@ export function WorkoutSetTable({
                           const setUpdates: { weight?: number; reps?: number; rpe?: number | null; completed: boolean } = { completed: nextCompleted };
                           if (isEditingThisSet && editingCell) {
                             if (editingCell.field === 'weight') {
-                              const n = parseNumericInput(editingCellValue, 'float');
+                              const n = parseAndValidateWeight(editingCellValue);
                               if (n !== null) setUpdates.weight = n;
                             } else if (editingCell.field === 'rpe') {
-                              const n = parseNumericInput(editingCellValue, 'float');
-                              if (n !== null) setUpdates.rpe = Math.min(10, Math.max(1, n));
+                              const parsed = parseAndValidateRpe(editingCellValue);
+                              if (parsed !== null) setUpdates.rpe = parsed;
                             } else {
-                              const n = parseNumericInput(editingCellValue, 'int');
+                              const n = parseAndValidateReps(editingCellValue);
                               if (n !== null) setUpdates.reps = n;
                             }
                             setEditingCell(null);
@@ -430,13 +442,19 @@ export function WorkoutSetTable({
                             Keyboard.dismiss();
                           }
                           if (nextCompleted) {
-                            if ((setUpdates.weight ?? set.weight) === 0 && effectiveGhostWeight !== null) {
-                              const gw = parseNumericInput(effectiveGhostWeight, 'float');
+                            if ((setUpdates.weight ?? set.weight) <= 0 && effectiveGhostWeight !== null) {
+                              const gw = parseAndValidateWeight(effectiveGhostWeight);
                               if (gw !== null) setUpdates.weight = gw;
                             }
-                            if ((setUpdates.reps ?? set.reps) === 0 && effectiveGhostReps !== null) {
-                              const gr = parseNumericInput(effectiveGhostReps, 'int');
+                            if ((setUpdates.reps ?? set.reps) < 1 && effectiveGhostReps !== null) {
+                              const gr = parseAndValidateReps(effectiveGhostReps);
                               if (gr !== null) setUpdates.reps = gr;
+                            }
+                            const finalWeight = setUpdates.weight ?? set.weight;
+                            const finalReps = setUpdates.reps ?? set.reps;
+                            const finalRpe = setUpdates.rpe ?? set.rpe;
+                            if (!isValidCompletedSet({ weight: finalWeight, reps: finalReps, rpe: finalRpe })) {
+                              return;
                             }
                           } else {
                             // Revert ghost-applied values back to 0 so ghost shows again
@@ -457,10 +475,11 @@ export function WorkoutSetTable({
                           if (nextCompleted) {
                             const finalRpe = setUpdates.rpe ?? set.rpe;
                             const hasNextSet = exercise.sets.length > setIndex + 1;
-                            if (finalRpe != null && finalRpe < 7 && hasNextSet) {
+                            if (shouldTriggerLowRpeWarning(finalRpe) && hasNextSet) {
                               const roundedRpe = Math.round(finalRpe);
                               updateToRPEWarning(roundedRpe, exercise.name);
                               sendRPENotification(roundedRpe, exercise.name, 'active');
+                              onRpeCheckComplete?.(roundedRpe, exercise.name, exerciseIndex, setIndex);
                             }
                           }
                         }}
@@ -605,7 +624,9 @@ export function WorkoutSetTable({
                 <Pressable
                   style={[styles.rpeDoneButton, { backgroundColor: colors.primaryLight }]}
                   onPress={() => {
-                    updateSet(rpePopup.exerciseIndex, rpePopup.setIndex, { rpe: rpePopup.value });
+                    const rpe = sanitizeRpe(rpePopup.value);
+                    updateSet(rpePopup.exerciseIndex, rpePopup.setIndex, { rpe });
+                    onRpeCommit?.(rpePopup.exerciseIndex, rpePopup.setIndex, rpe);
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     setRpePopup(null);
                   }}

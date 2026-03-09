@@ -25,6 +25,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
+import { shouldTriggerLowRpeWarning } from '../utils/rpe';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -243,9 +244,7 @@ export function PostSessionSummary({
 
   // "Push harder?" only when RPE was low AND it's not a deload week
   // (during deload, easy effort is expected — don't nag the user)
-  const lowRpeExercises = items.filter(
-    (i) => i.avgRpe != null && i.avgRpe < 8
-  );
+  const lowRpeExercises = items.filter((i) => shouldTriggerLowRpeWarning(i.avgRpe));
   const showPushHarder = !isDeloadWeek && lowRpeExercises.length > 0 && onPushHarder != null;
 
   return (

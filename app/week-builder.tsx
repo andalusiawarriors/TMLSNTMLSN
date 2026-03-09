@@ -23,6 +23,7 @@ import { getUserSettings, saveUserSettings, getSavedRoutines, getStorageUserId }
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import { workoutTypeToProtocolDay, getDefaultTmlsnExercises, toExerciseUuid } from '../lib/getTmlsnTemplate';
 import type { TrainingSettings, WeekDayEntry, SavedRoutine } from '../types';
 
@@ -434,6 +435,8 @@ export default function WeekBuilderScreen() {
           );
         }
       }
+
+      invalidateTodayWorkoutContextCache(uid ?? undefined);
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);

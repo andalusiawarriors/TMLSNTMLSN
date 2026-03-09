@@ -16,9 +16,15 @@ export type VolumeUnit = 'oz' | 'ml';
 /** Gym-typical weight increments: 0, 0.25, 0.5, 0.75, 1, 1.25, … (kg or lb). */
 const GYM_WEIGHT_INCREMENT = 0.25;
 
+/** Round to avoid float artifacts (e.g. 8.749999999 → 8.75). Use after any gym weight calculation. */
+export function roundToGymPrecision(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /** Round weight to the nearest gym increment (0.25). */
 export function roundToGymWeight(value: number): number {
-  return Math.round(value / GYM_WEIGHT_INCREMENT) * GYM_WEIGHT_INCREMENT;
+  const r = Math.round(value / GYM_WEIGHT_INCREMENT) * GYM_WEIGHT_INCREMENT;
+  return roundToGymPrecision(r);
 }
 
 /** Stored weight is in lb. Convert to display value in the given unit. Kg rounded to 4 decimals to avoid lb→kg float noise while preserving e.g. 58.125. */
@@ -57,30 +63,44 @@ export function fromDisplayFluid(displayFluid: number, unit: VolumeUnit): number
 }
 
 /**
- * Safe parse for numeric input (weight or reps). Handles empty string, commas, invalid.
+ * Safe parse for numeric input (weight or reps). Handles empty string, locale decimals.
+ * float: locale-tolerant (62,25 and 62.25 both parse). int: rejects decimals.
  * Returns null if invalid or empty.
  */
 export function parseNumericInput(
   raw: string,
   mode: 'float' | 'int'
 ): number | null {
-  const trimmed = raw.replace(/,/g, '').trim();
+  const trimmed = raw.trim();
   if (trimmed === '') return null;
   if (mode === 'float') {
-    const n = parseFloat(trimmed);
+    if (!/[\d]/.test(trimmed)) return null;
+    const invalidChars = trimmed.replace(/[\d.,]/g, '');
+    if (invalidChars.length > 0) return null;
+    const separators = (trimmed.match(/[,.]/g) || []);
+    if (separators.length > 1) return null;
+    const normalized = trimmed.replace(',', '.');
+    const n = parseFloat(normalized);
     return Number.isFinite(n) && n >= 0 ? n : null;
   }
+  if (trimmed.includes('.') || trimmed.includes(',')) return null;
   const n = parseInt(trimmed, 10);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 /**
- * Format weight for display: round to nearest gym increment (0, 0.25, 0.5, 0.75, 1, …), then show with no trailing zeros (58 → "58", 58.25 → "58.25", 58.5 → "58.5").
+ * Format weight for display: round to nearest gym increment, then show using device locale.
+ * Locale-aware: comma decimal (62,25) or dot decimal (62.25) per user's locale.
  */
 export function formatWeightDisplay(value: number, _unit: WeightUnit): string {
   const rounded = roundToGymWeight(value);
   if (rounded % 1 === 0) return String(Math.round(rounded));
-  return rounded.toFixed(2).replace(/\.?0+$/, '');
+  const formatter = new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  });
+  return formatter.format(rounded);
 }
 
 /** Format total volume for display: round to nearest gym increment (0.25), then show with no trailing zeros (1392 → "1392", 1392.5 → "1392.5"). */

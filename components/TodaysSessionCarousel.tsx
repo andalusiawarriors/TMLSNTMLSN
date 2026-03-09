@@ -18,7 +18,6 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -34,6 +33,7 @@ import { useRouter } from 'expo-router';
 import { ShinyText } from './ShinyText';
 import { useJarvis } from '../hooks/useJarvis';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
+import { useAuth } from '../context/AuthContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
 import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
@@ -42,6 +42,7 @@ import type { WeightUnit } from '../utils/units';
 import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
 import { EXERCISE_MAP } from '../utils/exerciseDb/exerciseDatabase';
 import type { OverloadCategory } from '../lib/progression/decideNextPrescription';
+import { getSessionCompletedDate } from '../utils/storage';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const PAD    = 16;
@@ -117,10 +118,30 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
       return { name, sets: baseSets, reps: repRangeLow, weightVal: '—', weightLabel: '', weightUnit, percentChange: null, signal: '', isNew: true, overloadType: null, prevWeight: 0, prevSets: 0, prevReps: 0 };
     }
 
-    // ── Canonical progression engine ─────────────────────────────────────────
-    const dbId = exDetail?.exerciseDbId;
+    // Use todayExerciseDetails when available (from buildTodayExerciseDetails with persisted progression state)
+    if (exDetail?.ghostWeight && exDetail.ghostReps && exDetail.ghostWeight !== '—') {
+      const targetWeightDisplay = exDetail.nextWeightLb != null
+        ? toDisplayWeight(exDetail.nextWeightLb, weightUnit)
+        : baseWeight;
+      const overloadType = exDetail.action === 'increase weight' ? 'up' : 'same';
+      const displayReps = parseInt(exDetail.ghostReps, 10) || repRangeHigh;
+      const weightVal = exDetail.ghostWeight;
+      const weightLabel = targetWeightDisplay > 0 ? weightUnit : '';
+      const signal = overloadType === 'up' ? '↑' : '';
+      let percentChange: string | null = null;
+      if (baseWeight > 0 && targetWeightDisplay !== baseWeight) {
+        const pct = ((targetWeightDisplay - baseWeight) / baseWeight) * 100;
+        percentChange = pct > 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`;
+      } else if (baseWeight > 0 && overloadType === 'same') {
+        percentChange = '0%';
+      }
+      return { name, sets: baseSets, reps: displayReps, weightVal, weightLabel, weightUnit, percentChange, signal, isNew: false, overloadType, prevWeight: baseWeight, prevSets: lastSets.length, prevReps: lastSets[0]?.reps ?? repRangeLow };
+    }
+
+    // Fallback: run engine with state from todayExerciseDetails (from exercise_progress_state) or defaults
+    const exerciseId = todayPlan.exerciseIds[i];
     const overloadCategory: OverloadCategory =
-      (dbId ? EXERCISE_MAP.get(dbId)?.overloadCategory : undefined) ?? 'compound_small';
+      (exerciseId ? EXERCISE_MAP.get(exerciseId)?.overloadCategory : undefined) ?? 'compound_small';
 
     const decision = decideNextPrescription({
       sets: lastSets.map((s) => ({
@@ -132,10 +153,9 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
       repRangeLow,
       repRangeHigh,
       overloadCategory,
-      // Preview context: use defaults — real band state lives in Supabase
-      currentBand: 'easy',
-      consecutiveSuccess: 0,
-      consecutiveFailure: 0,
+      currentBand: (exDetail?.currentBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy',
+      consecutiveSuccess: exDetail?.consecutiveSuccess ?? 0,
+      consecutiveFailure: exDetail?.consecutiveFailure ?? 0,
       isCalibrating: false,
       isDeloadWeek: false,
       blitzMode: false,
@@ -369,6 +389,7 @@ function StartButton({ label, onPress }: { label: string; onPress: () => void })
 export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: number }) {
   const router              = useRouter();
   const { activeWorkout }   = useActiveWorkout();
+  const { user } = useAuth();
   const { context, contextLoading, refresh } = useJarvis();
   const [showAll, setShowAll] = useState(false);
   const [sessionDoneToday, setSessionDoneToday] = useState(false);
@@ -377,14 +398,14 @@ export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: numbe
   useEffect(() => {
     (async () => {
       try {
-        const stored = await AsyncStorage.getItem('TMLSN_session_completed_date');
+        const stored = await getSessionCompletedDate(user?.id);
         const today  = new Date().toISOString().split('T')[0];
         setSessionDoneToday(stored === today);
       } catch {
         setSessionDoneToday(false);
       }
     })();
-  }, [animTrigger]); // re-check every time the tab is focused
+  }, [animTrigger, user?.id]); // re-check on focus and auth switch
 
   // Refresh Jarvis context every time the Fitness tab is focused
   const firstMountRef = useRef(false);
@@ -773,4 +794,3 @@ const S = StyleSheet.create({
     color: '#ABABAB',
   },
 });
-

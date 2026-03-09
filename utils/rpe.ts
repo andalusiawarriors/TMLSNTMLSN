@@ -2,6 +2,13 @@
  * RPE (Rate of Perceived Exertion) → Reps-In-Reserve label for the picker.
  * Shared by active workout and edit past workout set tables.
  */
+export const LOW_RPE_WARNING_THRESHOLD = 7;
+
+/** Low-effort warning rule used by workout feedback surfaces. */
+export function shouldTriggerLowRpeWarning(rpe: number | null | undefined): rpe is number {
+  return rpe != null && rpe < LOW_RPE_WARNING_THRESHOLD;
+}
+
 export function getRpeLabel(rpe: number): string {
   const rir = 10 - rpe;
   if (rir <= 0) return 'Max effort — no reps left';

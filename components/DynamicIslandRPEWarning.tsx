@@ -10,8 +10,8 @@
  *  • Non-DI iPhones (notch/pill/no-cutout)          → floating pill at top
  *
  * Triggered in two contexts:
- *  • context="active"  — fires immediately after a set's RPE is committed < 7
- *  • context="post"    — fires after workout is finished, avg RPE < 7
+ *  • context="active"  — fires immediately after a set's RPE is committed below target
+ *  • context="post"    — fires after workout is finished when avg RPE is below target
  */
 
 import React, { useEffect, useCallback } from 'react';

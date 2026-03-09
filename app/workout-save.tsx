@@ -17,14 +17,15 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { format } from 'date-fns';
 import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
-import { getWorkoutSessions, getUserSettings, finalizeWorkoutSession } from '../utils/storage';
+import { getWorkoutSessions, getUserSettings, finalizeWorkoutSession, setSessionCompletedDate } from '../utils/storage';
+import { getInvalidCompletedSets } from '../utils/workoutSetValidation';
 import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
@@ -34,6 +35,7 @@ export default function WorkoutSaveScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { activeWorkout, setActiveWorkout, discardWorkout } = useActiveWorkout();
+  const { user } = useAuth();
 
   const handleDiscard = () => {
     Alert.alert(
@@ -128,6 +130,14 @@ export default function WorkoutSaveScreen() {
       Alert.alert('Error', 'Workout data not found. Go back and try again.');
       return;
     }
+    const invalid = getInvalidCompletedSets(sessionToFinalize);
+    if (invalid.length > 0) {
+      const msg = invalid.length === 1
+        ? `Set ${invalid[0].setIndex} of ${invalid[0].exerciseName} has invalid data (weight > 0, reps ≥ 1, RPE 1–10). Fix it before saving.`
+        : `${invalid.length} sets have invalid data. Each completed set needs weight > 0, reps ≥ 1, and RPE 1–10 if set. Fix them before saving.`;
+      Alert.alert('Invalid set data', msg);
+      return;
+    }
     setIsSaving(true);
     setUploadError(null);
 
@@ -173,10 +183,7 @@ export default function WorkoutSaveScreen() {
       }
 
       // Mark today's recommended session as done so carousel shows "All caught up"
-      await AsyncStorage.setItem(
-        'TMLSN_session_completed_date',
-        new Date().toISOString().split('T')[0],
-      );
+      await setSessionCompletedDate(new Date().toISOString().split('T')[0], user?.id);
 
       // Clear the active workout now that the user has confirmed the save
       setActiveWorkout(null);

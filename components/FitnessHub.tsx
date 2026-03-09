@@ -24,7 +24,6 @@ import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
-import { emitWorkoutOriginRoute } from '../utils/fabBridge';
 
 import { EXERCISE_DATABASE } from '../utils/exerciseDb/exerciseDatabase';
 import { getUserSettings } from '../utils/storage';
@@ -125,7 +124,7 @@ export function FitnessHub() {
   const [animTrigger, setAnimTrigger]         = useState(0);
   const [showWorkoutBlock, setShowWorkoutBlock] = useState(false);
   const [training, setTraining]               = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
-  const { activeWorkout }                     = useActiveWorkout();
+  const { activeWorkout, setOriginRoute }     = useActiveWorkout();
   const router                                = useRouter();
 
   useFocusEffect(
@@ -140,10 +139,10 @@ export function FitnessHub() {
   const handlePress = useCallback(
     (route: string) => {
       if (activeWorkout) { setShowWorkoutBlock(true); return; }
-      emitWorkoutOriginRoute('/(tabs)/nutrition');
+      setOriginRoute('/(tabs)/nutrition');
       router.push(route as any);
     },
-    [activeWorkout, router],
+    [activeWorkout, router, setOriginRoute],
   );
 
   const scheduleMode = training.scheduleMode ?? 'ghost';

@@ -11,7 +11,7 @@
  *  - Blitz Mode: forces Extreme band, disables coaching, caps weekly increase at 10%
  */
 
-import { KG_PER_LB, LB_PER_KG } from '../../utils/units';
+import { KG_PER_LB, LB_PER_KG, roundToGymPrecision } from '../../utils/units';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,8 @@ const BANDS: DifficultyBand[] = ['easy', 'medium', 'hard', 'extreme'];
 /** Round to nearest valid exercise increment to avoid ugly decimals (e.g. 42.75 kg). */
 function roundToIncrement(valueKg: number, incrementKg: number): number {
   const inc = incrementKg > 0 ? incrementKg : 2.5;
-  return Math.round(valueKg / inc) * inc;
+  const r = Math.round(valueKg / inc) * inc;
+  return roundToGymPrecision(r);
 }
 
 /** Prefer most common working weight; if tied, use first working-set weight. Returns lb. */
@@ -245,7 +246,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     const deloadWeightKg = getDeloadWeight(baseWeightKg);
     const incrementKg = INCREMENTS[overloadCategory][activeBand];
     const nextWeightKg = roundToIncrement(deloadWeightKg, incrementKg);
-    const nextWeightLb = Math.round(nextWeightKg * LB_PER_KG * 1000) / 1000;
+    const nextWeightLb = roundToGymPrecision(nextWeightKg * LB_PER_KG);
 
     if (__DEV__) {
       console.log('[Progression] Deload week — weight reduced to 50%.');
@@ -330,7 +331,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   const nextWeightLb =
     action === 'build_reps'
       ? baseWeightLb
-      : Math.round(nextWeightKg * LB_PER_KG * 1000) / 1000;
+      : roundToGymPrecision(nextWeightKg * LB_PER_KG);
 
   const goal: ProgressionDecision['goal'] =
     action === 'add_weight' ? 'add_load' : 'add_reps';

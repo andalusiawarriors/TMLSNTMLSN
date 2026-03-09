@@ -86,19 +86,6 @@ export function onStreakPopupState(fn: BoolCb): VoidCb {
   };
 }
 
-// ── Workout origin route (layout → ActiveWorkoutContext, for navigate back on minimize) ──
-const originRouteListeners: ((route: string) => void)[] = [];
-export function emitWorkoutOriginRoute(route: string) {
-  originRouteListeners.forEach(fn => fn(route));
-}
-export function onWorkoutOriginRoute(fn: (route: string) => void): VoidCb {
-  originRouteListeners.push(fn);
-  return () => {
-    const i = originRouteListeners.indexOf(fn);
-    if (i >= 0) originRouteListeners.splice(i, 1);
-  };
-}
-
 // ── Workout expand from pill (ActiveWorkoutPill → layout, keep tab highlight on current tab) ──
 const expandOriginListeners: ((pathname: string) => void)[] = [];
 export function emitWorkoutExpandOrigin(pathname: string) {

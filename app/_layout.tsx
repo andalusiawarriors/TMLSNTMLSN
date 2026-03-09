@@ -37,9 +37,11 @@ import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { ActiveWorkoutProvider } from '../context/ActiveWorkoutContext';
 import { AuthProvider } from '../context/AuthContext';
 import { ActiveWorkoutPill } from '../components/ActiveWorkoutPill';
+import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 
 function RootLayoutInner() {
   const { colors } = useTheme();
+  const { activeWorkout } = useActiveWorkout();
 
   return (
     <View style={styles.rootInner}>
@@ -50,6 +52,7 @@ function RootLayoutInner() {
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '600' },
           contentStyle: { backgroundColor: colors.black },
+          gestureEnabled: !activeWorkout,
         }}
       >
         <Stack.Screen

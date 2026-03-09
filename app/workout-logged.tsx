@@ -18,6 +18,7 @@ import { toDisplayVolume, toDisplayWeight, formatWeightDisplay, formatVolumeDisp
 import { supabaseGetExercisePrescriptions } from '../utils/supabaseStorage';
 import { useSupabaseUser } from '../hooks/useSupabaseUser';
 import { PostSessionSummary, type ExerciseSummaryItem } from '../components/PostSessionSummary';
+import { shouldTriggerLowRpeWarning } from '../utils/rpe';
 import { DynamicIslandRPEWarning } from '../components/DynamicIslandRPEWarning';
 import { startRPEActivity, stopRPEActivity, sendRPENotification } from '../lib/liveActivity';
 import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
@@ -269,8 +270,8 @@ export default function WorkoutLoggedScreen() {
         );
         if (ts) setNextIsDeload(isDeloadWeek(Number(ts.deload_week_counter ?? 0)));
 
-        // Trigger Dynamic Island RPE warning if any exercise had RPE < 7
-        const lowRpe = items.find(i => i.avgRpe != null && i.avgRpe < 7);
+        // Trigger Dynamic Island RPE warning if any exercise had a low-effort average RPE
+        const lowRpe = items.find(i => shouldTriggerLowRpeWarning(i.avgRpe));
         if (lowRpe && lowRpe.avgRpe != null) {
           const roundedRpe = Math.round(lowRpe.avgRpe!);
           const worstEx    = lowRpe.exerciseName ?? '';

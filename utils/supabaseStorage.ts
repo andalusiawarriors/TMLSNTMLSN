@@ -152,7 +152,7 @@ function computeNextPrescription(
   meta: PrescriptionMeta,
   sets: PrescriptionSet[],
   _weightUnit: 'kg' | 'lb'
-): { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load'; nextBand: DifficultyBand } | null {
+): { nextWeight: number; goal: 'add_load' | 'add_reps' | 'reduce_load'; nextBand: DifficultyBand; reason: string } | null {
   const decision = decideNextPrescription({
     sets,
     repRangeLow: meta.repRangeLow,
@@ -167,7 +167,7 @@ function computeNextPrescription(
     avgRpeLast3Sessions: meta.avgRpeLast3Sessions,
   });
   if (!decision) return null;
-  return { nextWeight: decision.nextWeightLb, goal: decision.goal, nextBand: decision.nextBand };
+  return { nextWeight: decision.nextWeightLb, goal: decision.goal, nextBand: decision.nextBand, reason: decision.reason };
 }
 
 /** Resolve overload category from exercise DB id or name. Defaults to compound_small. */
@@ -854,7 +854,8 @@ export async function supabaseSaveWorkoutSession(
  * was passed in (exerciseDbId ?? exercise.name).
  */
 export type ExercisePrescriptionRow = {
-  nextWeight: number;
+  /** Next target weight in lb; null when row has state but no target yet. */
+  nextWeight: number | null;
   goal: string;
   difficultyBand: string;
   consecutiveSuccess: number;
@@ -884,10 +885,9 @@ export async function supabaseGetExercisePrescriptions(
 
   const result: Record<string, ExercisePrescriptionRow> = {};
   for (const row of data) {
-    if (row.next_target_weight == null) continue;
     const canonical = progressToCanonical[row.exercise_id] ?? row.exercise_id;
     result[canonical] = {
-      nextWeight:         row.next_target_weight,
+      nextWeight:         row.next_target_weight ?? null,
       goal:               row.next_goal_type         ?? 'add_reps',
       difficultyBand:     row.difficulty_band         ?? 'easy',
       consecutiveSuccess: row.consecutive_success     ?? 0,
@@ -897,6 +897,33 @@ export async function supabaseGetExercisePrescriptions(
     };
   }
   return result;
+}
+
+/** Upsert exercise progression state rows. Used by storage.upsertExerciseProgressState. */
+export async function supabaseUpsertExerciseProgressState(
+  userId: string,
+  rows: Array<{ exerciseId: string; currentBand: string; consecutiveSuccess: number; consecutiveFailure: number; nextWeight?: number; goal?: string; reason?: string }>
+): Promise<void> {
+  if (!supabase || rows.length === 0) return;
+  for (const r of rows) {
+    const exerciseId = toExerciseProgressId(r.exerciseId);
+    const { error } = await supabase.from('exercise_progress_state').upsert(
+      {
+        user_id: userId,
+        exercise_id: exerciseId,
+        variant_key: 'default',
+        difficulty_band: r.currentBand,
+        consecutive_success: r.consecutiveSuccess,
+        consecutive_failure: r.consecutiveFailure,
+        next_target_weight: r.nextWeight ?? null,
+        next_goal_type: r.goal ?? 'add_reps',
+        progression_reason: r.reason ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,exercise_id,variant_key' }
+    );
+    if (error) console.error('Supabase upsert exercise progress state:', error);
+  }
 }
 
 export async function supabaseUpdateWorkoutSessionName(

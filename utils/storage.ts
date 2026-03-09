@@ -27,6 +27,66 @@ const KEYS = {
   SAVED_FOODS: '@tmlsn/saved_foods',
 };
 
+const SESSION_COMPLETED_DATE_KEY = 'TMLSN_session_completed_date';
+const ACTIVE_WORKOUT_DRAFT_KEY = 'TMLSN_active_workout_draft';
+
+export type ActiveWorkoutDraft = {
+  version: 1;
+  savedAt: string;
+  workout: WorkoutSession;
+  currentExerciseIndex: number;
+};
+
+export function getSessionCompletedDateStorageKey(userId?: string | null): string {
+  return `${SESSION_COMPLETED_DATE_KEY}:${userId ?? getStorageUserId() ?? 'anonymous'}`;
+}
+
+export function getActiveWorkoutDraftStorageKey(userId?: string | null): string {
+  return `${ACTIVE_WORKOUT_DRAFT_KEY}:${userId ?? getStorageUserId() ?? 'anonymous'}`;
+}
+
+export async function getSessionCompletedDate(userId?: string | null): Promise<string | null> {
+  return AsyncStorage.getItem(getSessionCompletedDateStorageKey(userId));
+}
+
+export async function setSessionCompletedDate(
+  dateYMD: string,
+  userId?: string | null
+): Promise<void> {
+  await AsyncStorage.setItem(getSessionCompletedDateStorageKey(userId), dateYMD);
+}
+
+export async function getActiveWorkoutDraft(userId?: string | null): Promise<ActiveWorkoutDraft | null> {
+  const raw = await AsyncStorage.getItem(getActiveWorkoutDraftStorageKey(userId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as ActiveWorkoutDraft;
+    if (
+      parsed?.version !== 1 ||
+      !parsed?.savedAt ||
+      !parsed?.workout?.id ||
+      !parsed?.workout?.date ||
+      !Array.isArray(parsed?.workout?.exercises)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveActiveWorkoutDraft(
+  draft: ActiveWorkoutDraft,
+  userId?: string | null
+): Promise<void> {
+  await AsyncStorage.setItem(getActiveWorkoutDraftStorageKey(userId), JSON.stringify(draft));
+}
+
+export async function clearActiveWorkoutDraft(userId?: string | null): Promise<void> {
+  await AsyncStorage.removeItem(getActiveWorkoutDraftStorageKey(userId));
+}
+
 export { DEFAULT_GOALS, DEFAULT_SETTINGS };
 
 // Nutrition Storage Functions
@@ -99,11 +159,16 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   if (isSupabaseConfigured() && !uid) {
     return;
   }
+  const { sanitizeWorkoutSessionForSave } = await import('./workoutSetValidation');
+  const sessionSanitized = sanitizeWorkoutSessionForSave(session) as WorkoutSession;
   const { resolveRepRangesForSession } = await import('@/lib/progression/resolveRepRange');
-  const sessionResolved = await resolveRepRangesForSession(session);
+  const sessionResolved = (await resolveRepRangesForSession(sessionSanitized)) as WorkoutSession;
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveWorkoutSession(uid, sessionResolved);
+      void import('../lib/getWorkoutContext')
+        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
+        .catch(() => {});
       return;
     } catch (error) {
       console.error('Error saving workout session:', error);
@@ -115,6 +180,9 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
     // Upsert by id: replace existing session with same id (e.g. user edits then re-finishes)
     const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== sessionResolved.id), sessionResolved];
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+    void import('../lib/getWorkoutContext')
+      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
+      .catch(() => {});
   } catch (error) {
     console.error('Error saving workout session:', error);
     throw error;
@@ -489,6 +557,49 @@ export const getUserSettings = async (): Promise<UserSettings> => {
     return DEFAULT_SETTINGS;
   }
 };
+
+// --- Exercise progression state (Supabase only) ---
+
+export type ExerciseProgressStateRow = {
+  exerciseId: string;
+  currentBand: string;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  updatedAt?: string;
+};
+
+/** Fetch progression state for exercises. Returns map keyed by exerciseId. Defaults when missing. */
+export async function getExerciseProgressState(
+  userId: string,
+  exerciseIds: string[]
+): Promise<Record<string, ExerciseProgressStateRow>> {
+  const uid = getStorageUserId();
+  if (!uid || !isSupabaseConfigured() || userId !== uid || exerciseIds.length === 0) {
+    return {};
+  }
+  const prescriptions = await supabaseStorage.supabaseGetExercisePrescriptions(uid, exerciseIds);
+  const result: Record<string, ExerciseProgressStateRow> = {};
+  for (const id of exerciseIds) {
+    const rx = prescriptions[id];
+    result[id] = {
+      exerciseId: id,
+      currentBand: rx?.difficultyBand ?? 'easy',
+      consecutiveSuccess: rx?.consecutiveSuccess ?? 0,
+      consecutiveFailure: rx?.consecutiveFailure ?? 0,
+    };
+  }
+  return result;
+}
+
+/** Upsert progression state rows. Used after workout save; storage layer delegates to Supabase. */
+export async function upsertExerciseProgressState(
+  userId: string,
+  rows: Array<{ exerciseId: string; currentBand: string; consecutiveSuccess: number; consecutiveFailure: number; nextWeight?: number; goal?: string; reason?: string }>
+): Promise<void> {
+  const uid = getStorageUserId();
+  if (!uid || !isSupabaseConfigured() || userId !== uid) return;
+  await supabaseStorage.supabaseUpsertExerciseProgressState(uid, rows);
+}
 
 /** Progress Hub widget order. Uses UserSettings.progressHubOrder. */
 export const getProgressHubOrder = async (): Promise<string[]> => {
