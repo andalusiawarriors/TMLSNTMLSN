@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image, Pressable } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing } from '../constants/theme';
-import { isTmlsnTop100, isFoundationVerified, type ParsedNutrition } from '../utils/foodApi';
+import { isTmlsnTop100, isFoundationVerified } from '../utils/foodApi';
+import type { Meal } from '../types';
 
 const QUICKSILVER_VERIFIED_BADGE = require('../assets/quicksilver_verified_badge.png');
 const GOLD_VERIFIED_BADGE = require('../assets/gold_checkmark_badge.png');
@@ -26,22 +27,40 @@ const CARD_HEIGHT = 88;
 const CARD_FILL = '#292A2B';
 
 interface Props {
-  item: ParsedNutrition;
-  onPress: (item: ParsedNutrition) => void;
+  meal: Meal;
+  onPress?: () => void;
 }
 
-export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
-  const hasBrand = item.brand && item.brand.trim() !== '';
-  const top100 = isTmlsnTop100(item);
-  const isVerified = isFoundationVerified(item);
+/** Build minimal ParsedNutrition-like object from Meal for verification checks. */
+function mealToParsedLike(meal: Meal) {
+  return {
+    name: meal.name,
+    brand: meal.brand ?? '',
+    calories: meal.calories,
+    protein: meal.protein,
+    carbs: meal.carbs,
+    fat: meal.fat,
+    servingSize: '',
+    unit: 'g' as const,
+    source: (meal.source ?? 'off') as 'usda' | 'off',
+    dataType: meal.dataType,
+    fdcId: meal.fdcId,
+  };
+}
+
+/**
+ * Same card shape, layout, and styling as FoodResultRow (search results).
+ * Gold for Top 100, quicksilver for Foundation, white for default. Tick PNG shown for verified.
+ */
+export const LoggedFoodCard: React.FC<Props> = ({ meal, onPress }) => {
+  const parsed = mealToParsedLike(meal);
+  const top100 = isTmlsnTop100(parsed);
+  const isVerified = isFoundationVerified(parsed);
+  const hasBrand = meal.brand && meal.brand.trim() !== '';
   const showVerifiedStripe = !hasBrand && (top100 || isVerified);
 
-  return (
-    <View
-      style={styles.historyCardBorderWrap}
-      onStartShouldSetResponder={() => true}
-      onResponderRelease={() => onPress(item)}
-    >
+  const cardContent = (
+    <View style={styles.historyCardBorderWrap}>
       <LinearGradient
         colors={Colors.tabBarBorder}
         start={{ x: 0.5, y: 0 }}
@@ -60,33 +79,33 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
       <View style={[styles.cardShell, styles.historyCardShell]}>
         <View style={styles.historyCardLeft}>
           {(() => {
-            const brandLabel = item.brand && item.brand.trim() !== '' ? item.brand : '';
+            const brandLabel = meal.brand && meal.brand.trim() !== '' ? meal.brand : '';
             if (brandLabel) {
               return (
                 <>
-                  <Text style={[styles.resultBrand, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">
+                  <Text style={styles.resultBrand} numberOfLines={1} ellipsizeMode="tail">
                     {brandLabel}
                   </Text>
                   {top100 ? (
                     <View style={[styles.verifiedNameRow, { marginTop: 2 }]}>
-                      <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>}>
+                      <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>}>
                         <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                          <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+                          <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
                         </LinearGradient>
                       </MaskedView>
                       <Image source={GOLD_VERIFIED_BADGE} style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2, flexShrink: 0 }} resizeMode="contain" />
                     </View>
                   ) : isVerified ? (
                     <View style={[styles.verifiedNameRow, { marginTop: 2 }]}>
-                      <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>}>
+                      <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>}>
                         <LinearGradient colors={QUICKSILVER_GRADIENT} locations={QUICKSILVER_GRADIENT_LOCATIONS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                          <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+                          <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
                         </LinearGradient>
                       </MaskedView>
                       <Image source={QUICKSILVER_VERIFIED_BADGE} style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }} resizeMode="contain" />
                     </View>
                   ) : (
-                    <Text style={[styles.resultName, item.source === 'off' && { color: '#FFFFFF' }, { marginTop: 2 }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+                    <Text style={[styles.resultName, { marginTop: 2 }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
                   )}
                 </>
               );
@@ -94,9 +113,9 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
             if (top100) {
               return (
                 <View style={styles.verifiedNameRow}>
-                  <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>}>
+                  <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>}>
                     <LinearGradient colors={CHAMPAGNE_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                      <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+                      <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
                     </LinearGradient>
                   </MaskedView>
                   <Image source={GOLD_VERIFIED_BADGE} style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }} resizeMode="contain" />
@@ -106,9 +125,9 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
             if (isVerified) {
               return (
                 <View style={styles.verifiedNameRow}>
-                  <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>}>
+                  <MaskedView style={styles.verifiedNameMaskWrap} maskElement={<Text style={[styles.resultName, styles.verifiedNameText, { backgroundColor: 'transparent' }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>}>
                     <LinearGradient colors={QUICKSILVER_GRADIENT} locations={QUICKSILVER_GRADIENT_LOCATIONS} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                      <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+                      <Text style={[styles.resultName, styles.verifiedNameText, { opacity: 0 }]} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
                     </LinearGradient>
                   </MaskedView>
                   <Image source={QUICKSILVER_VERIFIED_BADGE} style={{ width: TMLSN_VERIFIED_TICK_HEIGHT, height: TMLSN_VERIFIED_TICK_HEIGHT, marginLeft: 2 }} resizeMode="contain" />
@@ -117,23 +136,28 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
             }
             return null;
           })()}
-          {!(item.brand && item.brand.trim() !== '') && !isTmlsnTop100(item) && !isFoundationVerified(item) ? (
-            <Text style={[styles.resultName, item.source === 'off' && { color: '#FFFFFF' }]} numberOfLines={1} ellipsizeMode="tail">{item.name}</Text>
+          {!hasBrand && !top100 && !isVerified ? (
+            <Text style={styles.resultName} numberOfLines={1} ellipsizeMode="tail">{meal.name}</Text>
           ) : null}
           <View style={styles.macrosRow}>
-            <Text style={styles.macrosPrefix}>per 100{item.unit ?? 'g'}</Text>
-            {isTmlsnTop100(item) ? (
-              <Text style={{ fontSize: 12, fontWeight: '500', color: CHAMPAGNE_TEXT }}>{item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F</Text>
-            ) : isFoundationVerified(item) ? (
-              <Text style={{ fontSize: 12, fontWeight: '500', color: QUICKSILVER_TEXT }}>{item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F</Text>
+            <Text style={styles.macrosPrefix}>logged</Text>
+            {top100 ? (
+              <Text style={{ fontSize: 12, fontWeight: '500', color: CHAMPAGNE_TEXT }}>{meal.calories} cal · {meal.protein}g P · {meal.carbs}g C · {meal.fat}g F</Text>
+            ) : isVerified ? (
+              <Text style={{ fontSize: 12, fontWeight: '500', color: QUICKSILVER_TEXT }}>{meal.calories} cal · {meal.protein}g P · {meal.carbs}g C · {meal.fat}g F</Text>
             ) : (
-              <Text style={{ fontSize: 12, fontWeight: '500', color: '#FFFFFF' }}>{item.calories} cal · {item.protein}g P · {item.carbs}g C · {item.fat}g F</Text>
+              <Text style={{ fontSize: 12, fontWeight: '500', color: Colors.white }}>{meal.calories} cal · {meal.protein}g P · {meal.carbs}g C · {meal.fat}g F</Text>
             )}
           </View>
         </View>
       </View>
     </View>
   );
+
+  if (onPress) {
+    return <Pressable onPress={onPress} style={({ pressed }) => [pressed && { opacity: 0.85 }]}>{cardContent}</Pressable>;
+  }
+  return cardContent;
 };
 
 const styles = StyleSheet.create({

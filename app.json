@@ -48,7 +48,8 @@
         }
       ],
       "expo-font",
-      "expo-audio"
+      "expo-audio",
+      "expo-speech-recognition"
     ],
     "experiments": {
       "typedRoutes": true

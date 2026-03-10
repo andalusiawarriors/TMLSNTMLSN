@@ -24,6 +24,15 @@ export interface Meal {
   carbs: number;
   fat: number;
   imageUri?: string; // Optional photo
+  /** Stored when logging from search — used to show gold/quicksilver styling in recently uploaded */
+  fdcId?: number;
+  source?: 'usda' | 'off';
+  dataType?: string;
+  brand?: string;
+  /** Amount user entered (e.g. "2", "100") — pre-load when re-opening from recently uploaded */
+  amount?: string;
+  /** Unit user selected (e.g. "cup", "100g") — pre-load when re-opening from recently uploaded */
+  unit?: string;
 }
 
 export interface DailyGoals {
@@ -176,6 +185,17 @@ export interface SavedFood {
   fat: number;
   lastUsed: string;
   useCount: number;
+}
+
+// Deck card (text-box natural language flow)
+export interface DeckItem {
+  id: string;
+  food: import('../utils/foodApi').ParsedNutrition;
+  amount: string;
+  unit: string;
+  mealType: MealType | null;
+  userInput: string;
+  excludedFdcIds?: number[];
 }
 
 // Notification Types

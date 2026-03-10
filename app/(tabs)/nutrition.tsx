@@ -21,7 +21,7 @@ import {
   AppStateStatus,
   RefreshControl,
   Animated as RNAnimated,
-  InteractionManager,
+  Easing as RNEasing,
   Keyboard,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -56,7 +56,7 @@ import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { PencilSimpleLine, MagnifyingGlass as MagnifyingGlassIcon, Camera as CameraIcon, XCircle as XCircleIcon, X as XIcon } from 'phosphor-react-native';
+import { PencilSimpleLine, MagnifyingGlass as MagnifyingGlassIcon, Camera as CameraIcon, XCircle as XCircleIcon, X as XIcon, Microphone as MicrophoneIcon } from 'phosphor-react-native';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
@@ -73,13 +73,14 @@ import {
   saveSavedFood,
   getWorkoutSessions,
 } from '../../utils/storage';
-import { NutritionLog, Meal, MealType, UserSettings, SavedFood } from '../../types';
+import { NutritionLog, Meal, MealType, UserSettings, SavedFood, DeckItem } from '../../types';
 import { generateId, getTodayDateString, toDateString } from '../../utils/helpers';
 import { type DayStatus } from '../../components/SwipeableWeekView';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
-import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatchBestEffort, getListFoodSearchTokens, parseListFoodQuantity, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../../utils/foodApi';
+import { useAuth } from '../../context/AuthContext';
+import { searchByBarcode, searchFoodsProgressive, searchFoodsNextPage, searchFoodFirstMatchBestEffort, getListFoodSearchTokens, parseListFoodQuantity, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified, detectMealTypeFromText, inferHouseholdPortions, extractQuantityAndFood } from '../../utils/foodApi';
 import { searchFoodHistory, addToFoodHistory } from '../../utils/foodHistory';
 import { hasNoMacros } from '../../utils/foodFilters';
 import { analyzeFood, readNutritionLabel, isGeminiConfigured } from '../../utils/geminiApi';
@@ -90,11 +91,23 @@ import { PillSegmentedControl, type SegmentValue } from '../../components/PillSe
 import { useAnimatedRingNumber } from '../../hooks/useAnimatedRingNumber';
 import { useAnimatedProgress } from '../../hooks/useAnimatedProgress';
 import { CalendarOverlay } from '../../components/CalendarOverlay';
-import NutritionHero from '../../components/NutritionHero';
+import { CalorieArch } from '../../components/CalorieArch';
+import { AddFoodCard } from '../../components/AddFoodCard';
+import { MealSections, type MealKey } from '../../components/MealSections'; // ARCH-REDESIGN: preserved for reimplementation
+import { ActionSheet } from '../../components/ActionSheet';
+import { FoodDeckCards } from '../../components/FoodDeckCards';
 import { ProgressHub } from '../../components/ProgressHub';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
+// Lazy-load speech module only when user taps mic (avoids Expo Go crash).
+let _speechModule: any = undefined;
+function getSpeechModule() {
+  if (_speechModule === undefined) {
+    try { _speechModule = require('expo-speech-recognition').ExpoSpeechRecognitionModule; } catch { _speechModule = null; }
+  }
+  return _speechModule;
+}
 
 const QUICKSILVER_VERIFIED_BADGE = require('../../assets/quicksilver_verified_badge.png');
 const GOLD_VERIFIED_BADGE = require('../../assets/gold_checkmark_badge.png');
@@ -109,6 +122,8 @@ const ADD_MEAL_VERIFIED_TICK_SIZE = 18;
 import { UnitWheelPicker, UNIT_TO_GRAMS, resolveGrams, getSmartDefaultUnit, type AddMealUnit } from '../../components/UnitWheelPicker';
 import { AddMealSheet } from '../../components/AddMealSheet';
 import { FoodResultRow } from '../../components/FoodResultRow';
+import { LoggedFoodCard } from '../../components/LoggedFoodCard';
+import { FoodDeckOverlay } from '../../components/FoodDeckOverlay';
 
 // EB Garamond for Calorie tab (headings, modals, etc.)
 const Font = {
@@ -159,6 +174,7 @@ export default function NutritionScreen({
   const openCardProcessedRef = useRef(false);
   const addFoodParamProcessedRef = useRef(false);
   const addMealInSearchOverlayRef = useRef(false);
+  const recentlyUploadedMealRef = useRef<Meal | null>(null);
   const cameFromSearchFoodRef = useRef(false);
   const [viewingDate, setViewingDate] = useState<string>(() => getTodayDateString());
   const [todayLog, setTodayLog] = useState<NutritionLog | null>(null);
@@ -176,10 +192,68 @@ export default function NutritionScreen({
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [homeSearchActive, setHomeSearchActive] = useState(false);
+  // ARCH-REDESIGN: action sheet for Add Food card and meal ellipsis
+  const [actionSheetVisible, setActionSheetVisible] = useState(false);
+  const [actionSheetMealTitle, setActionSheetMealTitle] = useState('');
+  const [foodDeckVisible, setFoodDeckVisible] = useState(false);
+  const [foodDeckMounted, setFoodDeckMounted] = useState(false);
+  const [searchMode, setSearchMode] = useState<'none' | 'database' | 'textbox'>('none');
+  const homeSearchActive = searchMode !== 'none';
+  const [addMealJustClosed, setAddMealJustClosed] = useState(false);
   const homeSearchInputRef = useRef<TextInput>(null);
   const searchExpandAnim = useRef(new RNAnimated.Value(0)).current;
   const pendingAddMealAfterHomeSearchRef = useRef(false);
+  const searchJustDismissedRef = useRef(false);
+  const pendingSearchFocusRef = useRef(false);
+  // Text-box (natural language) state
+  const [deckItems, setDeckItems] = useState<DeckItem[]>([]);
+  const [textBoxLoading, setTextBoxLoading] = useState(false);
+  const [textBoxQuery, setTextBoxQuery] = useState('');
+  const textBoxInputRef = useRef<TextInput>(null);
+  const textBoxExpandAnim = useRef(new RNAnimated.Value(0)).current;
+  const emptyOverlayOpacity = useRef(new RNAnimated.Value(1)).current;
+  const pendingTextBoxFocusRef = useRef(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [deckPreview, setDeckPreview] = useState({ cal: 0, protein: 0, carbs: 0, fat: 0 });
+  const [carbLabelBottomY, setCarbLabelBottomY] = useState<number | null>(null);
+  const handleDeckPreviewMacros = useCallback((macros: { cal: number; protein: number; carbs: number; fat: number }) => {
+    setDeckPreview(macros);
+  }, []);
+  // Reset addMealJustClosed after Modal unmount so search input can be focused again
+  useEffect(() => {
+    if (!addMealJustClosed) return;
+    const t = setTimeout(() => setAddMealJustClosed(false), 150);
+    return () => clearTimeout(t);
+  }, [addMealJustClosed]);
+
+  useEffect(() => {
+    if (foodDeckVisible) setFoodDeckMounted(true);
+  }, [foodDeckVisible]);
+
+  // Empty-state overlay: fade-out when deck opens (270ms); fade-in runs inside FoodDeckCards close (same parallel as cards)
+  useEffect(() => {
+    if (!foodDeckVisible) return;
+    RNAnimated.timing(emptyOverlayOpacity, {
+      toValue: 0,
+      duration: 270,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [foodDeckVisible, emptyOverlayOpacity]);
+
+  // Focus search input when overlay opens from pill tap so keyboard appears
+  useEffect(() => {
+    if (!homeSearchActive || !pendingSearchFocusRef.current || homeTab !== 'calories') return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (pendingSearchFocusRef.current) {
+          pendingSearchFocusRef.current = false;
+          homeSearchInputRef.current?.focus();
+        }
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [homeSearchActive, homeTab]);
   // Reset page when switching segment
   useEffect(() => {
     setNutritionPage(0);
@@ -204,18 +278,22 @@ export default function NutritionScreen({
     [todayLog, viewingDate]
   );
 
-  // Haptic only in AddMealSheet when changing quantity. Home ring updates (e.g. after sheet close) must not fire haptic.
-  const ringHaptic = 'none' as const;
-  const animatedCal = useAnimatedRingNumber(viewingDateLog.calories, 380, { haptic: ringHaptic });
-  const animatedProtein = useAnimatedRingNumber(viewingDateLog.protein, 380, { haptic: ringHaptic });
-  const animatedCarbs = useAnimatedRingNumber(viewingDateLog.carbs, 380, { haptic: ringHaptic });
-  const animatedFat = useAnimatedRingNumber(viewingDateLog.fat, 380, { haptic: ringHaptic });
+  const hasLoggedFood = viewingDateLog.meals.length > 0;
+  const { user } = useAuth();
+  const greetingName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'lucas';
+
+  const hasDeckPreview = deckPreview.cal !== 0 || deckPreview.protein !== 0;
+  const ringHaptic = hasDeckPreview ? 'sequence' as const : 'none' as const;
+  const animatedCal = useAnimatedRingNumber(viewingDateLog.calories + deckPreview.cal, 380, { haptic: ringHaptic });
+  const animatedProtein = useAnimatedRingNumber(viewingDateLog.protein + deckPreview.protein, 380, { haptic: ringHaptic });
+  const animatedCarbs = useAnimatedRingNumber(viewingDateLog.carbs + deckPreview.carbs, 380, { haptic: ringHaptic });
+  const animatedFat = useAnimatedRingNumber(viewingDateLog.fat + deckPreview.fat, 380, { haptic: ringHaptic });
 
   const _progGoals = settings?.dailyGoals ?? DEFAULT_GOALS;
-  const _calRatio = viewingDateLog.calories / _progGoals.calories;
-  const _protRatio = viewingDateLog.protein / _progGoals.protein;
-  const _carbRatio = viewingDateLog.carbs / _progGoals.carbs;
-  const _fatRatio = viewingDateLog.fat / _progGoals.fat;
+  const _calRatio = (viewingDateLog.calories + deckPreview.cal) / _progGoals.calories;
+  const _protRatio = (viewingDateLog.protein + deckPreview.protein) / _progGoals.protein;
+  const _carbRatio = (viewingDateLog.carbs + deckPreview.carbs) / _progGoals.carbs;
+  const _fatRatio = (viewingDateLog.fat + deckPreview.fat) / _progGoals.fat;
   const animCalProgress = useAnimatedProgress(Math.min(_calRatio, 3), _calRatio > 1 ? 800 : 600);
   const animProteinProgress = useAnimatedProgress(Math.min(_protRatio, 3), _protRatio > 1 ? 800 : 600);
   const animCarbsProgress = useAnimatedProgress(Math.min(_carbRatio, 3), _carbRatio > 1 ? 800 : 600);
@@ -633,6 +711,7 @@ export default function NutritionScreen({
       return;
     }
 
+    const foodForVerification = selectedFoodRef.current ?? selectedFoodForSheet;
     const newMeal: Meal = {
       id: generateId(),
       name: mealName,
@@ -643,6 +722,14 @@ export default function NutritionScreen({
       carbs: parseFloat(carbs) || 0,
       fat: parseFloat(fat) || 0,
       imageUri: mealImage,
+      ...(addMealAmount.trim() && { amount: addMealAmount.trim() }),
+      ...(addMealUnit && { unit: addMealUnit }),
+      ...(foodForVerification && {
+        fdcId: foodForVerification.fdcId,
+        source: foodForVerification.source,
+        dataType: foodForVerification.dataType,
+        brand: foodForVerification.brand ?? '',
+      }),
     };
 
     if (todayLog) {
@@ -804,6 +891,10 @@ export default function NutritionScreen({
         protein: pro,
         carbs: carb,
         fat: fatVal,
+        fdcId: r.matched.fdcId,
+        source: r.matched.source,
+        dataType: r.matched.dataType,
+        brand: r.matched.brand ?? '',
       };
     });
     const updatedLog: NutritionLog = {
@@ -889,14 +980,16 @@ export default function NutritionScreen({
     setShowFoodSearch(true);
   };
 
-  // Haptic: only when changing food quantity (AddMealSheet / useAnimatedRingNumber). Never on search bar open/close.
+  // No haptic on pill tap. Keyboard appears when pill is tapped (focus after overlay mounts).
   const activateHomeSearch = () => {
+    if (searchJustDismissedRef.current) return;
+    pendingSearchFocusRef.current = true;
     setFoodSearchQuery('');
     setFoodSearchResults([]);
     setFoodSearchPage(1);
     setFoodSearchHasMore(true);
     setSearchOverlayScreen('list');
-    setHomeSearchActive(true);
+    setSearchMode('database');
     emitHomeSearchState(true);
     requestAnimationFrame(() => {
       RNAnimated.timing(searchExpandAnim, {
@@ -905,13 +998,12 @@ export default function NutritionScreen({
         easing: Easing.inOut(Easing.ease),
         useNativeDriver: false,
       }).start();
-      // Do NOT auto-focus the search input: iOS fires a system haptic when a text field becomes first responder. User taps the field to focus and type.
     });
   };
 
   const dismissHomeSearch = () => {
-    homeSearchInputRef.current?.blur();
-    Keyboard.dismiss();
+    searchJustDismissedRef.current = true;
+    setTimeout(() => { searchJustDismissedRef.current = false; }, 250);
     emitHomeSearchState(false);
     RNAnimated.timing(searchExpandAnim, {
       toValue: 0,
@@ -919,13 +1011,247 @@ export default function NutritionScreen({
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: false,
     }).start(() => {
-      setHomeSearchActive(false);
+      homeSearchInputRef.current?.blur();
+      Keyboard.dismiss();
+      setSearchMode('none');
       setFoodSearchQuery('');
       setFoodSearchResults([]);
       setSearchOverlayScreen('list');
       addMealInSearchOverlayRef.current = false;
     });
   };
+
+  // ── Text-box (natural language) activation/dismiss ──
+  const activateTextBox = () => {
+    if (searchJustDismissedRef.current) return;
+    pendingTextBoxFocusRef.current = true;
+    setTextBoxQuery('');
+    setDeckItems([]);
+    setSearchMode('textbox');
+    emitHomeSearchState(true);
+    requestAnimationFrame(() => {
+      RNAnimated.timing(textBoxExpandAnim, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: false,
+      }).start();
+    });
+  };
+
+  const dismissTextBox = () => {
+    searchJustDismissedRef.current = true;
+    setTimeout(() => { searchJustDismissedRef.current = false; }, 250);
+    emitHomeSearchState(false);
+    RNAnimated.timing(textBoxExpandAnim, {
+      toValue: 0,
+      duration: 150,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: false,
+    }).start(() => {
+      textBoxInputRef.current?.blur();
+      Keyboard.dismiss();
+      setSearchMode('none');
+      setTextBoxQuery('');
+      setDeckItems([]);
+    });
+  };
+
+  // Focus text-box input when overlay opens
+  useEffect(() => {
+    if (searchMode !== 'textbox' || !pendingTextBoxFocusRef.current) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (pendingTextBoxFocusRef.current) {
+          textBoxInputRef.current?.focus();
+          pendingTextBoxFocusRef.current = false;
+        }
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [searchMode]);
+
+  const voiceSubsRef = useRef<any[]>([]);
+  useEffect(() => () => { voiceSubsRef.current.forEach((s) => s?.remove?.()); voiceSubsRef.current = []; }, []);
+  const toggleVoiceInput = useCallback(async () => {
+    const mod = getSpeechModule();
+    if (!mod) {
+      Alert.alert('Speech not available', 'Speech to text requires a development build and is not available in Expo Go.');
+      return;
+    }
+    try {
+      if (voiceListening) { mod.stop(); return; }
+      // Set up listeners only on first use (lazy).
+      if (voiceSubsRef.current.length === 0) {
+        const ee = mod.addListener || mod.addEventHandler;
+        if (typeof ee === 'function') {
+          voiceSubsRef.current.push(mod.addListener('start', () => setVoiceListening(true)));
+          voiceSubsRef.current.push(mod.addListener('end', () => setVoiceListening(false)));
+          voiceSubsRef.current.push(mod.addListener('result', (e: any) => {
+            const t = e?.results?.[0]?.transcript;
+            if (t) setTextBoxQuery(t);
+          }));
+          voiceSubsRef.current.push(mod.addListener('error', () => setVoiceListening(false)));
+        }
+      }
+      const result = await mod.requestPermissionsAsync();
+      if (!result.granted) {
+        Alert.alert('Microphone access', 'Allow microphone access to use speech to text.');
+        return;
+      }
+      mod.start({ lang: 'en-US', interimResults: true, continuous: false });
+    } catch (e) {
+      Alert.alert('Speech error', 'Could not start speech recognition. Try again or use a development build.');
+    }
+  }, [voiceListening]);
+
+  const handleTextBoxSubmit = useCallback(async () => {
+    const text = textBoxQuery.trim();
+    if (!text) return;
+    setTextBoxLoading(true);
+    try {
+      const globalMealType = detectMealTypeFromText(text);
+      const segments = getListFoodSearchTokens(text);
+      const rawSegments = segments.length > 0 ? segments : [text];
+
+      const items: DeckItem[] = await Promise.all(
+        rawSegments.map(async (seg) => {
+          const segmentMealType = detectMealTypeFromText(seg);
+          const mealType = segmentMealType ?? globalMealType;
+          const cleanSeg = seg.replace(/\bfor\s+(breakfast|lunch|dinner|supper|snack|snacks)\b/gi, '').trim();
+
+          const { amount: parsedAmount, rawUnit, foodName } = extractQuantityAndFood(cleanSeg);
+
+          const searchQuery = foodName.trim() ? foodName : cleanSeg;
+          const food = await searchFoodFirstMatchBestEffort(searchQuery);
+
+          let finalAmount = parsedAmount;
+          let finalUnit = rawUnit ?? food.unit ?? 'g';
+
+          if (rawUnit) {
+            const singular = rawUnit.replace(/s$/, '');
+            const apiPortions = food.portions ?? [];
+            const nameForInfer = `${food.name ?? ''} ${food.originalDescription ?? ''}`.trim().toLowerCase();
+            const inferred = nameForInfer ? inferHouseholdPortions(nameForInfer, food.unit ?? 'g') : [];
+            const allPortions = [...apiPortions, ...inferred];
+
+            let matchedUnit: string | null = null;
+            for (const p of allPortions) {
+              const pl = p.label.toLowerCase();
+              if (pl.includes(singular) || singular.includes(pl.replace(/^1\s+/, ''))) {
+                matchedUnit = p.label;
+                break;
+              }
+            }
+            if (!matchedUnit) {
+              const stdMap: Record<string, string> = {
+                cup: 'cup', tbsp: 'tbsp', tsp: 'tsp', oz: 'oz', g: '1g', ml: 'ml',
+              };
+              matchedUnit = stdMap[singular] ?? null;
+            }
+            if (matchedUnit) {
+              finalUnit = matchedUnit;
+            } else {
+              finalUnit = singular;
+            }
+          }
+
+          return {
+            id: generateId(),
+            food,
+            amount: finalAmount,
+            unit: finalUnit,
+            mealType,
+            userInput: cleanSeg,
+          };
+        })
+      );
+      // Immediately preview the front card's macros so the ring animates
+      // the moment the cards appear (not only after the food is logged).
+      if (items.length > 0) {
+        const fi = items[0];
+        const _nameForInfer = `${fi.food.name ?? ''} ${fi.food.originalDescription ?? ''}`.trim().toLowerCase();
+        const _inferred = _nameForInfer ? inferHouseholdPortions(_nameForInfer, fi.food.unit ?? 'g') : [];
+        const _mergedPortions = [...(fi.food.portions ?? []), ..._inferred];
+        const _grams = (parseFloat(fi.amount) || 1) * resolveGrams(fi.unit, _mergedPortions);
+        const _scale = _grams / 100;
+        setDeckPreview({
+          cal: Math.round((fi.food.calories || 0) * _scale),
+          protein: Math.round((fi.food.protein || 0) * _scale),
+          carbs: Math.round((fi.food.carbs || 0) * _scale),
+          fat: Math.round((fi.food.fat || 0) * _scale),
+        });
+      }
+      setDeckItems(items);
+    } finally {
+      setTextBoxLoading(false);
+    }
+  }, [textBoxQuery]);
+
+  const handleDeckLogFood = useCallback(async (item: DeckItem, mt: MealType) => {
+    if (!todayLog) return;
+    const nameForInfer = `${item.food.name ?? ''} ${item.food.originalDescription ?? ''}`.trim().toLowerCase();
+    const inferredPortions = nameForInfer ? inferHouseholdPortions(nameForInfer, item.food.unit ?? 'g') : [];
+    const mergedPortions = [...(item.food.portions ?? []), ...inferredPortions];
+    const grams = (parseFloat(item.amount) || 1) * resolveGrams(item.unit, mergedPortions);
+    const scale = grams / 100;
+    const newMeal: Meal = {
+      id: generateId(),
+      name: item.food.name,
+      mealType: mt,
+      time: new Date().toISOString(),
+      calories: Math.round((item.food.calories || 0) * scale),
+      protein: Math.round((item.food.protein || 0) * scale),
+      carbs: Math.round((item.food.carbs || 0) * scale),
+      fat: Math.round((item.food.fat || 0) * scale),
+      fdcId: item.food.fdcId,
+      source: item.food.source,
+      dataType: item.food.dataType,
+      brand: item.food.brand || undefined,
+      amount: item.amount,
+      unit: item.unit,
+    };
+    const updatedLog: NutritionLog = {
+      ...todayLog,
+      calories: todayLog.calories + newMeal.calories,
+      protein: todayLog.protein + newMeal.protein,
+      carbs: todayLog.carbs + newMeal.carbs,
+      fat: todayLog.fat + newMeal.fat,
+      meals: [...todayLog.meals, newMeal],
+    };
+    await saveNutritionLog(updatedLog);
+    setTodayLog(updatedLog);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [todayLog]);
+
+  const handleDeckSaveFood = useCallback(async (food: ParsedNutrition, amount?: string, unit?: string) => {
+    await saveSavedFood({
+      id: generateId(),
+      name: food.name,
+      brand: food.brand || undefined,
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat,
+      lastUsed: new Date().toISOString(),
+      useCount: 1,
+      ...(amount != null && unit != null ? { amount, unit } : {}),
+    } as any);
+  }, []);
+
+  const handleDeckReloadItem = useCallback(async (item: DeckItem): Promise<ParsedNutrition | null> => {
+    const excluded = [...(item.excludedFdcIds || [])];
+    if (item.food.fdcId) excluded.push(item.food.fdcId);
+    const result = await searchFoodFirstMatchBestEffort(item.userInput, { excludeFdcIds: excluded });
+    if (!result || result.calories === 0) return null;
+    return result;
+  }, []);
+
+  const handleDeckDismissAll = useCallback(() => {
+    setDeckItems([]);
+    setDeckPreview({ cal: 0, protein: 0, carbs: 0, fat: 0 });
+    dismissTextBox();
+  }, []);
 
   const handleChoiceScanFood = async (mode: 'ai' | 'barcode' | 'label' = 'ai') => {
     if (!permission?.granted) {
@@ -1168,6 +1494,31 @@ export default function NutritionScreen({
     // The home search overlay is a View (not a Modal), so AddMealSheet (Modal) can safely
     // open on top of it. Keep results + ring visible; just dismiss keyboard and open sheet.
     if (homeSearchActive) Keyboard.dismiss();
+    addMealInSearchOverlayRef.current = true;
+    setSearchOverlayScreen('addMeal');
+  };
+
+  /** Tap a Recently uploaded card → show overlay + AddMealSheet. Uses search overlay for blur/ring but WITHOUT pill expand animation. */
+  const handleSelectLoggedFood = (meal: Meal) => {
+    recentlyUploadedMealRef.current = meal;
+    const parsed: ParsedNutrition = {
+      name: meal.name,
+      brand: meal.brand ?? '',
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fat: meal.fat,
+      servingSize: '',
+      unit: 'g',
+      source: (meal.source ?? 'off') as 'usda' | 'off',
+    };
+    fillFormFromFood(parsed, { directValues: true });
+    setMealType(meal.mealType ?? 'snack');
+    setAddMealAmount(meal.amount?.trim() && parseFloat(meal.amount) > 0 ? meal.amount.trim() : '1');
+    setAddMealUnit(meal.unit ?? '1g');
+    setSearchMode('database');
+    emitHomeSearchState(true);
+    searchExpandAnim.setValue(1);
     addMealInSearchOverlayRef.current = true;
     setSearchOverlayScreen('addMeal');
   };
@@ -1502,6 +1853,9 @@ export default function NutritionScreen({
   const HEADER_PILL_SIZE = TOP_RIGHT_CIRCLE_SIZE; // 40 — circles, same y line as profile
   const HEADER_PILL_RADIUS = HEADER_PILL_SIZE / 2;
   const PILL_TO_DATE_GAP = 8;
+  const dateRowRevealOpacity = homeTab === 'calories' && !hasLoggedFood
+    ? emptyOverlayOpacity.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
+    : 1;
   const prevDay = useMemo(() => {
     const d = new Date(viewingDate + 'T12:00:00');
     d.setDate(d.getDate() - 1);
@@ -1548,7 +1902,7 @@ export default function NutritionScreen({
             zIndex: 20,
           }}
         >
-          {/* Date row — centered full width */}
+          {/* Date row — centered; fades in at same rate as protein/carb rings when overlay disappears */}
           <View
             ref={headerMeasureRef}
             onLayout={onHeaderLayout}
@@ -1566,17 +1920,19 @@ export default function NutritionScreen({
             }}
             pointerEvents="box-none"
           >
-            <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 1 }} hitSlop={8}>
-              <Ionicons name="chevron-back" size={16} color={Colors.primaryLight} />
-            </Pressable>
-            <Pressable onPress={() => setShowCalendar(true)} style={{ padding: 4 }} hitSlop={8}>
-              <Text style={{ fontSize: 14, color: Colors.primaryLight, fontWeight: '500' }}>
-                {viewingDateAsDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 1 }} hitSlop={8}>
-              <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
-            </Pressable>
+            <RNAnimated.View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: dateRowRevealOpacity }}>
+              <Pressable onPress={() => handleSelectDate(toDateString(prevDay))} style={{ padding: 1 }} hitSlop={8}>
+                <Ionicons name="chevron-back" size={16} color={Colors.primaryLight} />
+              </Pressable>
+              <Pressable onPress={() => setShowCalendar(true)} style={{ padding: 4 }} hitSlop={8}>
+                <Text style={{ fontSize: 14, color: Colors.primaryLight, fontWeight: '500' }}>
+                  {viewingDateAsDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => handleSelectDate(toDateString(nextDay))} style={{ padding: 1 }} hitSlop={8}>
+                <Ionicons name="chevron-forward" size={16} color={Colors.primaryLight} />
+              </Pressable>
+            </RNAnimated.View>
           </View>
 
           {/* Gradient bar (behind tab labels) */}
@@ -1603,7 +1959,7 @@ export default function NutritionScreen({
           {(() => {
             const GRAD_TOP = insets.top + 36;
             const TAB_KEYS = ['calories', 'progress', 'fitness'] as const;
-            const TAB_LABELS = ['calories.', 'progress.', 'fitness.'];
+            const TAB_LABELS = ['nutrition.', 'progress.', 'fitness.'];
             const INDICATOR_W = 37;
             const INDICATOR_FULL_H = 8;
             const INDICATOR_R = 31;
@@ -1709,228 +2065,29 @@ export default function NutritionScreen({
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
             const log = viewingDateLog;
-            const RING_W = 291;
-            const RING_STROKE = 11;
-            const RING_R = (RING_W - RING_STROKE) / 2;
-            const ARC_MID = RING_W / 2;
-            const MACRO_RING_SIZE = 41;
-            const MACRO_RING_STROKE = 3;
-            const RING_H = ARC_MID + 16;
-            const macros = [
-              { value: animatedProtein, label: 'protein', progress: animProteinProgress },
-              { value: animatedCarbs, label: 'carbs', progress: animCarbsProgress },
-              { value: animatedFat, label: 'fat', progress: animFatProgress },
-            ];
-            const macroPositions = [
-              { left: 47, top: 63 },
-              { left: (RING_W - MACRO_RING_SIZE) / 2, top: 95 },
-              { left: RING_W - 47 - MACRO_RING_SIZE, top: 63 },
-            ];
-            const ARC_LEN = Math.PI * RING_R;
-            const DASH = 2;
-            const DASH_GAP = 4;
-            const BOUNDARY_LINE_WIDTH = DASH * 1.05;
-            const NUM_LINES = Math.ceil(ARC_LEN / (DASH + DASH_GAP));
-            const filledCount = Math.round(Math.min(animCalProgress, 1) * NUM_LINES);
-            const overflowCount = Math.round(Math.min(Math.max(animCalProgress - 1, 0), 1) * NUM_LINES);
-            const CX = RING_W / 2;
-            const CY = ARC_MID;
-            const innerR = RING_R - RING_STROKE / 2;
-            const outerR = RING_R + RING_STROKE / 2;
-            const MACRO_R = (MACRO_RING_SIZE - MACRO_RING_STROKE) / 2;
-            const MACRO_CIRC = 2 * Math.PI * MACRO_R;
+            const heroData = {
+              calories: { current: log.calories + deckPreview.cal, goal: goals.calories },
+              protein: { current: log.protein + deckPreview.protein, goal: goals.protein },
+              carbs: { current: log.carbs + deckPreview.carbs, goal: goals.carbs },
+              fat: { current: log.fat + deckPreview.fat, goal: goals.fat },
+            };
             return (
-              <View style={{ alignItems: 'center' }}>
-                <View style={{ width: RING_W, height: RING_H, marginTop: 29 }}>
-                  {/* Semicircle arc — grey background */}
-                  <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
-                    <Defs>
-                      <SvgRadialGradient id="ringGrad" cx="50%" cy="100%" rx="50%" ry="100%">
-                        <SvgStop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
-                        <SvgStop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
-                      </SvgRadialGradient>
-                    </Defs>
-                    <SvgPath
-                      d={`M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`}
-                      fill="none"
-                      stroke="url(#ringGrad)"
-                      strokeWidth={RING_STROKE}
-                      strokeDasharray="2 4"
-                      strokeLinecap="butt"
-                      strokeMiterlimit={28.96}
-                    />
-                  </Svg>
-                  {/* Calorie progress — white SvgPath overlay (identical arc geometry) */}
-                  {filledCount > 0 && (() => {
-                    const arcD = `M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`;
-                    const whiteDash = (filledCount === 1 ? '2' : Array(filledCount).fill('2').join(' 4 ')) + ' 99999';
-                    const showBoundary = overflowCount === 0;
-                    const bIdx = filledCount - 1;
-                    const bT = (bIdx * (DASH + DASH_GAP) + DASH / 2) / ARC_LEN;
-                    const bAngle = Math.PI * (1 - bT);
-                    return (
-                      <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
-                        <SvgPath d={arcD} fill="none" stroke="#FFFFFF" strokeWidth={RING_STROKE} strokeDasharray={whiteDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
-                        {showBoundary && (
-                          <SvgLine
-                            x1={CX + (innerR - 0.1 * RING_STROKE) * Math.cos(bAngle)} y1={CY - (innerR - 0.1 * RING_STROKE) * Math.sin(bAngle)}
-                            x2={CX + (outerR + 0.1 * RING_STROKE) * Math.cos(bAngle)} y2={CY - (outerR + 0.1 * RING_STROKE) * Math.sin(bAngle)}
-                            stroke="#FFFFFF" strokeWidth={BOUNDARY_LINE_WIDTH} strokeLinecap="butt"
-                          />
-                        )}
-                      </Svg>
-                    );
-                  })()}
-                  {/* Calorie overflow — red dashes from start of path (same as pre-burgundy: replaces white on left) */}
-                  {overflowCount > 0 && (() => {
-                    const arcD = `M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`;
-                    const redDashes = overflowCount === 1 ? '2' : Array(overflowCount).fill('2').join(' 4 ');
-                    const redDash = redDashes + ' 99999';
-                    const bIdx = overflowCount - 1;
-                    const bT = (bIdx * (DASH + DASH_GAP) + DASH / 2) / ARC_LEN;
-                    const bAngle = Math.PI * (1 - bT);
-                    return (
-                      <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
-                        <SvgPath d={arcD} fill="none" stroke="#FF0000" strokeWidth={RING_STROKE} strokeDasharray={redDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
-                        <SvgLine
-                          x1={CX + (innerR - 0.1 * RING_STROKE) * Math.cos(bAngle)} y1={CY - (innerR - 0.1 * RING_STROKE) * Math.sin(bAngle)}
-                          x2={CX + (outerR + 0.1 * RING_STROKE) * Math.cos(bAngle)} y2={CY - (outerR + 0.1 * RING_STROKE) * Math.sin(bAngle)}
-                          stroke="#FF0000" strokeWidth={BOUNDARY_LINE_WIDTH} strokeLinecap="butt"
-                        />
-                      </Svg>
-                    );
-                  })()}
-
-                  {/* Calorie number + label — upper third of arc */}
-                  <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>
-                      {animatedCal}
-                    </Text>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>
-                      calories
-                    </Text>
-                  </View>
-
-                  {/* Macro rings — protein left, carbs bottom-center, fat right */}
-                  {macros.map((m, i) => {
-                    const mFill = Math.min(m.progress, 1);
-                    const mOver = Math.min(Math.max(m.progress - 1, 0), 1);
-                    const ctr = MACRO_RING_SIZE / 2;
-                    return (
-                      <View key={m.label} style={{ position: 'absolute', left: macroPositions[i].left, top: macroPositions[i].top, alignItems: 'center', width: MACRO_RING_SIZE }}>
-                        <View style={{ width: MACRO_RING_SIZE, height: MACRO_RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
-                          <Svg width={MACRO_RING_SIZE} height={MACRO_RING_SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
-                            <SvgCircle cx={ctr} cy={ctr} r={MACRO_R} fill="none" stroke="rgba(198,198,198,0.35)" strokeWidth={MACRO_RING_STROKE} />
-                            {mFill > 0 && (
-                              <SvgCircle
-                                cx={ctr} cy={ctr} r={MACRO_R}
-                                fill="none" stroke="#FFFFFF" strokeWidth={MACRO_RING_STROKE}
-                                strokeDasharray={`${MACRO_CIRC}`}
-                                strokeDashoffset={`${MACRO_CIRC * (1 - mFill)}`}
-                                strokeLinecap="round"
-                                transform={`rotate(-90 ${ctr} ${ctr})`}
-                              />
-                            )}
-                            {mOver > 0.001 && (
-                              <SvgCircle
-                                cx={ctr} cy={ctr} r={MACRO_R}
-                                fill="none" stroke="#FF0000" strokeWidth={MACRO_RING_STROKE}
-                                strokeDasharray={`${MACRO_CIRC * mOver} ${MACRO_CIRC * (1 - mOver)}`}
-                                strokeDashoffset={`${-MACRO_CIRC * mFill}`}
-                                strokeLinecap="round"
-                                transform={`rotate(-90 ${ctr} ${ctr})`}
-                              />
-                            )}
-                          </Svg>
-                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>
-                            {m.value}
-                          </Text>
-                        </View>
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>
-                          {m.label}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-
-                {/* "Log your food" bar + camera — bar morphs to absorb camera on tap */}
-                <View style={{ alignItems: 'center', marginTop: 16, zIndex: homeSearchActive ? 60 : 0 }}>
-                  {/* Fixed-width container prevents layout reflow during animation */}
-                  <View style={{ width: 291 + 12 + 53, height: 53 }}>
-                    {/* Camera button — fixed position, fades out */}
-                    <RNAnimated.View style={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      width: 53,
-                      height: 53,
-                      opacity: searchExpandAnim.interpolate({ inputRange: [0, 0.3], outputRange: [1, 0], extrapolate: 'clamp' }),
-                    }}>
-                      <Pressable
-                        onPress={() => { setCameraMode('ai'); setShowCamera(true); }}
-                        style={{
-                          width: 53, height: 53, borderRadius: 53 / 2, backgroundColor: '#2F3031',
-                          alignItems: 'center', justifyContent: 'center',
-                          shadowColor: '#505050', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 15.8, elevation: 8,
-                        }}
-                      >
-                        <CameraIcon size={22} color="#C6C6C6" weight="regular" />
-                      </Pressable>
-                    </RNAnimated.View>
-                    {/* Search bar — responder API only (no Touchable/Pressable = no haptic) */}
-                    <View
-                      style={{ position: 'absolute', left: 0, top: 0, width: 291 + 12 + 53, height: 53 }}
-                      onStartShouldSetResponder={() => !homeSearchActive}
-                      onResponderRelease={() => { if (!homeSearchActive) activateHomeSearch(); }}
-                    >
-                      <RNAnimated.View style={{
-                        width: searchExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [291, 291 + 12 + 53] }),
-                        height: 53,
-                        borderRadius: 28,
-                        backgroundColor: '#2F3031',
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 16,
-                        gap: 8,
-                        shadowColor: '#505050',
-                        shadowOffset: { width: 0, height: 0 },
-                        shadowOpacity: 1,
-                        shadowRadius: 15.8,
-                        elevation: 8,
-                      }}>
-                        <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
-                        <Text style={{ flex: 1, fontSize: 15, fontWeight: '500', color: '#C6C6C6', lineHeight: 20 }}>add a food</Text>
-                        <RNAnimated.View style={{ opacity: searchExpandAnim }}>
-                          <View
-                            onStartShouldSetResponder={() => true}
-                            onResponderRelease={dismissHomeSearch}
-                            style={{ padding: 10 }}
-                          >
-                            <XIcon size={20} color="#C6C6C6" weight="bold" />
-                          </View>
-                        </RNAnimated.View>
-                      </RNAnimated.View>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Recently uploaded — always visible (behind blur when search active) */}
-                <View style={{ width: CAROUSEL_WIDTH, marginTop: 24 }}>
-                  <Text style={[styles.recentlyUploadedTitle, { textTransform: 'lowercase' }]}>recently uploaded</Text>
-                  {!viewingDateLog.meals?.length ? (
-                    <Text style={[styles.recentlyUploadedPlaceholder, { textAlign: 'left', marginTop: 4 }]}>tap "add a food" to add your first meal.</Text>
-                  ) : (
-                    <View style={styles.recentlyUploadedList}>
-                      {viewingDateLog.meals.map((meal: Meal) => (
-                        <View key={meal.id} style={styles.recentlyUploadedMealRow}>
-                          <Text style={styles.recentlyUploadedMealName} numberOfLines={1}>{meal.name}</Text>
-                          <Text style={styles.recentlyUploadedMealCals}>{meal.calories} kcal</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
+              <View style={{ alignItems: 'center', paddingTop: 20 }}>
+                <CalorieArch
+                  data={heroData}
+                  calorieDisplay={animatedCal}
+                  proteinDisplay={animatedProtein}
+                  carbsDisplay={animatedCarbs}
+                  fatDisplay={animatedFat}
+                  calorieGoal={_progGoals.calories}
+                  calProgress={animCalProgress}
+                  proteinProgress={animProteinProgress}
+                  carbsProgress={animCarbsProgress}
+                  fatProgress={animFatProgress}
+                  emptyState={!hasLoggedFood}
+                  tickerOverlayOpacity={!hasLoggedFood ? emptyOverlayOpacity : undefined}
+                  onMacroRowLayout={setCarbLabelBottomY}
+                />
               </View>
             );
           })()
@@ -1951,10 +2108,41 @@ export default function NutritionScreen({
         )}
         </View>
       </ScrollView>
+
       </RNAnimated.View>
 
+      {/* Empty-state overlay: 767px tall, fades out in parallel with cards opening */}
+      {homeTab === 'calories' && !hasLoggedFood && (
+        <RNAnimated.View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: insets.top + 36,
+            left: 0,
+            right: 0,
+            height: 767,
+            zIndex: 21,
+            elevation: 21,
+            opacity: emptyOverlayOpacity,
+          }}
+        >
+          <LinearGradient
+            colors={['rgba(0,0,0,0.58)', 'rgba(0,0,0,0)']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={greetingOverlayStyles.wrap}>
+            <View style={greetingOverlayStyles.textBlock}>
+              <Text style={greetingOverlayStyles.hello}>hello,</Text>
+              <Text style={greetingOverlayStyles.name}>{greetingName}.</Text>
+            </View>
+          </View>
+        </RNAnimated.View>
+      )}
+
       {/* ═══ INLINE HOME SEARCH — layer 1: blur only (behind) ═══ */}
-      {homeSearchActive && homeTab === 'calories' && (
+      {searchMode === 'database' && homeTab === 'calories' && (
         <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 50, opacity: searchExpandAnim }]} pointerEvents="box-none">
           <View
             style={StyleSheet.absoluteFill}
@@ -1968,7 +2156,7 @@ export default function NutritionScreen({
       )}
 
       {/* ═══ INLINE HOME SEARCH — layer 2: ring, bar, results (above blur) ═══ */}
-      {homeSearchActive && homeTab === 'calories' && (
+      {searchMode === 'database' && homeTab === 'calories' && (
         <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 51, opacity: searchExpandAnim }]} pointerEvents="box-none">
           {/* Calorie ring + macros — always visible; AddMealSheet's ring (in Modal) layers on top */}
           {(() => {
@@ -2105,10 +2293,10 @@ export default function NutritionScreen({
               </View>
             );
           })()}
-          {/* Search bar — left-pinned so width growth doesn't shift content */}
-          <View style={{ position: 'absolute', top: insets.top + 73 + 29 + 162 + 16, left: (SCREEN_WIDTH - (291 + 12 + 53)) / 2 }}>
+          {/* Search bar — centered, full 356px in database overlay mode */}
+          <View style={{ position: 'absolute', top: insets.top + 73 + 29 + 162 + 16, left: (SCREEN_WIDTH - 356) / 2 }}>
             <RNAnimated.View style={{
-              width: searchExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [291, 291 + 12 + 53] }),
+              width: 356,
               height: 53,
               borderRadius: 28,
               backgroundColor: '#2F3031',
@@ -2125,6 +2313,7 @@ export default function NutritionScreen({
               <MagnifyingGlassIcon size={18} color="#C6C6C6" weight="bold" />
               <TextInput
                 ref={homeSearchInputRef}
+                focusable={!addMealJustClosed}
                 style={{
                   flex: 1,
                   fontSize: 15,
@@ -2199,6 +2388,211 @@ export default function NutritionScreen({
             </ScrollView>
           </View>
         </RNAnimated.View>
+      )}
+
+      {/* ═══ TEXT-BOX OVERLAY — blur + expanded input + deck ═══ */}
+      {searchMode === 'textbox' && homeTab === 'calories' && (
+        <>
+          {/* Layer 1: blur backdrop */}
+          <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 50, opacity: textBoxExpandAnim }]} pointerEvents="box-none">
+            <View
+              style={StyleSheet.absoluteFill}
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={() => { if (deckItems.length === 0) dismissTextBox(); }}
+            >
+              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]} />
+            </View>
+          </RNAnimated.View>
+
+          {/* Layer 2: Calorie ring + expanded text-box input + deck */}
+          <RNAnimated.View style={[StyleSheet.absoluteFill, { zIndex: 51, opacity: textBoxExpandAnim }]} pointerEvents="box-none">
+            {/* Calorie ring (same as database search overlay) */}
+            {(() => {
+              const RING_W = 291;
+              const RING_STROKE = 11;
+              const RING_R = (RING_W - RING_STROKE) / 2;
+              const ARC_MID = RING_W / 2;
+              const MACRO_RING_SIZE = 41;
+              const MACRO_RING_STROKE = 3;
+              const RING_H = ARC_MID + 16;
+              const macros = [
+                { value: animatedProtein, label: 'protein', progress: animProteinProgress },
+                { value: animatedCarbs, label: 'carbs', progress: animCarbsProgress },
+                { value: animatedFat, label: 'fat', progress: animFatProgress },
+              ];
+              const macroPositions = [
+                { left: 47, top: 63 },
+                { left: (RING_W - MACRO_RING_SIZE) / 2, top: 95 },
+                { left: RING_W - 47 - MACRO_RING_SIZE, top: 63 },
+              ];
+              const ARC_LEN = Math.PI * RING_R;
+              const DASH = 2;
+              const DASH_GAP = 4;
+              const NUM_LINES = Math.ceil(ARC_LEN / (DASH + DASH_GAP));
+              const filledCount = Math.round(Math.min(animCalProgress, 1) * NUM_LINES);
+              const overflowCount = Math.round(Math.min(Math.max(animCalProgress - 1, 0), 1) * NUM_LINES);
+              const MACRO_R = (MACRO_RING_SIZE - MACRO_RING_STROKE) / 2;
+              const MACRO_CIRC = 2 * Math.PI * MACRO_R;
+              const RING_TOP = insets.top + 73 + 29;
+              return (
+                <View style={{ position: 'absolute', top: RING_TOP, left: 0, right: 0, alignItems: 'center', zIndex: 52 }} pointerEvents="none">
+                  <View style={{ width: RING_W, height: RING_H }}>
+                    <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                      <Defs>
+                        <SvgRadialGradient id="ringGradTextBox" cx="50%" cy="100%" rx="50%" ry="100%">
+                          <SvgStop offset="0%" stopColor="#C6C6C6" stopOpacity="1" />
+                          <SvgStop offset="100%" stopColor="#3A3A3A" stopOpacity="1" />
+                        </SvgRadialGradient>
+                      </Defs>
+                      <SvgPath
+                        d={`M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`}
+                        fill="none"
+                        stroke="url(#ringGradTextBox)"
+                        strokeWidth={RING_STROKE}
+                        strokeDasharray="2 4"
+                        strokeLinecap="butt"
+                        strokeMiterlimit={28.96}
+                      />
+                    </Svg>
+                    {filledCount > 0 && (() => {
+                      const arcD = `M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`;
+                      const whiteDash = (filledCount === 1 ? '2' : Array(filledCount).fill('2').join(' 4 ')) + ' 99999';
+                      const CX2 = RING_W / 2; const CY2 = ARC_MID;
+                      const innerR2 = RING_R - RING_STROKE / 2; const outerR2 = RING_R + RING_STROKE / 2;
+                      const bIdx = filledCount - 1;
+                      const bT = (bIdx * (DASH + DASH_GAP) + DASH / 2) / ARC_LEN;
+                      const bAngle = Math.PI * (1 - bT);
+                      return (
+                        <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                          <SvgPath d={arcD} fill="none" stroke="#FFFFFF" strokeWidth={RING_STROKE} strokeDasharray={whiteDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
+                          {overflowCount === 0 && <SvgLine x1={CX2 + (innerR2 - 0.1 * RING_STROKE) * Math.cos(bAngle)} y1={CY2 - (innerR2 - 0.1 * RING_STROKE) * Math.sin(bAngle)} x2={CX2 + (outerR2 + 0.1 * RING_STROKE) * Math.cos(bAngle)} y2={CY2 - (outerR2 + 0.1 * RING_STROKE) * Math.sin(bAngle)} stroke="#FFFFFF" strokeWidth={DASH * 1.05} strokeLinecap="butt" />}
+                        </Svg>
+                      );
+                    })()}
+                    {overflowCount > 0 && (() => {
+                      const arcD = `M ${RING_STROKE / 2} ${ARC_MID} A ${RING_R} ${RING_R} 0 0 1 ${RING_W - RING_STROKE / 2} ${ARC_MID}`;
+                      const redDash = (overflowCount === 1 ? '2' : Array(overflowCount).fill('2').join(' 4 ')) + ' 99999';
+                      const CX2 = RING_W / 2; const CY2 = ARC_MID;
+                      const innerR2 = RING_R - RING_STROKE / 2; const outerR2 = RING_R + RING_STROKE / 2;
+                      const bIdx = overflowCount - 1;
+                      const bT = (bIdx * (DASH + DASH_GAP) + DASH / 2) / ARC_LEN;
+                      const bAngle = Math.PI * (1 - bT);
+                      return (
+                        <Svg width={RING_W} height={ARC_MID + RING_STROKE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                          <SvgPath d={arcD} fill="none" stroke="#FF0000" strokeWidth={RING_STROKE} strokeDasharray={redDash} strokeLinecap="butt" strokeMiterlimit={28.96} />
+                          <SvgLine x1={CX2 + (innerR2 - 0.1 * RING_STROKE) * Math.cos(bAngle)} y1={CY2 - (innerR2 - 0.1 * RING_STROKE) * Math.sin(bAngle)} x2={CX2 + (outerR2 + 0.1 * RING_STROKE) * Math.cos(bAngle)} y2={CY2 - (outerR2 + 0.1 * RING_STROKE) * Math.sin(bAngle)} stroke="#FF0000" strokeWidth={DASH * 1.05} strokeLinecap="butt" />
+                        </Svg>
+                      );
+                    })()}
+                    <View style={{ position: 'absolute', top: 24, left: 0, right: 0, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 36, fontWeight: '700', color: '#FFFFFF', letterSpacing: -1 }}>{animatedCal}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#C6C6C6', marginTop: -2 }}>calories</Text>
+                    </View>
+                    {macros.map((m, i) => {
+                      const mFill = Math.min(m.progress, 1);
+                      const mOver = Math.min(Math.max(m.progress - 1, 0), 1);
+                      const ctr = MACRO_RING_SIZE / 2;
+                      return (
+                        <View key={m.label} style={{ position: 'absolute', left: macroPositions[i].left, top: macroPositions[i].top, alignItems: 'center', width: MACRO_RING_SIZE }}>
+                          <View style={{ width: MACRO_RING_SIZE, height: MACRO_RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+                            <Svg width={MACRO_RING_SIZE} height={MACRO_RING_SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
+                              <SvgCircle cx={ctr} cy={ctr} r={MACRO_R} fill="none" stroke="rgba(198,198,198,0.35)" strokeWidth={MACRO_RING_STROKE} />
+                              {mFill > 0 && (
+                                <SvgCircle cx={ctr} cy={ctr} r={MACRO_R} fill="none" stroke="#FFFFFF" strokeWidth={MACRO_RING_STROKE}
+                                  strokeDasharray={`${MACRO_CIRC}`} strokeDashoffset={`${MACRO_CIRC * (1 - mFill)}`}
+                                  strokeLinecap="round" transform={`rotate(-90 ${ctr} ${ctr})`} />
+                              )}
+                              {mOver > 0.001 && (
+                                <SvgCircle cx={ctr} cy={ctr} r={MACRO_R} fill="none" stroke="#FF0000" strokeWidth={MACRO_RING_STROKE}
+                                  strokeDasharray={`${MACRO_CIRC * mOver} ${MACRO_CIRC * (1 - mOver)}`}
+                                  strokeDashoffset={`${-MACRO_CIRC * mFill}`}
+                                  strokeLinecap="round" transform={`rotate(-90 ${ctr} ${ctr})`} />
+                              )}
+                            </Svg>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#C6C6C6' }}>{m.value}</Text>
+                          </View>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#C6C6C6', marginTop: 3 }}>{m.label}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })()}
+
+            {/* Expanded text-box input */}
+            <View style={{ position: 'absolute', top: insets.top + 73 + 29 + 162 + 16, left: (SCREEN_WIDTH - 356) / 2 }}>
+              <RNAnimated.View style={{
+                width: textBoxExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [226, 356] }),
+                height: 53,
+                borderRadius: 28,
+                backgroundColor: '#2F3031',
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 16,
+                gap: 8,
+                shadowColor: '#505050',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 1,
+                shadowRadius: 15.8,
+                elevation: 8,
+                alignSelf: 'center',
+              }}>
+                <TextInput
+                  ref={textBoxInputRef}
+                  style={{
+                    flex: 1,
+                    fontSize: 15,
+                    fontWeight: '500',
+                    color: '#FFFFFF',
+                    paddingVertical: 0,
+                    paddingHorizontal: 0,
+                    lineHeight: 20,
+                    ...(Platform.OS === 'android' && { includeFontPadding: false }),
+                  }}
+                  placeholder="type to log"
+                  placeholderTextColor="#C6C6C6"
+                  value={textBoxQuery}
+                  onChangeText={setTextBoxQuery}
+                  returnKeyType="done"
+                  onSubmitEditing={handleTextBoxSubmit}
+                />
+                {textBoxLoading ? (
+                  <ActivityIndicator size="small" color="#C6C6C6" />
+                ) : (
+                  textBoxQuery.length === 0 && (
+                    <RNAnimated.View style={{ opacity: textBoxExpandAnim }}>
+                      <Pressable onPress={toggleVoiceInput} style={{ padding: 8 }} hitSlop={12}>
+                        <MicrophoneIcon
+                          size={20}
+                          color={voiceListening ? '#FFFFFF' : '#C6C6C6'}
+                          weight={voiceListening ? 'fill' : 'regular'}
+                        />
+                      </Pressable>
+                    </RNAnimated.View>
+                  )
+                )}
+              </RNAnimated.View>
+            </View>
+
+            {/* Deck overlay — stacked food cards from text-box input */}
+            {deckItems.length > 0 && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 55 }} pointerEvents="box-none">
+                <FoodDeckOverlay
+                  items={deckItems}
+                  onUpdateItems={setDeckItems}
+                  onLogFood={handleDeckLogFood}
+                  onSaveFood={handleDeckSaveFood}
+                  onDismissAll={handleDeckDismissAll}
+                  onReloadItem={handleDeckReloadItem}
+                  onPreviewMacros={handleDeckPreviewMacros}
+                  cardTopOffset={insets.top + 73 + 29 + 162 + 16}
+                />
+              </View>
+            )}
+          </RNAnimated.View>
+        </>
       )}
 
       {/* Fire streak full-screen popup — slides in from left when pill is tapped */}
@@ -2762,7 +3156,11 @@ export default function NutritionScreen({
                 maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 style={{ flex: 1 }}
                 renderItem={({ item }) => (
-                <TouchableOpacity style={styles.foodSearchItem} onPress={() => handleSelectFood(item)}>
+                <View
+                  style={styles.foodSearchItem}
+                  onStartShouldSetResponder={() => true}
+                  onResponderRelease={() => handleSelectFood(item)}
+                >
                   <View style={styles.foodSearchCardLeft}>
                     {(() => {
                       const top100 = isTmlsnTop100(item);
@@ -2909,7 +3307,7 @@ export default function NutritionScreen({
                       )}
                     </View>
                   </View>
-                </TouchableOpacity>
+                </View>
               )}
               ListEmptyComponent={!foodSearchLoading && foodSearchQuery.length > 0 ? <Text style={styles.emptyText}>No results found</Text> : null}
               onEndReached={loadMoreFoodSearch}
@@ -2938,15 +3336,68 @@ export default function NutritionScreen({
         </View>
       </Modal>
 
+      {/* ARCH-REDESIGN: Add Food button — always opacity 1; deck (zIndex 100) covers it when open, reveals on unmount */}
+      {homeTab === 'calories' && (
+        <View
+          pointerEvents={foodDeckVisible ? 'none' : 'auto'}
+          style={{
+            position: 'absolute',
+            bottom: 88,
+            left: 0,
+            right: 0,
+            alignItems: 'center',
+            zIndex: 50,
+          }}
+        >
+          <AddFoodCard onPress={() => setFoodDeckVisible(true)} />
+        </View>
+      )}
+
+      {/* ARCH-REDESIGN: Food Deck — Modal so it renders above nav pill */}
+      <Modal visible={foodDeckMounted} transparent animationType="none" statusBarTranslucent>
+        <FoodDeckCards
+          visible={foodDeckVisible}
+          onSelect={(card) => {
+            setFoodDeckVisible(false);
+            // TODO: route to camera/search/list/repeat fullscreen
+          }}
+          onDismiss={() => setFoodDeckVisible(false)}
+          overlayOpacityRef={!hasLoggedFood ? emptyOverlayOpacity : undefined}
+          riseTargetY={carbLabelBottomY != null ? carbLabelBottomY + 8 : undefined}
+          onCloseComplete={() => setFoodDeckMounted(false)}
+        />
+      </Modal>
+
+      {/* ARCH-REDESIGN: Action Sheet (meal ellipsis) */}
+      <ActionSheet
+        visible={actionSheetVisible}
+        mealTitle={actionSheetMealTitle || 'add food.'}
+        onClose={() => setActionSheetVisible(false)}
+        onRepeatLast={() => {}}
+        onSaved={() => {}}
+        onScan={() => {}}
+        onSearch={() => {}}
+      />
+
       {/* Add Meal sheet — used from Food Search overlay (addMeal) and standalone (showAddMeal) */}
       <AddMealSheet
         visible={searchOverlayScreen === 'addMeal' || showAddMeal}
         onClose={() => {
+          homeSearchInputRef.current?.blur();
+          setAddMealJustClosed(true);
           if (searchOverlayScreen === 'addMeal') {
+            if (recentlyUploadedMealRef.current) {
+              recentlyUploadedMealRef.current = null;
+              setAddMealBrandName('');
+              dismissHomeSearch();
+              return;
+            }
+            recentlyUploadedMealRef.current = null;
             addMealInSearchOverlayRef.current = false;
             setAddMealBrandName('');
             setSearchOverlayScreen('list');
           } else {
+            recentlyUploadedMealRef.current = null;
             setAddMealTitleBrand('');
             setAddMealBrandName('');
             setShowAddMeal(false);
@@ -2984,13 +3435,25 @@ export default function NutritionScreen({
         verifiedTickSize={ADD_MEAL_VERIFIED_TICK_SIZE}
         userVolumeUnit={settings?.volumeUnit}
         selectedFood={selectedFoodForSheet}
-        dayLog={homeSearchActive ? {
-          calories: viewingDateLog.calories,
-          protein:  viewingDateLog.protein,
-          carbs:    viewingDateLog.carbs,
-          fat:      viewingDateLog.fat,
-        } : undefined}
+        dayLog={homeSearchActive ? (() => {
+          const exclude = recentlyUploadedMealRef.current;
+          if (exclude) {
+            return {
+              calories: viewingDateLog.calories - exclude.calories,
+              protein:  viewingDateLog.protein - exclude.protein,
+              carbs:    viewingDateLog.carbs - exclude.carbs,
+              fat:      viewingDateLog.fat - exclude.fat,
+            };
+          }
+          return {
+            calories: viewingDateLog.calories,
+            protein:  viewingDateLog.protein,
+            carbs:    viewingDateLog.carbs,
+            fat:      viewingDateLog.fat,
+          };
+        })() : undefined}
         dailyGoals={settings?.dailyGoals ?? DEFAULT_GOALS}
+        skipInitialRingAnimation={!!recentlyUploadedMealRef.current}
       />
 
       {/* Edit Goals Modal */}
@@ -3064,6 +3527,29 @@ export default function NutritionScreen({
     </View>
   );
 }
+
+const greetingOverlayStyles = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+  },
+  textBlock: {
+    marginLeft: 130,
+  },
+  hello: {
+    fontSize: 23,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.43)',
+    lineHeight: 23,
+  },
+  name: {
+    fontSize: 48,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginTop: 1,
+    lineHeight: 48,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {

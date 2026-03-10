@@ -303,6 +303,80 @@ interface OFFProductResponse {
   product?: OFFProduct;
 }
 
+/** Extracts a household-style label from OFF serving_size. E.g. "1 slice (40g)" → "1 slice"; "40 g" → null (use fallback). */
+function parseOFFServingLabel(servingSize: string, servGrams: number): string | null {
+  const s = (servingSize ?? '').trim().toLowerCase();
+  if (!s) return null;
+  // Match household phrases: "1 slice", "1 cup", "2 pieces", "1 slice (40g)", etc.
+  const householdMatch = s.match(/^(\d+(?:\.\d+)?)\s*(slice|slices|cup|cups|piece|pieces|serving|servings|can|cans|bottle|bottles|tbsp|tsp|oz|unit|medium|large|small)\b/i);
+  if (householdMatch) {
+    const num = householdMatch[1];
+    const unit = householdMatch[2].toLowerCase();
+    const plural = unit === 'slices' || unit === 'cups' || unit === 'pieces' || unit === 'servings' || unit === 'cans' || unit === 'bottles';
+    const singular = unit === 'slices' ? 'slice' : unit === 'cups' ? 'cup' : unit === 'pieces' ? 'piece' : unit === 'servings' ? 'serving' : unit === 'cans' ? 'can' : unit === 'bottles' ? 'bottle' : unit;
+    return `${num} ${parseFloat(num) === 1 && !plural ? singular : unit}`;
+  }
+  // Pure gram/ml string like "40 g" or "240 ml" — no household unit
+  if (/^\d+(?:\.\d+)?\s*(g|gram|grams|ml|l|oz)\b/i.test(s)) return null;
+  return null;
+}
+
+/**
+ * Infer household portions from food name. Best-effort estimates (e.g. bread → 1 slice).
+ * Exported for AddMealSheet to merge into unit list when API portions omit household units.
+ */
+export function inferHouseholdPortions(name: string, unit: 'g' | 'ml'): FoodPortion[] {
+  const n = name.toLowerCase().trim();
+  if (!n) return [];
+
+  // Beverage can (soda, beer) — 330ml
+  if (/\b(soda|beer|coke|cola|soft\s*drink)\b/.test(n) && unit === 'ml') {
+    return [{ label: '1 can', gramWeight: 330 }];
+  }
+  // Juice, milk, carton — 1 cup 240ml
+  if (/\b(juice|orange\s*juice|apple\s*juice|milk|oat\s*milk|almond\s*milk|carton)\b/.test(n) && unit === 'ml') {
+    return [{ label: '1 cup', gramWeight: 240 }];
+  }
+  // Egg — 1 large 50g, 1 medium 44g (order: egg before bread so "egg bread" matches egg)
+  if (/\begg(s)?\b/.test(n) && unit === 'g') {
+    return [{ label: '1 large', gramWeight: 50 }, { label: '1 medium', gramWeight: 44 }];
+  }
+  // Bread (includes white, wheat, commercially prepared, etc.)
+  if (/\b(bread|sourdough|bagel|roll|toast|bun)\b/.test(n) && unit === 'g') {
+    return [{ label: '1 slice', gramWeight: 30 }];
+  }
+  // Pizza
+  if (/\bpizza\b/.test(n) && unit === 'g') {
+    return [{ label: '1 slice', gramWeight: 125 }];
+  }
+  // Cake
+  if (/\bcake\b/.test(n) && unit === 'g') {
+    return [{ label: '1 slice', gramWeight: 80 }];
+  }
+  // Canned solid (beans, tomatoes, soup, tuna)
+  if (/\b(canned|beans|tomatoes|soup|tuna)\b/.test(n) && unit === 'g') {
+    return [{ label: '1 can', gramWeight: 400 }];
+  }
+  // Cereal
+  if (/\bcereal\b/.test(n) && unit === 'g') {
+    return [{ label: '1 cup', gramWeight: 30 }];
+  }
+  // Banana
+  if (/\bbanana\b/.test(n) && unit === 'g') {
+    return [{ label: '1 medium', gramWeight: 118 }];
+  }
+  // Apple
+  if (/\bapple(s)?\b/.test(n) && unit === 'g') {
+    return [{ label: '1 medium', gramWeight: 182 }];
+  }
+  // Orange
+  if (/\borange(s)?\b/.test(n) && unit === 'g') {
+    return [{ label: '1 medium', gramWeight: 131 }];
+  }
+
+  return [];
+}
+
 interface OFFSearchResponse {
   count?: number;
   products?: OFFProduct[];
@@ -354,10 +428,18 @@ function parseOFFProduct(p: OFFProduct): ParsedNutrition {
   const portions: FoodPortion[] = [];
   if (p.serving_quantity && p.serving_quantity > 0) {
     const servGrams = p.serving_quantity;
-    const sLabel = p.serving_size
-      ? p.serving_size.toLowerCase()
-      : `1 serving (${Math.round(servGrams)}g)`;
+    const parsedLabel = p.serving_size ? parseOFFServingLabel(p.serving_size, servGrams) : null;
+    const sLabel = parsedLabel ?? `1 serving (${Math.round(servGrams)}g)`;
     portions.push({ label: sLabel, gramWeight: servGrams });
+  }
+  // Always merge inferred household portions (e.g. "1 slice" for bread) so user has toggle even when API returned other portions
+  const inferred = inferHouseholdPortions(name, isLiquid ? 'ml' : 'g');
+  const existingLabels = new Set(portions.map((x) => x.label.toLowerCase()));
+  for (const p of inferred) {
+    if (!existingLabels.has(p.label.toLowerCase())) {
+      portions.unshift(p);
+      existingLabels.add(p.label.toLowerCase());
+    }
   }
 
   return {
@@ -624,6 +706,15 @@ function parseUSDAFood(food: USDAFoodItem): ParsedNutrition | null {
       : `1 serving (${Math.round(servingGrams)}g)`;
     if (!portions.some(p => Math.abs(p.gramWeight - servingGrams!) < 1)) {
       portions.push({ label: sLabel, gramWeight: servingGrams });
+    }
+  }
+  // Always merge inferred household portions (e.g. "1 slice" for bread) so user has toggle even when API returned other portions
+  const inferred = inferHouseholdPortions(name, isLiquid ? 'ml' : 'g');
+  const existingLabels = new Set(portions.map((x) => x.label.toLowerCase()));
+  for (const p of inferred) {
+    if (!existingLabels.has(p.label.toLowerCase())) {
+      portions.unshift(p);
+      existingLabels.add(p.label.toLowerCase());
     }
   }
 
@@ -1229,7 +1320,7 @@ function applyWordLevelTypos(line: string): string {
 const LIST_FOOD_AMOUNT_PREFIXES = [
   /^\s*with\s+a\s+(dash|splash|bit|little)\s+of\s+/i,
   /^\s*(?:a\s+)?(dash|splash|bit)\s+of\s+/i,
-  /^\s*\d+(\.\d+)?\s*(g|ml|oz|cup|cups|tbsp|tsp|scoop|scoops|slice|slices|serving|servings)?\s*(?:of\s+)?/i,
+  /^\s*(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(grams|gram|cups|cup|scoops|scoop|slices|slice|servings|serving|tablespoons|tablespoon|teaspoons|teaspoon|tbsp|tsp|ounces|ounce|pieces|piece|cans|can|oz|g|ml)\b\s*(?:of\s+)?/i,
 ];
 
 /** Single-word variants that are amount/serving only — never use as search query so "dash" doesn't drive the match. */
@@ -1254,6 +1345,41 @@ function extractListFoodIngredientName(phrase: string): string {
     s = s.replace(re, '').trim();
   }
   return s || phrase.trim();
+}
+
+const EXTRACT_QTY_NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, a: 1, an: 1, half: 0.5,
+};
+const EXTRACT_QTY_RE = /^\s*(?:a|an|half|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+(?:\.\d+)?)\s+(slices|slice|scoops|scoop|cups|cup|tablespoons|tablespoon|tbsp|teaspoons|teaspoon|tsp|pieces|piece|servings|serving|ounces|ounce|oz|cans|can|grams|gram|milliliters|milliliter|large|medium|small|g|ml)\b\s*(?:of\s+)?/i;
+const EXTRACT_QTY_SIMPLE_RE = /^\s*(\d+(?:\.\d+)?)\s*(grams|gram|g|ml|oz)\b\s*(?:of\s+)?/i;
+
+/**
+ * Split a user phrase into { amount, rawUnit, foodName }.
+ * "2 slices of white bread" → { amount: '2', rawUnit: 'slice', foodName: 'white bread' }
+ * "200g chicken breast"     → { amount: '200', rawUnit: 'g', foodName: 'chicken breast' }
+ * "white bread"             → { amount: '1', rawUnit: null, foodName: 'white bread' }
+ */
+export function extractQuantityAndFood(phrase: string): { amount: string; rawUnit: string | null; foodName: string } {
+  const s = phrase.trim();
+  if (!s) return { amount: '1', rawUnit: null, foodName: s };
+
+  const m = s.match(EXTRACT_QTY_RE);
+  if (m) {
+    const numPart = s.match(/^\s*(\S+)/)?.[1]?.toLowerCase() ?? '1';
+    const count = EXTRACT_QTY_NUMBER_WORDS[numPart] ?? (parseFloat(numPart) || 1);
+    const rawUnit = m[1].toLowerCase().replace(/s$/, '').replace(/^tablespoon$/, 'tbsp').replace(/^teaspoon$/, 'tsp').replace(/^ounce$/, 'oz').replace(/^gram$/, 'g').replace(/^milliliter$/, 'ml');
+    const foodName = s.replace(m[0], '').trim();
+    return { amount: String(count), rawUnit, foodName };
+  }
+
+  const ms = s.match(EXTRACT_QTY_SIMPLE_RE);
+  if (ms) {
+    const foodName = s.replace(ms[0], '').trim();
+    if (foodName) return { amount: ms[1], rawUnit: ms[2]?.toLowerCase() ?? 'g', foodName };
+  }
+
+  return { amount: '1', rawUnit: null, foodName: s };
 }
 
 /** Word to number for quantity parsing (one, two, ... twenty, etc.). */
@@ -1307,7 +1433,7 @@ export function parseListFoodQuantity(phrase: string): { amount: number; unit: '
   }
 
   // Word number + unit: one cup, 2 cups, one slice, 4 scoops, 1 tbsp, 2 tsp
-  const wordNumMatch = s.match(/^\s*(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(cup|cups|slice|slices|scoop|scoops|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons)\b/i);
+  const wordNumMatch = s.match(/^\s*(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(cups|cup|slices|slice|scoops|scoop|tablespoons|tablespoon|tbsp|teaspoons|teaspoon|tsp)\b/i);
   if (wordNumMatch) {
     const numStr = wordNumMatch[1].toLowerCase();
     const n = LIST_FOOD_NUMBER_WORDS[numStr] ?? (parseInt(numStr, 10) || 1);
@@ -1323,10 +1449,14 @@ export function parseListFoodQuantity(phrase: string): { amount: number; unit: '
 }
 
 /** Picks best match: only candidates that correspond to the canonical ingredient (hard filter); then rank by score. Returns null if none correspond. */
-function pickBestForListFood(items: ParsedNutrition[], canonicalQuery: string): ParsedNutrition | null {
+function pickBestForListFood(items: ParsedNutrition[], canonicalQuery: string, excludeFdcIds?: number[]): ParsedNutrition | null {
   if (items.length === 0) return null;
   const q = canonicalQuery.trim().toLowerCase();
-  const corresponding = items.filter((item) => listFoodCorresponds(q, item.name));
+  let corresponding = items.filter((item) => listFoodCorresponds(q, item.name));
+  if (excludeFdcIds && excludeFdcIds.length > 0) {
+    const excluded = new Set(excludeFdcIds);
+    corresponding = corresponding.filter((item) => !item.fdcId || !excluded.has(item.fdcId));
+  }
   if (corresponding.length === 0) return null;
   const byScore = (a: ParsedNutrition, b: ParsedNutrition) => scoreResult(a, canonicalQuery) - scoreResult(b, canonicalQuery);
   const sorted = [...corresponding].sort((a, b) => byScore(b, a));
@@ -1334,14 +1464,14 @@ function pickBestForListFood(items: ParsedNutrition[], canonicalQuery: string): 
 }
 
 /** Runs one search and returns the best match or null. Waits for full merged pool (USDA+OFF) before selecting. Uses canonicalForSelection for correspondence filter when provided (so variant "milk" does not accept dairy when user said "coconut milk"). */
-function tryFirstMatchQuery(query: string, canonicalForSelection?: string): Promise<ParsedNutrition | null> {
+function tryFirstMatchQuery(query: string, canonicalForSelection?: string, excludeFdcIds?: number[]): Promise<ParsedNutrition | null> {
   const trimmed = query.trim();
   if (!trimmed) return Promise.resolve(null);
   const canonical = (canonicalForSelection ?? trimmed).trim().toLowerCase();
 
   const preloaded = getPreloadedResultsExact(trimmed);
   if (preloaded.length > 0) {
-    const best = pickBestForListFood(preloaded, canonical);
+    const best = pickBestForListFood(preloaded, canonical, excludeFdcIds);
     if (best) return Promise.resolve(best);
   }
 
@@ -1350,17 +1480,17 @@ function tryFirstMatchQuery(query: string, canonicalForSelection?: string): Prom
     searchFoodsProgressive(trimmed, (results) => {
       fullPool = results;
     }, 40).then(() => {
-      const best = pickBestForListFood(fullPool, canonical);
+      const best = pickBestForListFood(fullPool, canonical, excludeFdcIds);
       resolve(best);
     });
   });
 }
 
 /** Returns the first search result for a query. For List Food use canonicalForSelection so selection respects the user's ingredient (e.g. "coconut milk") not the variant used to fetch (e.g. "milk"). */
-export async function searchFoodFirstMatch(query: string, canonicalForSelection?: string): Promise<ParsedNutrition | null> {
+export async function searchFoodFirstMatch(query: string, canonicalForSelection?: string, excludeFdcIds?: number[]): Promise<ParsedNutrition | null> {
   const q = query.trim();
   if (!q) return null;
-  return tryFirstMatchQuery(q, canonicalForSelection);
+  return tryFirstMatchQuery(q, canonicalForSelection, excludeFdcIds);
 }
 
 /** Splits a List Food line into ingredients (e.g. "eggs and toast" → ["eggs", "toast"]). Splits on " and ", " with ", ", ", " & " only; filters empty and numbers-only. Export for nutrition screen so one line → one row per ingredient. */
@@ -1409,7 +1539,7 @@ function listFoodQueryVariants(query: string): string[] {
  * we try each variant to fetch a pool but only accept results that correspond to the canonical (e.g. "coconut milk" not "milk").
  * Never returns null: synthetic row (user text, 0 macros) if no corresponding match.
  */
-export async function searchFoodFirstMatchBestEffort(query: string): Promise<ParsedNutrition> {
+export async function searchFoodFirstMatchBestEffort(query: string, opts?: { excludeFdcIds?: number[] }): Promise<ParsedNutrition> {
   const trimmed = query.trim();
   if (!trimmed) {
     return {
@@ -1427,7 +1557,7 @@ export async function searchFoodFirstMatchBestEffort(query: string): Promise<Par
   const canonicalIngredient = applyWordLevelTypos(extractListFoodIngredientName(trimmed)).trim().toLowerCase();
   const variants = listFoodQueryVariants(query);
   for (const variant of variants) {
-    const match = await searchFoodFirstMatch(variant, canonicalIngredient);
+    const match = await searchFoodFirstMatch(variant, canonicalIngredient, opts?.excludeFdcIds);
     if (match) return match;
   }
   return {
@@ -1441,6 +1571,20 @@ export async function searchFoodFirstMatchBestEffort(query: string): Promise<Par
     unit: 'g',
     source: 'usda',
   };
+}
+
+/** Detect meal type ("for breakfast/lunch/dinner/snack") from natural language text. */
+export function detectMealTypeFromText(text: string): import('../types').MealType | null {
+  const MEAL_PATTERNS: Array<[import('../types').MealType, RegExp]> = [
+    ['breakfast', /\bfor\s+breakfast\b/i],
+    ['lunch', /\bfor\s+lunch\b/i],
+    ['dinner', /\bfor\s+(dinner|supper)\b/i],
+    ['snack', /\bfor\s+(snack|snacks)\b/i],
+  ];
+  for (const [type, re] of MEAL_PATTERNS) {
+    if (re.test(text)) return type;
+  }
+  return null;
 }
 
 /** Preload Foundation (TMLSN Verified) results for common queries so they show instantly when user searches. Call once on app/screen load. */

@@ -22,7 +22,7 @@ import { BlurView } from 'expo-blur';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { searchFoodsProgressive, searchFoodsNextPage, preloadCommonSearches, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../utils/foodApi';
+import { searchFoodsProgressive, searchFoodsNextPage, preloadCommonSearches, inferHouseholdPortions, ParsedNutrition, isTmlsnTop100, isFoundationVerified } from '../utils/foodApi';
 import { addToFoodHistory } from '../utils/foodHistory';
 import { getNutritionLogByDate, saveNutritionLog, saveSavedFood } from '../utils/storage';
 import { getTodayDateString, generateId } from '../utils/helpers';
@@ -31,7 +31,7 @@ import { BackButton } from '../components/BackButton';
 import { Button } from '../components/Button';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { Input } from '../components/Input';
-import { UnitWheelPicker, UNIT_TO_GRAMS, type AddMealUnit } from '../components/UnitWheelPicker';
+import { UnitWheelPicker, UNIT_TO_GRAMS, getSmartDefaultUnit, resolveGrams, type AddMealUnit } from '../components/UnitWheelPicker';
 import { AddMealSheet } from '../components/AddMealSheet';
 import type { Meal, MealType, NutritionLog } from '../types';
 
@@ -92,7 +92,7 @@ export default function SearchFoodScreen() {
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
-  const [addMealUnit, setAddMealUnit] = useState<AddMealUnit>('1g');
+  const [addMealUnit, setAddMealUnit] = useState<string>('1g');
   const [addMealAmount, setAddMealAmount] = useState('1');
   const selectedFoodRef = useRef<ParsedNutrition | null>(null);
   const [selectedFood, setSelectedFood] = useState<ParsedNutrition | null>(null);
@@ -198,9 +198,21 @@ export default function SearchFoodScreen() {
     const isTmlsnVerified = isFoundationVerified(food);
     setAddMealTitleBrand(top100 ? 'TMLSN TOP 100' : isTmlsnVerified ? 'TMLSN VERIFIED' : (food.brand ?? ''));
     setAddMealBrandName(food.brand ?? '');
-    setAddMealUnit('100g');
-    setAddMealAmount('1');
-    const factor = UNIT_TO_GRAMS['100g'] / 100;
+    const nameForInfer = `${food.name ?? ''} ${food.originalDescription ?? ''}`.trim().toLowerCase();
+    const inferred = nameForInfer ? inferHouseholdPortions(nameForInfer, food.unit ?? 'g') : [];
+    const existingLabels = new Set((food.portions ?? []).map((p) => p.label.toLowerCase()));
+    const mergedPortions = [...(food.portions ?? [])];
+    for (const p of inferred) {
+      if (!existingLabels.has(p.label.toLowerCase())) {
+        mergedPortions.unshift(p);
+        existingLabels.add(p.label.toLowerCase());
+      }
+    }
+    const foodWithPortions = mergedPortions.length > 0 ? { ...food, portions: mergedPortions } : food;
+    const { unit: smartUnit, amount: smartAmount } = getSmartDefaultUnit(foodWithPortions);
+    setAddMealUnit(smartUnit);
+    setAddMealAmount(smartAmount || '1');
+    const factor = (parseFloat(smartAmount) || 1) * resolveGrams(smartUnit, mergedPortions) / 100;
     setCalories(String(Math.round((food.calories || 0) * factor)));
     setProtein(String(Math.round((food.protein || 0) * factor)));
     setCarbs(String(Math.round((food.carbs || 0) * factor)));
@@ -213,7 +225,8 @@ export default function SearchFoodScreen() {
     if (!food) return;
     const amt = parseFloat(addMealAmount);
     if (!Number.isFinite(amt) || amt <= 0) return;
-    const grams = amt * UNIT_TO_GRAMS[addMealUnit];
+    const gramsPerUnit = resolveGrams(addMealUnit, food.portions);
+    const grams = amt * gramsPerUnit;
     const scale = grams / 100;
     setCalories(String(Math.round((food.calories || 0) * scale)));
     setProtein(String(Math.round((food.protein || 0) * scale)));
@@ -248,6 +261,7 @@ export default function SearchFoodScreen() {
         meals: [],
       };
     }
+    const food = selectedFoodRef.current;
     const newMeal: Meal = {
       id: generateId(),
       name: mealName.trim(),
@@ -257,6 +271,12 @@ export default function SearchFoodScreen() {
       protein: parseFloat(protein) || 0,
       carbs: parseFloat(carbs) || 0,
       fat: parseFloat(fat) || 0,
+      ...(food && {
+        fdcId: food.fdcId,
+        source: food.source,
+        dataType: food.dataType,
+        brand: food.brand ?? '',
+      }),
     };
     const updatedLog: NutritionLog = {
       ...todayLog,
