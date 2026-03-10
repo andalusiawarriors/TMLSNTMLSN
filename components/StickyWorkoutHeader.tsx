@@ -1,11 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import AnimatedReanimated from 'react-native-reanimated';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 type Props = {
-  animStyle: any;
   workoutName: string;
   elapsedSeconds: number;
   totalVolumeDisplay: number;
@@ -21,6 +19,9 @@ type Props = {
     tabBarBorder: [string, string];
     tabBarFill: [string, string];
   };
+  enableStatsModal?: boolean;
+  onStatsVolumePress?: () => void;
+  onStatsSetsPress?: () => void;
 };
 
 function formatElapsed(s: number): string {
@@ -30,7 +31,6 @@ function formatElapsed(s: number): string {
 }
 
 export function StickyWorkoutHeader({
-  animStyle,
   workoutName,
   elapsedSeconds,
   totalVolumeDisplay,
@@ -41,13 +41,15 @@ export function StickyWorkoutHeader({
   onMinimize,
   paddingTop,
   colors,
+  enableStatsModal,
+  onStatsVolumePress,
+  onStatsSetsPress,
 }: Props) {
   return (
-    <AnimatedReanimated.View
+    <View
       style={[
         styles.container,
         { backgroundColor: colors.primaryDark, paddingTop },
-        animStyle,
       ]}
     >
       {/* Top bar row */}
@@ -89,23 +91,47 @@ export function StickyWorkoutHeader({
 
       {/* Stats pills */}
       <View style={styles.statsRow}>
-        <View style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}>
-          <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
-          <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
-          <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
-        </View>
-        <View style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}>
-          <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
-          <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
-          <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
-        </View>
+        {enableStatsModal && onStatsVolumePress ? (
+          <Pressable
+            style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}
+            onPress={onStatsVolumePress}
+            hitSlop={6}
+          >
+            <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
+            <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
+            <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}>
+            <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>⚖</Text>
+            <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{Math.round(totalVolumeDisplay).toLocaleString()}</Text>
+            <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>{weightUnit}</Text>
+          </View>
+        )}
+        {enableStatsModal && onStatsSetsPress ? (
+          <Pressable
+            style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}
+            onPress={onStatsSetsPress}
+            hitSlop={6}
+          >
+            <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
+            <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
+            <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}>
+            <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>◉</Text>
+            <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{completedSetsCount}</Text>
+            <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>sets</Text>
+          </View>
+        )}
         <View style={[styles.pill, { backgroundColor: colors.primaryLight + '12' }]}>
           <Text style={[styles.pillIcon, { color: colors.primaryLight + '80' }]}>◎</Text>
           <Text style={[styles.pillValue, { color: colors.primaryLight }]}>{exerciseCount}</Text>
           <Text style={[styles.pillUnit, { color: colors.primaryLight + '80' }]}>exercises</Text>
         </View>
       </View>
-    </AnimatedReanimated.View>
+    </View>
   );
 }
 

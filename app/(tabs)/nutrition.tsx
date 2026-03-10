@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
-import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState, onHomeTab } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import Animated, {
@@ -97,6 +97,7 @@ import { MealSections, type MealKey } from '../../components/MealSections'; // A
 import { ActionSheet } from '../../components/ActionSheet';
 import { FoodDeckCards } from '../../components/FoodDeckCards';
 import { ProgressHub } from '../../components/ProgressHub';
+import { FitnessHub } from '../../components/FitnessHub';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
@@ -189,6 +190,9 @@ export default function NutritionScreen({
   const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [homeTab, setHomeTab] = useState<'calories' | 'progress' | 'fitness'>('calories');
+  useEffect(() => {
+    return onHomeTab((tab) => setHomeTab(tab));
+  }, []);
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -1902,7 +1906,8 @@ export default function NutritionScreen({
             zIndex: 20,
           }}
         >
-          {/* Date row — centered; fades in at same rate as protein/carb rings when overlay disappears */}
+          {/* Date row — centered; fades in at same rate as protein/carb rings when overlay disappears; hidden on progress/fitness tabs */}
+          {homeTab === 'calories' && (
           <View
             ref={headerMeasureRef}
             onLayout={onHeaderLayout}
@@ -1934,6 +1939,7 @@ export default function NutritionScreen({
               </Pressable>
             </RNAnimated.View>
           </View>
+          )}
 
           {/* Gradient bar (behind tab labels) */}
           <View
@@ -2096,14 +2102,8 @@ export default function NutritionScreen({
             <ProgressHub />
           </View>
         ) : (
-          <View style={{ width: CAROUSEL_WIDTH, alignSelf: 'center' }}>
-            {hasHeatmapSetRecords ? (
-              <HeatmapPreviewWidgetSideBySide heatmapData={weeklyHeatmap} cardWidth={CAROUSEL_WIDTH} bare />
-            ) : (
-              <View style={styles.heatmapEmptyState}>
-                <Text style={styles.heatmapEmptyText}>No workout data for this week</Text>
-              </View>
-            )}
+          <View style={{ overflow: 'visible' as const }}>
+            <FitnessHub />
           </View>
         )}
         </View>

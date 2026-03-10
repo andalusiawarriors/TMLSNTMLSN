@@ -37,9 +37,9 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
       return;
     }
     router.replace({
-      pathname: '/workout',
+      pathname: '/(tabs)/workout',
       params: { startSplitId: split.id },
-    });
+    } as any);
   };
 
   const toggleExpand = (id: string) => {

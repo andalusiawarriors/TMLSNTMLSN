@@ -18,9 +18,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { usePathname, useSegments } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
-import { emitWorkoutExpandOrigin, emitWorkoutOriginRoute, emitClosePopup } from '../utils/fabBridge';
+import { emitWorkoutExpandOrigin, emitClosePopup } from '../utils/fabBridge';
 import { useTheme } from '../context/ThemeContext';
 import { Typography, Spacing } from '../constants/theme';
 import { AnimatedPressable } from './AnimatedPressable';
@@ -71,6 +71,7 @@ function GreenPulsingDot() {
 
 export function ActiveWorkoutPill() {
   const pathname = usePathname();
+  const router = useRouter();
   const segments = useSegments();
   const { colors } = useTheme();
   const {
@@ -79,6 +80,7 @@ export function ActiveWorkoutPill() {
     minimized,
     expandWorkout,
     discardWorkout,
+    setOriginRoute,
   } = useActiveWorkout();
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -146,8 +148,10 @@ export function ActiveWorkoutPill() {
         : pathname.includes('workout') ? '/(tabs)/workout'
         : '/(tabs)/nutrition';
       emitWorkoutExpandOrigin(route);
-      emitWorkoutOriginRoute(route);
+      setOriginRoute(route);
+      // expandWorkout only sets minimized=false; navigation is owned here
       expandWorkout();
+      router.replace('/(tabs)/workout');
     }
   };
 

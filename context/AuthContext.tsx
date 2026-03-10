@@ -51,9 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: { subscription } } = supabase!.auth.onAuthStateChange((event, session) => {
       const uid = session?.user?.id ?? null;
-      if (__DEV__) {
-        console.log('[Auth] onAuthStateChange:', event, 'sessionExists=', !!session, 'userId=', uid ?? '(null)');
-      }
       setSession(session);
       setUser(session?.user ?? null);
       setStorageUserId(uid);

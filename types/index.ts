@@ -120,9 +120,22 @@ export interface Prompt {
 }
 
 // Training System Settings
+export type TrainingArchetype =
+  | 'bodybuilder'
+  | 'athlete'
+  | 'powerlifter'
+  | 'mdj'
+  | 'general';
 export type VolumeFramework = 'rp' | 'range' | 'custom';
 export type ScheduleMode = 'builder' | 'tmlsn' | 'ghost';
 export type WeekReset = 'monday' | 'rolling' | 'custom_day';
+
+export type WeekDayEntry = {
+  sessionName?: string;   // display label e.g. "Upper A"
+  isRest?: boolean;
+  splitId?: string;       // references a TMLSN split id
+  routineId?: string;     // references a saved routine id
+};
 
 export interface RpMuscleTarget {
   mev: number;
@@ -136,6 +149,7 @@ export interface RangeMuscleTarget {
 }
 
 export interface TrainingSettings {
+  archetype: TrainingArchetype;
   volumeFramework: VolumeFramework;
   scheduleMode: ScheduleMode;
   weekReset: WeekReset;
@@ -146,6 +160,12 @@ export interface TrainingSettings {
   useRpeForOverload: boolean;
   rpMuscleTargets: Record<string, RpMuscleTarget>;
   rangeMuscleTargets: Record<string, RangeMuscleTarget>;
+  /** Primary training goal — drives the progressive overload algorithm defaults. */
+  trainingFocus?: 'hypertrophy' | 'strength';
+  /** Builder mode week plan — 7 entries indexed 0=Mon … 6=Sun. */
+  weekPlan?: WeekDayEntry[];
+  /** Builder mode target session count per week. */
+  weeklySessionTarget?: number;
 }
 
 // User Settings
@@ -159,6 +179,8 @@ export interface UserSettings {
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
   /** Progress Hub widget order (ids). Saved per account. */
   progressHubOrder?: string[];
+  /** Training system settings (volume framework, schedule, archetype, etc.). */
+  training?: TrainingSettings;
 }
 
 // Saved Food (for quick re-logging)

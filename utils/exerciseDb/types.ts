@@ -54,6 +54,7 @@ export type ForceType = 'push' | 'pull' | 'legs' | 'static' | 'hinge' | 'rotatio
 export interface Exercise {
   id: string;
   name: string;
+  overloadCategory: 'compound_big' | 'compound_small' | 'isolation';
   category: ExerciseCategory;
   equipment: EquipmentType[];
   movementType: MovementType;

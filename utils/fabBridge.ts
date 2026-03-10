@@ -86,19 +86,6 @@ export function onStreakPopupState(fn: BoolCb): VoidCb {
   };
 }
 
-// ── Workout origin route (layout → ActiveWorkoutContext, for navigate back on minimize) ──
-const originRouteListeners: ((route: string) => void)[] = [];
-export function emitWorkoutOriginRoute(route: string) {
-  originRouteListeners.forEach(fn => fn(route));
-}
-export function onWorkoutOriginRoute(fn: (route: string) => void): VoidCb {
-  originRouteListeners.push(fn);
-  return () => {
-    const i = originRouteListeners.indexOf(fn);
-    if (i >= 0) originRouteListeners.splice(i, 1);
-  };
-}
-
 // ── Workout expand from pill (ActiveWorkoutPill → layout, keep tab highlight on current tab) ──
 const expandOriginListeners: ((pathname: string) => void)[] = [];
 export function emitWorkoutExpandOrigin(pathname: string) {
@@ -135,5 +122,19 @@ export function onHomeSearchState(fn: BoolCb): VoidCb {
   return () => {
     const i = homeSearchListeners.indexOf(fn);
     if (i >= 0) homeSearchListeners.splice(i, 1);
+  };
+}
+
+// ── Home tab switch (FitnessHub → nutrition.tsx) ──
+type HomeTab = 'calories' | 'progress' | 'fitness';
+const homeTabListeners: ((tab: HomeTab) => void)[] = [];
+export function emitHomeTab(tab: HomeTab) {
+  homeTabListeners.forEach(fn => fn(tab));
+}
+export function onHomeTab(fn: (tab: HomeTab) => void): () => void {
+  homeTabListeners.push(fn);
+  return () => {
+    const i = homeTabListeners.indexOf(fn);
+    if (i >= 0) homeTabListeners.splice(i, 1);
   };
 }

@@ -30,6 +30,7 @@ import {
 import type {
   UserSettings,
   TrainingSettings,
+  TrainingArchetype,
   VolumeFramework,
   ScheduleMode,
   WeekReset,
@@ -94,7 +95,7 @@ const SCHEDULE_MODES = [
     tag: 'Preset',
     icon: 'flash-outline' as const,
     description: 'The TMLSN schedule is set for you. Daily push notifications confirm your session.',
-    detail: 'Mon: Push · Tue: Pull · Wed: Legs · Thu: Push · Fri: Pull · Sat: Full · Sun: Rest',
+    detail: 'Mon: Upper A · Tue: Lower A · Wed: Rest · Thu: Upper B · Fri: Lower B · Sat–Sun: Rest',
     options: [
       { id: 'scheduleNotifications' as const, label: 'Daily session notifications' },
       { id: 'scheduleReminderEnabled' as const, label: 'Morning reminder at 05:30' },
@@ -115,6 +116,49 @@ const WEEK_RESETS = [
   { id: 'monday' as WeekReset,     label: 'Monday – Sunday',   description: 'Standard calendar week' },
   { id: 'rolling' as WeekReset,    label: 'Rolling 7 Days',    description: 'From your last logged workout' },
   { id: 'custom_day' as WeekReset, label: 'Custom Start Day',  description: 'You pick the anchor day' },
+] as const;
+
+const ARCHETYPES = [
+  {
+    id: 'bodybuilder' as TrainingArchetype,
+    label: 'Bodybuilder',
+    tag: 'Hypertrophy',
+    icon: 'barbell-outline' as const,
+    description: 'Volume-focused splits with progressive overload. Push/Pull/Legs or Upper/Lower.',
+    detail: 'Default: TMLSN Routines · overload targets · split view',
+  },
+  {
+    id: 'athlete' as TrainingArchetype,
+    label: 'Athlete',
+    tag: 'Performance',
+    icon: 'flash-outline' as const,
+    description: 'Conditioning, WODs, varied movement. Includes CrossFit whiteboard scan.',
+    detail: 'Default: Scan WOD · Your Routines · ghost-friendly',
+  },
+  {
+    id: 'powerlifter' as TrainingArchetype,
+    label: 'Powerlifter',
+    tag: 'Strength',
+    icon: 'trending-up-outline' as const,
+    description: 'Strength-focused. Top sets, peaking cycles, percentage-based loading.',
+    detail: 'Default: Your Routines · uploaded program support · RPE tracking',
+  },
+  {
+    id: 'mdj' as TrainingArchetype,
+    label: 'Multidimensionally Jacked',
+    tag: 'Hybrid',
+    icon: 'infinite-outline' as const,
+    description: 'Everything. No single label fits. Full access to all tools, surfaced equally.',
+    detail: 'Default: full tool grid · no single default modality',
+  },
+  {
+    id: 'general' as TrainingArchetype,
+    label: 'General Fitness',
+    tag: 'Flexible',
+    icon: 'body-outline' as const,
+    description: 'Staying healthy and active. No rigid system required.',
+    detail: 'Default: Start Empty · TMLSN Basics · gentle guidance',
+  },
 ] as const;
 
 const RP_MUSCLE_KEYS = [
@@ -178,15 +222,17 @@ type SelectionCardProps = {
   detail: string;
   selected: boolean;
   onSelect: () => void;
+  disabled?: boolean;
   children?: React.ReactNode;
 };
 
 function SelectionCard({
-  icon, label, tag, description, detail, selected, onSelect, children,
+  icon, label, tag, description, detail, selected, onSelect, disabled, children,
 }: SelectionCardProps) {
   return (
     <Pressable
-      onPress={onSelect}
+      onPress={disabled ? undefined : onSelect}
+      disabled={disabled}
       style={[styles.selCard, selected && styles.selCardActive]}
     >
       {selected && (
@@ -338,11 +384,13 @@ function WeekResetRow({ label, description, selected, onSelect, last }: WeekRese
 type ConfigSummaryProps = { training: TrainingSettings };
 
 function ConfigSummary({ training }: ConfigSummaryProps) {
+  const arch = ARCHETYPES.find(a => a.id === training.archetype);
   const vf = VOLUME_FRAMEWORKS.find(f => f.id === training.volumeFramework);
   const sm = SCHEDULE_MODES.find(m => m.id === training.scheduleMode);
   const wr = WEEK_RESETS.find(w => w.id === training.weekReset);
 
   const rows: [string, string][] = [
+    ['Archetype', arch?.label ?? '—'],
     ['Volume', vf?.label ?? '—'],
     ['Schedule', sm?.label ?? '—'],
     ['Week Reset', wr?.label ?? '—'],
@@ -379,7 +427,11 @@ export default function TrainingSystemSettings() {
   const loadSettings = useCallback(async () => {
     const s = await getUserSettings();
     setSettings(s);
-    setTraining(s.training ?? DEFAULT_TRAINING_SETTINGS);
+    setTraining({
+      ...DEFAULT_TRAINING_SETTINGS,
+      ...s.training,
+      archetype: s.training?.archetype ?? DEFAULT_TRAINING_SETTINGS.archetype,
+    });
   }, []);
 
   useFocusEffect(
@@ -401,6 +453,9 @@ export default function TrainingSystemSettings() {
       setSaving(false);
     }
   };
+
+  const setArchetype = (id: TrainingArchetype) =>
+    setTraining(prev => ({ ...prev, archetype: id }));
 
   const setVolumeFramework = (id: VolumeFramework) =>
     setTraining(prev => ({ ...prev, volumeFramework: id }));
@@ -451,6 +506,33 @@ export default function TrainingSystemSettings() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+
+        {/* ── Training Archetype ── */}
+        <SectionLabel>TRAINING ARCHETYPE</SectionLabel>
+        {/* Only Bodybuilder is active — other archetypes are displayed but locked */}
+        <View style={[styles.cardGroup, { marginBottom: 4 }]}>
+          {ARCHETYPES.map(arch => {
+            const isLocked = arch.id !== 'bodybuilder';
+            return (
+              <SelectionCard
+                key={arch.id}
+                icon={arch.icon}
+                label={arch.label}
+                tag={isLocked ? 'Soon' : arch.tag}
+                description={arch.description}
+                detail={arch.detail}
+                selected={training.archetype === arch.id}
+                onSelect={isLocked ? () => {} : () => setArchetype(arch.id)}
+                disabled={isLocked}
+              />
+            );
+          })}
+        </View>
+        <Text style={styles.archetypeLockNote}>
+          Only the Bodybuilder archetype is available in this build. Others are coming soon.
+        </Text>
+
+        <View style={styles.divider} />
 
         {/* ── Volume Framework ── */}
         <SectionLabel>VOLUME FRAMEWORK</SectionLabel>
@@ -504,6 +586,7 @@ export default function TrainingSystemSettings() {
               detail={mode.detail}
               selected={training.scheduleMode === mode.id}
               onSelect={() => setScheduleMode(mode.id)}
+              disabled={false}
             >
               {training.scheduleMode === mode.id && mode.options.length > 0 && (
                 <View style={styles.toggleGroup}>
@@ -612,6 +695,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 4,
     paddingHorizontal: 2,
+  },
+
+  // Archetype lock note
+  archetypeLockNote: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+    marginBottom: 12,
+    marginTop: 6,
+    paddingHorizontal: 2,
+    letterSpacing: 0.1,
+    lineHeight: 16,
   },
 
   // Card group

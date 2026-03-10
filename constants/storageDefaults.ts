@@ -1,4 +1,4 @@
-import { DailyGoals, TrainingSettings, UserSettings } from '../types';
+import { DailyGoals, TrainingSettings, TrainingArchetype, UserSettings } from '../types';
 
 export const DEFAULT_GOALS: DailyGoals = {
   calories: 2500,
@@ -13,6 +13,7 @@ export const DEFAULT_PROGRESS_HUB_ORDER = [
 ] as const;
 
 export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
+  archetype: 'general' as TrainingArchetype,
   volumeFramework: 'rp',
   scheduleMode: 'tmlsn',
   weekReset: 'monday',
@@ -44,6 +45,8 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
     glutes:     { min: 4,  max: 16 },
     core:       { min: 6,  max: 20 },
   },
+  weekPlan: [],
+  weeklySessionTarget: 4,
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {

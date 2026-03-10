@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import type { ReactNode } from 'react';
@@ -36,9 +37,11 @@ import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { ActiveWorkoutProvider } from '../context/ActiveWorkoutContext';
 import { AuthProvider } from '../context/AuthContext';
 import { ActiveWorkoutPill } from '../components/ActiveWorkoutPill';
+import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 
 function RootLayoutInner() {
   const { colors } = useTheme();
+  const { activeWorkout } = useActiveWorkout();
 
   return (
     <View style={styles.rootInner}>
@@ -49,6 +52,7 @@ function RootLayoutInner() {
           headerTintColor: colors.white,
           headerTitleStyle: { fontWeight: '600' },
           contentStyle: { backgroundColor: colors.black },
+          gestureEnabled: !activeWorkout,
         }}
       >
         <Stack.Screen
@@ -74,31 +78,26 @@ function RootLayoutInner() {
           }}
         />
         <Stack.Screen
-          name="tmlsn-routines-modal"
+          name="fitness-hub-tmlsn-routines"
           options={{
-            presentation: 'modal',
-            gestureEnabled: true,
-            gestureDirection: 'vertical',
             headerShown: false,
-            title: 'TMLSN routines',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
         <Stack.Screen
-          name="your-routines-modal"
+          name="fitness-hub-your-routines"
           options={{
-            presentation: 'modal',
             headerShown: false,
-            title: 'Your routines',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
         <Stack.Screen
-          name="start-empty-workout-modal"
+          name="fitness-hub-start-empty"
           options={{
-            presentation: 'modal',
             headerShown: false,
-            title: 'Workout',
+            animation: 'slide_from_right',
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
@@ -161,6 +160,34 @@ function RootLayoutInner() {
             contentStyle: { backgroundColor: colors.primaryDark },
           }}
         />
+        <Stack.Screen
+          name="workout-edit"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="exercises"
+          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
+        />
+        <Stack.Screen
+          name="week-builder"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
+        <Stack.Screen
+          name="tmlsnai"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            contentStyle: { backgroundColor: colors.primaryDark },
+          }}
+        />
       </Stack>
       {/* Active workout pill at root — visible above modals and overlay */}
       <ActiveWorkoutPill />
@@ -205,6 +232,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
+      <BottomSheetModalProvider>
       <HapticProviderWrapper>
         <ThemeProvider>
           <AuthProvider>
@@ -214,6 +242,7 @@ export default function RootLayout() {
           </AuthProvider>
         </ThemeProvider>
       </HapticProviderWrapper>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }
