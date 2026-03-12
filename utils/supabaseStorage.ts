@@ -294,6 +294,178 @@ function toExerciseProgressId(exerciseId: string): string {
   return uuidv5(exerciseId, EXERCISE_NAMESPACE);
 }
 
+function sortSessionsChronologically(sessions: WorkoutSession[]): WorkoutSession[] {
+  return [...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+function toSessionDay(sessionDate: string): string {
+  return sessionDate.split('T')[0] ?? sessionDate;
+}
+
+function recomputeDeloadWeekCounterFromHistory(
+  currentCounter: number,
+  sessionDateStr: string,
+  wasDeloadWeek: boolean,
+  lastWorkoutDateStr: string | null
+): { nextCounter: number; nextLastWorkoutDate: string } {
+  const sessionDate = new Date(sessionDateStr);
+  const lastWorkoutDate = lastWorkoutDateStr ? new Date(lastWorkoutDateStr) : null;
+
+  let nextCounter: number;
+  if (wasDeloadWeek) {
+    nextCounter = 0;
+  } else if (!lastWorkoutDate) {
+    nextCounter = 1;
+  } else {
+    const daysBetween = Math.floor(
+      (sessionDate.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysBetween >= 7) {
+      nextCounter = 1;
+    } else if (isoWeekKey(sessionDate) !== isoWeekKey(lastWorkoutDate)) {
+      nextCounter = currentCounter + 1;
+    } else {
+      nextCounter = currentCounter;
+    }
+  }
+
+  return {
+    nextCounter,
+    nextLastWorkoutDate: toSessionDay(sessionDateStr),
+  };
+}
+
+async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
+  if (!supabase) return;
+
+  const sessions = sortSessionsChronologically(await supabaseGetWorkoutSessions(userId));
+
+  if (sessions.length === 0) {
+    await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
+    await supabase
+      .from('training_settings')
+      .upsert(
+        {
+          user_id: userId,
+          deload_week_counter: 0,
+          last_workout_date: null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+    return;
+  }
+
+  const userSettings = await supabaseGetUserSettings(userId);
+  const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+
+  const progressByExercise = new Map<string, {
+    nextWeight: number | null;
+    goal: 'add_load' | 'add_reps' | 'reduce_load';
+    band: DifficultyBand;
+    success: number;
+    failure: number;
+    calibrating: boolean;
+    reason: string;
+  }>();
+
+  let deloadWeekCounter = 0;
+  let lastWorkoutDate: string | null = null;
+
+  for (const session of sessions) {
+    const deloadThisWeek = isDeloadWeek(deloadWeekCounter);
+
+    for (const ex of session.exercises ?? []) {
+      if (!ex.sets?.length) continue;
+
+      const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
+      const exerciseId = toExerciseProgressId(canonicalId);
+      const existing = progressByExercise.get(exerciseId);
+      const isCalibrating = existing ? existing.calibrating : true;
+
+      const meta: PrescriptionMeta = {
+        repRangeLow: ex.repRangeLow ?? 8,
+        repRangeHigh: ex.repRangeHigh ?? 12,
+        smallestIncrement: ex.smallestIncrement ?? 2.5,
+        defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
+        overloadCategory: resolveOverloadCategory(ex.exerciseDbId, ex.name),
+        currentBand: existing?.band ?? 'easy',
+        consecutiveSuccess: existing?.success ?? 0,
+        consecutiveFailure: existing?.failure ?? 0,
+        isCalibrating,
+        isDeloadWeek: deloadThisWeek,
+        blitzMode: false,
+      };
+
+      const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
+        weight: Number(s.weight ?? 0),
+        reps: Number(s.reps ?? 0),
+        rpe: s.rpe ?? null,
+        completed: Boolean(s.completed ?? false),
+      }));
+
+      const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
+      if (!prescription) continue;
+
+      progressByExercise.set(exerciseId, {
+        nextWeight: prescription.nextWeight,
+        goal: prescription.goal,
+        band: prescription.nextBand,
+        success: prescription.goal === 'add_load' ? (existing?.success ?? 0) + 1 : 0,
+        failure: prescription.goal === 'add_reps' && !isCalibrating ? (existing?.failure ?? 0) + 1 : 0,
+        calibrating: false,
+        reason: prescription.reason ?? '',
+      });
+    }
+
+    const deloadState = recomputeDeloadWeekCounterFromHistory(
+      deloadWeekCounter,
+      session.date,
+      deloadThisWeek,
+      lastWorkoutDate
+    );
+    deloadWeekCounter = deloadState.nextCounter;
+    lastWorkoutDate = deloadState.nextLastWorkoutDate;
+  }
+
+  await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
+
+  const rows = Array.from(progressByExercise.entries()).map(([exerciseId, state]) => ({
+    user_id: userId,
+    exercise_id: exerciseId,
+    variant_key: 'default',
+    next_target_weight: state.nextWeight,
+    next_goal_type: state.goal,
+    difficulty_band: state.band,
+    consecutive_success: state.success,
+    consecutive_failure: state.failure,
+    is_calibrating: state.calibrating,
+    progression_reason: state.reason,
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (rows.length > 0) {
+    const { error: progressError } = await supabase
+      .from('exercise_progress_state')
+      .insert(rows);
+    if (progressError) throw progressError;
+  }
+
+  const { error: trainingError } = await supabase
+    .from('training_settings')
+    .upsert(
+      {
+        user_id: userId,
+        deload_week_counter: deloadWeekCounter,
+        last_workout_date: lastWorkoutDate,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+  if (trainingError) throw trainingError;
+}
+
 /** Generate a UUID v4 for Supabase columns that expect UUID type. */
 function generateUuid(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -1102,6 +1274,7 @@ export async function supabaseDeleteWorkoutSession(userId: string, sessionId: st
   await supabase.from('workout_exercises').delete().eq('user_id', userId).eq('session_id', sessionId);
   const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId).eq('id', sessionId);
   if (error) throw error;
+  await recomputeDerivedWorkoutState(userId);
 }
 
 export async function supabaseDeleteAllWorkoutSessions(userId: string): Promise<void> {
@@ -1110,6 +1283,7 @@ export async function supabaseDeleteAllWorkoutSessions(userId: string): Promise<
   await supabase.from('workout_exercises').delete().eq('user_id', userId);
   const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId);
   if (error) throw error;
+  await recomputeDerivedWorkoutState(userId);
 }
 
 function groupBy<T extends Record<string, unknown>>(

@@ -84,8 +84,6 @@ export type WorkoutSetTableProps = {
   onSetRowLayout?: (exerciseIndex: number, setIndex: number, y: number) => void;
   playIn: () => void;
   playOut: () => void;
-  /** Legacy: prescription from DB. Ghost values (ghostWeight/ghostReps) are canonical; prescription is fallback when no history. */
-  prescription?: { nextWeight: number; goal: string } | null;
   /** Human-readable reason for the ghost (e.g. "Add weight", "Build reps", "Deload"). Optional, for future tooltip. */
   ghostReason?: string | null;
   /** Called when user commits RPE via popup Done (e.g. for in-session weight bump on low RPE). */
@@ -162,7 +160,6 @@ export function WorkoutSetTable({
   onSetRowLayout,
   playIn,
   playOut,
-  prescription = null,
   ghostReason,
   onRpeCommit,
   onRpeCheckComplete,
@@ -316,10 +313,10 @@ export function WorkoutSetTable({
       {exercise.sets.map((set, setIndex) => {
         const isCompleted = set.completed;
         const rowKey = `${exerciseIndex}-${setIndex}`;
-        // Only show ghost for sets that have a corresponding previous set, or when prescription drives the target.
+        // Only show ghost for sets that have a corresponding previous set.
         const hasHistoryForSet = setIndex < prevSets.length;
-        const effectiveGhostWeight = (prescription != null || hasHistoryForSet) ? ghostWeight : null;
-        const effectiveGhostReps = (prescription != null || hasHistoryForSet) ? ghostReps : null;
+        const effectiveGhostWeight = hasHistoryForSet ? ghostWeight : null;
+        const effectiveGhostReps = hasHistoryForSet ? ghostReps : null;
         return (
           <View key={set.id} style={styles.setBlock} onLayout={(e) => onSetRowLayout?.(exerciseIndex, setIndex, e.nativeEvent.layout.y)}>
             <Swipeable

@@ -5,9 +5,10 @@ import { formatLocalYMD, getLocalDayName, getLocalMondayYMD } from '@/lib/time';
 import * as supabaseStorage from '@/utils/supabaseStorage';
 import { resolveExerciseDbIdFromName } from '@/utils/workoutMuscles';
 import { toDisplayWeight, formatWeightDisplay } from '@/utils/units';
-import { KG_PER_LB, LB_PER_KG } from '@/utils/units';
+import { LB_PER_KG } from '@/utils/units';
 import { resolveRepRangesForExercises, type ResolveRepRangeInputFull } from '@/lib/progression/resolveRepRange';
-import { decideNextPrescription, didHitRepThreshold } from '@/lib/progression/decideNextPrescription';
+import { isDeloadWeek } from '@/lib/progression/decideNextPrescription';
+import { buildDisplayPrescriptionSnapshot } from '@/lib/progression/buildDisplayPrescriptionSnapshot';
 import { TMLSN_SPLITS } from '@/constants/workoutSplits';
 
 // ─── TMLSN Protocol Schedule (when schedule mode is TMLSN) ─────────────────────
@@ -27,6 +28,8 @@ export interface TrainingSettings {
   volumeFramework: 'builder' | 'tmlsn_protocol' | 'ghost';
   scheduleMode: string | null;
   currentWeek: number;
+  blitzMode?: boolean;
+  deloadWeekCounter?: number;
 }
 
 export interface ScheduledSet {
@@ -258,15 +261,12 @@ async function fetchAllTmlsnExerciseHistory(
   return result;
 }
 
-function actionToPhrase(action: 'deload' | 'add_weight' | 'build_reps'): PrescriptionActionPhrase {
-  return action === 'deload' ? 'deload' : action === 'add_weight' ? 'increase weight' : 'build reps';
-}
-
 /** Build per-exercise details from canonical progression engine. Single source of truth for JARVIS. */
 async function buildTodayExerciseDetails(
   userId: string,
   todayPlan: TodayPlan,
-  weightUnit: 'kg' | 'lb'
+  weightUnit: 'kg' | 'lb',
+  trainingSettings?: TrainingSettings | null
 ): Promise<TodayExerciseDetail[]> {
   const sessions = await supabaseStorage.supabaseGetWorkoutSessions(userId);
   const prescriptions = await supabaseStorage.supabaseGetExercisePrescriptions(userId, todayPlan.exerciseIds);
@@ -345,38 +345,34 @@ async function buildTodayExerciseDetails(
         completed: true,
       }));
 
-      // Always run engine with state from exercise_progress_state; engine output is source of truth
-      const currentBand = (prescription?.difficultyBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy';
-      const consecutiveSuccess = prescription?.consecutiveSuccess ?? 0;
-      const consecutiveFailure = prescription?.consecutiveFailure ?? 0;
-      const isCalibrating = prescription?.isCalibrating ?? false;
-
-      const decision = decideNextPrescription({
-        sets: workingSets,
+      const snapshot = buildDisplayPrescriptionSnapshot({
+        exerciseName,
+        exerciseDbId: resolveExerciseDbIdFromName(exerciseName) ?? exerciseId,
         repRangeLow,
         repRangeHigh,
-        overloadCategory: 'compound_small',
-        currentBand,
-        consecutiveSuccess,
-        consecutiveFailure,
-        isCalibrating,
-        isDeloadWeek: false,
-        blitzMode: false,
+        recentSets: doneSets.map((s) => ({
+          weight: s.weight ?? 0,
+          reps: s.reps ?? 0,
+          rpe: s.rpe ?? null,
+        })),
+        prescription,
+        weightUnit,
+        isDeloadWeek: isDeloadWeek(Number(trainingSettings?.deloadWeekCounter ?? 0)),
+        blitzMode: Boolean(trainingSettings?.blitzMode ?? false),
       });
 
-      if (decision) {
-        nextWeightLb = decision.nextWeightLb;
-        ghostWeight = formatWeightDisplay(toDisplayWeight(decision.nextWeightLb, weightUnit), weightUnit);
-        ghostReps = String(decision.nextRepTarget);
-        action = actionToPhrase(decision.action as 'deload' | 'add_weight' | 'build_reps');
-        reason = decision.reason;
-        goal = decision.goal;
-        const rpeVals = workingSets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
+      if (snapshot.ghostWeight && snapshot.ghostReps) {
+        nextWeightLb = snapshot.nextWeightLb;
+        ghostWeight = snapshot.ghostWeight;
+        ghostReps = snapshot.ghostReps;
+        action = snapshot.action;
+        reason = snapshot.reason;
+        goal = snapshot.goal;
         basedOn = {
           lastSessionDate: sessionDate,
-          workingSetsAnalyzed: workingSets.length,
-          maxRpe: rpeVals.length > 0 ? Math.max(...rpeVals) : null,
-          hitTopRange: decision.debug.hitThreshold,
+          workingSetsAnalyzed: snapshot.workingSetsAnalyzed,
+          maxRpe: snapshot.maxRpe,
+          hitTopRange: Boolean(snapshot.hitTopRange),
         };
       } else {
         const last = doneSets[doneSets.length - 1];
@@ -385,18 +381,6 @@ async function buildTodayExerciseDetails(
         ghostReps = String(last.reps);
       }
       break;
-    }
-
-    // Fallback when no history: use DB prescription only when it has a valid target
-    if (!ghostWeight || !ghostReps) {
-      const fallbackRx = prescriptions[exerciseId];
-      if (fallbackRx?.nextWeight != null) {
-        nextWeightLb = fallbackRx.nextWeight;
-        ghostWeight = formatWeightDisplay(toDisplayWeight(fallbackRx.nextWeight, weightUnit), weightUnit);
-        ghostReps = String(fallbackRx.goal === 'add_load' ? repRangeLow : repRangeHigh);
-        goal = fallbackRx.goal;
-        action = fallbackRx.goal === 'add_load' ? 'increase weight' : fallbackRx.goal === 'reduce_load' ? 'deload' : 'build reps';
-      }
     }
 
     return {
@@ -552,34 +536,47 @@ export async function getTodayWorkoutContext(
     const [settingsRes] = await Promise.all([
       supabase
         .from('training_settings')
-        .select('volume_framework, schedule_mode, current_week')
+        .select('volume_framework, schedule_mode, current_week, blitz_mode, deload_week_counter')
         .eq('user_id', effectiveUserId)
         .maybeSingle(),
     ]);
 
-    // Map training settings first (needed for getHistorySummary filter)
+    // Map training settings first (needed for getHistorySummary filter).
+    // training_settings may exist with only deload/blitz fields populated, so merge
+    // missing planning fields from user_settings.training before deciding plan source.
+    let fallbackUserTraining: {
+      volumeFramework?: string;
+      scheduleMode?: string | null;
+      archetype?: string;
+    } | null = null;
+    try {
+      const userSettings = await supabaseStorage.supabaseGetUserSettings(effectiveUserId);
+      const t = userSettings.training;
+      if (t) {
+        fallbackUserTraining = {
+          volumeFramework: t.volumeFramework,
+          scheduleMode: t.scheduleMode ?? null,
+          archetype: t.archetype,
+        };
+      }
+    } catch {
+      // ignore
+    }
+
     let trainingSettings: TrainingSettings | null = null;
-    if (settingsRes.data) {
+    if (settingsRes.data || fallbackUserTraining) {
       const r = settingsRes.data;
       trainingSettings = {
-        volumeFramework: r.volume_framework as TrainingSettings['volumeFramework'],
-        scheduleMode: r.schedule_mode ?? null,
-        currentWeek: r.current_week,
+        volumeFramework: (
+          r?.volume_framework ??
+          fallbackUserTraining?.volumeFramework ??
+          'builder'
+        ) as TrainingSettings['volumeFramework'],
+        scheduleMode: r?.schedule_mode ?? fallbackUserTraining?.scheduleMode ?? null,
+        currentWeek: Number(r?.current_week ?? 1),
+        blitzMode: Boolean((r as { blitz_mode?: boolean | null } | null)?.blitz_mode ?? false),
+        deloadWeekCounter: Number((r as { deload_week_counter?: number | null } | null)?.deload_week_counter ?? 0),
       };
-    } else {
-      try {
-        const userSettings = await supabaseStorage.supabaseGetUserSettings(effectiveUserId);
-        const t = userSettings.training;
-        if (t) {
-          trainingSettings = {
-            volumeFramework: (t.volumeFramework as TrainingSettings['volumeFramework']) ?? 'builder',
-            scheduleMode: t.scheduleMode ?? null,
-            currentWeek: 1,
-          };
-        }
-      } catch {
-        // ignore
-      }
     }
 
     // History summary with schedule_mode filter applied inside (4s timeout, never throws)
@@ -614,7 +611,7 @@ export async function getTodayWorkoutContext(
       return {
         ...ctx,
         scheduleMode: trainingSettings?.scheduleMode ?? null,
-        archetype: (trainingSettings as { archetype?: string })?.archetype,
+        archetype: fallbackUserTraining?.archetype,
         volumeFramework: trainingSettings?.volumeFramework,
         todaySessionLabel: getTodaySessionLabel(
           trainingSettings?.scheduleMode,
@@ -692,7 +689,7 @@ export async function getTodayWorkoutContext(
           supabaseStorage.supabaseGetUserSettings(effectiveUserId),
         ]);
         const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
-        const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
+        const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit, trainingSettings);
 
         return remember(extendWithCoaching({
           userId: effectiveUserId,
@@ -750,7 +747,7 @@ export async function getTodayWorkoutContext(
               ? fetchExerciseHistoryFromSessions(effectiveUserId, exerciseIds)
               : Promise.resolve(null),
             exerciseIds.length > 0
-              ? buildTodayExerciseDetails(effectiveUserId, todayPlanFromSettings, weightUnit)
+              ? buildTodayExerciseDetails(effectiveUserId, todayPlanFromSettings, weightUnit, trainingSettings)
               : Promise.resolve([] as TodayExerciseDetail[]),
           ]);
           return remember(extendWithCoaching({
@@ -814,7 +811,7 @@ export async function getTodayWorkoutContext(
       supabaseStorage.supabaseGetUserSettings(effectiveUserId),
     ]);
     const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
-    const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit);
+    const todayExerciseDetails = await buildTodayExerciseDetails(effectiveUserId, todayPlan, weightUnit, trainingSettings);
 
     return remember(extendWithCoaching({
       userId: effectiveUserId,

@@ -1105,19 +1105,6 @@ export function WorkoutCore({
                           <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                         </View>
                         <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
-                        {(() => {
-                          const ghost = exerciseProgressionMap.get(exercise.id);
-                          if (!ghost || (!ghost.ghostWeight && !ghost.ghostReps)) return null;
-                          let _label: string | null = null;
-                          if (ghost.ghostReason === 'Add weight') {
-                            _label = ghost.loadChangePercent != null ? `↑ ${ghost.loadChangePercent.toFixed(1)}%` : '↑ Load';
-                          } else if (ghost.ghostReason === 'Build reps') {
-                            _label = '+ Reps';
-                          } else if (ghost.ghostReason === 'Deload') {
-                            _label = ghost.loadChangePercent != null ? `↓ ${Math.abs(ghost.loadChangePercent).toFixed(1)}%` : '↓ Deload';
-                          }
-                          return _label ? <Text style={[styles.goalBadge, { color: colors.primaryLight + '50' }]}>{_label}</Text> : null;
-                        })()}
                       </View>
                       {enableReorder && reorderHandle.activeIndex === exerciseIndex ? (
                         <View style={styles.reorderControls}>
@@ -1189,7 +1176,6 @@ export function WorkoutCore({
                           ghostWeight={ghostWeight}
                           ghostReps={ghostReps}
                           ghostReason={ghostReason}
-                          prescription={exKey && prescriptions[exKey]?.nextWeight != null ? { nextWeight: prescriptions[exKey].nextWeight!, goal: prescriptions[exKey].goal } : null}
                           weightUnit={weightUnit}
                           colors={colors}
                           loadEntryMode={loadEntryMode}
@@ -1807,12 +1793,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
     color: Colors.primaryLight + '50',
     marginBottom: 12,
-  },
-  goalBadge: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    letterSpacing: -0.11,
-    flexShrink: 0,
   },
   addSetButtonBlock: {
     alignSelf: 'stretch',

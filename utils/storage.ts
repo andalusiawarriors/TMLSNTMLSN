@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine, SavedFood } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import * as supabaseStorage from './supabaseStorage';
 import { DEFAULT_GOALS, DEFAULT_SETTINGS, DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
 import { logStreakWorkout } from './streak';
@@ -195,9 +196,7 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseSaveWorkoutSession(uid, sessionResolved);
-      void import('../lib/getWorkoutContext')
-        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
-        .catch(() => {});
+      invalidateTodayWorkoutContextCache(uid);
       return;
     } catch (error) {
       console.error('Error saving workout session:', error);
@@ -209,9 +208,7 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
     // Upsert by id: replace existing session with same id (e.g. user edits then re-finishes)
     const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== sessionResolved.id), sessionResolved];
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
-    void import('../lib/getWorkoutContext')
-      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
-      .catch(() => {});
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
   } catch (error) {
     console.error('Error saving workout session:', error);
     throw error;
@@ -320,9 +317,7 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
     try {
       await supabaseStorage.supabaseDeleteWorkoutSession(uid, sessionId);
       await syncSessionCompletedDateFromHistory(uid);
-      void import('../lib/getWorkoutContext')
-        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
-        .catch(() => {});
+      invalidateTodayWorkoutContextCache(uid);
       return;
     } catch (error) {
       console.error('Error deleting workout session:', error);
@@ -334,9 +329,7 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
     const updatedSessions = existingSessions.filter((s) => s.id !== sessionId);
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
     await syncSessionCompletedDateFromHistory(uid ?? undefined);
-    void import('../lib/getWorkoutContext')
-      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
-      .catch(() => {});
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
   } catch (error) {
     console.error('Error deleting workout session:', error);
     throw error;
@@ -352,9 +345,7 @@ export const deleteAllWorkoutSessions = async (): Promise<void> => {
     try {
       await supabaseStorage.supabaseDeleteAllWorkoutSessions(uid);
       await clearSessionCompletedDate(uid);
-      void import('../lib/getWorkoutContext')
-        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
-        .catch(() => {});
+      invalidateTodayWorkoutContextCache(uid);
       return;
     } catch (error) {
       console.error('Error deleting all workout sessions:', error);
@@ -364,9 +355,7 @@ export const deleteAllWorkoutSessions = async (): Promise<void> => {
   try {
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify([]));
     await clearSessionCompletedDate(uid ?? undefined);
-    void import('../lib/getWorkoutContext')
-      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
-      .catch(() => {});
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
   } catch (error) {
     console.error('Error deleting all workout sessions:', error);
     throw error;

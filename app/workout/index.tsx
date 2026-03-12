@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { WorkoutSession } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
+import { useFocusEffect } from '@react-navigation/native';
 import { Gear, List } from 'phosphor-react-native';
 import { AnimatedPressable } from '../../components/AnimatedPressable';
 import { WorkoutCore } from '../../components/WorkoutCore';
@@ -21,6 +22,7 @@ import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarnin
 import { useButtonSound } from '../../hooks/useButtonSound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { getWorkoutSessions } from '../../utils/storage';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
@@ -53,6 +55,7 @@ export default function WorkoutScreen({
   }>({ visible: false, rpe: 0, exerciseName: '' });
   const [isInjured, setIsInjured] = useState(false);
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
 
   const handleWeightUnitReady = useCallback((w: 'kg' | 'lb') => setWeightUnit(w), []);
 
@@ -65,6 +68,19 @@ export default function WorkoutScreen({
   const handleRpeWarning = useCallback((rpe: number, exerciseName: string, weightBumpDisplay?: string | null) => {
     setRpeWarning({ visible: true, rpe, exerciseName, weightBumpDisplay });
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const sessions = await getWorkoutSessions();
+        if (!cancelled) setRecentSessions(sessions);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
@@ -141,7 +157,7 @@ export default function WorkoutScreen({
         enableReorder={false}
         enableStatsModal={false}
         enableRpeBump={true}
-        recentSessions={[]}
+        recentSessions={recentSessions}
         onRpeWarning={handleRpeWarning}
         onWeightUnitReady={handleWeightUnitReady}
         expandOnFocus={false}
