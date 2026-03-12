@@ -40,6 +40,10 @@ import {
 
 export type SegmentOption = { key: string; label: string };
 
+/** AddFoodCard-style track: fill rgba(47,48,49,0.25), outline rgba(255,255,255,0.25) 1px. Keeps selPill unchanged. */
+const ADD_FOOD_FILL = 'rgba(47, 48, 49, 0.25)';
+const ADD_FOOD_BORDER = 'rgba(255, 255, 255, 0.25)';
+
 export type LiquidGlassSegmentedProps = {
   options: SegmentOption[];
   value: string;
@@ -48,6 +52,8 @@ export type LiquidGlassSegmentedProps = {
   disabled?: boolean;
   style?: ViewStyle;
   width?: number;
+  /** 'glass' = default liquid glass track; 'addFood' = AddFoodCard fill + outline, selPill unchanged */
+  trackVariant?: 'glass' | 'addFood';
 };
 
 // ── Per-option animated label ────────────────────────────────────────────────
@@ -108,6 +114,7 @@ export function LiquidGlassSegmented({
   disabled = false,
   style,
   width: widthProp,
+  trackVariant = 'glass',
 }: LiquidGlassSegmentedProps) {
   const selIdx = options.findIndex(o => o.key === value);
   const numOpts = options.length;
@@ -278,9 +285,13 @@ export function LiquidGlassSegmented({
     <View style={[st.container, style, { width: trackWidth }]}>
       <GestureDetector gesture={gesture}>
         <View style={st.wrapper}>
-          {/* Glass track — overflow hidden clips blur layers cleanly */}
-          <View style={[st.track, { width: trackWidth }]}>
-            <GlassLayers radius={GLASS_RADIUS_PILL} />
+          {/* Track — glass (default) or addFood fill/outline; overflow hidden clips cleanly */}
+          <View style={[st.track, { width: trackWidth }, trackVariant === 'addFood' && st.addFoodTrack]}>
+            {trackVariant === 'addFood' ? (
+              <View style={[StyleSheet.absoluteFillObject, { borderRadius: GLASS_RADIUS_PILL, backgroundColor: ADD_FOOD_FILL, borderWidth: 1, borderColor: ADD_FOOD_BORDER }]} pointerEvents="none" />
+            ) : (
+              <GlassLayers radius={GLASS_RADIUS_PILL} />
+            )}
           </View>
 
           {/* Overlay — overflow visible so thumb/lens scale isn't clipped */}
@@ -388,6 +399,10 @@ const st = StyleSheet.create({
     borderRadius: GLASS_RADIUS_PILL,
     overflow: 'hidden',
     ...GLASS_SHADOW,
+  },
+  addFoodTrack: {
+    shadowOpacity: 0,
+    elevation: 0,
   },
   overlay: {
     position: 'absolute',

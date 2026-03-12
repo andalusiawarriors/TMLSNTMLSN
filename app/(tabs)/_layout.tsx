@@ -19,12 +19,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState } from '../../utils/fabBridge';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState, onAiChatOverlayOpen, onAiChatOverlayClose, emitAiChatOverlayState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import { BarcodeIcon, ClipboardText, MagnifyingGlass, Robot, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
+import AiFoodChatScreen from '../ai-food-chat';
 
 // ── Pill constants ──
 const getTabLabelStyle = (labelColor: string) => ({
@@ -193,6 +195,7 @@ export default function TabsLayout() {
   const segments = useSegments();
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
@@ -235,7 +238,13 @@ export default function TabsLayout() {
   const fabRotAnim = useRef(new RNAnimated.Value(0)).current;
   const [fabOpen, setFabOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showAiChatOverlay, setShowAiChatOverlay] = useState(false);
+  const [isClosingAiChat, setIsClosingAiChat] = useState(false);
   const [tabBarProps, setTabBarProps] = useState<any>(null);
+
+  const AI_CHAT_FADE_MS = 220;
+  const aiChatTabBarOpacity = useRef(new RNAnimated.Value(1)).current;
+  const aiChatOverlayOpacity = useRef(new RNAnimated.Value(0)).current;
 
   useEffect(() => {
     return onProfileSheetState((open) => setShowProfile(open));
@@ -314,6 +323,85 @@ export default function TabsLayout() {
     const unsub = onHomeSearchState((active) => setHomeSearchActive(active));
     return unsub;
   }, []);
+
+  // AI chat overlay: open from Add Food card or FAB tmlsnai card
+  useEffect(() => {
+    return onAiChatOverlayOpen(() => setShowAiChatOverlay(true));
+  }, []);
+
+  // AI chat overlay: close when user toggles nutrition/progress/fitness (or other close request)
+  useEffect(() => {
+    return onAiChatOverlayClose(() => {
+      if (showAiChatOverlay || isClosingAiChat) closeAiChatOverlay();
+    });
+  }, [showAiChatOverlay, isClosingAiChat, closeAiChatOverlay]);
+
+  const prevAiChatOpenRef = useRef(false);
+  const closeAiChatOverlay = useCallback(() => {
+    setIsClosingAiChat(true);
+    emitAiChatOverlayState(false);
+    RNAnimated.parallel([
+      RNAnimated.timing(aiChatOverlayOpacity, {
+        toValue: 0,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(aiChatTabBarOpacity, {
+        toValue: 1,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setShowAiChatOverlay(false);
+        setIsClosingAiChat(false);
+        prevAiChatOpenRef.current = false;
+        aiChatOverlayOpacity.setValue(0);
+        aiChatTabBarOpacity.setValue(1);
+      }
+    });
+  }, [aiChatOverlayOpacity, aiChatTabBarOpacity]);
+
+  useEffect(() => {
+    if (!showAiChatOverlay || isClosingAiChat) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeAiChatOverlay();
+      return true;
+    });
+    return () => sub.remove();
+  }, [showAiChatOverlay, isClosingAiChat, closeAiChatOverlay]);
+
+  // Notify nutrition when AI overlay opens/closes (hide greeting + Add button)
+  useEffect(() => {
+    emitAiChatOverlayState(showAiChatOverlay);
+  }, [showAiChatOverlay]);
+
+  // AI chat open: fade out tab bar, fade in overlay (only when transitioning to open)
+  useEffect(() => {
+    if (!showAiChatOverlay || isClosingAiChat) {
+      prevAiChatOpenRef.current = showAiChatOverlay;
+      return;
+    }
+    if (prevAiChatOpenRef.current) return;
+    prevAiChatOpenRef.current = true;
+    aiChatOverlayOpacity.setValue(0);
+    RNAnimated.parallel([
+      RNAnimated.timing(aiChatTabBarOpacity, {
+        toValue: 0,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(aiChatOverlayOpacity, {
+        toValue: 1,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [showAiChatOverlay, isClosingAiChat, aiChatOverlayOpacity, aiChatTabBarOpacity]);
 
   // Clamp pill X so rebound never goes outside bar (fill still bounces, display is clamped)
   const pillTranslateXClamped = pillTranslateX.interpolate({
@@ -666,7 +754,7 @@ export default function TabsLayout() {
       // search food: always push to full search-food page.
       // scan: emit on nutrition (camera overlay); from other tabs use food-action-modal.
       if (card === 'tmlsnai') {
-        router.push('/tmlsnai');
+        setShowAiChatOverlay(true);
       } else if (card === 'saved') {
         if (isNutritionSelected) emitCardSelect('saved');
         else router.push({ pathname: '/food-action-modal', params: { card: 'saved' } });
@@ -1112,21 +1200,44 @@ export default function TabsLayout() {
 
       {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
       {tabBarProps && (
-        <View
+        <RNAnimated.View
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
             bottom: 0,
             height: TAB_BAR_HEIGHT,
-            zIndex: homeSearchActive ? 0 : 99999,
-            elevation: homeSearchActive ? 0 : 99999,
-            opacity: homeSearchActive ? 0 : 1,
+            zIndex: homeSearchActive || showAiChatOverlay || isClosingAiChat ? 0 : 99999,
+            elevation: homeSearchActive || showAiChatOverlay || isClosingAiChat ? 0 : 99999,
+            opacity: homeSearchActive ? 0 : (showAiChatOverlay || isClosingAiChat ? aiChatTabBarOpacity : 1),
           }}
-          pointerEvents={homeSearchActive ? 'none' : 'box-none'}
+          pointerEvents={homeSearchActive || showAiChatOverlay || isClosingAiChat ? 'none' : 'box-none'}
         >
           {renderTabBar(tabBarProps)}
-        </View>
+        </RNAnimated.View>
+      )}
+
+      {/* AI chat overlay — over home; no dim so home visible; nav hidden; fade in/out */}
+      {(showAiChatOverlay || isClosingAiChat) && (
+        <RNAnimated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              zIndex: 99998,
+              elevation: 99998,
+              opacity: aiChatOverlayOpacity,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          <View style={{ flex: 1, paddingTop: 110 }} pointerEvents="box-none">
+            <AiFoodChatScreen
+              overlayMode
+              onClose={closeAiChatOverlay}
+              backButtonTopOffset={insets.top + 73 + 8}
+            />
+          </View>
+        </RNAnimated.View>
       )}
 
       {/* ══════════════════════════════════════════════════════════ */}

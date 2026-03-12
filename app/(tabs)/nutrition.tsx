@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { usePathname, useLocalSearchParams, useRouter } from 'expo-router';
-import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState, onHomeTab } from '../../utils/fabBridge';
+import { onCardSelect, emitStreakPopupState, emitProfileSheetState, emitHomeSearchState, onHomeTab, emitHomeTabState, emitOpenAiChatOverlay, emitCloseAiChatOverlay, onAiChatOverlayState, onNutritionLogUpdated } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
 import Animated, {
@@ -98,6 +98,7 @@ import { ActionSheet } from '../../components/ActionSheet';
 import { FoodDeckCards } from '../../components/FoodDeckCards';
 import { ProgressHub } from '../../components/ProgressHub';
 import { FitnessHub } from '../../components/FitnessHub';
+import { LiquidGlassSegmented } from '../../components/ui/liquidGlass';
 import Svg, { Defs, RadialGradient as SvgRadialGradient, Stop as SvgStop, Circle as SvgCircle, Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import { DEFAULT_GOALS } from '../../constants/storageDefaults';
 import { toDisplayFluid, fromDisplayFluid, formatFluidDisplay } from '../../utils/units';
@@ -190,9 +191,16 @@ export default function NutritionScreen({
   const [hasHeatmapSetRecords, setHasHeatmapSetRecords] = useState(false);
   const [homeSegment, setHomeSegment] = useState<SegmentValue>('Nutrition');
   const [homeTab, setHomeTab] = useState<'calories' | 'progress' | 'fitness'>('calories');
+  const [aiChatOverlayOpen, setAiChatOverlayOpen] = useState(false);
   useEffect(() => {
     return onHomeTab((tab) => setHomeTab(tab));
   }, []);
+  useEffect(() => {
+    return onAiChatOverlayState((open) => setAiChatOverlayOpen(open));
+  }, []);
+  useEffect(() => {
+    emitHomeTabState(homeTab);
+  }, [homeTab]);
   const [dayStatusByDate, setDayStatusByDate] = useState<Record<string, DayStatus>>({});
   const [workoutDateKeys, setWorkoutDateKeys] = useState<string[]>([]);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -216,6 +224,8 @@ export default function NutritionScreen({
   const textBoxInputRef = useRef<TextInput>(null);
   const textBoxExpandAnim = useRef(new RNAnimated.Value(0)).current;
   const emptyOverlayOpacity = useRef(new RNAnimated.Value(1)).current;
+  const addButtonOpacity = useRef(new RNAnimated.Value(1)).current;
+  const headerGradientOpacity = useRef(new RNAnimated.Value(0)).current; // gradient bar: hidden in greeting state, fades in when add food opens
   const pendingTextBoxFocusRef = useRef(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [deckPreview, setDeckPreview] = useState({ cal: 0, protein: 0, carbs: 0, fat: 0 });
@@ -234,16 +244,37 @@ export default function NutritionScreen({
     if (foodDeckVisible) setFoodDeckMounted(true);
   }, [foodDeckVisible]);
 
-  // Empty-state overlay: fade-out when deck opens (270ms); fade-in runs inside FoodDeckCards close (same parallel as cards)
+  const AI_CHAT_FADE_MS = 220;
+
+  // Empty-state overlay: fade-out when deck or AI chat opens; fade-in when both closed (same duration as tab bar / AI overlay)
   useEffect(() => {
-    if (!foodDeckVisible) return;
+    if (foodDeckVisible) {
+      RNAnimated.timing(emptyOverlayOpacity, {
+        toValue: 0,
+        duration: 270,
+        easing: RNEasing.out(RNEasing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    const target = aiChatOverlayOpen ? 0 : 1;
     RNAnimated.timing(emptyOverlayOpacity, {
-      toValue: 0,
-      duration: 270,
+      toValue: target,
+      duration: AI_CHAT_FADE_MS,
       easing: RNEasing.out(RNEasing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [foodDeckVisible, emptyOverlayOpacity]);
+  }, [foodDeckVisible, aiChatOverlayOpen, emptyOverlayOpacity]);
+
+  // Add Food button: same fade as overlay/nav when AI chat opens/closes
+  useEffect(() => {
+    RNAnimated.timing(addButtonOpacity, {
+      toValue: aiChatOverlayOpen ? 0 : 1,
+      duration: AI_CHAT_FADE_MS,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [aiChatOverlayOpen, addButtonOpacity]);
 
   // Focus search input when overlay opens from pill tap so keyboard appears
   useEffect(() => {
@@ -285,6 +316,25 @@ export default function NutritionScreen({
   const hasLoggedFood = viewingDateLog.meals.length > 0;
   const { user } = useAuth();
   const greetingName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'lucas';
+
+  // Gradient bar (nutrition/progress/fitness row): hidden in greeting state, fades in when add food (deck) opens
+  useEffect(() => {
+    if (homeTab !== 'calories') {
+      RNAnimated.timing(headerGradientOpacity, { toValue: 1, duration: 200, easing: RNEasing.out(RNEasing.cubic), useNativeDriver: true }).start();
+      return;
+    }
+    if (hasLoggedFood) {
+      RNAnimated.timing(headerGradientOpacity, { toValue: 1, duration: 200, easing: RNEasing.out(RNEasing.cubic), useNativeDriver: true }).start();
+      return;
+    }
+    const target = foodDeckVisible || aiChatOverlayOpen ? 1 : 0;
+    RNAnimated.timing(headerGradientOpacity, {
+      toValue: target,
+      duration: foodDeckVisible ? 270 : AI_CHAT_FADE_MS,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [homeTab, hasLoggedFood, foodDeckVisible, aiChatOverlayOpen, headerGradientOpacity]);
 
   const hasDeckPreview = deckPreview.cal !== 0 || deckPreview.protein !== 0;
   const ringHaptic = hasDeckPreview ? 'sequence' as const : 'none' as const;
@@ -504,6 +554,18 @@ export default function NutritionScreen({
 
   const loadDataRef = useRef(loadData);
   loadDataRef.current = loadData;
+  const viewingDateRef = useRef(viewingDate);
+  viewingDateRef.current = viewingDate;
+
+  // Live arch update when user logs food from AI overlay
+  useEffect(() => {
+    return onNutritionLogUpdated(async () => {
+      const date = viewingDateRef.current;
+      const log = await getNutritionLogByDate(date);
+      if (log) setTodayLog(log);
+    });
+  }, []);
+
   // Only run entrance animations when the tab actually gains focus, not when viewingDate changes.
   // (useFocusEffect re-runs when its callback identity changes; loadData changes with viewingDate, so we use a ref to keep the callback stable.)
   useFocusEffect(
@@ -1857,9 +1919,8 @@ export default function NutritionScreen({
   const HEADER_PILL_SIZE = TOP_RIGHT_CIRCLE_SIZE; // 40 — circles, same y line as profile
   const HEADER_PILL_RADIUS = HEADER_PILL_SIZE / 2;
   const PILL_TO_DATE_GAP = 8;
-  const dateRowRevealOpacity = homeTab === 'calories' && !hasLoggedFood
-    ? emptyOverlayOpacity.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
-    : 1;
+  // Date always visible behind overlays (like calorie counter) — whether or not user has logged food or opened AI chat
+  const dateRowRevealOpacity = 1;
   const prevDay = useMemo(() => {
     const d = new Date(viewingDate + 'T12:00:00');
     d.setDate(d.getDate() - 1);
@@ -1906,7 +1967,7 @@ export default function NutritionScreen({
             zIndex: 20,
           }}
         >
-          {/* Date row — centered; fades in at same rate as protein/carb rings when overlay disappears; hidden on progress/fitness tabs */}
+          {/* Date row — always visible (above overlays), like calorie counter */}
           {homeTab === 'calories' && (
           <View
             ref={headerMeasureRef}
@@ -1920,7 +1981,8 @@ export default function NutritionScreen({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              zIndex: 10,
+              zIndex: 22,
+              elevation: 22,
               height: HEADER_PILL_SIZE,
             }}
             pointerEvents="box-none"
@@ -1941,15 +2003,16 @@ export default function NutritionScreen({
           </View>
           )}
 
-          {/* Gradient bar (behind tab labels) */}
-          <View
+          {/* Gradient — full screen edge-to-edge (extend past parent bounds to span physical screen); hidden in greeting state, fades in when add food opens */}
+          <RNAnimated.View
             style={{
               position: 'absolute',
-              top: insets.top + 36,
-              left: 0,
-              right: 0,
-              height: 37,
+              top: 0,
+              left: -SCREEN_WIDTH / 2,
+              width: SCREEN_WIDTH * 2,
+              height: headerTop + HEADER_PILL_SIZE,
               zIndex: 1,
+              opacity: headerGradientOpacity,
             }}
             pointerEvents="none"
           >
@@ -1959,85 +2022,8 @@ export default function NutritionScreen({
               end={{ x: 0.5, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-          </View>
+          </RNAnimated.View>
 
-          {/* Tab icons + labels + indicator pill */}
-          {(() => {
-            const GRAD_TOP = insets.top + 36;
-            const TAB_KEYS = ['calories', 'progress', 'fitness'] as const;
-            const TAB_LABELS = ['nutrition.', 'progress.', 'fitness.'];
-            const INDICATOR_W = 37;
-            const INDICATOR_FULL_H = 8;
-            const INDICATOR_R = 31;
-            const EDGE_PAD = 77;
-            const indicatorPositions = [
-              EDGE_PAD,
-              (SCREEN_WIDTH - INDICATOR_W) / 2,
-              SCREEN_WIDTH - EDGE_PAD - INDICATOR_W,
-            ];
-            const LABEL_FONT = 14;
-            const ICON_AREA_H = LABEL_FONT + 16;
-
-            return (
-              <>
-                <View style={{ position: 'absolute', top: GRAD_TOP - ICON_AREA_H, left: 0, right: 0, height: ICON_AREA_H, zIndex: 10 }} pointerEvents="box-none">
-                  {TAB_KEYS.map((key, i) => {
-                    const isSelected = homeTab === key;
-                    const centerX = indicatorPositions[i] + INDICATOR_W / 2;
-                    return (
-                      <Pressable
-                        key={key}
-                        onPress={() => setHomeTab(key)}
-                        android_disableSound
-                        style={{
-                          position: 'absolute',
-                          left: centerX - 50,
-                          width: 100,
-                          top: 0,
-                          bottom: 0,
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          paddingBottom: 14,
-                          opacity: isSelected ? 1 : 0.55,
-                        }}
-                      >
-                        <Text style={{
-                          fontSize: LABEL_FONT,
-                          fontWeight: isSelected ? '700' : '600',
-                          color: isSelected ? '#FFFFFF' : '#C6C6C6',
-                          letterSpacing: -0.2,
-                        }}>
-                          {TAB_LABELS[i]}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                {(() => {
-                  const selIdx = TAB_KEYS.indexOf(homeTab);
-                  const x = indicatorPositions[selIdx];
-                  return (
-                    <View style={{
-                      position: 'absolute',
-                      top: GRAD_TOP - INDICATOR_FULL_H / 2,
-                      left: x,
-                      width: INDICATOR_W,
-                      height: INDICATOR_FULL_H / 2,
-                      overflow: 'hidden',
-                      zIndex: 11,
-                    }}>
-                      <View style={{
-                        width: INDICATOR_W,
-                        height: INDICATOR_FULL_H,
-                        backgroundColor: '#C6C6C6',
-                        borderRadius: INDICATOR_R,
-                      }} />
-                    </View>
-                  );
-                })()}
-              </>
-            );
-          })()}
         </View>
 
         <ScrollView
@@ -2067,7 +2053,7 @@ export default function NutritionScreen({
       >
         {/* ═══ TAB CONTENT ═══ */}
         <View style={{ marginTop: insets.top + 36 + 37 - (headerTop + HEADER_PILL_SIZE), overflow: 'visible' as const }}>
-        {homeTab === 'calories' ? (
+        {homeTab === 'calories' && !aiChatOverlayOpen ? (
           (() => {
             const goals = settings?.dailyGoals ?? DEFAULT_GOALS;
             const log = viewingDateLog;
@@ -2097,7 +2083,7 @@ export default function NutritionScreen({
               </View>
             );
           })()
-        ) : homeTab === 'progress' ? (
+        ) : homeTab === 'calories' ? null : homeTab === 'progress' ? (
           <View style={{ overflow: 'visible' as const }}>
             <ProgressHub />
           </View>
@@ -2111,18 +2097,18 @@ export default function NutritionScreen({
 
       </RNAnimated.View>
 
-      {/* Empty-state overlay: 767px tall, fades out in parallel with cards opening */}
+      {/* Empty-state overlay: starts at top of screen (top: 0), full width; black gradient + hello/[NAME]; fades out when AI chat or deck opens */}
       {homeTab === 'calories' && !hasLoggedFood && (
         <RNAnimated.View
           pointerEvents="none"
           style={{
             position: 'absolute',
-            top: insets.top + 36,
-            left: 0,
-            right: 0,
+            top: 0,
+            left: -SCREEN_WIDTH / 2,
+            width: SCREEN_WIDTH * 2,
             height: 767,
-            zIndex: 21,
-            elevation: 21,
+            zIndex: 19,
+            elevation: 19,
             opacity: emptyOverlayOpacity,
           }}
         >
@@ -2135,11 +2121,13 @@ export default function NutritionScreen({
           <View style={greetingOverlayStyles.wrap}>
             <View style={greetingOverlayStyles.textBlock}>
               <Text style={greetingOverlayStyles.hello}>hello,</Text>
-              <Text style={greetingOverlayStyles.name}>{greetingName}.</Text>
+              <Text style={greetingOverlayStyles.name}>[NAME].</Text>
             </View>
           </View>
         </RNAnimated.View>
       )}
+
+      {/* Nutrition/Progress/Fitness toggle — always rendered in _layout when on nutrition tab (fixed position, no jump) */}
 
       {/* ═══ INLINE HOME SEARCH — layer 1: blur only (behind) ═══ */}
       {searchMode === 'database' && homeTab === 'calories' && (
@@ -3336,10 +3324,10 @@ export default function NutritionScreen({
         </View>
       </Modal>
 
-      {/* ARCH-REDESIGN: Add Food button — always opacity 1; deck (zIndex 100) covers it when open, reveals on unmount */}
+      {/* ARCH-REDESIGN: Add Food button — fades out with nav/overlay when AI chat opens */}
       {homeTab === 'calories' && (
-        <View
-          pointerEvents={foodDeckVisible ? 'none' : 'auto'}
+        <RNAnimated.View
+          pointerEvents={foodDeckVisible || aiChatOverlayOpen ? 'none' : 'auto'}
           style={{
             position: 'absolute',
             bottom: 88,
@@ -3347,10 +3335,11 @@ export default function NutritionScreen({
             right: 0,
             alignItems: 'center',
             zIndex: 50,
+            opacity: addButtonOpacity,
           }}
         >
-          <AddFoodCard onPress={() => setFoodDeckVisible(true)} />
-        </View>
+          <AddFoodCard onPress={() => emitOpenAiChatOverlay()} />
+        </RNAnimated.View>
       )}
 
       {/* ARCH-REDESIGN: Food Deck — Modal so it renders above nav pill */}
@@ -3532,9 +3521,10 @@ const greetingOverlayStyles = StyleSheet.create({
   wrap: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   textBlock: {
-    marginLeft: 130,
+    alignItems: 'center',
   },
   hello: {
     fontSize: 23,
