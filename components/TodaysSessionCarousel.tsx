@@ -29,7 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { ShinyText } from './ShinyText';
 import type { UseJarvisResult } from '../hooks/useJarvis';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
@@ -367,7 +367,8 @@ export function TodaysSessionCarousel({
   jarvis: UseJarvisResult;
 }) {
   const router              = useRouter();
-  const { activeWorkout }   = useActiveWorkout();
+  const { activeWorkout, reconcileActiveWorkoutState } = useActiveWorkout();
+  const pathname = usePathname();
   const { user } = useAuth();
   const { context, contextLoading, refresh } = jarvis;
   const [showAll, setShowAll] = useState(false);
@@ -495,8 +496,9 @@ export function TodaysSessionCarousel({
         <View style={S.startBtnWrap}>
           <StartButton
             label={`Start ${wt}`}
-            onPress={() => {
-              if (activeWorkout) return;
+            onPress={async () => {
+              const reconciled = await reconcileActiveWorkoutState(pathname);
+              if (reconciled) return;
               const split = TMLSN_SPLITS.find((s) => s.name === wt);
               if (split) {
                 router.replace({ pathname: '/(tabs)/workout', params: { startSplitId: split.id } } as any);
@@ -575,8 +577,9 @@ export function TodaysSessionCarousel({
       <View style={S.startBtnWrap}>
         <StartButton
           label={`Start ${sessionName}`}
-          onPress={() => {
-            if (activeWorkout) return;
+          onPress={async () => {
+            const reconciled = await reconcileActiveWorkoutState(pathname);
+            if (reconciled) return;
             const workoutType = todayPlan?.workoutType ?? sessionName;
             const split = TMLSN_SPLITS.find((s) => s.name === workoutType);
             if (split) {

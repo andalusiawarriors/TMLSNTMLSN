@@ -310,6 +310,10 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
 
 export const deleteWorkoutSession = async (sessionId: string): Promise<void> => {
   const uid = getStorageUserId();
+  const draft = await getActiveWorkoutDraft(uid ?? undefined);
+  if (draft?.workout?.id === sessionId) {
+    await clearActiveWorkoutDraft(uid ?? undefined);
+  }
   if (isSupabaseConfigured() && !uid) {
     return;
   }
@@ -338,6 +342,7 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
 
 export const deleteAllWorkoutSessions = async (): Promise<void> => {
   const uid = getStorageUserId();
+  await clearActiveWorkoutDraft(uid ?? undefined);
   if (isSupabaseConfigured() && !uid) {
     return;
   }

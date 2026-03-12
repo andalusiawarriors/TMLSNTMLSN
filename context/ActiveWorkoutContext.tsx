@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import type { WorkoutSession } from '../types';
 import { startWorkoutActivity, stopWorkoutActivity } from '../lib/liveActivity';
 import { useAuth } from './AuthContext';
@@ -9,6 +9,7 @@ import {
   getActiveWorkoutDraft,
   saveActiveWorkoutDraft,
 } from '../utils/storage';
+import { cancelRestTimerNotification } from '../utils/notifications';
 
 type ActiveWorkoutContextValue = {
   activeWorkout: WorkoutSession | null;
@@ -21,6 +22,7 @@ type ActiveWorkoutContextValue = {
   minimizeWorkout: () => void;
   expandWorkout: () => void;
   discardWorkout: (onDiscarded: () => void) => void;
+  reconcileActiveWorkoutState: (pathnameOverride?: string | null) => Promise<WorkoutSession | null>;
   originRoute: string | null;
   setOriginRoute: (route: string | null) => void;
 };
@@ -29,6 +31,7 @@ const ActiveWorkoutContext = createContext<ActiveWorkoutContextValue | null>(nul
 
 export function ActiveWorkoutProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading } = useAuth();
   const [activeWorkout, setActiveWorkoutRaw] = useState<WorkoutSession | null>(null);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
@@ -38,9 +41,35 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const restorePromptedForKeyRef = useRef<string | null>(null);
   const previousActiveWorkoutIdRef = useRef<string | null>(null);
 
+  const clearActiveWorkoutState = useCallback((workoutId?: string | null) => {
+    if (workoutId) {
+      void cancelRestTimerNotification(workoutId);
+    }
+    void clearActiveWorkoutDraft(user?.id);
+    workoutActivityStartedRef.current = false;
+    setActiveWorkoutRaw(null);
+    setCurrentExerciseIndex(0);
+    setMinimized(false);
+    setOriginRoute(null);
+    void stopWorkoutActivity();
+  }, [user?.id]);
+
+  const isValidActiveWorkout = useCallback((workout: WorkoutSession | null | undefined): workout is WorkoutSession => {
+    if (!workout) return false;
+    if (workout.isComplete) return false;
+    if (!workout.id || !workout.date || !Array.isArray(workout.exercises)) return false;
+    return true;
+  }, []);
+
+  const isValidActiveWorkoutRoute = useCallback((value?: string | null) => {
+    if (!value) return false;
+    return value === '/(tabs)/workout' || value === '/workout' || value === '/workout-save';
+  }, []);
+
   const setActiveWorkout = useCallback((w: WorkoutSession | null) => {
-    setActiveWorkoutRaw(w);
+    const previousWorkoutId = activeWorkout?.id;
     if (w) {
+      setActiveWorkoutRaw(w);
       setMinimized(false);
       // Only start the Live Activity when a workout is first started, not on
       // every set update — otherwise a new activity is created on every tap.
@@ -49,10 +78,9 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
         startWorkoutActivity(w.name);
       }
     } else {
-      workoutActivityStartedRef.current = false;
-      stopWorkoutActivity();
+      clearActiveWorkoutState(previousWorkoutId);
     }
-  }, []);
+  }, [activeWorkout?.id, clearActiveWorkoutState]);
 
   const currentExerciseName =
     activeWorkout?.exercises[currentExerciseIndex]?.name ?? 'No exercise';
@@ -78,17 +106,57 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
   const discardWorkout = useCallback(
     (onDiscarded: () => void) => {
       const returnTo = originRoute && originRoute !== '/(tabs)/workout' ? originRoute : '/(tabs)/nutrition';
-      workoutActivityStartedRef.current = false;
-      stopWorkoutActivity();
-      setActiveWorkoutRaw(null);
-      setCurrentExerciseIndex(0);
-      setMinimized(false);
-      setOriginRoute(null);
+      clearActiveWorkoutState(activeWorkout?.id);
       router.replace(returnTo as any);
       onDiscarded();
     },
-    [originRoute, router]
+    [activeWorkout?.id, clearActiveWorkoutState, originRoute, router]
   );
+
+  const reconcileActiveWorkoutState = useCallback(async (pathnameOverride?: string | null) => {
+    const route = pathnameOverride ?? pathname;
+    const draft = await getActiveWorkoutDraft(user?.id);
+    const draftSavedAtMs = draft ? Date.parse(draft.savedAt) : NaN;
+    const draftExpired =
+      draft != null &&
+      (!Number.isFinite(draftSavedAtMs) || Date.now() - draftSavedAtMs > 7 * 24 * 60 * 60 * 1000);
+    const draftValid = draft != null && !draftExpired && isValidActiveWorkout(draft.workout);
+
+    if (draft && !draftValid) {
+      await clearActiveWorkoutDraft(user?.id);
+    }
+
+    if (activeWorkout && !isValidActiveWorkout(activeWorkout)) {
+      clearActiveWorkoutState(activeWorkout.id);
+      await clearActiveWorkoutDraft(user?.id);
+      return null;
+    }
+
+    if (
+      activeWorkout &&
+      !minimized &&
+      !isValidActiveWorkoutRoute(route) &&
+      (!draftValid || draft?.workout.id !== activeWorkout.id)
+    ) {
+      clearActiveWorkoutState(activeWorkout.id);
+      await clearActiveWorkoutDraft(user?.id);
+      return null;
+    }
+
+    if (activeWorkout && draftValid && draft.workout.id !== activeWorkout.id) {
+      await clearActiveWorkoutDraft(user?.id);
+    }
+
+    return activeWorkout;
+  }, [
+    activeWorkout,
+    clearActiveWorkoutState,
+    isValidActiveWorkout,
+    isValidActiveWorkoutRoute,
+    minimized,
+    pathname,
+    user?.id,
+  ]);
 
   useEffect(() => {
     const draftUserKey = user?.id ?? 'anonymous';
@@ -101,7 +169,11 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
       if (cancelled || !draft) return;
 
       const savedAtMs = Date.parse(draft.savedAt);
-      if (!Number.isFinite(savedAtMs) || Date.now() - savedAtMs > 7 * 24 * 60 * 60 * 1000) {
+      if (
+        !isValidActiveWorkout(draft.workout) ||
+        !Number.isFinite(savedAtMs) ||
+        Date.now() - savedAtMs > 7 * 24 * 60 * 60 * 1000
+      ) {
         await clearActiveWorkoutDraft(user?.id);
         return;
       }
@@ -137,7 +209,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     return () => {
       cancelled = true;
     };
-  }, [activeWorkout, isLoading, setActiveWorkout, user?.id]);
+  }, [activeWorkout, isLoading, isValidActiveWorkout, setActiveWorkout, user?.id]);
 
   useEffect(() => {
     const previousId = previousActiveWorkoutIdRef.current;
@@ -182,6 +254,10 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void reconcileActiveWorkoutState(pathname);
+        return;
+      }
       if (!activeWorkout) return;
       if (state === 'inactive' || state === 'background') {
         void saveActiveWorkoutDraft(
@@ -196,7 +272,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
       }
     });
     return () => sub.remove();
-  }, [activeWorkout, currentExerciseIndex, user?.id]);
+  }, [activeWorkout, currentExerciseIndex, pathname, reconcileActiveWorkoutState, user?.id]);
 
   const value: ActiveWorkoutContextValue = {
     activeWorkout,
@@ -209,6 +285,7 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     minimizeWorkout,
     expandWorkout,
     discardWorkout,
+    reconcileActiveWorkoutState,
     originRoute,
     setOriginRoute,
   };

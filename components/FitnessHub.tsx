@@ -5,7 +5,7 @@
 //   Zone 2: Divider → "Tools" label → clean text rows
 // ============================================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,12 @@ import {
   Pressable,
   TouchableOpacity,
   Modal,
+  Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
 
 import { Colors } from '../constants/theme';
@@ -24,7 +26,9 @@ import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
+import { ShinyText } from './ShinyText';
 import { useJarvis } from '../hooks/useJarvis';
+import { emitWorkoutExpandOrigin, emitClosePopup } from '../utils/fabBridge';
 
 import { EXERCISE_DATABASE } from '../utils/exerciseDb/exerciseDatabase';
 import { getUserSettings } from '../utils/storage';
@@ -38,6 +42,72 @@ const QS     = '#ABABAB';
 const GOLD   = '#D4B896';
 const SUB    = '#7a8690';
 const BORDER = 'rgba(255,255,255,0.05)';
+
+// Silver gradient (matches TodaysSessionCarousel StartButton)
+const SILVER = ['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74'] as const;
+const SILVER_LOCS = [0, 0.37, 0.69, 1] as const;
+
+function formatElapsed(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s}s`;
+  }
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+// ─── In Progress Workout Card (replaces Today's Session when workout is minimized) ────
+
+function InProgressWorkoutCard({
+  workoutName,
+  elapsedSeconds,
+  onResume,
+  onDiscard,
+}: {
+  workoutName: string;
+  elapsedSeconds: number;
+  onResume: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <View style={S.hero}>
+      <Text style={S.inProgressEyebrow}>in progress</Text>
+      <ShinyText
+        text={workoutName}
+        speed={5}
+        delay={0}
+        spread={120}
+        yoyo={false}
+        color="#b5b5b5"
+        shineColor="#ffffff"
+        direction="right"
+        style={S.inProgressTitle}
+        containerStyle={{ marginBottom: 4, marginLeft: -(PAD + 4) }}
+      />
+      <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
+      <View style={S.startBtnWrap}>
+        <Pressable onPress={onResume} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginBottom: 3 })}>
+          <LinearGradient
+            colors={SILVER}
+            locations={SILVER_LOCS}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={S.resumeBtn}
+          >
+            <Text style={S.resumeBtnIcon}>▶</Text>
+            <Text style={S.resumeBtnText}>Resume</Text>
+          </LinearGradient>
+        </Pressable>
+        <Pressable onPress={onDiscard} style={{ marginTop: 10 }}>
+          <Text style={S.discardLink}>Discard workout</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 // ─── Tool Row — card style matching TodaysSessionCarousel exercise rows ────────
 
@@ -125,9 +195,28 @@ export function FitnessHub() {
   const [animTrigger, setAnimTrigger]         = useState(0);
   const [showWorkoutBlock, setShowWorkoutBlock] = useState(false);
   const [training, setTraining]               = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
-  const { activeWorkout, setOriginRoute }     = useActiveWorkout();
-  const router                                = useRouter();
-  const jarvis                                = useJarvis();
+  const {
+    activeWorkout,
+    minimized,
+    expandWorkout,
+    discardWorkout,
+    setOriginRoute,
+    reconcileActiveWorkoutState,
+    workoutStartTime,
+  } = useActiveWorkout();
+  const router   = useRouter();
+  const pathname = usePathname();
+  const segments = useSegments();
+  const jarvis   = useJarvis();
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!workoutStartTime) return;
+    const tick = () => setElapsedSeconds(Math.floor((Date.now() - workoutStartTime) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [workoutStartTime]);
 
   useFocusEffect(
     useCallback(() => {
@@ -139,13 +228,39 @@ export function FitnessHub() {
   );
 
   const handlePress = useCallback(
-    (route: string) => {
-      if (activeWorkout) { setShowWorkoutBlock(true); return; }
+    async (route: string) => {
+      const reconciled = await reconcileActiveWorkoutState(pathname);
+      if (reconciled) { setShowWorkoutBlock(true); return; }
       setOriginRoute('/(tabs)/nutrition');
       router.push(route as any);
     },
-    [activeWorkout, router, setOriginRoute],
+    [pathname, reconcileActiveWorkoutState, router, setOriginRoute],
   );
+
+  const handleResumeMinimizedWorkout = useCallback(() => {
+    emitClosePopup();
+    const route =
+      segments.includes('(profile)') ? '/(tabs)/(profile)'
+      : pathname.includes('nutrition') ? '/(tabs)/nutrition'
+      : pathname.includes('prompts') ? '/(tabs)/prompts'
+      : pathname.includes('workout') ? '/(tabs)/workout'
+      : '/(tabs)/nutrition';
+    emitWorkoutExpandOrigin(route);
+    setOriginRoute(route);
+    expandWorkout();
+    router.replace('/(tabs)/workout' as any);
+  }, [expandWorkout, pathname, segments, setOriginRoute, router]);
+
+  const handleDiscardMinimizedWorkout = useCallback(() => {
+    Alert.alert(
+      'Discard workout?',
+      'Your progress will be lost. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => discardWorkout(() => {}) },
+      ]
+    );
+  }, [discardWorkout]);
 
   const scheduleMode = training.scheduleMode ?? 'ghost';
   const isBuilder    = scheduleMode === 'builder';
@@ -186,7 +301,16 @@ export function FitnessHub() {
 
       {/* ── Zone 1 ── */}
       <ZoneOneCard jarvis={jarvis} />
-      <TodaysSessionCarousel animTrigger={animTrigger} jarvis={jarvis} />
+      {activeWorkout && minimized ? (
+        <InProgressWorkoutCard
+          workoutName={activeWorkout.name ?? 'Workout'}
+          elapsedSeconds={elapsedSeconds}
+          onResume={handleResumeMinimizedWorkout}
+          onDiscard={handleDiscardMinimizedWorkout}
+        />
+      ) : (
+        <TodaysSessionCarousel animTrigger={animTrigger} jarvis={jarvis} />
+      )}
 
       {/* ── Zone 2: Tools ── */}
       <View style={S.toolsSection}>
@@ -246,6 +370,69 @@ export function FitnessHub() {
 
 const S = StyleSheet.create({
   container: {},
+
+  hero: {
+    paddingHorizontal: PAD,
+    paddingBottom: 24,
+  },
+  inProgressEyebrow: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#979798',
+    letterSpacing: -0.8,
+    marginTop: -8,
+    marginBottom: 10,
+    marginLeft: -(PAD + 4),
+    alignSelf: 'flex-start',
+  },
+  inProgressTitle: {
+    height: 42,
+    fontSize: 35,
+    fontWeight: '600',
+    letterSpacing: -1.75,
+    lineHeight: 41,
+    textAlign: 'left',
+    textTransform: 'lowercase',
+    color: '#b5b5b5',
+  },
+  inProgressElapsed: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#ABABAB',
+    marginLeft: -(PAD + 4),
+    marginTop: -4,
+    marginBottom: 20,
+  },
+  startBtnWrap: {
+    marginLeft: -(PAD + 4),
+    marginRight: 4 - PAD,
+  },
+  resumeBtn: {
+    width: '100%',
+    height: 55,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  resumeBtnIcon: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  resumeBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+  },
+  discardLink: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#FF3B30',
+    textAlign: 'center',
+  },
 
   toolsSection: {
     paddingHorizontal: PAD,

@@ -3,6 +3,8 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+const REST_TIMER_NOTIFICATION_TYPE = 'rest-timer';
+
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -62,15 +64,21 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 
 // Schedule a rest timer notification
 export const scheduleRestTimerNotification = async (
+  sessionId: string,
   exerciseName: string,
   setNumber: number,
   seconds: number
 ): Promise<string> => {
   try {
+    await cancelRestTimerNotification(sessionId);
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Rest Time Up! 🔥',
         body: `Time for Set ${setNumber} of ${exerciseName}`,
+        data: {
+          type: REST_TIMER_NOTIFICATION_TYPE,
+          sessionId,
+        },
         sound: true,
         priority: Notifications.AndroidNotificationPriority.HIGH,
       },
@@ -83,6 +91,24 @@ export const scheduleRestTimerNotification = async (
   } catch (error) {
     console.error('Error scheduling rest timer notification:', error);
     throw error;
+  }
+};
+
+export const cancelRestTimerNotification = async (sessionId: string): Promise<void> => {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const matching = scheduled.filter((notification) => {
+      const data = notification.content.data as { type?: string; sessionId?: string } | undefined;
+      return data?.type === REST_TIMER_NOTIFICATION_TYPE && data.sessionId === sessionId;
+    });
+
+    await Promise.all(
+      matching.map((notification) =>
+        Notifications.cancelScheduledNotificationAsync(notification.identifier)
+      )
+    );
+  } catch (error) {
+    console.error('Error canceling rest timer notification:', error);
   }
 };
 

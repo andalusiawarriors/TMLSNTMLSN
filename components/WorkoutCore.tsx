@@ -38,7 +38,7 @@ import { generateId, formatDuration, buildExerciseFromRoutineTemplate } from '..
 import { resolveExerciseDbIdFromName } from '../utils/workoutMuscles';
 import { toExerciseUuid } from '../lib/getTmlsnTemplate';
 import { getAllExerciseSettings } from '../utils/exerciseSettings';
-import { scheduleRestTimerNotification, cancelNotification } from '../utils/notifications';
+import { scheduleRestTimerNotification, cancelRestTimerNotification } from '../utils/notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useButtonSound } from '../hooks/useButtonSound';
 import AnimatedReanimated, {
@@ -197,6 +197,14 @@ export function WorkoutCore({
     startEmpty?: string;
   }>();
 
+  const clearWorkoutStartParams = useCallback(() => {
+    router.setParams({
+      startSplitId: undefined,
+      startRoutineId: undefined,
+      startEmpty: undefined,
+    } as any);
+  }, [router]);
+
   useLayoutEffect(() => {
     if (initialActiveWorkout) {
       setActiveWorkout(initialActiveWorkout);
@@ -216,7 +224,6 @@ export function WorkoutCore({
 
   const [restTimerActive, setRestTimerActive] = useState(false);
   const [restTimeRemaining, setRestTimeRemaining] = useState(0);
-  const [restTimerNotificationId, setRestTimerNotificationId] = useState<string | null>(null);
   const [restTimerContext, setRestTimerContext] = useState<{ exerciseName: string; setNumberDisplay: number } | null>(null);
 
   const [restTimerVisible, setRestTimerVisible] = useState(false);
@@ -333,8 +340,29 @@ export function WorkoutCore({
     if (lastProcessedStartEmpty.current) return;
     lastProcessedStartEmpty.current = true;
     startFreeformWorkout();
-    router.setParams({});
-  }, [asModal, startEmpty]);
+    clearWorkoutStartParams();
+  }, [asModal, clearWorkoutStartParams, startEmpty]);
+
+  useEffect(() => {
+    if (!startSplitId) {
+      lastProcessedSplitId.current = null;
+    }
+  }, [startSplitId]);
+
+  useEffect(() => {
+    if (!startRoutineId) {
+      lastProcessedRoutineId.current = null;
+    }
+  }, [startRoutineId]);
+
+  // When activeWorkout is cleared (e.g. after discard), reset "already processed" refs
+  // so that stale route params (startSplitId/startRoutineId) can be re-processed on reopen.
+  useEffect(() => {
+    if (!activeWorkout) {
+      lastProcessedSplitId.current = null;
+      lastProcessedRoutineId.current = null;
+    }
+  }, [activeWorkout]);
 
   useFocusEffect(
     useCallback(() => {
@@ -351,30 +379,68 @@ export function WorkoutCore({
   useEffect(() => { activeWorkoutRef.current = activeWorkout; }, [activeWorkout]);
 
   useEffect(() => {
-    if (startSplitId && startSplitId !== lastProcessedSplitId.current) {
-      const split = TMLSN_SPLITS.find((s) => s.id === startSplitId);
-      if (split) {
-        lastProcessedSplitId.current = startSplitId;
-        startWorkoutFromSplit(split);
-        router.setParams({});
-      }
+    if (!startSplitId || startSplitId === lastProcessedSplitId.current) return;
+    const split = TMLSN_SPLITS.find((s) => s.id === startSplitId);
+    if (!split) {
+      lastProcessedSplitId.current = startSplitId;
+      clearWorkoutStartParams();
+      return;
     }
-  }, [startSplitId]);
+    lastProcessedSplitId.current = startSplitId;
+    let cancelled = false;
+    (async () => {
+      try {
+        await startWorkoutFromSplit(split);
+        if (!cancelled) clearWorkoutStartParams();
+      } catch (e) {
+        if (__DEV__) console.warn('[WorkoutCore] startWorkoutFromSplit failed:', e);
+        if (!cancelled) {
+          lastProcessedSplitId.current = null;
+          clearWorkoutStartParams();
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clearWorkoutStartParams, startSplitId]);
 
   useEffect(() => {
-    if (startRoutineId && startRoutineId !== lastProcessedRoutineId.current) {
-      (async () => {
+    if (!startRoutineId || startRoutineId === lastProcessedRoutineId.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
         const [routines, settings] = await Promise.all([getSavedRoutines(), getUserSettings()]);
         const routine = routines.find((r) => r.id === startRoutineId);
-        if (routine) {
+        if (!routine) {
           lastProcessedRoutineId.current = startRoutineId;
-          const defaultRestTimer = settings?.defaultRestTimer ?? 120;
-          startWorkoutFromSavedRoutine(routine, defaultRestTimer);
-          router.setParams({});
+          if (!cancelled) clearWorkoutStartParams();
+          return;
         }
-      })();
-    }
-  }, [startRoutineId]);
+        lastProcessedRoutineId.current = startRoutineId;
+        const defaultRestTimer = settings?.defaultRestTimer ?? 120;
+        await startWorkoutFromSavedRoutine(routine, defaultRestTimer);
+        if (!cancelled) clearWorkoutStartParams();
+      } catch (e) {
+        if (__DEV__) console.warn('[WorkoutCore] startWorkoutFromSavedRoutine failed:', e);
+        if (!cancelled) {
+          lastProcessedRoutineId.current = null;
+          clearWorkoutStartParams();
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clearWorkoutStartParams, startRoutineId]);
+
+  // Fallback: if stuck on placeholder for 5s (e.g. async hung), clear params to allow redirect.
+  const inPlaceholderState = !activeWorkout && !minimized && (startSplitId || startRoutineId);
+  useEffect(() => {
+    if (!inPlaceholderState) return;
+    const t = setTimeout(() => {
+      lastProcessedSplitId.current = startSplitId ?? lastProcessedSplitId.current;
+      lastProcessedRoutineId.current = startRoutineId ?? lastProcessedRoutineId.current;
+      clearWorkoutStartParams();
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [inPlaceholderState, clearWorkoutStartParams, startSplitId, startRoutineId]);
 
   useEffect(() => {
     if (!activeWorkout || !user) { setPrescriptions({}); return; }
@@ -720,9 +786,8 @@ export function WorkoutCore({
     if (hasActiveRestTimer()) {
       return;
     }
-    if (restTimerNotificationId) {
-      await cancelNotification(restTimerNotificationId);
-      setRestTimerNotificationId(null);
+    if (activeWorkout?.id) {
+      await cancelRestTimerNotification(activeWorkout.id);
     }
     restTimerEndRef.current = Date.now() + seconds * 1000;
     setRestTimeRemaining(seconds);
@@ -733,17 +798,17 @@ export function WorkoutCore({
     setRestTimerContext({ exerciseName, setNumberDisplay });
     updateToRestTimer(exerciseName, setNumberDisplay, seconds);
     try {
-      const notificationId = await scheduleRestTimerNotification(exerciseName, setNumberDisplay, seconds);
-      setRestTimerNotificationId(notificationId);
+      if (activeWorkout?.id) {
+        await scheduleRestTimerNotification(activeWorkout.id, exerciseName, setNumberDisplay, seconds);
+      }
     } catch (error) {
       console.error('Failed to schedule rest timer notification:', error);
     }
   };
 
   const skipRestTimer = (setId?: string) => {
-    if (restTimerNotificationId) {
-      cancelNotification(restTimerNotificationId);
-      setRestTimerNotificationId(null);
+    if (activeWorkout?.id) {
+      void cancelRestTimerNotification(activeWorkout.id);
     }
     restTimerEndRef.current = null;
     cancelRestTimerActivity();
@@ -756,9 +821,8 @@ export function WorkoutCore({
     const before = restTimeRemaining;
     const after = Math.max(0, before + delta);
     if (after === 0) {
-      if (restTimerNotificationId) {
-        await cancelNotification(restTimerNotificationId);
-        setRestTimerNotificationId(null);
+      if (activeWorkout?.id) {
+        await cancelRestTimerNotification(activeWorkout.id);
       }
       restTimerEndRef.current = null;
       cancelRestTimerActivity();
@@ -769,15 +833,15 @@ export function WorkoutCore({
     }
     restTimerEndRef.current = Date.now() + after * 1000;
     setRestTimeRemaining(after);
-    if (restTimerNotificationId) {
-      await cancelNotification(restTimerNotificationId);
-      setRestTimerNotificationId(null);
+    if (activeWorkout?.id) {
+      await cancelRestTimerNotification(activeWorkout.id);
     }
     const ctx = restTimerContext;
     if (!ctx) return;
     try {
-      const notificationIdNew = await scheduleRestTimerNotification(ctx.exerciseName, ctx.setNumberDisplay, after);
-      setRestTimerNotificationId(notificationIdNew);
+      if (activeWorkout?.id) {
+        await scheduleRestTimerNotification(activeWorkout.id, ctx.exerciseName, ctx.setNumberDisplay, after);
+      }
     } catch (error) {
       console.error('Failed to reschedule rest timer notification:', error);
     }
@@ -812,6 +876,7 @@ export function WorkoutCore({
         Alert.alert('No workout data', 'Add at least one completed set before saving.');
         return;
       }
+      await cancelRestTimerNotification(payload.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onCloseModal?.();
       await onFinish(payload);
@@ -878,7 +943,30 @@ export function WorkoutCore({
 
   const insets = useSafeAreaInsets();
 
-  if (!activeWorkout || minimized) return null;
+  // When activeWorkout is null but we have start params, effects will re-process (refs cleared above).
+  // Show minimal placeholder to avoid blank gray screen while processing.
+  if (!activeWorkout || minimized) {
+    if (!activeWorkout && !minimized && (startSplitId || startRoutineId)) {
+      return (
+        <View
+          style={[
+            styles.workoutOverlay,
+            {
+              backgroundColor: colors.primaryDark,
+              height: windowHeight,
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
+          ]}
+        >
+          <Text style={[styles.logTitle, { color: colors.primaryLight + '80', textAlign: 'center' }]}>
+            Starting workout…
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  }
 
   const scrollProps = {};
 
