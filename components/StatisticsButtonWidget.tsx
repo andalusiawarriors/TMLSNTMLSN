@@ -4,12 +4,13 @@
 // ============================================================
 
 import React from 'react';
-import { Text, StyleSheet, Dimensions } from 'react-native';
+import { StyleSheet, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { AnimatedPressable } from './AnimatedPressable';
 import { Card } from './Card';
-import { Colors, Font, Typography } from '../constants/theme';
+import { Typography } from '../constants/theme';
+import { TmlsnText } from './ui/TmlsnText';
 
 const PROGRESS_CARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const PROGRESS_CARD_HEIGHT = 237;
@@ -26,7 +27,7 @@ export function StatisticsButtonWidget() {
       style={styles.wrap}
     >
       <Card gradientFill borderRadius={38} style={styles.card}>
-        <Text style={styles.cardText}>statistics</Text>
+        <TmlsnText style={styles.cardText}>statistics</TmlsnText>
       </Card>
     </AnimatedPressable>
   );
@@ -47,7 +48,6 @@ const styles = StyleSheet.create({
     marginVertical: 0,
   },
   cardText: {
-    fontFamily: Font.monoMedium,
     fontSize: Typography.promptText,
     fontWeight: '500' as const,
     lineHeight: 16,

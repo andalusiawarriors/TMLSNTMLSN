@@ -22,9 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getUserSettings, saveUserSettings, getSavedRoutines, getStorageUserId } from '../utils/storage';
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
-import { workoutTypeToProtocolDay, getDefaultTmlsnExercises, toExerciseUuid } from '../lib/getTmlsnTemplate';
 import type { TrainingSettings, WeekDayEntry, SavedRoutine } from '../types';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -40,8 +38,7 @@ const GREEN  = '#56a86a';
 const PAD    = 16;
 
 // ─── Day labels ───────────────────────────────────────────────────────────────
-const DAYS     = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // Get current Monday's dates for the week
 function getCurrentWeekDates(): Date[] {
@@ -381,61 +378,8 @@ export default function WeekBuilderScreen() {
       const settings = await getUserSettings();
       await saveUserSettings({ ...settings, training: updatedTraining });
 
-      // 2. Sync to workout_schedule table (read by TodaysSessionCarousel + Jarvis)
+      // workout_schedule table not in production; schedule read from user_settings.weekPlan by getWorkoutContext
       const uid = getStorageUserId();
-      if (supabase && isSupabaseConfigured() && uid) {
-        const dayOfWeek = DAY_NAMES[editingIdx];
-
-        if (item.type === 'clear') {
-          await supabase
-            .from('workout_schedule')
-            .delete()
-            .eq('user_id', uid)
-            .eq('day_of_week', dayOfWeek);
-        } else {
-          let workoutType: string | null = null;
-          let exerciseIds: string[] = [];
-          let isRestDay = false;
-
-          if (item.type === 'rest') {
-            isRestDay = true;
-          } else if (item.type === 'split') {
-            workoutType = item.name;
-            // TMLSN protocol splits: resolve exercises via protocol day
-            const protocolDay = workoutTypeToProtocolDay(item.name);
-            if (protocolDay) {
-              exerciseIds = getDefaultTmlsnExercises(protocolDay).map((e) => e.id);
-            } else {
-              // Other TMLSN splits: look up directly
-              const split = TMLSN_SPLITS.find((s) => s.id === item.id);
-              exerciseIds = (split?.exercises ?? []).map((ex) => {
-                const resolved = ex.name; // toExerciseUuid falls back to name-based UUID
-                return toExerciseUuid(resolved);
-              });
-            }
-          } else if (item.type === 'routine') {
-            workoutType = item.name;
-            const routine = routines.find((r) => r.id === item.id);
-            if (routine) {
-              exerciseIds = routine.exercises.map((ex) =>
-                toExerciseUuid(ex.exerciseDbId ?? ex.id)
-              );
-            }
-          }
-
-          await supabase.from('workout_schedule').upsert(
-            {
-              user_id: uid,
-              day_of_week: dayOfWeek,
-              workout_type: workoutType,
-              exercise_ids: exerciseIds,
-              is_rest_day: isRestDay,
-            },
-            { onConflict: 'user_id,day_of_week' }
-          );
-        }
-      }
-
       invalidateTodayWorkoutContextCache(uid ?? undefined);
 
       setSaved(true);

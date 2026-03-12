@@ -181,6 +181,10 @@ export interface UserSettings {
   progressHubOrder?: string[];
   /** Training system settings (volume framework, schedule, archetype, etc.). */
   training?: TrainingSettings;
+  /** Body map gender for heatmap display. */
+  bodyMapGender?: 'male' | 'female';
+  /** For bilateral dumbbell exercises: 'per_hand' (default) or 'total'. Overrides exercise default when ambiguous. */
+  dumbbellWeightPreference?: 'per_hand' | 'total';
 }
 
 // Saved Food (for quick re-logging)

@@ -5,7 +5,7 @@
 // System font only.
 // ============================================================
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,17 +14,21 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  Dimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { EXERCISE_DATABASE } from '../../utils/exerciseDb/exerciseDatabase';
+import { EXERCISE_DATABASE, searchExercises } from '../../utils/exerciseDb/exerciseDatabase';
 import type { Exercise } from '../../utils/exerciseDb/types';
+import type { CreateExerciseInput } from '../../utils/exerciseDb/types';
 import { getWorkoutSessions } from '../../utils/storage';
 import { getAllExerciseSettings } from '../../utils/exerciseSettings';
+import { supabaseFetchUserExercises, supabaseInsertUserExercise } from '../../utils/supabaseStorage';
+import { useAuth } from '../../context/AuthContext';
+import { CreateExerciseSheet } from '../../components/CreateExerciseSheet';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 
 // ── Design tokens ─────────────────────────────────────────────
@@ -56,16 +60,25 @@ const LABEL_TO_CATEGORY: Record<string, string> = {
   Calves: 'calves', Abs: 'abs', 'Full Body': 'full_body',
 };
 
+type FilterMode = 'all' | 'yours' | 'builtin' | 'recent';
+const FILTER_LABELS: Record<FilterMode, string> = {
+  all: 'All',
+  yours: 'Your exercises',
+  builtin: 'Built-in',
+  recent: 'Recently done',
+};
+
 const EQUIP_LABELS: Record<string, string> = {
   barbell: 'Bar', dumbbell: 'DB', cable: 'Cable', machine: 'Machine',
   bodyweight: 'BW', kettlebell: 'KB', ez_bar: 'EZ',
   smith_machine: 'Smith', resistance_band: 'Band', trx: 'TRX',
+  plate: 'Plate', trap_bar: 'Trap Bar',
 };
 
 // ── Exercise Row ──────────────────────────────────────────────
-interface RowProps { exercise: Exercise; isFav: boolean; onPress: (ex: Exercise) => void }
+interface RowProps { exercise: Exercise; isFav: boolean; isCustom?: boolean; onPress: (ex: Exercise) => void }
 
-function ExerciseRow({ exercise: ex, isFav, onPress }: RowProps) {
+function ExerciseRow({ exercise: ex, isFav, isCustom, onPress }: RowProps) {
   const catLabel   = CATEGORY_LABELS[ex.category] ?? ex.category;
   const equipChips = ex.equipment.slice(0, 3).map((e) => EQUIP_LABELS[e] ?? e);
   return (
@@ -85,16 +98,19 @@ function ExerciseRow({ exercise: ex, isFav, onPress }: RowProps) {
             </View>
           ))}
         </View>
-        <Text style={styles.muscleLabel}>{catLabel}</Text>
+        <View style={styles.rowMeta}>
+          <Text style={styles.muscleLabel}>{catLabel}</Text>
+          {isCustom && <Text style={styles.customLabel}>custom</Text>}
+        </View>
       </View>
     </Pressable>
   );
 }
 
 // ── Favorites Section ─────────────────────────────────────────
-interface FavSectionProps { exercises: Exercise[]; onPress: (ex: Exercise) => void }
+interface FavSectionProps { exercises: Exercise[]; userExerciseIds: Set<string>; onPress: (ex: Exercise) => void }
 
-function FavoritesSection({ exercises, onPress }: FavSectionProps) {
+function FavoritesSection({ exercises, userExerciseIds, onPress }: FavSectionProps) {
   if (!exercises.length) return null;
   return (
     <View style={styles.favSection}>
@@ -105,6 +121,7 @@ function FavoritesSection({ exercises, onPress }: FavSectionProps) {
         {exercises.map((ex, idx) => {
           const catLabel   = CATEGORY_LABELS[ex.category] ?? ex.category;
           const equipChips = ex.equipment.slice(0, 3).map((e) => EQUIP_LABELS[e] ?? e);
+          const isCustom   = userExerciseIds.has(ex.id);
           const isLast     = idx === exercises.length - 1;
           return (
             <View key={ex.id}>
@@ -124,7 +141,10 @@ function FavoritesSection({ exercises, onPress }: FavSectionProps) {
                       </View>
                     ))}
                   </View>
-                  <Text style={styles.muscleLabel}>{catLabel}</Text>
+                  <View style={styles.rowMeta}>
+                    <Text style={styles.muscleLabel}>{catLabel}</Text>
+                    {isCustom && <Text style={styles.customLabel}>custom</Text>}
+                  </View>
                 </View>
               </Pressable>
               {!isLast && <View style={styles.separator} />}
@@ -138,15 +158,23 @@ function FavoritesSection({ exercises, onPress }: FavSectionProps) {
 }
 
 // ── Main Screen ───────────────────────────────────────────────
+function sortByName(a: Exercise, b: Exercise): number {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+}
+
 export default function ExerciseLibraryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
 
-  const [searchQuery,      setSearchQuery]      = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [showRecentlyDone, setShowRecentlyDone] = useState(false);
-  const [favoriteIds,      setFavoriteIds]      = useState<Set<string>>(new Set());
-  const [recentIds,        setRecentIds]        = useState<string[]>([]);
+  const [searchQuery,       setSearchQuery]       = useState('');
+  const [selectedCategory,  setSelectedCategory]  = useState('All');
+  const [filterMode,        setFilterMode]        = useState<FilterMode>('all');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [favoriteIds,       setFavoriteIds]       = useState<Set<string>>(new Set());
+  const [recentIds,         setRecentIds]         = useState<string[]>([]);
+  const [userExercises,     setUserExercises]     = useState<Exercise[]>([]);
+  const [showCreateSheet,   setShowCreateSheet]   = useState(false);
 
   // ── Load on focus ──
   const loadData = useCallback(async () => {
@@ -176,12 +204,19 @@ export default function ExerciseLibraryScreen() {
       }
       setRecentIds(Array.from(seen.keys()));
     } catch { /* ignore */ }
-  }, []);
+
+    if (user?.id) {
+      supabaseFetchUserExercises(user.id).then(setUserExercises);
+    }
+  }, [user?.id]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
   // ── Derived ──
-  const allExercises = useMemo(() => EXERCISE_DATABASE, []);
+  const allExercises = useMemo(() => {
+    const merged = [...EXERCISE_DATABASE, ...userExercises];
+    return merged.sort(sortByName);
+  }, [userExercises]);
 
   const recentlyDone = useMemo((): Exercise[] => {
     if (!recentIds.length) return [];
@@ -196,6 +231,20 @@ export default function ExerciseLibraryScreen() {
     [allExercises, favoriteIds],
   );
 
+  const userExerciseIds  = useMemo(() => new Set(userExercises.map((e) => e.id)), [userExercises]);
+  const recentlyDoneIds  = useMemo(() => new Set(recentlyDone.map((e) => e.id)), [recentlyDone]);
+
+  const scopeBaseList = useMemo(() => {
+    if (filterMode === 'yours') return [...userExercises].sort(sortByName);
+    if (filterMode === 'builtin') return [...EXERCISE_DATABASE].sort(sortByName);
+    return allExercises;
+  }, [filterMode, userExercises, allExercises]);
+
+  const favoriteExercisesScoped = useMemo(
+    () => favoriteExercises.filter((ex) => scopeBaseList.some((s) => s.id === ex.id)),
+    [favoriteExercises, scopeBaseList],
+  );
+
   const searchNorm        = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
   const activeCategoryKey = useMemo(
     () => (selectedCategory === 'All' ? '' : (LABEL_TO_CATEGORY[selectedCategory] ?? '')),
@@ -204,23 +253,45 @@ export default function ExerciseLibraryScreen() {
 
   const applyFilters = useCallback(
     (list: Exercise[]) => {
-      let out = list;
+      let out: Exercise[];
+      if (searchNorm) {
+        const searched = searchExercises(searchQuery.trim(), EXERCISE_DATABASE, userExercises);
+        if (filterMode === 'all') out = searched;
+        else if (filterMode === 'yours') out = searched.filter((ex) => userExerciseIds.has(ex.id));
+        else if (filterMode === 'builtin') out = searched.filter((ex) => !userExerciseIds.has(ex.id));
+        else out = searched.filter((ex) => recentlyDoneIds.has(ex.id));
+      } else {
+        out = list;
+      }
       if (activeCategoryKey) out = out.filter((ex) => ex.category === activeCategoryKey);
-      if (searchNorm)         out = out.filter((ex) => ex.name.toLowerCase().includes(searchNorm));
-      return out;
+      return [...out].sort(sortByName);
     },
-    [activeCategoryKey, searchNorm],
+    [activeCategoryKey, searchNorm, searchQuery, userExercises, filterMode, userExerciseIds, recentlyDoneIds],
   );
 
   const mainList = useMemo(
-    () => applyFilters(showRecentlyDone ? recentlyDone : allExercises),
-    [showRecentlyDone, recentlyDone, allExercises, applyFilters],
+    () => applyFilters(filterMode === 'recent' ? recentlyDone : scopeBaseList),
+    [filterMode, recentlyDone, scopeBaseList, applyFilters],
   );
 
   const filteredFavorites = useMemo(
-    () => applyFilters(favoriteExercises),
-    [favoriteExercises, applyFilters],
+    () => applyFilters(favoriteExercisesScoped),
+    [favoriteExercisesScoped, applyFilters],
   );
+
+  const filterOptions = useMemo(
+    () => [
+      { value: 'all' as const, label: 'All' },
+      { value: 'yours' as const, label: 'Your exercises' },
+      { value: 'builtin' as const, label: 'Built-in' },
+      ...(recentIds.length > 0 ? [{ value: 'recent' as const, label: 'Recently done' }] : []),
+    ],
+    [recentIds.length],
+  );
+
+  useEffect(() => {
+    if (filterMode === 'recent' && recentIds.length === 0) setFilterMode('all');
+  }, [filterMode, recentIds.length]);
 
   const handlePress = useCallback(
     (ex: Exercise) => {
@@ -230,12 +301,30 @@ export default function ExerciseLibraryScreen() {
     [router],
   );
 
+  const handleCreateSave = useCallback(
+    async (data: CreateExerciseInput) => {
+      if (!user?.id) return null;
+      const created = await supabaseInsertUserExercise(user.id, data);
+      if (created) {
+        setUserExercises((prev) => [...prev, created].sort(sortByName));
+        setShowCreateSheet(false);
+      }
+      return created;
+    },
+    [user?.id],
+  );
+
   const renderSeparator = useCallback(() => <View style={styles.separator} />, []);
   const renderRow = useCallback(
     ({ item }: { item: Exercise }) => (
-      <ExerciseRow exercise={item} isFav={favoriteIds.has(item.id)} onPress={handlePress} />
+      <ExerciseRow
+        exercise={item}
+        isFav={favoriteIds.has(item.id)}
+        isCustom={userExerciseIds.has(item.id)}
+        onPress={handlePress}
+      />
     ),
-    [favoriteIds, handlePress],
+    [favoriteIds, handlePress, userExerciseIds],
   );
   const keyExtractor = useCallback((item: Exercise) => item.id, []);
 
@@ -244,9 +333,8 @@ export default function ExerciseLibraryScreen() {
   const HEADER_TITLE = 44;
   const HEADER_SRCH  = 46 + 8; // input + margin
   const HEADER_PILLS = 38 + 4;
-  const HEADER_REC   = recentIds.length > 0 ? 38 + 8 : 0;
   const HEADER_BORD  = 5;
-  const HEADER_H     = HEADER_TOP + HEADER_TITLE + HEADER_SRCH + HEADER_PILLS + HEADER_REC + HEADER_BORD;
+  const HEADER_H     = HEADER_TOP + HEADER_TITLE + HEADER_SRCH + HEADER_PILLS + HEADER_BORD;
 
   return (
     <View style={styles.root}>
@@ -257,7 +345,7 @@ export default function ExerciseLibraryScreen() {
         <BlurView intensity={BLUR} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: GLASS_FILL }]} />
 
-        {/* Back + Title */}
+        {/* Back + Title + Create */}
         <View style={[styles.headerRow, { height: HEADER_TITLE }]}>
           <Pressable
             onPress={() => router.back()}
@@ -267,7 +355,17 @@ export default function ExerciseLibraryScreen() {
             <Text style={styles.backChevron}>‹</Text>
           </Pressable>
           <Text style={styles.headerTitle}>exercises.</Text>
-          <View style={{ width: 40 }} />
+          {user?.id ? (
+            <Pressable
+              onPress={() => { Haptics.selectionAsync(); setShowCreateSheet(true); }}
+              style={({ pressed }) => [styles.headerActionBtn, pressed && { opacity: 0.5 }]}
+              hitSlop={12}
+            >
+              <Ionicons name="add" size={24} color={TEXT_PRIMARY} />
+            </Pressable>
+          ) : (
+            <View style={styles.headerActionPlaceholder} />
+          )}
         </View>
 
         {/* Search */}
@@ -288,13 +386,25 @@ export default function ExerciseLibraryScreen() {
           />
         </View>
 
-        {/* Category chips */}
+        {/* Filter pill + Category chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.pillsContent}
           style={[styles.pillsScroll, { height: HEADER_PILLS }]}
         >
+          <Pressable
+            onPress={() => { Haptics.selectionAsync(); setShowFilterDropdown((v) => !v); }}
+            style={({ pressed }) => [
+              styles.filterPill,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Text style={styles.filterPillText} numberOfLines={1}>
+              {FILTER_LABELS[filterMode]}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={TEXT_DIM} style={{ marginLeft: 4 }} />
+          </Pressable>
           {CATEGORIES.map((cat) => {
             const active = selectedCategory === cat;
             return (
@@ -315,26 +425,42 @@ export default function ExerciseLibraryScreen() {
           })}
         </ScrollView>
 
-        {/* Recently done toggle */}
-        {recentIds.length > 0 && (
-          <View style={styles.recentRow}>
-            <Pressable
-              onPress={() => { Haptics.selectionAsync(); setShowRecentlyDone((v) => !v); }}
-              style={({ pressed }) => [
-                styles.recentPill,
-                showRecentlyDone && styles.recentPillActive,
-                pressed && { opacity: 0.6 },
-              ]}
-            >
-              <Text style={[styles.recentText, showRecentlyDone && styles.recentTextActive]}>
-                {showRecentlyDone ? '● recently done' : '○ recently done'}
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
         <View style={styles.headerBorder} />
       </View>
+
+      {/* Filter dropdown overlay (outside header to avoid overflow clip) */}
+      {showFilterDropdown && (
+        <>
+          <Pressable
+            style={[StyleSheet.absoluteFill, { zIndex: 99 }]}
+            onPress={() => setShowFilterDropdown(false)}
+          />
+          <View style={[styles.filterDropdown, { top: HEADER_TOP + HEADER_TITLE + HEADER_SRCH + 4 }]}>
+            <BlurView intensity={BLUR} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: GLASS_FILL, borderRadius: 18 }]} />
+            <View style={styles.filterDropdownContent}>
+              {filterOptions.map((opt) => {
+                const active = filterMode === opt.value;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    style={({ pressed }) => [styles.filterDropdownItem, pressed && styles.filterDropdownItemPressed]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setFilterMode(opt.value);
+                      setShowFilterDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.filterDropdownItemText, active && styles.filterDropdownItemTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </>
+      )}
 
       {/* ── Main list ── */}
       <FlatList
@@ -346,8 +472,8 @@ export default function ExerciseLibraryScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListHeaderComponent={
-          !showRecentlyDone && filteredFavorites.length > 0
-            ? <FavoritesSection exercises={filteredFavorites} onPress={handlePress} />
+          filterMode !== 'recent' && filteredFavorites.length > 0
+            ? <FavoritesSection exercises={filteredFavorites} userExerciseIds={userExerciseIds} onPress={handlePress} />
             : null
         }
         ListEmptyComponent={
@@ -359,6 +485,12 @@ export default function ExerciseLibraryScreen() {
         maxToRenderPerBatch={20}
         windowSize={10}
         initialNumToRender={24}
+      />
+
+      <CreateExerciseSheet
+        visible={showCreateSheet}
+        onClose={() => setShowCreateSheet(false)}
+        onSave={handleCreateSave}
       />
     </View>
   );
@@ -386,6 +518,10 @@ const styles = StyleSheet.create({
     flex: 1, textAlign: 'center',
     color: TEXT_PRIMARY, fontSize: 20, fontWeight: '600', letterSpacing: -0.5,
   },
+  headerActionBtn: {
+    width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
+  },
+  headerActionPlaceholder: { width: 40, height: 40 },
   headerBorder: { height: 1, backgroundColor: GLASS_BORDER, marginTop: 4 },
 
   // Search
@@ -414,20 +550,37 @@ const styles = StyleSheet.create({
   catPillText:       { color: TEXT_DIM, fontSize: 12, fontWeight: '500' },
   catPillTextActive: { color: TEXT_PRIMARY, fontWeight: '600' },
 
-  // Recently done toggle
-  recentRow: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
-  recentPill: {
-    alignSelf: 'flex-start', borderRadius: 13,
-    paddingHorizontal: 13, paddingVertical: 5,
+  // Filter dropdown pill
+  filterPill: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 13, paddingHorizontal: 12, paddingVertical: 5,
     borderWidth: 1, borderColor: GLASS_BORDER,
     backgroundColor: 'rgba(47,48,49,0.30)',
+    maxWidth: 140,
   },
-  recentPillActive: {
-    backgroundColor: 'rgba(198,198,198,0.13)',
-    borderColor: 'rgba(198,198,198,0.28)',
+  filterPillText: {
+    color: TEXT_PRIMARY, fontSize: 12, fontWeight: '500',
   },
-  recentText:       { color: TEXT_DIM, fontSize: 12, fontWeight: '500' },
-  recentTextActive: { color: TEXT_PRIMARY, fontWeight: '600' },
+
+  // Filter dropdown
+  filterDropdown: {
+    position: 'absolute', left: 16, right: 16, zIndex: 101,
+    minWidth: 160, maxWidth: 220, overflow: 'hidden', borderRadius: 18,
+    borderWidth: 1, borderColor: GLASS_BORDER,
+  },
+  filterDropdownContent: { paddingVertical: 4 },
+  filterDropdownItem: {
+    paddingVertical: 12, paddingHorizontal: 16,
+  },
+  filterDropdownItemPressed: {
+    backgroundColor: 'rgba(198,198,198,0.06)',
+  },
+  filterDropdownItemText: {
+    color: TEXT_DIM, fontSize: 14, fontWeight: '500',
+  },
+  filterDropdownItemTextActive: {
+    color: TEXT_PRIMARY, fontWeight: '600',
+  },
 
   // List
   listContent: { paddingBottom: 60 },
@@ -452,7 +605,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(198,198,198,0.11)',
   },
   chipText:    { color: TEXT_DIM, fontSize: 11, fontWeight: '500' },
-  muscleLabel: { color: TEXT_DIM, fontSize: 11, marginLeft: 8, flexShrink: 0 },
+  rowMeta:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8, flexShrink: 0 },
+  muscleLabel: { color: TEXT_DIM, fontSize: 11 },
+  customLabel: { color: TEXT_DIM, fontSize: 10, opacity: 0.7 },
 
   // Separator
   separator: {

@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, Font } from '../constants/theme';
+import { Colors, Typography, Spacing } from '../constants/theme';
+import { TmlsnText } from './ui/TmlsnText';
 import { getUserSettings, saveUserSettings } from '../utils/storage';
 import type { UserSettings } from '../types';
 import {
@@ -35,7 +36,7 @@ function SegmentPill({
         pressed && { opacity: 0.85 },
       ]}
     >
-      <Text style={[styles.pillText, selected && styles.pillTextActive]}>{label}</Text>
+      <TmlsnText style={[styles.pillText, selected && styles.pillTextActive]}>{label}</TmlsnText>
     </Pressable>
   );
 }
@@ -65,7 +66,7 @@ export default function AppSettingsScreen() {
   if (!settings) {
     return (
       <View style={[styles.container, { backgroundColor: Colors.primaryDark }]}>
-        <Text style={styles.loadingText}>loading...</Text>
+        <TmlsnText style={styles.loadingText}>loading...</TmlsnText>
       </View>
     );
   }
@@ -171,14 +172,14 @@ export default function AppSettingsScreen() {
                         pressed && { opacity: 0.85 },
                       ]}
                     >
-                      <Text
+                      <TmlsnText
                         style={[
                           styles.chipText,
                           (settings.defaultRestTimer ?? 120) === sec && styles.chipTextActive,
                         ]}
                       >
                         {REST_TIMER_LABELS[sec]}
-                      </Text>
+                      </TmlsnText>
                     </Pressable>
                   ))}
                 </View>
@@ -201,6 +202,30 @@ export default function AppSettingsScreen() {
               />
             </>
           )}
+        </SettingsCard>
+
+        <SettingsSectionHeader label="Workout" />
+        <SettingsCard>
+          <SettingsRow
+            icon="barbell-outline"
+            label="Dumbbell weight entry"
+            subtitle="for bilateral exercises (e.g. lateral raise)"
+            last={false}
+            right={
+              <View style={styles.pillRow}>
+                <SegmentPill
+                  label="Per hand"
+                  selected={(settings.dumbbellWeightPreference ?? 'per_hand') === 'per_hand'}
+                  onPress={() => updateSettings({ dumbbellWeightPreference: 'per_hand' })}
+                />
+                <SegmentPill
+                  label="Total"
+                  selected={(settings.dumbbellWeightPreference ?? 'per_hand') === 'total'}
+                  onPress={() => updateSettings({ dumbbellWeightPreference: 'total' })}
+                />
+              </View>
+            }
+          />
         </SettingsCard>
 
         <SettingsSectionHeader label="Display" />
@@ -244,7 +269,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   loadingText: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     textAlign: 'center',

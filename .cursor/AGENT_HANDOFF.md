@@ -79,8 +79,11 @@
 
 ## Recently touched
 
-*List files or areas you just changed so the next agent knows what’s fresh.*
+*List files or areas you just changed so the next agent knows what's fresh.*
 
+- `utils/exerciseDb/exerciseDatabase.ts`, `app/exercises/index.tsx`, `app/exercises/[id].tsx`, `components/ExercisePickerModal.tsx` – Exercise system polish: search normalization (tricep/triceps, bicep/biceps, lat/lateral, db/dumbbell, bb/barbell); built-in vs custom indicator on ExerciseRow, FavoritesSection, ExercisePickerModal; detail page loadEntryMode badge + Custom label
+- `app/exercises/index.tsx`, `app/exercises/[id].tsx` – Create Exercise in Fitness Hub: user exercises merged with built-in, alphabetical sort, searchExercises for search, CreateExerciseSheet + Create exercise row; detail page fallback to user exercises when id not in EXERCISE_MAP
+- `constants/typography.ts`, `components/ui/TmlsnText.tsx`, `components/AppSettingsScreen.tsx`, `components/StatisticsButtonWidget.tsx`, `components/StreakWidget.tsx`, `.cursor/rules/system-default-font.mdc` – Added SF/system typography foundation (`SystemTypography`, `TypographyFamilies`, `TmlsnText`) and migrated 3 shared components to default system font usage
 <<<<<<< Updated upstream
 =======
 - `components/MuscleRadarChart.tsx`, `components/DetailedBodyHeatmap.tsx`, `components/MuscleBodyHeatmap.tsx` – Strength muscle haptics: removed animation-based haptics from radar; added haptic on muscle selection (body tap + MuscleRow tap)

@@ -27,6 +27,7 @@ import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarnin
 import { useButtonSound } from '../../hooks/useButtonSound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { formatLocalYMD } from '../../lib/time';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
@@ -66,7 +67,7 @@ export default function WorkoutScreen({
   const handleFinish = useCallback(async (payload: WorkoutSession) => {
     await saveWorkoutSession(payload);
     await logStreakWorkout();
-    await setSessionCompletedDate(new Date().toISOString().split('T')[0], user?.id);
+    await setSessionCompletedDate(formatLocalYMD(new Date()), user?.id);
     setActiveWorkout(null);
 
     const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };

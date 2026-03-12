@@ -14,6 +14,8 @@ import {
   TouchableOpacity,
   InputAccessoryView,
   Platform,
+  type NativeSyntheticEvent,
+  type TextInputEndEditingEventData,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +23,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import type { Exercise } from '../types';
+import type { LoadEntryMode } from '../utils/exerciseDb/types';
 import type { PrevSet } from '../utils/workoutSetTable';
 import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
 import {
@@ -89,6 +92,8 @@ export type WorkoutSetTableProps = {
   onRpeCommit?: (exerciseIndex: number, setIndex: number, rpe: number) => void;
   /** Called when user completes a set (check) with low RPE and has next set (for Dynamic Island warning). */
   onRpeCheckComplete?: (rpe: number, exerciseName: string, exerciseIndex: number, setIndex: number) => void;
+  /** How weight is entered: total, per hand, or per side. Affects weight column label. */
+  loadEntryMode?: LoadEntryMode;
 };
 
 function AnimatedSetNoteRow({
@@ -161,6 +166,7 @@ export function WorkoutSetTable({
   ghostReason,
   onRpeCommit,
   onRpeCheckComplete,
+  loadEntryMode = 'total',
 }: WorkoutSetTableProps) {
   const [editingCell, setEditingCell] = useState<{
     exerciseIndex: number;
@@ -174,30 +180,94 @@ export function WorkoutSetTable({
   const [ghostTooltip, setGhostTooltip] = useState<{ lastText: string; targetText: string } | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const commitInProgressRef = useRef(false);
+  const editingCellRef = useRef(editingCell);
+  const editingCellValueRef = useRef(editingCellValue);
   const accessoryViewID = `set-confirm-${exerciseIndex}`;
 
+  useEffect(() => {
+    editingCellRef.current = editingCell;
+  }, [editingCell]);
+
+  useEffect(() => {
+    editingCellValueRef.current = editingCellValue;
+  }, [editingCellValue]);
+
+  const setDraftValue = useCallback((value: string) => {
+    editingCellValueRef.current = value;
+    setEditingCellValue(value);
+  }, []);
+
+  const clearEditingState = useCallback(() => {
+    editingCellRef.current = null;
+    editingCellValueRef.current = '';
+    setEditingCell(null);
+    setEditingCellValue('');
+  }, []);
+
   const commitActiveFieldIfNeeded = useCallback(
-    (source: 'done' | 'outside' | 'blur') => {
-      if (!editingCell) return;
+    (
+      source: 'done' | 'outside' | 'blur',
+      overrides?: {
+        cell?: { exerciseIndex: number; setIndex: number; field: 'weight' | 'reps' | 'rpe' } | null;
+        value?: string;
+      }
+    ) => {
+      const activeCell = overrides?.cell ?? editingCellRef.current;
+      if (!activeCell) return;
       if (commitInProgressRef.current) return;
       commitInProgressRef.current = true;
-      const { exerciseIndex: exIdx, setIndex, field } = editingCell;
+      const rawValue = overrides?.value ?? editingCellValueRef.current;
+      const { exerciseIndex: exIdx, setIndex, field } = activeCell;
       if (field === 'weight') {
-        const n = parseAndValidateWeight(editingCellValue);
+        const n = parseAndValidateWeight(rawValue);
         if (n !== null) updateSet(exIdx, setIndex, { weight: n });
       } else if (field === 'rpe') {
-        const parsed = parseAndValidateRpe(editingCellValue);
+        const parsed = parseAndValidateRpe(rawValue);
         if (parsed !== null) updateSet(exIdx, setIndex, { rpe: parsed });
       } else {
-        const n = parseAndValidateReps(editingCellValue);
+        const n = parseAndValidateReps(rawValue);
         if (n !== null) updateSet(exIdx, setIndex, { reps: n });
       }
-      setEditingCell(null);
-      setEditingCellValue('');
+      clearEditingState();
       Keyboard.dismiss();
       commitInProgressRef.current = false;
     },
-    [editingCell, editingCellValue, weightUnit, updateSet]
+    [clearEditingState, updateSet]
+  );
+
+  const beginEditingCell = useCallback(
+    (
+      nextCell: { exerciseIndex: number; setIndex: number; field: 'weight' | 'reps' | 'rpe' },
+      initialValue: string
+    ) => {
+      const activeCell = editingCellRef.current;
+      if (
+        activeCell &&
+        (activeCell.exerciseIndex !== nextCell.exerciseIndex ||
+          activeCell.setIndex !== nextCell.setIndex ||
+          activeCell.field !== nextCell.field)
+      ) {
+        commitActiveFieldIfNeeded('outside');
+      }
+      editingCellRef.current = nextCell;
+      editingCellValueRef.current = initialValue;
+      setEditingCell(nextCell);
+      setEditingCellValue(initialValue);
+    },
+    [commitActiveFieldIfNeeded]
+  );
+
+  const handleInputEndEditing = useCallback(
+    (
+      cell: { exerciseIndex: number; setIndex: number; field: 'weight' | 'reps' | 'rpe' },
+      e: NativeSyntheticEvent<TextInputEndEditingEventData>
+    ) => {
+      const text = e.nativeEvent.text ?? '';
+      editingCellValueRef.current = text;
+      setEditingCellValue(text);
+      commitActiveFieldIfNeeded('blur', { cell, value: text });
+    },
+    [commitActiveFieldIfNeeded]
   );
 
   const commitActiveFieldRef = useRef(commitActiveFieldIfNeeded);
@@ -217,7 +287,20 @@ export function WorkoutSetTable({
           <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">PREVIOUS</Text>
         </View>
         <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight }]}>
-          <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">{weightUnit.toUpperCase()}</Text>
+          {loadEntryMode === 'total' ? (
+            <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">
+              {weightUnit.toUpperCase()}
+            </Text>
+          ) : (
+            <View style={styles.setTableHeaderStack}>
+              <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]}>
+                {weightUnit.toUpperCase()}
+              </Text>
+              <Text style={[styles.setTableHeaderSublabel, { color: colors.primaryLight + '50' }]}>
+                {loadEntryMode === 'per_hand' ? 'per hand' : 'per side'}
+              </Text>
+            </View>
+          )}
         </View>
         <View style={[styles.setTableCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps }]}>
           <Text style={[styles.setTableHeaderLabel, { color: colors.primaryLight + '50' }]} numberOfLines={1} ellipsizeMode="tail">REPS</Text>
@@ -289,10 +372,10 @@ export function WorkoutSetTable({
                         <View style={[styles.setInputCellBase, { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' }, styles.setInputCellActiveVisual, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]} collapsable={false}>
                           <Input
                             value={editingCellValue}
-                            onChangeText={setEditingCellValue}
+                            onChangeText={setDraftValue}
                             onFocus={() => onFocusCell?.(exerciseIndex, setIndex)}
-                            onBlur={() => commitActiveFieldIfNeeded('blur')}
-                            onEndEditing={() => {}}
+                            onBlur={() => {}}
+                            onEndEditing={(e) => handleInputEndEditing({ exerciseIndex, setIndex, field: 'weight' }, e)}
                             autoFocus
                             keyboardType="decimal-pad"
                             placeholder="—"
@@ -312,8 +395,7 @@ export function WorkoutSetTable({
                           onPressOut={playOut}
                           onPress={() => {
                             const displayValue = set.weight > 0 ? formatWeightDisplay(toDisplayWeight(set.weight, weightUnit), weightUnit) : '';
-                            setEditingCell({ exerciseIndex, setIndex, field: 'weight' });
-                            setEditingCellValue(displayValue);
+                            beginEditingCell({ exerciseIndex, setIndex, field: 'weight' }, displayValue);
                           }}
                           onLongPress={set.weight === 0 && effectiveGhostWeight ? () => {
                             const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
@@ -346,10 +428,10 @@ export function WorkoutSetTable({
                         <View style={[styles.setInputCellBase, { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' }, styles.setInputCellActiveVisual, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]} collapsable={false}>
                           <Input
                             value={editingCellValue}
-                            onChangeText={setEditingCellValue}
+                            onChangeText={setDraftValue}
                             onFocus={() => onFocusCell?.(exerciseIndex, setIndex)}
-                            onBlur={() => commitActiveFieldIfNeeded('blur')}
-                            onEndEditing={() => {}}
+                            onBlur={() => {}}
+                            onEndEditing={(e) => handleInputEndEditing({ exerciseIndex, setIndex, field: 'reps' }, e)}
                             autoFocus
                             keyboardType="number-pad"
                             placeholder="—"
@@ -369,8 +451,7 @@ export function WorkoutSetTable({
                           onPressOut={playOut}
                           onPress={() => {
                             const displayValue = set.reps > 0 ? String(set.reps) : '';
-                            setEditingCell({ exerciseIndex, setIndex, field: 'reps' });
-                            setEditingCellValue(displayValue);
+                            beginEditingCell({ exerciseIndex, setIndex, field: 'reps' }, displayValue);
                           }}
                           onLongPress={set.reps === 0 && effectiveGhostReps ? () => {
                             const _prev = prevSets[setIndex]?.weight > 0 && prevSets[setIndex]?.reps > 0
@@ -437,8 +518,7 @@ export function WorkoutSetTable({
                               const n = parseAndValidateReps(editingCellValue);
                               if (n !== null) setUpdates.reps = n;
                             }
-                            setEditingCell(null);
-                            setEditingCellValue('');
+                            clearEditingState();
                             Keyboard.dismiss();
                           }
                           if (nextCompleted) {
@@ -684,6 +764,18 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '50',
     textAlign: 'center',
     textTransform: 'uppercase' as const,
+  },
+  setTableHeaderStack: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 0,
+  },
+  setTableHeaderSublabel: {
+    fontSize: 9,
+    fontWeight: '600' as const,
+    letterSpacing: 0,
+    textAlign: 'center',
+    marginTop: 1,
   },
   setInputCell: { paddingHorizontal: 2 },
   setCellContentCenter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', width: '100%' },

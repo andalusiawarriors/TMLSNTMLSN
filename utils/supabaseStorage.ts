@@ -38,6 +38,7 @@ import {
   type OverloadCategory,
 } from '../lib/progression/decideNextPrescription';
 import { EXERCISE_MAP } from './exerciseDb/exerciseDatabase';
+import type { Exercise as DbExercise, CreateExerciseInput } from './exerciseDb/types';
 
 // workout_sets column for set ordering (DB may use set_number, set_order, order, etc.)
 const SET_ORDER_COLUMN = 'set_number';
@@ -147,6 +148,78 @@ type PrescriptionMeta = {
 
 type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
 
+export type WorkoutStreakStateRow = {
+  streakStartYmd: string | null;
+  lastWorkoutYmd: string | null;
+  lastWorkoutAt: string | null;
+  streakDead: boolean;
+  exemptWeek: string | null;
+};
+
+export async function supabaseGetWorkoutStreak(userId: string): Promise<WorkoutStreakStateRow | null> {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('workout_streaks')
+    .select('streak_start_ymd,last_workout_ymd,last_workout_at,streak_dead,exempt_week')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase get workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+
+  if (!data) return null;
+  return {
+    streakStartYmd: data.streak_start_ymd != null ? String(data.streak_start_ymd) : null,
+    lastWorkoutYmd: data.last_workout_ymd != null ? String(data.last_workout_ymd) : null,
+    lastWorkoutAt: data.last_workout_at != null ? String(data.last_workout_at) : null,
+    streakDead: Boolean(data.streak_dead ?? false),
+    exemptWeek: data.exempt_week != null ? String(data.exempt_week) : null,
+  };
+}
+
+export async function supabaseUpsertWorkoutStreak(
+  userId: string,
+  state: WorkoutStreakStateRow
+): Promise<void> {
+  if (!supabase) return;
+
+  const row: Database['public']['Tables']['workout_streaks']['Insert'] = {
+    user_id: userId,
+    streak_start_ymd: state.streakStartYmd,
+    last_workout_ymd: state.lastWorkoutYmd,
+    last_workout_at: state.lastWorkoutAt,
+    streak_dead: state.streakDead,
+    exempt_week: state.exemptWeek,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('workout_streaks')
+    .upsert(row, { onConflict: 'user_id' });
+
+  if (error) {
+    console.error('Supabase upsert workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+}
+
+export async function supabaseDeleteWorkoutStreak(userId: string): Promise<void> {
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from('workout_streaks')
+    .delete()
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('Supabase delete workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+}
+
 /** Uses canonical progression engine with full band system. */
 function computeNextPrescription(
   meta: PrescriptionMeta,
@@ -230,6 +303,77 @@ function generateUuid(): string {
   });
 }
 
+// --- User Exercises (custom exercises) ---
+
+function mapUserExerciseRowToDbExercise(row: Record<string, unknown>, userId: string): DbExercise {
+  const muscles = (row.muscles as Array<{ muscleId: string; activationPercent: number }>) ?? [];
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    overloadCategory: (row.overload_category as 'compound_big' | 'compound_small' | 'isolation') ?? 'isolation',
+    category: row.category as DbExercise['category'],
+    equipment: (row.equipment as DbExercise['equipment']) ?? [],
+    movementType: (row.movement_type as DbExercise['movementType']) ?? 'isolation',
+    forceType: (row.force_type as DbExercise['forceType']) ?? 'push',
+    muscles,
+    description: (row.description as string) ?? '',
+    tips: row.tips as string | undefined,
+    laterality: row.laterality as DbExercise['laterality'],
+    loadEntryMode: row.load_entry_mode as DbExercise['loadEntryMode'],
+    baseMovementId: row.base_movement_id as string | undefined,
+    aliases: row.aliases as string[] | undefined,
+    scope: 'user',
+    userId,
+  };
+}
+
+export async function supabaseFetchUserExercises(userId: string): Promise<DbExercise[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('user_exercises')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Supabase fetch user exercises:', error);
+    return [];
+  }
+  return (data ?? []).map((row) => mapUserExerciseRowToDbExercise(row as Record<string, unknown>, userId));
+}
+
+export async function supabaseInsertUserExercise(
+  userId: string,
+  data: CreateExerciseInput
+): Promise<DbExercise | null> {
+  if (!supabase) return null;
+  const row = {
+    user_id: userId,
+    name: data.name,
+    category: data.category,
+    equipment: data.equipment,
+    movement_type: 'isolation',
+    force_type: 'push',
+    overload_category: 'isolation',
+    laterality: data.laterality,
+    load_entry_mode: data.loadEntryMode,
+    base_movement_id: null,
+    aliases: [],
+    muscles: [] as unknown,
+    description: data.description ?? null,
+    tips: null,
+  };
+  const { data: inserted, error } = await supabase
+    .from('user_exercises')
+    .insert(row)
+    .select()
+    .single();
+  if (error) {
+    console.error('Supabase insert user exercise:', error);
+    return null;
+  }
+  return mapUserExerciseRowToDbExercise(inserted as Record<string, unknown>, userId);
+}
+
 // --- User Settings ---
 
 export async function supabaseGetUserSettings(userId: string): Promise<UserSettings> {
@@ -295,6 +439,8 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
       defaultRestTimer: s.defaultRestTimer,
       defaultRestTimerEnabled: s.defaultRestTimerEnabled,
       progressHubOrder: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : undefined,
+      bodyMapGender: s.bodyMapGender,
+      dumbbellWeightPreference: s.dumbbellWeightPreference,
     };
   }
   const pho = row.progress_hub_order as string[] | undefined;
@@ -320,6 +466,8 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
     defaultRestTimerEnabled:
       row.default_rest_timer_enabled != null ? Boolean(row.default_rest_timer_enabled) : undefined,
     training,
+    bodyMapGender: (row.body_map_gender as 'male' | 'female') ?? undefined,
+    dumbbellWeightPreference: (row.dumbbell_weight_preference as 'per_hand' | 'total') ?? undefined,
   };
 }
 
@@ -338,6 +486,8 @@ function mapUserSettingsToRow(
     default_rest_timer_enabled: s.defaultRestTimerEnabled ?? null,
     progress_hub_order: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : null,
     training_settings: s.training ?? null,
+    body_map_gender: s.bodyMapGender ?? null,
+    dumbbell_weight_preference: s.dumbbellWeightPreference ?? null,
   };
 }
 

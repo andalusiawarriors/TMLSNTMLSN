@@ -60,4 +60,5 @@ export const DEFAULT_SETTINGS: UserSettings = {
   bodyMapGender: 'male',
   progressHubOrder: [...DEFAULT_PROGRESS_HUB_ORDER],
   training: DEFAULT_TRAINING_SETTINGS,
+  dumbbellWeightPreference: 'per_hand',
 };

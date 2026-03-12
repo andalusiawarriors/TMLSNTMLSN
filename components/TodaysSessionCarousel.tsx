@@ -37,6 +37,7 @@ import { useAuth } from '../context/AuthContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
 import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
+import { formatLocalYMD } from '../lib/time';
 import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
 import type { WeightUnit } from '../utils/units';
 import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
@@ -399,7 +400,7 @@ export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: numbe
     (async () => {
       try {
         const stored = await getSessionCompletedDate(user?.id);
-        const today  = new Date().toISOString().split('T')[0];
+        const today  = formatLocalYMD(new Date());
         setSessionDoneToday(stored === today);
       } catch {
         setSessionDoneToday(false);

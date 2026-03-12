@@ -42,6 +42,66 @@ export type Database = {
         }
         Relationships: []
       }
+      user_exercises: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          category: string
+          equipment: string[]
+          movement_type: string
+          force_type: string
+          overload_category: string
+          laterality: string | null
+          load_entry_mode: string
+          base_movement_id: string | null
+          aliases: string[]
+          muscles: unknown
+          description: string | null
+          tips: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          category: string
+          equipment?: string[]
+          movement_type: string
+          force_type: string
+          overload_category?: string
+          laterality?: string | null
+          load_entry_mode?: string
+          base_movement_id?: string | null
+          aliases?: string[]
+          muscles?: unknown
+          description?: string | null
+          tips?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          category?: string
+          equipment?: string[]
+          movement_type?: string
+          force_type?: string
+          overload_category?: string
+          laterality?: string | null
+          load_entry_mode?: string
+          base_movement_id?: string | null
+          aliases?: string[]
+          muscles?: unknown
+          description?: string | null
+          tips?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       nutrition_logs: {
         Row: {
           calories: number
@@ -509,6 +569,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      workout_streaks: {
+        Row: {
+          created_at: string
+          exempt_week: string | null
+          last_workout_at: string | null
+          last_workout_ymd: string | null
+          streak_dead: boolean
+          streak_start_ymd: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          exempt_week?: string | null
+          last_workout_at?: string | null
+          last_workout_ymd?: string | null
+          streak_dead?: boolean
+          streak_start_ymd?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          exempt_week?: string | null
+          last_workout_at?: string | null
+          last_workout_ymd?: string | null
+          streak_dead?: boolean
+          streak_start_ymd?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {

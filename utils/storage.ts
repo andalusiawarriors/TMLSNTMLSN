@@ -206,7 +206,7 @@ export async function finalizeWorkoutSession(
     console.group('[Finalize] start sessionId=' + sessionId);
   }
   const duration =
-    session.duration != null && session.duration >= 0
+    session.duration != null && session.duration > 0
       ? session.duration
       : Math.round((Date.now() - new Date(session.date).getTime()) / 60000);
   const sessionCompleted: WorkoutSession = {

@@ -114,22 +114,24 @@ export function normalizeWeightForStorage(value: number): number {
 // ─── Session-level validation ─────────────────────────────────────────────────
 
 /**
- * Sanitize a workout session before save: mark any completed set with invalid
- * weight/reps/rpe as incomplete so broken data is never persisted.
+ * Sanitize a workout session before save:
+ * - drop any uncommitted set rows entirely
+ * - drop invalid completed rows entirely
+ * This keeps preview/ghost values in active UI state only and out of persisted history.
  */
 export function sanitizeWorkoutSessionForSave(session: WorkoutSession): WorkoutSession {
   return {
     ...session,
     exercises: (session.exercises ?? []).map((ex) => ({
       ...ex,
-      sets: (ex.sets ?? []).map((s) => {
-        if (!s.completed) return s;
+      sets: (ex.sets ?? []).filter((s) => {
+        if (!s.completed) return false;
         const valid = isValidCompletedSet({
           weight: s.weight ?? 0,
           reps: s.reps ?? 0,
           rpe: s.rpe ?? undefined,
         });
-        return valid ? s : { ...s, completed: false };
+        return valid;
       }),
     })),
   };

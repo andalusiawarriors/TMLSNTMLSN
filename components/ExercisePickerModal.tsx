@@ -27,9 +27,11 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
+import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY, searchExercises } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
 import * as Theme from '../constants/theme';
+import { CreateExerciseSheet } from './CreateExerciseSheet';
+import type { CreateExerciseInput } from '../utils/exerciseDb/types';
 
 const { Colors, Typography, Spacing } = Theme;
 
@@ -61,6 +63,10 @@ interface ExercisePickerModalProps {
   onClose: () => void;
   onSelect: (exercise: { id: string; name: string; exerciseDbId: string; restTimer: number }) => void;
   defaultRestTimer?: number;
+  /** User-created exercises to merge with built-in. Fetched from user_exercises when signed in. */
+  userExercises?: DbExercise[];
+  /** Create custom exercise. When provided, shows "Create exercise" row. Returns created exercise or null. */
+  onCreateExercise?: (data: CreateExerciseInput) => Promise<DbExercise | null>;
 }
 
 export function ExercisePickerModal({
@@ -68,10 +74,14 @@ export function ExercisePickerModal({
   onClose,
   onSelect,
   defaultRestTimer = 120,
+  userExercises = [],
+  onCreateExercise,
 }: ExercisePickerModalProps) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showCreateSheet, setShowCreateSheet] = useState(false);
+  const [localUserExercises, setLocalUserExercises] = useState<DbExercise[]>(userExercises);
 
   // ── Drag-to-close (attached to header only) ──────
   const translateY = useSharedValue(CLOSED_Y);
@@ -115,24 +125,38 @@ export function ExercisePickerModal({
     }
   }, [visible, translateY, backdropOpacity]);
 
-  const categories = useMemo(
-    () => Object.keys(EXERCISES_BY_CATEGORY).sort(),
-    []
-  );
+  const effectiveUserExercises = localUserExercises.length > 0 ? localUserExercises : (userExercises ?? []);
+
+  const categories = useMemo(() => {
+    const fromBuiltIn = new Set(Object.keys(EXERCISES_BY_CATEGORY));
+    effectiveUserExercises.forEach((ex) => fromBuiltIn.add(ex.category));
+    return Array.from(fromBuiltIn).sort();
+  }, [effectiveUserExercises]);
+
+  const handleCreateExercise = async (data: CreateExerciseInput) => {
+    if (!onCreateExercise) return null;
+    const created = await onCreateExercise(data);
+    if (created) {
+      setShowCreateSheet(false);
+      setLocalUserExercises((prev) => [...prev, created]);
+      onSelect({ id: created.id, name: created.name, exerciseDbId: created.id, restTimer: defaultRestTimer });
+      closeWithAnimation();
+      return created;
+    }
+    return null;
+  };
 
   const filteredExercises = useMemo(() => {
-    const cat = selectedCategory
-      ? EXERCISES_BY_CATEGORY[selectedCategory] ?? []
-      : EXERCISE_DATABASE;
-    const q = search.toLowerCase().trim();
-    if (!q) return cat;
-    return cat.filter(
-      (ex) =>
-        ex.name.toLowerCase().includes(q) ||
-        ex.category.toLowerCase().includes(q) ||
-        ex.equipment.some((e) => e.toLowerCase().includes(q))
-    );
-  }, [search, selectedCategory]);
+    const builtIn = EXERCISE_DATABASE;
+    const user = effectiveUserExercises;
+    const base = search.trim()
+      ? searchExercises(search, builtIn, user)
+      : [...builtIn, ...user];
+    if (selectedCategory) {
+      return base.filter((ex) => ex.category === selectedCategory);
+    }
+    return base;
+  }, [search, selectedCategory, effectiveUserExercises]);
 
   const handleSelect = (ex: DbExercise) => {
     onSelect({ id: ex.id, name: ex.name, exerciseDbId: ex.id, restTimer: defaultRestTimer });
@@ -162,13 +186,24 @@ export function ExercisePickerModal({
               <View style={styles.grabber} />
               <View style={styles.headerRow}>
                 <Text style={styles.title}>add exercise</Text>
-                <Pressable
-                  style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-                  onPress={closeWithAnimation}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="close" size={18} color={Colors.primaryLight} />
-                </Pressable>
+                <View style={styles.headerActions}>
+                  {onCreateExercise && (
+                    <Pressable
+                      style={({ pressed }) => [styles.headerActionBtn, pressed && styles.closeBtnPressed]}
+                      onPress={() => setShowCreateSheet(true)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons name="add" size={20} color={Colors.primaryLight} />
+                    </Pressable>
+                  )}
+                  <Pressable
+                    style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
+                    onPress={closeWithAnimation}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={18} color={Colors.primaryLight} />
+                  </Pressable>
+                </View>
               </View>
 
               {/* SEARCH */}
@@ -234,22 +269,28 @@ export function ExercisePickerModal({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {item.equipment.join(', ')} · {item.movementType}
-                    </Text>
-                  </View>
-                  <View style={styles.addBtn}>
-                    <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
-                  </View>
-                </Pressable>
-              )}
+              renderItem={({ item }) => {
+                const isCustom = effectiveUserExercises.some((e) => e.id === item.id);
+                return (
+                  <Pressable
+                    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                    onPress={() => handleSelect(item)}
+                  >
+                    <View style={styles.rowText}>
+                      <View style={styles.rowNameRow}>
+                        <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                        {isCustom && <Text style={styles.customTag}>custom</Text>}
+                      </View>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {item.equipment.join(', ')} · {item.movementType}
+                      </Text>
+                    </View>
+                    <View style={styles.addBtn}>
+                      <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
+                    </View>
+                  </Pressable>
+                );
+              }}
               ListEmptyComponent={
                 <View style={styles.emptyWrap}>
                   <Text style={styles.emptyText}>No exercises match your search.</Text>
@@ -262,6 +303,12 @@ export function ExercisePickerModal({
           </Pressable>
         </Animated.View>
       </View>
+
+      <CreateExerciseSheet
+        visible={showCreateSheet}
+        onClose={() => setShowCreateSheet(false)}
+        onSave={handleCreateExercise}
+      />
     </Modal>
   );
 }
@@ -322,6 +369,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: -0.11,
     color: Colors.primaryLight,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: R,
+    backgroundColor: Colors.primaryLight + '0E',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   closeBtn: {
     width: 36,
@@ -423,11 +483,22 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: Spacing.sm,
   },
+  rowNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   rowName: {
     fontSize: 15,
     fontWeight: '600',
     letterSpacing: -0.11,
     color: Colors.primaryLight,
+    flex: 1,
+  },
+  customTag: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.primaryLight + '70',
   },
   rowMeta: {
     fontSize: Typography.label,

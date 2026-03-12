@@ -118,13 +118,6 @@ function RadarPoint({
     );
   }, [index]);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      Haptics.selectionAsync();
-    }, index * STAGGER_MS + SLIDE_DURATION * 0.3);
-    return () => clearTimeout(t);
-  }, [index]);
-
   const animatedProps = useAnimatedProps(() => ({
     cx: centerX + (targetX - centerX) * progress.value,
     cy: centerY + (targetY - centerY) * progress.value,
@@ -140,7 +133,7 @@ function RadarPoint({
   );
 }
 
-// ── Radar axis label with staggered appear + haptic ──────────
+// ── Radar axis label with staggered appear ───────────────────
 // Rendered as RN Text overlay (entering doesn't work reliably with SVG G)
 
 function RadarAxisLabel({
@@ -158,13 +151,6 @@ function RadarAxisLabel({
   label: string;
   fill: string;
 }) {
-  useEffect(() => {
-    const t = setTimeout(() => {
-      Haptics.selectionAsync();
-    }, index * STAGGER_MS);
-    return () => clearTimeout(t);
-  }, [index]);
-
   const textAlign = anchor === 'start' ? 'left' : anchor === 'end' ? 'right' : 'center';
   const translateX = anchor === 'start' ? 0 : anchor === 'end' ? -60 : -30;
 

@@ -3,7 +3,96 @@
 // 150+ exercises with full muscle activation percentages
 // ============================================================
 
-import { Exercise } from './types';
+import { Exercise, LoadEntryMode } from './types';
+import type { UserSettings } from '../../types';
+
+// ── Search helper ───────────────────────────────────────────
+
+/** Normalize common query variants for search (e.g. tricep→triceps, lat→lateral). */
+const QUERY_NORMALIZE: Record<string, string> = {
+  tricep: 'triceps', triceps: 'triceps',
+  bicep: 'biceps', biceps: 'biceps',
+  lat: 'lateral', lateral: 'lateral',
+  db: 'dumbbell', dumbbell: 'dumbbell',
+  bb: 'barbell', barbell: 'barbell',
+};
+
+/** Tokenize query for search (lowercase, split on spaces). */
+function tokenize(q: string): string[] {
+  return q.toLowerCase().trim().split(/\s+/).filter(Boolean);
+}
+
+/** Normalize token for matching; returns token or expanded form. */
+function normalizeToken(tok: string): string {
+  return QUERY_NORMALIZE[tok] ?? tok;
+}
+
+/** Score exercise for relevance: 3=exact, 2=prefix, 1=contains, 0=no match. */
+function scoreExercise(ex: Exercise, tokens: string[]): number {
+  const nameLower = ex.name.toLowerCase();
+  const aliasLower = (ex.aliases ?? []).map((a) => a.toLowerCase());
+  const searchable = [nameLower, ...aliasLower];
+  const catLower = ex.category.toLowerCase();
+  const equipLower = ex.equipment.map((e) => e.toLowerCase());
+
+  let score = 0;
+  for (const tok of tokens) {
+    const norm = normalizeToken(tok);
+    let best = 0;
+    for (const s of searchable) {
+      if (s === norm || s === tok) best = Math.max(best, 3);
+      else if (s.startsWith(norm) || norm.startsWith(s) || s.startsWith(tok) || tok.startsWith(s)) best = Math.max(best, 2);
+      else if (s.includes(norm) || s.includes(tok)) best = Math.max(best, 1);
+    }
+    if (catLower.includes(norm) || catLower.includes(tok) || equipLower.some((e) => e.includes(norm) || e.includes(tok))) {
+      best = Math.max(best, 1);
+    }
+    if (best === 0) return 0;
+    score += best;
+  }
+  return score;
+}
+
+/**
+ * Search and merge built-in + user exercises. Tokenizes query, matches name + aliases + category + equipment.
+ * Sorts by relevance: exact match > prefix > contains.
+ */
+export function searchExercises(
+  query: string,
+  builtIn: Exercise[],
+  userExercises: Exercise[]
+): Exercise[] {
+  const merged = [...builtIn, ...userExercises];
+  const q = query.trim();
+  if (!q) return merged;
+
+  const tokens = tokenize(q);
+  const scored = merged
+    .map((ex) => ({ ex, score: scoreExercise(ex, tokens) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return scored.map(({ ex }) => ex);
+}
+
+/**
+ * Resolve loadEntryMode for an exercise. Used for weight column label in WorkoutSetTable.
+ * - If exercise has loadEntryMode, use it.
+ * - Else if equipment includes dumbbell and laterality === 'bilateral', use userSettings.dumbbellWeightPreference ?? 'per_hand'.
+ * - Else default 'total'.
+ */
+export function getLoadEntryModeForExercise(
+  exercise: Pick<Exercise, 'equipment' | 'laterality' | 'loadEntryMode'>,
+  userSettings?: Pick<UserSettings, 'dumbbellWeightPreference'> | null
+): LoadEntryMode {
+  if (exercise.loadEntryMode) return exercise.loadEntryMode;
+  const hasDumbbell = exercise.equipment?.includes('dumbbell') ?? false;
+  const isBilateral = exercise.laterality === 'bilateral' || !exercise.laterality;
+  if (hasDumbbell && isBilateral) {
+    return (userSettings?.dumbbellWeightPreference ?? 'per_hand') as LoadEntryMode;
+  }
+  return 'total';
+}
 
 // ── CHEST ────────────────────────────────────────────────────
 
@@ -282,6 +371,22 @@ const chestExercises: Exercise[] = [
       { muscleId: 'triceps_lateral', activationPercent: 50 },
     ],
     description: 'Bench press on Smith machine. Fixed bar path, good for controlled overload.',
+  },
+  {
+    id: 'incline_smith_chest_press',
+    name: 'Incline Smith Machine Chest Press',
+    overloadCategory: 'compound_small',
+    category: 'chest',
+    equipment: ['smith_machine'],
+    movementType: 'compound',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'chest_upper', activationPercent: 85 },
+      { muscleId: 'chest_mid', activationPercent: 55 },
+      { muscleId: 'front_delts', activationPercent: 70 },
+      { muscleId: 'triceps_lateral', activationPercent: 50 },
+    ],
+    description: 'Incline bench on Smith machine, press bar from upper chest.',
   },
   {
     id: 'landmine_press',
@@ -818,6 +923,28 @@ const shoulderExercises: Exercise[] = [
     ],
     description: 'Arms at sides, raise dumbbells laterally to shoulder height.',
     tips: 'Slight lean forward, lead with elbows, pour the teacup at top.',
+    laterality: 'bilateral',
+    baseMovementId: 'lateral_raise',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_lateral_raise',
+    name: 'Single-Arm Lateral Raise',
+    overloadCategory: 'isolation',
+    category: 'shoulders',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'side_delts', activationPercent: 95 },
+      { muscleId: 'front_delts', activationPercent: 25 },
+      { muscleId: 'traps_upper', activationPercent: 35 },
+    ],
+    description: 'Raise one dumbbell laterally to shoulder height. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'lateral_raise',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm lateral raise', 'one-arm lateral raise'],
   },
   {
     id: 'lateral_raise_cable',
@@ -1030,6 +1157,29 @@ const bicepsExercises: Exercise[] = [
       { muscleId: 'forearm_flexors', activationPercent: 35 },
     ],
     description: 'Standing or seated, curl dumbbells alternating or together.',
+    laterality: 'bilateral',
+    baseMovementId: 'curl',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_curl',
+    name: 'Single-Arm Dumbbell Curl',
+    overloadCategory: 'isolation',
+    category: 'biceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'pull',
+    muscles: [
+      { muscleId: 'biceps_short', activationPercent: 85 },
+      { muscleId: 'biceps_long', activationPercent: 85 },
+      { muscleId: 'brachialis', activationPercent: 45 },
+      { muscleId: 'forearm_flexors', activationPercent: 35 },
+    ],
+    description: 'Curl one dumbbell at a time. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'curl',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm curl', 'one-arm curl'],
   },
   {
     id: 'hammer_curl',
@@ -1047,6 +1197,29 @@ const bicepsExercises: Exercise[] = [
     ],
     description: 'Neutral grip (palms facing in), curl dumbbells. Great for arm thickness.',
     tips: 'Targets brachialis which pushes the bicep up — key for arm size.',
+    laterality: 'bilateral',
+    baseMovementId: 'hammer_curl',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_hammer_curl',
+    name: 'Single-Arm Hammer Curl',
+    overloadCategory: 'isolation',
+    category: 'biceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'pull',
+    muscles: [
+      { muscleId: 'brachialis', activationPercent: 85 },
+      { muscleId: 'brachioradialis', activationPercent: 80 },
+      { muscleId: 'biceps_long', activationPercent: 65 },
+      { muscleId: 'forearm_flexors', activationPercent: 45 },
+    ],
+    description: 'Neutral grip, curl one dumbbell at a time. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'hammer_curl',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm hammer curl', 'one-arm hammer curl'],
   },
   {
     id: 'incline_dumbbell_curl',
@@ -1211,6 +1384,22 @@ const tricepsExercises: Exercise[] = [
     tips: 'Lowering behind the head increases long head stretch.',
   },
   {
+    id: 'tricep_extension_cable',
+    name: 'Cable Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['cable'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_lateral', activationPercent: 90 },
+      { muscleId: 'triceps_medial', activationPercent: 75 },
+      { muscleId: 'triceps_long', activationPercent: 55 },
+    ],
+    description: 'Standing cable tricep extension. Single-arm or double rope.',
+    aliases: ['cable tricep extension', 'single arm cable tricep extension'],
+  },
+  {
     id: 'tricep_pushdown_rope',
     name: 'Tricep Pushdown (Rope)',
     overloadCategory: 'isolation',
@@ -1270,6 +1459,43 @@ const tricepsExercises: Exercise[] = [
       { muscleId: 'triceps_medial', activationPercent: 45 },
     ],
     description: 'Hold dumbbell overhead with both hands, lower behind head, extend.',
+    laterality: 'bilateral',
+    loadEntryMode: 'total',
+  },
+  {
+    id: 'tricep_extension_dumbbell',
+    name: 'Dumbbell Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_long', activationPercent: 90 },
+      { muscleId: 'triceps_lateral', activationPercent: 50 },
+      { muscleId: 'triceps_medial', activationPercent: 45 },
+    ],
+    description: 'Overhead extension with both hands on one dumbbell. Total weight.',
+    laterality: 'bilateral',
+    loadEntryMode: 'total',
+  },
+  {
+    id: 'single_arm_tricep_extension',
+    name: 'Single-Arm Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['cable', 'dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_long', activationPercent: 90 },
+      { muscleId: 'triceps_lateral', activationPercent: 55 },
+      { muscleId: 'triceps_medial', activationPercent: 50 },
+    ],
+    description: 'Single-arm cable or dumbbell tricep extension. Unilateral.',
+    laterality: 'unilateral',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm tricep extension', 'one-arm tricep extension'],
   },
   {
     id: 'dips_triceps',

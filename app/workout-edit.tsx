@@ -29,6 +29,10 @@ import { useButtonSound } from '../hooks/useButtonSound';
 import { HomeGradientBackground } from '../components/HomeGradientBackground';
 import { WorkoutSetTable } from '../components/WorkoutSetTable';
 import { buildPrevSetsAndGhost } from '../utils/workoutSetTable';
+import { EXERCISE_MAP, getLoadEntryModeForExercise } from '../utils/exerciseDb/exerciseDatabase';
+import { supabaseFetchUserExercises } from '../utils/supabaseStorage';
+import { useAuth } from '../context/AuthContext';
+import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -55,6 +59,9 @@ export default function WorkoutEditScreen() {
   const [weightUnit, setWeightUnit] = useState<'lb' | 'kg'>('lb');
   const [commitOutsideTrigger, setCommitOutsideTrigger] = useState(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [userSettings, setUserSettings] = useState<{ dumbbellWeightPreference?: 'per_hand' | 'total' } | null>(null);
+  const [userExercises, setUserExercises] = useState<DbExercise[]>([]);
+  const { user } = useAuth();
 
   const scrollRef = useRef<ScrollView>(null);
   const sessionRef = useRef<WorkoutSession | null>(null);
@@ -77,14 +84,18 @@ export default function WorkoutEditScreen() {
         const found = sessions.find((s) => s.id === sessionId);
         if (found) setSession(JSON.parse(JSON.stringify(found)));
         setWeightUnit(settings?.weightUnit ?? 'lb');
+        setUserSettings(settings);
         setRecentSessions(sessions.filter((s) => s.id !== sessionId).slice(0, 10));
+        if (user?.id) {
+          supabaseFetchUserExercises(user.id).then(setUserExercises);
+        }
       } catch (e) {
         console.error(e);
       } finally {
         setLoading(false);
       }
     })();
-  }, [sessionId]);
+  }, [sessionId, user?.id]);
 
   const updateSet = useCallback((
     exerciseIndex: number,
@@ -316,6 +327,9 @@ export default function WorkoutEditScreen() {
 
                 {(() => {
                   const { prevSets, ghostWeight, ghostReps } = buildPrevSetsAndGhost(exercise, {}, recentSessions, weightUnit);
+                  const dbEx = (exercise.exerciseDbId && EXERCISE_MAP.get(exercise.exerciseDbId))
+                    ?? userExercises.find((ue) => ue.id === exercise.exerciseDbId || ue.name === exercise.name);
+                  const loadEntryMode = dbEx ? getLoadEntryModeForExercise(dbEx, userSettings) : 'total';
                   return (
                     <WorkoutSetTable
                       exercise={exercise}
@@ -325,6 +339,7 @@ export default function WorkoutEditScreen() {
                       ghostReps={ghostReps}
                       weightUnit={weightUnit}
                       colors={colors}
+                      loadEntryMode={loadEntryMode}
                       updateSet={updateSet}
                       onRemoveSet={removeSet}
                       onAddSet={addSet}

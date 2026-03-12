@@ -19,8 +19,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Svg, { Polyline, Line, Rect, Text as SvgText, Circle } from 'react-native-svg';
-import { EXERCISE_MAP } from '../../utils/exerciseDb/exerciseDatabase';
+import { EXERCISE_MAP, getLoadEntryModeForExercise } from '../../utils/exerciseDb/exerciseDatabase';
+import type { Exercise } from '../../utils/exerciseDb/types';
 import { getWorkoutSessions, getUserSettings } from '../../utils/storage';
+import type { UserSettings } from '../../types';
+import { supabaseFetchUserExercises } from '../../utils/supabaseStorage';
+import { useAuth } from '../../context/AuthContext';
 import {
   getExerciseSettings,
   saveExerciseSettings,
@@ -64,6 +68,7 @@ const EQUIP_LABELS: Record<string, string> = {
   barbell: 'Bar', dumbbell: 'DB', cable: 'Cable', machine: 'Machine',
   bodyweight: 'BW', kettlebell: 'KB', ez_bar: 'EZ',
   smith_machine: 'Smith', resistance_band: 'Band', trx: 'TRX',
+  plate: 'Plate', trap_bar: 'Trap Bar',
 };
 
 const MUSCLE_LABELS: Record<string, string> = {
@@ -306,9 +311,27 @@ const stepStyles = StyleSheet.create({
 export default function ExerciseDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const exercise = useMemo(() => (id ? EXERCISE_MAP.get(id) : undefined), [id]);
+  const builtinExercise = useMemo(() => (id ? EXERCISE_MAP.get(id) : undefined), [id]);
+  const [userExercise, setUserExercise] = useState<Exercise | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (builtinExercise || !id || !user?.id) {
+      setUserExercise(builtinExercise ? null : undefined);
+      return;
+    }
+    let active = true;
+    supabaseFetchUserExercises(user.id).then((list) => {
+      if (!active) return;
+      const found = list.find((ex) => ex.id === id) ?? null;
+      setUserExercise(found);
+    });
+    return () => { active = false; };
+  }, [id, user?.id, builtinExercise]);
+
+  const exercise = builtinExercise ?? (userExercise ?? undefined);
 
   const [chartData,  setChartData]  = useState<ChartPoint[]>([]);
   const [isFav,      setIsFav]      = useState(false);
@@ -320,6 +343,7 @@ export default function ExerciseDetailScreen() {
       : 1,
   );
   const [weightUnit, setWeightUnit] = useState<'kg' | 'lb'>('kg');
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [saveState,  setSaveState]  = useState<'idle' | 'saved'>('idle');
 
   const increment = INCREMENT_OPTIONS[incIdx];
@@ -342,6 +366,7 @@ export default function ExerciseDetailScreen() {
       const idx = INCREMENT_OPTIONS.indexOf(settings.smallestIncrement);
       setIncIdx(idx !== -1 ? idx : 1);
       setWeightUnit((userSettings.weightUnit ?? 'kg') as 'kg' | 'lb');
+      setUserSettings(userSettings);
 
       // Chart
       try {
@@ -393,6 +418,17 @@ export default function ExerciseDetailScreen() {
     setTimeout(() => setSaveState('idle'), 2000);
   }, [id, repLow, repHigh, incIdx]);
 
+  // ── Loading (fetching user exercise) ──
+  const isLoadingUserExercise = !builtinExercise && id && user?.id && userExercise === undefined;
+  if (isLoadingUserExercise) {
+    return (
+      <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
+        <HomeGradientBackground />
+        <Text style={{ color: TEXT_DIM, fontSize: 16 }}>Loading…</Text>
+      </View>
+    );
+  }
+
   // ── Not found ──
   if (!exercise) {
     return (
@@ -418,7 +454,13 @@ export default function ExerciseDetailScreen() {
 
   const equipLabels = exercise.equipment.map((e) => EQUIP_LABELS[e] ?? e).join(', ');
   const catLabel    = CATEGORY_LABELS[exercise.category] ?? exercise.category;
+  const loadEntryMode = exercise.loadEntryMode ?? getLoadEntryModeForExercise(exercise, userSettings);
+  const isCustom = !!userExercise;
   const TITLE_TOP   = insets.top + 8;
+
+  const LOAD_ENTRY_LABELS: Record<string, string> = {
+    total: 'Total weight', per_hand: 'Per hand', per_side: 'Per side',
+  };
 
   return (
     <View style={styles.root}>
@@ -460,11 +502,21 @@ export default function ExerciseDetailScreen() {
       >
         {/* ── Exercise Info card ── */}
         <GCard>
-          {/* Category + equipment row */}
+          {/* Category + equipment + scope + load entry row */}
           <View style={styles.badgeRow}>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{catLabel}</Text>
             </View>
+            {isCustom && (
+              <View style={styles.badgeCustom}>
+                <Text style={styles.badgeText}>{'Custom'}</Text>
+              </View>
+            )}
+            {loadEntryMode !== 'total' && (
+              <View style={styles.badgeLoad}>
+                <Text style={styles.badgeText}>{LOAD_ENTRY_LABELS[loadEntryMode] ?? loadEntryMode}</Text>
+              </View>
+            )}
             <Text style={styles.equipText}>{equipLabels}</Text>
           </View>
 
@@ -595,6 +647,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16,
   },
   badge: {
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: 'rgba(198,198,198,0.12)',
+    borderWidth: 1, borderColor: GLASS_BORDER,
+  },
+  badgeCustom: {
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: 'rgba(198,198,198,0.08)',
+    borderWidth: 1, borderColor: GLASS_BORDER,
+  },
+  badgeLoad: {
     borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
     backgroundColor: 'rgba(198,198,198,0.12)',
     borderWidth: 1, borderColor: GLASS_BORDER,

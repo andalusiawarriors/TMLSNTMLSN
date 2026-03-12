@@ -1,6 +1,10 @@
 -- ============================================================
 -- 008_training_system.sql
 -- Training settings, schedule, logs, and weekly volume view
+--
+-- NOTE: workout_schedule and weekly_volume_summary are stale design artifacts.
+-- They are NOT present in production. Do not reintroduce code dependencies on
+-- them unless this schema is intentionally revived.
 -- ============================================================
 
 -- ─── ENUMS ───────────────────────────────────────────────────

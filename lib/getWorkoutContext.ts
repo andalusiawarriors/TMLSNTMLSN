@@ -547,26 +547,14 @@ export async function getTodayWorkoutContext(
 
   const loadPromise = (async (): Promise<WorkoutContext> => {
     try {
-    // Parallel: training_settings + today's schedule + weekly volume (history fetched after we have trainingSettings)
-    const [settingsRes, scheduleRes, volumeRes] = await Promise.all([
+    // training_settings only. workout_schedule and weekly_volume_summary are not in production;
+    // schedule comes from TMLSN_PROTOCOL_SCHEDULE or user_settings.weekPlan; weeklyVolume degrades to [].
+    const [settingsRes] = await Promise.all([
       supabase
         .from('training_settings')
         .select('volume_framework, schedule_mode, current_week')
         .eq('user_id', effectiveUserId)
         .maybeSingle(),
-
-      supabase
-        .from('workout_schedule')
-        .select('day_of_week, workout_type, exercise_ids, is_rest_day')
-        .eq('user_id', effectiveUserId)
-        .eq('day_of_week', lookupDay)
-        .maybeSingle(),
-
-      supabase
-        .from('weekly_volume_summary')
-        .select('muscle_group, week_start, sets_done, mev, mav, mrv')
-        .eq('user_id', effectiveUserId)
-        .eq('week_start', mondayYMD),
     ]);
 
     // Map training settings first (needed for getHistorySummary filter)
@@ -597,17 +585,6 @@ export async function getTodayWorkoutContext(
     // History summary with schedule_mode filter applied inside (4s timeout, never throws)
     const historySummary = await getHistorySummary(effectiveUserId, trainingSettings);
 
-
-    // Debug: if schedule/settings null with no error, confirm rows exist
-    if (__DEV__ && !settingsRes.error && !scheduleRes.error && (!settingsRes.data || !scheduleRes.data)) {
-      const [tsCount, wsCount] = await Promise.all([
-        supabase.from('training_settings').select('id', { count: 'exact', head: true }).eq('user_id', effectiveUserId),
-        supabase.from('workout_schedule').select('id', { count: 'exact', head: true }).eq('user_id', effectiveUserId),
-      ]);
-      console.log('[getWorkoutContext] debug: training_settings count=', tsCount.count, 'tsError=', tsCount.error);
-      console.log('[getWorkoutContext] debug: workout_schedule count=', wsCount.count, 'wsError=', wsCount.error);
-    }
-
     const isTmlsnProtocol =
     trainingSettings?.scheduleMode === 'tmlsn' ||
     trainingSettings?.scheduleMode === 'tmlsn_protocol' ||
@@ -619,21 +596,11 @@ export async function getTodayWorkoutContext(
 
     if (__DEV__) {
       if (settingsRes.error) console.warn('[getWorkoutContext] training_settings error:', settingsRes.error);
-      if (scheduleRes.error) console.warn('[getWorkoutContext] workout_schedule error:', scheduleRes.error);
-      if (volumeRes.error) console.warn('[getWorkoutContext] weekly_volume_summary error:', volumeRes.error);
-      const scheduleRow = scheduleRes.data ? 'YES' : 'NO';
-      console.log('[getWorkoutContext] dayName=', dayName, 'scheduleRow=', scheduleRow, 'isTmlsnProtocol=', isTmlsnProtocol);
+      console.log('[getWorkoutContext] dayName=', dayName, 'isTmlsnProtocol=', isTmlsnProtocol);
     }
 
-    // Map weekly volume
-    const weeklyVolume: VolumeStatus[] = (volumeRes.data ?? []).map((row: { muscle_group?: string; week_start?: string; sets_done?: number; mev?: number; mav?: number; mrv?: number }) => ({
-      muscleGroup: row.muscle_group ?? '',
-      weekStart: row.week_start ?? '',
-      setsDone: Number(row.sets_done ?? 0),
-      mev: row.mev ?? null,
-      mav: row.mav ?? null,
-      mrv: row.mrv ?? null,
-    }));
+    // weekly_volume_summary not in production; degrade to empty (consumers handle empty)
+    const weeklyVolume: VolumeStatus[] = [];
 
     const trainedToday = (historySummary.recentSessions ?? []).some((s) => s.sessionDate === todayYMD);
     const lastSession = historySummary.lastSessionDate ?? historySummary.adherence?.lastWorkoutDate ?? null;
@@ -669,8 +636,9 @@ export async function getTodayWorkoutContext(
       };
     };
 
-    // No schedule row from DB — use TMLSN fallback when on TMLSN protocol
-    const rawSchedule = scheduleRes.data;
+    // Production does not use workout_schedule. Schedule comes from TMLSN_PROTOCOL_SCHEDULE
+    // (protocol mode) or user_settings.weekPlan (builder/custom mode).
+    const rawSchedule = null;
     if (!rawSchedule) {
       if (isTmlsnProtocol) {
         if (__DEV__) {

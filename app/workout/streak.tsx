@@ -18,11 +18,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Typography, Font } from '../../constants/theme';
 import { getUserSettings } from '../../utils/storage';
 import { scheduleStreak6HourNotification, cancelNotification } from '../../utils/notifications';
+import {
+  getCurrentLocalWeekKey,
+  getStreakCountdownSeconds,
+  getStreakState,
+  resetStreakState,
+  useStreakRestDay,
+} from '../../utils/streak';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const STORAGE_KEY = 'tmlsn_workout_streak_v2';
 const STREAK_NOTIF_KEY = 'tmlsn_streak_6h_notification_id';
 const TICK_MS = 17; // ~60fps for smooth bar and number updates
 const COUNTDOWN_TOTAL = 86400;
@@ -59,14 +65,6 @@ const BAR_CONFIGS = [
 // ─── DATE UTILS ───────────────────────────────────────────────────────────────
 function daysInMonth(dt: Date) {
   return new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
-}
-
-function getWeekKey(date: Date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return `${d.getUTCFullYear()}-W${Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)}`;
 }
 
 function formatCountdown(secs: number) {
@@ -220,60 +218,47 @@ const BAR_H = 42;
 export default function StreakScreen() {
   const [streakStart, setStreakStart] = useState<Date | null>(null);
   const [lastWorkout, setLastWorkout] = useState<Date | null>(null);
+  const [lastWorkoutYmd, setLastWorkoutYmd] = useState<string | null>(null);
   const [exemptWeek, setExemptWeek] = useState<string | null>(null);
   const [streakDead, setStreakDead] = useState(false);
   const [countdown, setCountdown] = useState(COUNTDOWN_TOTAL);
   const [barData, setBarData] = useState<ReturnType<typeof calcBars> | null>(null);
 
-  const streakRef = useRef<Date | null>(null);
-  const deadRef = useRef(false);
   const exemptRef = useRef<string | null>(null);
-  const lastWorkRef = useRef<Date | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cdRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streakNotifRef = useRef<string | null>(null);
 
-  useEffect(() => { streakRef.current = streakStart; }, [streakStart]);
-  useEffect(() => { deadRef.current = streakDead; }, [streakDead]);
   useEffect(() => { exemptRef.current = exemptWeek; }, [exemptWeek]);
-  useEffect(() => { lastWorkRef.current = lastWorkout; }, [lastWorkout]);
 
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
-        const s = JSON.parse(raw);
-        const start = s.streakStart ? new Date(s.streakStart) : null;
-        const last = s.lastWorkout ? new Date(s.lastWorkout) : null;
-        if (start) setStreakStart(start);
-        if (last) setLastWorkout(last);
-        if (s.exemptWeek) setExemptWeek(s.exemptWeek);
+        const state = await getStreakState();
+        setStreakStart(state.streakStart);
+        setLastWorkout(state.lastWorkout);
+        setLastWorkoutYmd(state.lastWorkoutYmd);
+        setExemptWeek(state.exemptWeek);
+        setStreakDead(state.streakDead);
 
-        if (last) {
-          const elapsed = Math.floor((Date.now() - last.getTime()) / 1000);
-          const rem = COUNTDOWN_TOTAL - elapsed;
-          if (rem <= 0 && s.exemptWeek !== getWeekKey(new Date())) {
-            setStreakDead(true);
-          } else {
-            const cd = Math.max(0, rem);
-            setCountdown(cd);
-            if (cd > SIX_HOURS_SEC) {
-              getUserSettings().then(async (settings) => {
-                if (settings.notificationsEnabled) {
-                  const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
-                  if (oldId) {
-                    await cancelNotification(oldId);
-                    await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
-                  }
-                  const id = await scheduleStreak6HourNotification(cd - SIX_HOURS_SEC);
-                  if (id) {
-                    streakNotifRef.current = id;
-                    await AsyncStorage.setItem(STREAK_NOTIF_KEY, id);
-                  }
+        if (state.lastWorkoutYmd && !state.streakDead) {
+          const cd = getStreakCountdownSeconds(state.lastWorkoutYmd, state.exemptWeek);
+          setCountdown(cd);
+          if (cd > SIX_HOURS_SEC) {
+            getUserSettings().then(async (settings) => {
+              if (settings.notificationsEnabled) {
+                const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
+                if (oldId) {
+                  await cancelNotification(oldId);
+                  await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
                 }
-              });
-            }
+                const id = await scheduleStreak6HourNotification(cd - SIX_HOURS_SEC);
+                if (id) {
+                  streakNotifRef.current = id;
+                  await AsyncStorage.setItem(STREAK_NOTIF_KEY, id);
+                }
+              }
+            });
           }
         }
       } catch (e) { console.warn('streak load error', e); }
@@ -291,33 +276,17 @@ export default function StreakScreen() {
 
   useEffect(() => {
     if (cdRef.current) clearInterval(cdRef.current);
-    if (!lastWorkout || streakDead) return;
+    if (!lastWorkoutYmd || streakDead) return;
     cdRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          if (cdRef.current) clearInterval(cdRef.current);
-          if (exemptRef.current === getWeekKey(new Date())) {
-            return COUNTDOWN_TOTAL;
-          }
-          setStreakDead(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const next = getStreakCountdownSeconds(lastWorkoutYmd, exemptRef.current, new Date());
+      setCountdown(next);
+      if (next === 0 && exemptRef.current !== getCurrentLocalWeekKey(new Date())) {
+        if (cdRef.current) clearInterval(cdRef.current);
+        setStreakDead(true);
+      }
     }, 1000);
     return () => { if (cdRef.current) clearInterval(cdRef.current); };
-  }, [lastWorkout, streakDead]);
-
-  const persist = useCallback(async (patch: Record<string, unknown> = {}) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({
-        streakStart: streakRef.current?.toISOString() ?? null,
-        lastWorkout: lastWorkRef.current?.toISOString() ?? null,
-        exemptWeek: exemptRef.current ?? null,
-        ...patch,
-      }));
-    } catch (e) { console.warn('streak save error', e); }
-  }, []);
+  }, [lastWorkoutYmd, streakDead]);
 
   const useRestDay = useCallback(async () => {
     const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
@@ -326,10 +295,10 @@ export default function StreakScreen() {
       await AsyncStorage.removeItem(STREAK_NOTIF_KEY);
     }
     streakNotifRef.current = null;
-    const wk = getWeekKey(new Date());
+    const wk = getCurrentLocalWeekKey(new Date());
     setExemptWeek(wk);
-    await persist({ exemptWeek: wk });
-  }, [persist]);
+    await useStreakRestDay();
+  }, []);
 
   const resetStreak = useCallback(async () => {
     const oldId = await AsyncStorage.getItem(STREAK_NOTIF_KEY);
@@ -346,10 +315,11 @@ export default function StreakScreen() {
     setExemptWeek(null);
     setCountdown(COUNTDOWN_TOTAL);
     setBarData(null);
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    setLastWorkoutYmd(null);
+    await resetStreakState();
   }, []);
 
-  const exemptThisWeek = exemptWeek === getWeekKey(new Date());
+  const exemptThisWeek = exemptWeek === getCurrentLocalWeekKey(new Date());
   const cdUrgent = countdown < 3600;
   const cdWarning = !cdUrgent && countdown < 10800;
   const cdColor = cdUrgent ? Colors.accentRed : cdWarning ? Colors.primaryLight : Colors.primaryLight;

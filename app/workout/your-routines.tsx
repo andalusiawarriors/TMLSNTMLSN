@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,10 @@ import { SavedRoutine, SavedRoutineExercise } from '../../types';
 import { generateId, formatDuration } from '../../utils/helpers';
 import { useButtonSound } from '../../hooks/useButtonSound';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { Card } from '../../components/Card';
+import { supabaseFetchUserExercises, supabaseInsertUserExercise } from '../../utils/supabaseStorage';
+import type { Exercise as DbExercise, CreateExerciseInput } from '../../utils/exerciseDb/types';
 import { BackButton } from '../../components/BackButton';
 import { HomeGradientBackground } from '../../components/HomeGradientBackground';
 
@@ -49,6 +52,14 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
     name: string;
     exercises: SavedRoutineExercise[];
   }>({ name: 'New Routine', exercises: [] });
+  const [userExercises, setUserExercises] = useState<DbExercise[]>([]);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (showExercisePicker && user?.id) {
+      supabaseFetchUserExercises(user.id).then(setUserExercises);
+    }
+  }, [showExercisePicker, user?.id]);
 
   const loadRoutines = useCallback(async () => {
     const routines = await getSavedRoutines();
@@ -429,6 +440,8 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
             onClose={() => setShowExercisePicker(false)}
             onSelect={addExerciseToRoutine}
             defaultRestTimer={120}
+            userExercises={userExercises}
+            onCreateExercise={user?.id ? (data: CreateExerciseInput) => supabaseInsertUserExercise(user.id, data) : undefined}
           />
         </View>
       )}

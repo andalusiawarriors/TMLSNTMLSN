@@ -7,6 +7,7 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import Body, { type ExtendedBodyPart, type Slug } from 'react-native-body-highlighter';
 import type { HeatmapData } from '../utils/weeklyMuscleTracker';
@@ -143,6 +144,7 @@ export function DetailedBodyHeatmap({
     if (!onMusclePress || !bodyPart.slug) return;
     const group = SLUG_TO_GROUP[bodyPart.slug];
     if (group) {
+      Haptics.selectionAsync();
       onMusclePress(pressedMuscleGroup === group ? null : group);
     }
   }, [onMusclePress, pressedMuscleGroup]);

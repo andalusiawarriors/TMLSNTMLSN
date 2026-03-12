@@ -23,6 +23,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { formatLocalYMD } from '../lib/time';
 import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
 import { getWorkoutSessions, getUserSettings, finalizeWorkoutSession, setSessionCompletedDate } from '../utils/storage';
 import { getInvalidCompletedSets } from '../utils/workoutSetValidation';
@@ -72,12 +73,16 @@ export default function WorkoutSaveScreen() {
         getUserSettings(),
       ]);
       const found = sessions.find((s: any) => s.id === sessionId);
-      setSession(found || null);
+      setSession((current: any) => {
+        if (found) return found;
+        if (activeWorkout?.id === sessionId) return current;
+        return null;
+      });
       setWeightUnit(settings.weightUnit);
       if (found?.name && found.name !== 'Workout') setTitle(found.name);
     }
     if (sessionId) loadSession();
-  }, [sessionId]);
+  }, [sessionId, activeWorkout?.id]);
 
   // Prefer active workout from context when it matches (user just tapped Finish); else use loaded session.
   useEffect(() => {
@@ -87,13 +92,15 @@ export default function WorkoutSaveScreen() {
     }
   }, [sessionId, activeWorkout]);
 
+  const displaySession = activeWorkout?.id === sessionId ? activeWorkout : session;
+
   // Derived stats
-  const duration = session?.duration ?? 0;
-  const totalSets = session
-    ? session.exercises.reduce((acc: number, ex: any) => acc + ex.sets.filter((s: any) => s.completed).length, 0)
+  const duration = displaySession?.duration ?? 0;
+  const totalSets = displaySession
+    ? displaySession.exercises.reduce((acc: number, ex: any) => acc + ex.sets.filter((s: any) => s.completed).length, 0)
     : 0;
-  const rawVolume = session
-    ? session.exercises.reduce(
+  const rawVolume = displaySession
+    ? displaySession.exercises.reduce(
         (acc: number, ex: any) =>
           acc + ex.sets.filter((s: any) => s.completed).reduce((sacc: number, set: any) => sacc + set.weight * set.reps, 0),
         0
@@ -183,7 +190,7 @@ export default function WorkoutSaveScreen() {
       }
 
       // Mark today's recommended session as done so carousel shows "All caught up"
-      await setSessionCompletedDate(new Date().toISOString().split('T')[0], user?.id);
+      await setSessionCompletedDate(formatLocalYMD(new Date()), user?.id);
 
       // Clear the active workout now that the user has confirmed the save
       setActiveWorkout(null);

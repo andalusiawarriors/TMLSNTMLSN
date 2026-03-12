@@ -67,9 +67,13 @@ import { shouldTriggerLowRpeWarning } from '../utils/rpe';
 import { getTodayWorkoutContext, type TodayExerciseDetail } from '../lib/getWorkoutContext';
 import {
   supabaseGetExercisePrescriptions,
+  supabaseFetchUserExercises,
+  supabaseInsertUserExercise,
   ExercisePrescriptionRow,
   resolveOverloadCategory,
 } from '../utils/supabaseStorage';
+import type { Exercise as DbExercise, CreateExerciseInput } from '../utils/exerciseDb/types';
+import { EXERCISE_MAP, getLoadEntryModeForExercise } from '../utils/exerciseDb/exerciseDatabase';
 import { LB_PER_KG } from '../utils/units';
 import { getIncrementKg } from '../lib/progression/decideNextPrescription';
 import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
@@ -122,7 +126,7 @@ export function buildCompletedWorkoutSession(w: WorkoutSession): WorkoutSession 
       name: ex.name,
       exerciseDbId: ex.exerciseDbId,
       restTimer: ex.restTimer,
-      sets: (ex.sets ?? []).map((s) => ({
+      sets: (ex.sets ?? []).filter((s) => s.completed).map((s) => ({
         id: s.id,
         weight: s.weight,
         reps: s.reps,
@@ -270,8 +274,16 @@ export function WorkoutCore({
 
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [statsModalTab, setStatsModalTab] = useState<'volume' | 'sets'>('volume');
+  const [userExercises, setUserExercises] = useState<DbExercise[]>([]);
+  const [userSettings, setUserSettings] = useState<{ dumbbellWeightPreference?: 'per_hand' | 'total' } | null>(null);
 
   const { playIn, playOut } = useButtonSound();
+
+  useEffect(() => {
+    if (showExercisePicker && user?.id) {
+      supabaseFetchUserExercises(user.id).then(setUserExercises);
+    }
+  }, [showExercisePicker, user?.id]);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -329,6 +341,7 @@ export function WorkoutCore({
       setAnimTrigger((t) => t + 1);
       getUserSettings().then((s) => {
         setWeightUnit(s.weightUnit);
+        setUserSettings(s);
         onWeightUnitReady?.(s.weightUnit);
       });
       if (expandOnFocus && activeWorkout && minimizedRef.current) expandWorkout();
@@ -1165,6 +1178,9 @@ export function WorkoutCore({
                     {(() => {
                       const exKey = exercise.exerciseDbId ?? exercise.name;
                       const { prevSets, ghostWeight, ghostReps, ghostReason } = exerciseProgressionMap.get(exercise.id) ?? { prevSets: [], ghostWeight: null, ghostReps: null, ghostReason: null };
+                      const dbEx = (exercise.exerciseDbId && EXERCISE_MAP.get(exercise.exerciseDbId))
+                        ?? userExercises.find((ue) => ue.id === exercise.exerciseDbId || ue.name === exercise.name);
+                      const loadEntryMode = dbEx ? getLoadEntryModeForExercise(dbEx, userSettings) : 'total';
                       return (
                         <WorkoutSetTable
                           exercise={exercise}
@@ -1176,6 +1192,7 @@ export function WorkoutCore({
                           prescription={exKey && prescriptions[exKey]?.nextWeight != null ? { nextWeight: prescriptions[exKey].nextWeight!, goal: prescriptions[exKey].goal } : null}
                           weightUnit={weightUnit}
                           colors={colors}
+                          loadEntryMode={loadEntryMode}
                           updateSet={updateSet}
                           onRemoveSet={removeSet}
                           onAddSet={addSet}
@@ -1355,6 +1372,8 @@ export function WorkoutCore({
           setShowExercisePicker(false);
         }}
         defaultRestTimer={120}
+        userExercises={userExercises}
+        onCreateExercise={user?.id ? async (data: CreateExerciseInput) => supabaseInsertUserExercise(user.id, data) : undefined}
       />
 
       <Modal
