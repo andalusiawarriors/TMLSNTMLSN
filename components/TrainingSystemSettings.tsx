@@ -19,6 +19,7 @@ import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserSettings, saveUserSettings } from '../utils/storage';
+import { HomeGradientBackground } from './HomeGradientBackground';
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
 import { Spacing } from '../constants/theme';
 import {
@@ -490,6 +491,7 @@ export default function TrainingSystemSettings() {
   if (!settings) {
     return (
       <View style={styles.loading}>
+        <HomeGradientBackground />
         <ActivityIndicator color={GOLD} />
       </View>
     );
@@ -497,6 +499,7 @@ export default function TrainingSystemSettings() {
 
   return (
     <View style={styles.container}>
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[

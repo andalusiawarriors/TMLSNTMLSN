@@ -8,7 +8,7 @@ import { workoutsToSetRecords } from '../../utils/workoutMuscles';
 import { getWeekStart, calculateWeeklyMuscleVolume, calculateHeatmap } from '../../utils/weeklyMuscleTracker';
 import { MuscleBodyHeatmap } from '../../components/MuscleBodyHeatmap';
 import { AnimatedFadeInUp } from '../../components/AnimatedFadeInUp';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 export default function StatisticsScreen() {
   const router = useRouter();
@@ -43,7 +43,7 @@ export default function StatisticsScreen() {
 
   return (
     <View style={styles.container}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -67,7 +67,7 @@ export default function StatisticsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
   },
   scrollLayer: {
     zIndex: 2,

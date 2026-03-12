@@ -15,8 +15,8 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserSettings, saveUserSettings, getSavedRoutines, getStorageUserId } from '../utils/storage';
@@ -400,13 +400,7 @@ export default function WeekBuilderScreen() {
   if (!training) {
     return (
       <View style={[S.screen, { paddingTop: insets.top + 20, justifyContent: 'center', alignItems: 'center' }]}>
-        <LinearGradient
-          colors={['#2F3031', '#1A1A1A']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
-          pointerEvents="none"
-        />
+        <FlatFitnessBackground />
         <ActivityIndicator color={GOLD} style={{ zIndex: 1 }} />
       </View>
     );
@@ -416,14 +410,8 @@ export default function WeekBuilderScreen() {
 
   return (
     <View style={[S.screen, { paddingTop: insets.top }]}>
-      {/* Background — matches FitnessHub (nutrition tab) */}
-      <LinearGradient
-        colors={['#2F3031', '#1A1A1A']}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
-        pointerEvents="none"
-      />
+      {/* Background — flat #1A1A1A to match Fitness Hub */}
+      <FlatFitnessBackground />
 
       {/* ── Header ── */}
       <View style={S.header}>

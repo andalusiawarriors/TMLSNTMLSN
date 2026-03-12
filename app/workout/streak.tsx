@@ -26,7 +26,7 @@ import {
   useStreakRestDay,
 } from '../../utils/streak';
 import { BlurRollNumber } from '../../components/BlurRollNumber';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const STREAK_NOTIF_KEY = 'tmlsn_streak_6h_notification_id';
@@ -327,7 +327,7 @@ export default function StreakScreen() {
 
   return (
     <View style={styles.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -417,14 +417,14 @@ export default function StreakScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.primaryDark },
+  root: { flex: 1, backgroundColor: '#1A1A1A' },
   scrollLayer: {
     zIndex: 2,
   },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xl * 2 },
 
   widget: {
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
     borderRadius: 38,
     padding: Spacing.lg,
     shadowColor: Colors.black,

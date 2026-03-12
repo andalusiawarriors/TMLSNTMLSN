@@ -6,9 +6,7 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
-  ImageBackground,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { WorkoutSession } from '../../types';
@@ -23,6 +21,7 @@ import { useButtonSound } from '../../hooks/useButtonSound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { getWorkoutSessions } from '../../utils/storage';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
@@ -45,7 +44,6 @@ export default function WorkoutScreen({
   const { activeWorkout } = useActiveWorkout();
   const insets = useSafeAreaInsets();
   const { playIn, playOut } = useButtonSound();
-  const windowHeight = Dimensions.get('window').height;
 
   const [rpeWarning, setRpeWarning] = useState<{
     visible: boolean;
@@ -83,23 +81,11 @@ export default function WorkoutScreen({
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      {/* Workout home – background, header (settings | history), three start buttons */}
+    <View style={styles.container}>
+      <FlatFitnessBackground />
+      {/* Workout home – header (settings | history), three start buttons */}
       {!asModal && !activeWorkout && (
         <>
-          <View style={[StyleSheet.absoluteFill, { zIndex: 0 }]} pointerEvents="none">
-            <ImageBackground
-              source={require('../../assets/home-background.png')}
-              style={{ width: SCREEN_WIDTH, height: windowHeight, position: 'absolute', top: 0, left: 0 }}
-              resizeMode="cover"
-            >
-              <LinearGradient
-                colors={['transparent', 'rgba(47, 48, 49, 0.4)', 'rgba(47, 48, 49, 0.85)', '#2F3031', '#1a1a1a']}
-                locations={[0, 0.2, 0.35, 0.45, 0.65]}
-                style={StyleSheet.absoluteFill}
-              />
-            </ImageBackground>
-          </View>
           <View
             style={[
               styles.exploreHeader,
@@ -187,7 +173,7 @@ export default function WorkoutScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
     overflow: 'visible',
   },
   exploreHeader: {

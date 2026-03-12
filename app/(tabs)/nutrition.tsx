@@ -1937,14 +1937,21 @@ export default function NutritionScreen({
       {!asModal && (
       <>
       <RNAnimated.View style={{ flex: 1, transform: [{ translateX: contentShiftX }] }}>
-        {/* Background: vertical gradient */}
-        <LinearGradient
-          colors={['#2F3031', '#1A1A1A']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
-          pointerEvents="none"
-        />
+        {/* Background: gradient for calories, flat #1A1A1A for progress/fitness */}
+        {homeTab === 'calories' ? (
+          <LinearGradient
+            colors={['#2F3031', '#1A1A1A']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
+            pointerEvents="none"
+          />
+        ) : (
+          <View
+            style={[StyleSheet.absoluteFill, { backgroundColor: '#1A1A1A', zIndex: 0 }]}
+            pointerEvents="none"
+          />
+        )}
         {/* Flywheel at fixed Y: reveals progressively on pull, spins on refresh, then rises with haptic */}
         <View
           style={[styles.flywheelOverlay, { top: headerTop + 12 }]}
@@ -2003,26 +2010,28 @@ export default function NutritionScreen({
           </View>
           )}
 
-          {/* Gradient — full screen edge-to-edge (extend past parent bounds to span physical screen); hidden in greeting state, fades in when add food opens */}
-          <RNAnimated.View
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: -SCREEN_WIDTH / 2,
-              width: SCREEN_WIDTH * 2,
-              height: headerTop + HEADER_PILL_SIZE,
-              zIndex: 1,
-              opacity: headerGradientOpacity,
-            }}
-            pointerEvents="none"
-          >
-            <LinearGradient
-              colors={['rgba(114,114,114,0.25)', 'rgba(47,48,49,0.25)']}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </RNAnimated.View>
+          {/* Gradient bar at top — only for calories tab; fitness/progress use flat background */}
+          {homeTab === 'calories' && (
+            <RNAnimated.View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: -SCREEN_WIDTH / 2,
+                width: SCREEN_WIDTH * 2,
+                height: headerTop + HEADER_PILL_SIZE,
+                zIndex: 1,
+                opacity: headerGradientOpacity,
+              }}
+              pointerEvents="none"
+            >
+              <LinearGradient
+                colors={['rgba(114,114,114,0.25)', 'rgba(47,48,49,0.25)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </RNAnimated.View>
+          )}
 
         </View>
 

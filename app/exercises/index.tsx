@@ -28,11 +28,11 @@ import { getWorkoutSessions } from '../../utils/storage';
 import { getAllExerciseSettings } from '../../utils/exerciseSettings';
 import { supabaseFetchUserExercises, supabaseInsertUserExercise } from '../../utils/supabaseStorage';
 import { useAuth } from '../../context/AuthContext';
-import { CreateExerciseSheet } from '../../components/CreateExerciseSheet';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { CreateExerciseAISheet } from '../../components/CreateExerciseAISheet';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 // ── Design tokens ─────────────────────────────────────────────
-const BG           = '#2F3031';
+const BG           = '#1A1A1A';
 const TEXT_PRIMARY = '#C6C6C6';
 const TEXT_DIM     = 'rgba(198,198,198,0.55)';
 const GLASS_FILL   = 'rgba(47,48,49,0.42)';
@@ -100,7 +100,11 @@ function ExerciseRow({ exercise: ex, isFav, isCustom, onPress }: RowProps) {
         </View>
         <View style={styles.rowMeta}>
           <Text style={styles.muscleLabel}>{catLabel}</Text>
-          {isCustom && <Text style={styles.customLabel}>custom</Text>}
+          {isCustom && (
+            <View style={styles.customPill}>
+              <Text style={styles.customPillText}>custom</Text>
+            </View>
+          )}
         </View>
       </View>
     </Pressable>
@@ -143,7 +147,11 @@ function FavoritesSection({ exercises, userExerciseIds, onPress }: FavSectionPro
                   </View>
                   <View style={styles.rowMeta}>
                     <Text style={styles.muscleLabel}>{catLabel}</Text>
-                    {isCustom && <Text style={styles.customLabel}>custom</Text>}
+                    {isCustom && (
+                      <View style={styles.customPill}>
+                        <Text style={styles.customPillText}>custom</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </Pressable>
@@ -338,7 +346,7 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <View style={styles.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       {/* ── Sticky Header ── */}
       <View style={[styles.stickyHeader, { paddingTop: HEADER_TOP }]} pointerEvents="box-none">
@@ -487,7 +495,7 @@ export default function ExerciseLibraryScreen() {
         initialNumToRender={24}
       />
 
-      <CreateExerciseSheet
+      <CreateExerciseAISheet
         visible={showCreateSheet}
         onClose={() => setShowCreateSheet(false)}
         onSave={handleCreateSave}
@@ -607,7 +615,15 @@ const styles = StyleSheet.create({
   chipText:    { color: TEXT_DIM, fontSize: 11, fontWeight: '500' },
   rowMeta:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8, flexShrink: 0 },
   muscleLabel: { color: TEXT_DIM, fontSize: 11 },
-  customLabel: { color: TEXT_DIM, fontSize: 10, opacity: 0.7 },
+  customPill: {
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(198,198,198,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.14)',
+  },
+  customPillText: { color: TEXT_DIM, fontSize: 10, fontWeight: '500', opacity: 0.75 },
 
   // Separator
   separator: {

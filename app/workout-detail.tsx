@@ -24,7 +24,7 @@ import { getWorkoutSessions, getUserSettings, deleteWorkoutSession, updateWorkou
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession, Set } from '../types';
 import { formatWeightDisplay, formatVolumeDisplay, toDisplayWeight, fromDisplayWeight, toDisplayVolume, parseNumericInput } from '../utils/units';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { LiquidGlassPill } from '../components/ui/liquidGlass';
 import { generateId } from '../utils/helpers';
@@ -199,7 +199,7 @@ export default function WorkoutDetailScreen() {
   if (loading || !displaySession) {
     return (
       <View style={styles.container}>
-        <HomeGradientBackground />
+        <FlatFitnessBackground />
         <View style={[styles.loadingHeader, { paddingTop: insets.top + 8 }]}>
           {backButton}
         </View>
@@ -221,7 +221,7 @@ export default function WorkoutDetailScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       <StickyGlassHeader
         title=""
@@ -400,7 +400,7 @@ export default function WorkoutDetailScreen() {
 const GLASS_RADIUS = 16;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#2F3031' },
+  container: { flex: 1, backgroundColor: '#1A1A1A' },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg },
   loadingHeader: {

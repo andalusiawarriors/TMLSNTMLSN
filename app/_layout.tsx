@@ -93,7 +93,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -101,7 +101,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -109,7 +109,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -136,7 +136,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -144,7 +144,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -152,7 +152,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -160,7 +160,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -168,7 +168,7 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
@@ -176,19 +176,19 @@ function RootLayoutInner() {
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen
           name="exercises"
-          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.primaryDark } }}
+          options={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: '#1A1A1A' } }}
         />
         <Stack.Screen
           name="week-builder"
           options={{
             headerShown: false,
             animation: 'slide_from_right',
-            contentStyle: { backgroundColor: colors.primaryDark },
+            contentStyle: { backgroundColor: '#1A1A1A' },
           }}
         />
         <Stack.Screen

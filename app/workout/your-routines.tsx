@@ -30,7 +30,7 @@ import { Card } from '../../components/Card';
 import { supabaseFetchUserExercises, supabaseInsertUserExercise } from '../../utils/supabaseStorage';
 import type { Exercise as DbExercise, CreateExerciseInput } from '../../utils/exerciseDb/types';
 import { BackButton } from '../../components/BackButton';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 const windowHeight = Dimensions.get('window').height;
 
@@ -215,7 +215,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
         <View style={styles.titleRow} pointerEvents="box-none">
           <Text style={styles.screenTitle}>Your Routines</Text>
         </View>
-        <HomeGradientBackground />
+        <FlatFitnessBackground />
         <ScrollView
           style={styles.scrollLayer}
           contentContainerStyle={styles.content}
@@ -289,7 +289,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
       {/* ─── ROUTINE BUILDER OVERLAY (matches workout log design) ─── */}
       {showRoutineBuilder && (
-        <View style={[styles.overlay, { height: windowHeight, backgroundColor: colors.primaryDark }]}>
+        <View style={[styles.overlay, { height: windowHeight, backgroundColor: '#1A1A1A' }]}>
           <KeyboardAvoidingView
             style={styles.overlayKeyboardWrap}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -455,7 +455,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
   },
   titleRow: {
     position: 'absolute',

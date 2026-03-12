@@ -3,7 +3,7 @@
 // Minimal create custom exercise form (Fitness Hub style)
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,15 +16,18 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { CaretDown } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TmlsnText } from './ui/TmlsnText';
 import * as Theme from '../constants/theme';
 import type { ExerciseCategory, EquipmentType, Laterality, LoadEntryMode, CreateExerciseInput } from '../utils/exerciseDb/types';
 
-const { Colors, Typography, Spacing } = Theme;
+const { Colors, Spacing } = Theme;
 
 export type { CreateExerciseInput };
 const R = 16;
+
+type DropdownField = 'category' | 'equipment' | 'laterality' | 'loadEntryMode' | null;
 
 const CATEGORY_OPTIONS: ExerciseCategory[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -46,7 +49,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 const EQUIPMENT_LABELS: Record<string, string> = {
   barbell: 'Barbell', dumbbell: 'Dumbbell', cable: 'Cable', machine: 'Machine',
   bodyweight: 'Bodyweight', kettlebell: 'Kettlebell', ez_bar: 'EZ Bar',
-  smith_machine: 'Smith', resistance_band: 'Band', trx: 'TRX', plate: 'Plate',   trap_bar: 'Trap Bar',
+  smith_machine: 'Smith', resistance_band: 'Band', trx: 'TRX', plate: 'Plate', trap_bar: 'Trap Bar',
 };
 
 interface CreateExerciseSheetProps {
@@ -54,21 +57,39 @@ interface CreateExerciseSheetProps {
   onClose: () => void;
   /** Persist and return created exercise. Caller handles add-to-list and select. */
   onSave: (data: CreateExerciseInput) => Promise<unknown>;
+  /** Pre-fill form (e.g. from AI confirmation edit). */
+  initialData?: CreateExerciseInput | null;
 }
 
 export function CreateExerciseSheet({
   visible,
   onClose,
   onSave,
+  initialData,
 }: CreateExerciseSheetProps) {
   const insets = useSafeAreaInsets();
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState<ExerciseCategory>('chest');
-  const [equipment, setEquipment] = useState<EquipmentType[]>(['dumbbell']);
-  const [laterality, setLaterality] = useState<Laterality>('bilateral');
-  const [loadEntryMode, setLoadEntryMode] = useState<LoadEntryMode>('per_hand');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState(initialData?.name ?? '');
+  const [category, setCategory] = useState<ExerciseCategory>(initialData?.category ?? 'chest');
+  const [equipment, setEquipment] = useState<EquipmentType[]>(
+    initialData?.equipment?.length ? initialData.equipment : ['dumbbell']
+  );
+  const [laterality, setLaterality] = useState<Laterality>(initialData?.laterality ?? 'bilateral');
+  const [loadEntryMode, setLoadEntryMode] = useState<LoadEntryMode>(initialData?.loadEntryMode ?? 'per_hand');
+  const [description, setDescription] = useState(initialData?.description ?? '');
   const [saving, setSaving] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState<DropdownField>(null);
+
+  // Sync when initialData changes (e.g. opened from AI edit)
+  useEffect(() => {
+    if (visible && initialData) {
+      setName(initialData.name);
+      setCategory(initialData.category);
+      setEquipment(initialData.equipment?.length ? initialData.equipment : ['dumbbell']);
+      setLaterality(initialData.laterality ?? 'bilateral');
+      setLoadEntryMode(initialData.loadEntryMode ?? 'per_hand');
+      setDescription(initialData.description ?? '');
+    }
+  }, [visible, initialData]);
 
   const toggleEquipment = (eq: EquipmentType) => {
     setEquipment((prev) =>
@@ -130,7 +151,7 @@ export function CreateExerciseSheet({
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Name</TmlsnText>
+              <Text style={styles.label}>Name</Text>
               <TextInput
                 value={name}
                 onChangeText={setName}
@@ -142,92 +163,141 @@ export function CreateExerciseSheet({
               />
             </View>
 
-            <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Category</TmlsnText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {CATEGORY_OPTIONS.map((c) => (
+            <View style={styles.fieldBlock}>
+              <Pressable
+                style={({ pressed }) => [styles.fieldRow, pressed && styles.fieldRowPressed]}
+                onPress={() => setDropdownOpen((v) => (v === 'category' ? null : 'category'))}
+              >
+                <Text style={styles.label}>Category</Text>
+                <View style={styles.fieldValueRow}>
+                  <Text style={styles.fieldValue}>{CATEGORY_LABELS[category] ?? category}</Text>
+                  <CaretDown size={14} weight="bold" color={Colors.primaryLight + '80'} style={{ marginLeft: 6 }} />
+                </View>
+              </Pressable>
+              {dropdownOpen === 'category' && (
+                <View style={styles.dropdown}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                    {CATEGORY_OPTIONS.map((c) => (
+                      <Pressable
+                        key={c}
+                        style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                        onPress={() => { setCategory(c); setDropdownOpen(null); }}
+                      >
+                        <Text style={[styles.dropdownItemText, category === c && styles.dropdownItemActive]}>
+                          {CATEGORY_LABELS[c] ?? c}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Pressable
+                style={({ pressed }) => [styles.fieldRow, pressed && styles.fieldRowPressed]}
+                onPress={() => setDropdownOpen((v) => (v === 'equipment' ? null : 'equipment'))}
+              >
+                <Text style={styles.label}>Equipment</Text>
+                <View style={styles.fieldValueRow}>
+                  <Text style={styles.fieldValue} numberOfLines={1}>
+                    {equipment.map((e) => EQUIPMENT_LABELS[e] ?? e).join(', ')}
+                  </Text>
+                  <CaretDown size={14} weight="bold" color={Colors.primaryLight + '80'} style={{ marginLeft: 6 }} />
+                </View>
+              </Pressable>
+              {dropdownOpen === 'equipment' && (
+                <View style={styles.dropdown}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                    {EQUIPMENT_OPTIONS.map((eq) => {
+                      const sel = equipment.includes(eq);
+                      return (
+                        <Pressable
+                          key={eq}
+                          style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                          onPress={() => {
+                            toggleEquipment(eq);
+                          }}
+                        >
+                          <Text style={[styles.dropdownItemText, sel && styles.dropdownItemActive]}>
+                            {sel ? '✓ ' : ''}{EQUIPMENT_LABELS[eq] ?? eq}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Pressable
+                style={({ pressed }) => [styles.fieldRow, pressed && styles.fieldRowPressed]}
+                onPress={() => setDropdownOpen((v) => (v === 'laterality' ? null : 'laterality'))}
+              >
+                <Text style={styles.label}>Laterality</Text>
+                <View style={styles.fieldValueRow}>
+                  <Text style={styles.fieldValue}>{laterality === 'unilateral' ? 'Unilateral' : 'Bilateral'}</Text>
+                  <CaretDown size={14} weight="bold" color={Colors.primaryLight + '80'} style={{ marginLeft: 6 }} />
+                </View>
+              </Pressable>
+              {dropdownOpen === 'laterality' && (
+                <View style={styles.dropdown}>
                   <Pressable
-                    key={c}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      category === c && styles.chipActive,
-                      pressed && styles.chipPressed,
-                    ]}
-                    onPress={() => setCategory(c)}
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                    onPress={() => { setLaterality('bilateral'); setDropdownOpen(null); }}
                   >
-                    <TmlsnText variant="body" style={[styles.chipText, category === c && styles.chipTextActive]}>
-                      {CATEGORY_LABELS[c] ?? c}
-                    </TmlsnText>
+                    <Text style={[styles.dropdownItemText, laterality === 'bilateral' && styles.dropdownItemActive]}>Bilateral</Text>
                   </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Equipment</TmlsnText>
-              <View style={styles.chipWrap}>
-                {EQUIPMENT_OPTIONS.map((eq) => (
                   <Pressable
-                    key={eq}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      equipment.includes(eq) && styles.chipActive,
-                      pressed && styles.chipPressed,
-                    ]}
-                    onPress={() => toggleEquipment(eq)}
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                    onPress={() => { setLaterality('unilateral'); setDropdownOpen(null); }}
                   >
-                    <TmlsnText variant="body" style={[styles.chipText, equipment.includes(eq) && styles.chipTextActive]}>
-                      {EQUIPMENT_LABELS[eq] ?? eq}
-                    </TmlsnText>
+                    <Text style={[styles.dropdownItemText, laterality === 'unilateral' && styles.dropdownItemActive]}>Unilateral</Text>
                   </Pressable>
-                ))}
-              </View>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.fieldBlock}>
+              <Pressable
+                style={({ pressed }) => [styles.fieldRow, pressed && styles.fieldRowPressed]}
+                onPress={() => setDropdownOpen((v) => (v === 'loadEntryMode' ? null : 'loadEntryMode'))}
+              >
+                <Text style={styles.label}>Weight entry</Text>
+                <View style={styles.fieldValueRow}>
+                  <Text style={styles.fieldValue}>
+                    {loadEntryMode === 'per_hand' ? 'Per hand' : loadEntryMode === 'per_side' ? 'Per side' : 'Total'}
+                  </Text>
+                  <CaretDown size={14} weight="bold" color={Colors.primaryLight + '80'} style={{ marginLeft: 6 }} />
+                </View>
+              </Pressable>
+              {dropdownOpen === 'loadEntryMode' && (
+                <View style={styles.dropdown}>
+                  <Pressable
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                    onPress={() => { setLoadEntryMode('total'); setDropdownOpen(null); }}
+                  >
+                    <Text style={[styles.dropdownItemText, loadEntryMode === 'total' && styles.dropdownItemActive]}>Total</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                    onPress={() => { setLoadEntryMode('per_hand'); setDropdownOpen(null); }}
+                  >
+                    <Text style={[styles.dropdownItemText, loadEntryMode === 'per_hand' && styles.dropdownItemActive]}>Per hand</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
+                    onPress={() => { setLoadEntryMode('per_side'); setDropdownOpen(null); }}
+                  >
+                    <Text style={[styles.dropdownItemText, loadEntryMode === 'per_side' && styles.dropdownItemActive]}>Per side</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
 
             <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Laterality</TmlsnText>
-              <View style={styles.pillRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.pill, laterality === 'bilateral' && styles.pillActive, pressed && styles.pillPressed]}
-                  onPress={() => setLaterality('bilateral')}
-                >
-                  <TmlsnText variant="body" style={[styles.pillText, laterality === 'bilateral' && styles.pillTextActive]}>Bilateral</TmlsnText>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.pill, laterality === 'unilateral' && styles.pillActive, pressed && styles.pillPressed]}
-                  onPress={() => setLaterality('unilateral')}
-                >
-                  <TmlsnText variant="body" style={[styles.pillText, laterality === 'unilateral' && styles.pillTextActive]}>Unilateral</TmlsnText>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Weight entry</TmlsnText>
-              <View style={styles.pillRow}>
-                <Pressable
-                  style={({ pressed }) => [styles.pill, loadEntryMode === 'total' && styles.pillActive, pressed && styles.pillPressed]}
-                  onPress={() => setLoadEntryMode('total')}
-                >
-                  <TmlsnText variant="body" style={[styles.pillText, loadEntryMode === 'total' && styles.pillTextActive]}>Total</TmlsnText>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.pill, loadEntryMode === 'per_hand' && styles.pillActive, pressed && styles.pillPressed]}
-                  onPress={() => setLoadEntryMode('per_hand')}
-                >
-                  <TmlsnText variant="body" style={[styles.pillText, loadEntryMode === 'per_hand' && styles.pillTextActive]}>Per hand</TmlsnText>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.pill, loadEntryMode === 'per_side' && styles.pillActive, pressed && styles.pillPressed]}
-                  onPress={() => setLoadEntryMode('per_side')}
-                >
-                  <TmlsnText variant="body" style={[styles.pillText, loadEntryMode === 'per_side' && styles.pillTextActive]}>Per side</TmlsnText>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.field}>
-              <TmlsnText variant="label" style={styles.label}>Description (optional)</TmlsnText>
+              <Text style={styles.label}>Description (optional)</Text>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
@@ -249,9 +319,9 @@ export function CreateExerciseSheet({
               onPress={handleSave}
               disabled={!name.trim() || equipment.length === 0 || saving}
             >
-              <TmlsnText variant="body" style={styles.saveBtnText}>
+              <Text style={styles.saveBtnText}>
                 {saving ? 'Saving...' : 'Create exercise'}
-              </TmlsnText>
+              </Text>
             </Pressable>
           </ScrollView>
         </Pressable>
@@ -307,23 +377,81 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   scroll: {
-    maxHeight: 400,
+    maxHeight: 500,
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
-    gap: Spacing.lg,
+    gap: Spacing.md,
   },
   field: {
-    gap: Spacing.sm,
+    gap: 8,
+  },
+  fieldBlock: {
+    gap: 0,
+  },
+  fieldRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  fieldRowPressed: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  fieldValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  fieldValue: {
+    color: Colors.primaryLight,
+    fontSize: 15,
+    fontWeight: '500',
+    maxWidth: '70%',
   },
   label: {
     color: Colors.primaryLight + '80',
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  dropdown: {
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 10,
+    marginTop: 4,
+    marginBottom: 4,
+    maxHeight: 180,
+    overflow: 'hidden',
+  },
+  dropdownScroll: {
+    maxHeight: 176,
+    paddingVertical: 4,
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  dropdownItemPressed: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  dropdownItemText: {
+    color: Colors.primaryLight,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dropdownItemActive: {
     fontWeight: '600',
   },
   input: {
     height: 48,
-    borderRadius: R,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -336,62 +464,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     textAlignVertical: 'top',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    height: 40,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primaryLight + '0C',
-  },
-  chipActive: {
-    backgroundColor: Colors.primaryLight + '18',
-  },
-  chipPressed: {
-    opacity: 0.72,
-  },
-  chipText: {
-    color: Colors.primaryLight + 'A0',
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: Colors.primaryLight,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  pill: {
-    height: 40,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primaryLight + '0C',
-  },
-  pillActive: {
-    backgroundColor: Colors.primaryLight + '18',
-  },
-  pillPressed: {
-    opacity: 0.72,
-  },
-  pillText: {
-    color: Colors.primaryLight + 'A0',
-    fontWeight: '600',
-  },
-  pillTextActive: {
-    color: Colors.primaryLight,
   },
   saveBtn: {
     height: 52,

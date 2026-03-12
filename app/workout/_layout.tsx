@@ -22,10 +22,10 @@ export default function WorkoutLayout() {
       screenOptions={({ route }) => {
         const params = route.params as { returnTo?: string } | undefined;
         return {
-        headerStyle: { backgroundColor: Colors.primaryDark },
+        headerStyle: { backgroundColor: '#1A1A1A' },
         headerTintColor: Colors.primaryLight,
         headerBackVisible: false,
-        contentStyle: { backgroundColor: Colors.primaryDark },
+        contentStyle: { backgroundColor: '#1A1A1A' },
         animation: 'slide_from_right',
         animationDuration: 220,
         headerLeft: () => (

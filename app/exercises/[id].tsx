@@ -31,14 +31,14 @@ import {
   toggleFavorite,
   DEFAULT_EXERCISE_SETTINGS,
 } from '../../utils/exerciseSettings';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 // ── Layout & tokens ───────────────────────────────────────────
 const { width: SW } = Dimensions.get('window');
 const OUTER_PAD     = 20;
 const CARD_RADIUS   = 22;
 const CARD_GAP      = 14;
-const BG            = '#2F3031';
+const BG            = '#1A1A1A';
 const TEXT_PRIMARY  = '#C6C6C6';
 const TEXT_DIM      = 'rgba(198,198,198,0.55)';
 const TEXT_VERY_DIM = 'rgba(198,198,198,0.35)';
@@ -418,12 +418,36 @@ export default function ExerciseDetailScreen() {
     setTimeout(() => setSaveState('idle'), 2000);
   }, [id, repLow, repHigh, incIdx]);
 
+  // ── Top muscles (must be before early returns to satisfy rules of hooks) ──
+  const topMuscles = useMemo(
+    () =>
+      exercise
+        ? [...exercise.muscles]
+            .sort((a, b) => b.activationPercent - a.activationPercent)
+            .slice(0, 4)
+            .map((m) => ({ label: MUSCLE_LABELS[m.muscleId] ?? m.muscleId, pct: m.activationPercent }))
+        : [],
+    [exercise],
+  );
+
+  const equipLabels = exercise ? exercise.equipment.map((e) => EQUIP_LABELS[e] ?? e).join(', ') : '';
+  const catLabel = exercise ? (CATEGORY_LABELS[exercise.category] ?? exercise.category) : '';
+  const loadEntryMode = exercise
+    ? (exercise.loadEntryMode ?? getLoadEntryModeForExercise(exercise, userSettings))
+    : 'total';
+  const isCustom = !!userExercise;
+  const TITLE_TOP = insets.top + 8;
+
+  const LOAD_ENTRY_LABELS: Record<string, string> = {
+    total: 'Total weight', per_hand: 'Per hand', per_side: 'Per side',
+  };
+
   // ── Loading (fetching user exercise) ──
   const isLoadingUserExercise = !builtinExercise && id && user?.id && userExercise === undefined;
   if (isLoadingUserExercise) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
-        <HomeGradientBackground />
+        <FlatFitnessBackground />
         <Text style={{ color: TEXT_DIM, fontSize: 16 }}>Loading…</Text>
       </View>
     );
@@ -433,7 +457,7 @@ export default function ExerciseDetailScreen() {
   if (!exercise) {
     return (
       <View style={[styles.root, { alignItems: 'center', justifyContent: 'center' }]}>
-        <HomeGradientBackground />
+        <FlatFitnessBackground />
         <Text style={{ color: TEXT_DIM, fontSize: 16 }}>Exercise not found.</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
           <Text style={{ color: TEXT_PRIMARY, fontSize: 15 }}>← Go back</Text>
@@ -442,29 +466,9 @@ export default function ExerciseDetailScreen() {
     );
   }
 
-  // ── Top muscles ──
-  const topMuscles = useMemo(
-    () =>
-      [...exercise.muscles]
-        .sort((a, b) => b.activationPercent - a.activationPercent)
-        .slice(0, 4)
-        .map((m) => ({ label: MUSCLE_LABELS[m.muscleId] ?? m.muscleId, pct: m.activationPercent })),
-    [exercise],
-  );
-
-  const equipLabels = exercise.equipment.map((e) => EQUIP_LABELS[e] ?? e).join(', ');
-  const catLabel    = CATEGORY_LABELS[exercise.category] ?? exercise.category;
-  const loadEntryMode = exercise.loadEntryMode ?? getLoadEntryModeForExercise(exercise, userSettings);
-  const isCustom = !!userExercise;
-  const TITLE_TOP   = insets.top + 8;
-
-  const LOAD_ENTRY_LABELS: Record<string, string> = {
-    total: 'Total weight', per_hand: 'Per hand', per_side: 'Per side',
-  };
-
   return (
     <View style={styles.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       {/* ── Fixed header bar ── */}
       <View style={[styles.fixedHeader, { paddingTop: TITLE_TOP }]}>

@@ -7,6 +7,7 @@ import { useActiveWorkout } from '../../../context/ActiveWorkoutContext';
 import { getWorkoutSessions } from '../../../utils/storage';
 import { WorkoutSession } from '../../../types';
 import { WorkoutCore } from '../../../components/WorkoutCore';
+import { FlatFitnessBackground } from '../../../components/FlatFitnessBackground';
 
 function WorkoutTabRedirect() {
   const router = useRouter();
@@ -62,7 +63,8 @@ export default function WorkoutScreen({
     startEmpty !== '1';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
+    <View style={styles.container}>
+      <FlatFitnessBackground />
       <Stack.Screen options={{ gestureEnabled: !activeWorkout }} />
       {shouldRedirect && <WorkoutTabRedirect />}
       <WorkoutCore

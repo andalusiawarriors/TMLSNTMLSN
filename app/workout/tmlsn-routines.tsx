@@ -8,7 +8,7 @@ import type { WorkoutSplit } from '../../types';
 import { useButtonSound } from '../../hooks/useButtonSound';
 import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
-import { HomeGradientBackground } from '../../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
 const formatRoutineTitle = (name: string) => {
   const lower = name.toLowerCase();
@@ -53,7 +53,7 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
       <View style={styles.titleRow} pointerEvents="box-none">
         <Text style={styles.screenTitle}>TMLSN Routines</Text>
       </View>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
       <ScrollView
         style={styles.scrollLayer}
         contentContainerStyle={styles.content}
@@ -138,7 +138,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
   },
   titleRow: {
     position: 'absolute',

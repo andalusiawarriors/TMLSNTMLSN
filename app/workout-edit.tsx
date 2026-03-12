@@ -26,7 +26,7 @@ import { WorkoutSession } from '../types';
 import { fromDisplayWeight, toDisplayVolume } from '../utils/units';
 import { generateId } from '../utils/helpers';
 import { useButtonSound } from '../hooks/useButtonSound';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { WorkoutSetTable } from '../components/WorkoutSetTable';
 import { buildPrevSetsAndGhost } from '../utils/workoutSetTable';
 import { EXERCISE_MAP, getLoadEntryModeForExercise } from '../utils/exerciseDb/exerciseDatabase';
@@ -197,8 +197,8 @@ export default function WorkoutEditScreen() {
 
   if (loading || !session) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-        <HomeGradientBackground />
+      <View style={[styles.container, { backgroundColor: '#1A1A1A' }]}>
+        <FlatFitnessBackground />
       </View>
     );
   }
@@ -212,8 +212,8 @@ export default function WorkoutEditScreen() {
   const totalVolumeDisplay = toDisplayVolume(totalVolumeRaw, weightUnit);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      <HomeGradientBackground />
+    <View style={[styles.container, { backgroundColor: '#1A1A1A' }]}>
+      <FlatFitnessBackground />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

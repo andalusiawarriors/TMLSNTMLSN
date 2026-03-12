@@ -29,7 +29,7 @@ import { getWorkoutSessions, getUserSettings, deleteWorkoutSession, deleteAllWor
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { WorkoutSession } from '../types';
 import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import { Ionicons } from '@expo/vector-icons';
@@ -405,8 +405,8 @@ export default function WorkoutHistoryScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primaryDark }]}>
-      <HomeGradientBackground />
+    <View style={[styles.container, { backgroundColor: '#1A1A1A' }]}>
+      <FlatFitnessBackground />
 
       <StickyGlassHeader
         title=""

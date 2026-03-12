@@ -28,7 +28,7 @@ import { Camera, Image as ImageIcon, CaretLeft } from 'phosphor-react-native';
 import { getWorkoutSessions, getUserSettings, finalizeWorkoutSession, setSessionCompletedDate } from '../utils/storage';
 import { getInvalidCompletedSets } from '../utils/workoutSetValidation';
 import { toDisplayVolume, formatVolumeDisplay } from '../utils/units';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 
 export default function WorkoutSaveScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -215,8 +215,8 @@ export default function WorkoutSaveScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={[styles.root, { backgroundColor: colors.primaryDark }]}>
-          <HomeGradientBackground />
+        <View style={[styles.root, { backgroundColor: '#1A1A1A' }]}>
+          <FlatFitnessBackground />
           <KeyboardAvoidingView style={{ flex: 1, zIndex: 2 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
             {/* Top bar */}

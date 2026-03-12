@@ -15,36 +15,55 @@ const QUERY_NORMALIZE: Record<string, string> = {
   lat: 'lateral', lateral: 'lateral',
   db: 'dumbbell', dumbbell: 'dumbbell',
   bb: 'barbell', barbell: 'barbell',
+  one: 'single', single: 'single',
+  ohp: 'overhead', overhead: 'overhead',
+  sm: 'smith', smith: 'smith',
+  ext: 'extension', extension: 'extension', extensions: 'extension',
 };
 
-/** Tokenize query for search (lowercase, split on spaces). */
+/** Tokenize query for search (lowercase, split on spaces, strip punctuation). */
 function tokenize(q: string): string[] {
-  return q.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  return q.toLowerCase().trim().replace(/[^\w\s-]/g, ' ').split(/\s+/).filter(Boolean);
 }
 
-/** Normalize token for matching; returns token or expanded form. */
-function normalizeToken(tok: string): string {
-  return QUERY_NORMALIZE[tok] ?? tok;
+/** Get all variants of a token for matching (normalized form + singular if plural). */
+function getTokenVariants(tok: string): string[] {
+  const norm = QUERY_NORMALIZE[tok] ?? tok;
+  const variants = new Set<string>([tok, norm]);
+  if (norm.length > 3 && norm.endsWith('s') && !norm.endsWith('ss')) {
+    variants.add(norm.slice(0, -1));
+  }
+  if (tok.length > 3 && tok.endsWith('s') && !tok.endsWith('ss')) {
+    variants.add(tok.slice(0, -1));
+  }
+  return Array.from(variants);
+}
+
+/** Build searchable text from exercise (name, aliases, equipment with underscores as spaces). */
+function getSearchableStrings(ex: Exercise): string[] {
+  const nameLower = ex.name.toLowerCase();
+  const aliasLower = (ex.aliases ?? []).map((a) => a.toLowerCase());
+  const equipText = (ex.equipment ?? []).map((e) => e.replace(/_/g, ' ').toLowerCase());
+  return [nameLower, ...aliasLower, ...equipText];
 }
 
 /** Score exercise for relevance: 3=exact, 2=prefix, 1=contains, 0=no match. */
 function scoreExercise(ex: Exercise, tokens: string[]): number {
-  const nameLower = ex.name.toLowerCase();
-  const aliasLower = (ex.aliases ?? []).map((a) => a.toLowerCase());
-  const searchable = [nameLower, ...aliasLower];
-  const catLower = ex.category.toLowerCase();
-  const equipLower = ex.equipment.map((e) => e.toLowerCase());
+  const searchable = getSearchableStrings(ex);
+  const catLower = (ex.category ?? '').toLowerCase();
 
   let score = 0;
   for (const tok of tokens) {
-    const norm = normalizeToken(tok);
+    const variants = getTokenVariants(tok);
     let best = 0;
-    for (const s of searchable) {
-      if (s === norm || s === tok) best = Math.max(best, 3);
-      else if (s.startsWith(norm) || norm.startsWith(s) || s.startsWith(tok) || tok.startsWith(s)) best = Math.max(best, 2);
-      else if (s.includes(norm) || s.includes(tok)) best = Math.max(best, 1);
+    for (const v of variants) {
+      for (const s of searchable) {
+        if (s === v) best = Math.max(best, 3);
+        else if (s.startsWith(v) || v.startsWith(s)) best = Math.max(best, 2);
+        else if (s.includes(v)) best = Math.max(best, 1);
+      }
     }
-    if (catLower.includes(norm) || catLower.includes(tok) || equipLower.some((e) => e.includes(norm) || e.includes(tok))) {
+    if (catLower && (variants.some((v) => catLower.includes(v)) || variants.some((v) => v.includes(catLower)))) {
       best = Math.max(best, 1);
     }
     if (best === 0) return 0;

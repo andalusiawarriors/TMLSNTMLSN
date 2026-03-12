@@ -13,6 +13,7 @@ import {
   SettingsToggleRow,
   SETTINGS_ICON_COLOR,
 } from './SettingsShared';
+import { HomeGradientBackground } from './HomeGradientBackground';
 
 const REST_TIMER_OPTIONS = [60, 90, 120, 180];
 const REST_TIMER_LABELS: Record<number, string> = {
@@ -65,7 +66,8 @@ export default function AppSettingsScreen() {
 
   if (!settings) {
     return (
-      <View style={[styles.container, { backgroundColor: Colors.primaryDark }]}>
+      <View style={styles.container}>
+        <HomeGradientBackground />
         <TmlsnText style={styles.loadingText}>loading...</TmlsnText>
       </View>
     );
@@ -74,7 +76,8 @@ export default function AppSettingsScreen() {
   const contentBottom = insets.bottom + Spacing.xxl;
 
   return (
-    <View style={[styles.container, { backgroundColor: Colors.primaryDark }]}>
+    <View style={styles.container}>
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingHorizontal: Spacing.md, paddingBottom: contentBottom }]}

@@ -952,7 +952,7 @@ export function WorkoutCore({
           style={[
             styles.workoutOverlay,
             {
-              backgroundColor: colors.primaryDark,
+              backgroundColor: '#1A1A1A',
               height: windowHeight,
               justifyContent: 'center',
               alignItems: 'center',
@@ -983,7 +983,7 @@ export function WorkoutCore({
       <AnimatedReanimated.View
         style={[
           styles.workoutOverlay,
-          { backgroundColor: colors.primaryDark, height: windowHeight },
+          { backgroundColor: '#1A1A1A', height: windowHeight },
           overlayEntranceStyle,
         ]}
       >
@@ -1004,7 +1004,7 @@ export function WorkoutCore({
               onMinimize={handleMinimize}
               paddingTop={insets.top}
               colors={{
-                primaryDark: colors.primaryDark,
+                primaryDark: '#1A1A1A',
                 primaryLight: colors.primaryLight,
                 tabBarBorder: colors.tabBarBorder as [string, string],
                 tabBarFill: colors.tabBarFill as [string, string],
@@ -1513,7 +1513,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
     zIndex: 10,
   },
   logTopBar: {

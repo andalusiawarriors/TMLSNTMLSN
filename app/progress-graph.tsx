@@ -45,7 +45,7 @@ import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import TiltPressable from '../components/TiltPressable';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { KG_PER_LB } from '../utils/units';
@@ -825,7 +825,7 @@ export default function ProgressGraphScreen() {
   // ── Render ─────────────────────────────────────────────────
   return (
     <View style={p.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       <StickyGlassHeader
         title=""
@@ -1288,7 +1288,7 @@ export default function ProgressGraphScreen() {
 
 // ── Styles ─────────────────────────────────────────────────────
 const p = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: Colors.primaryDark },
+  root:   { flex: 1, backgroundColor: '#1A1A1A' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: OUTER_PAD, paddingBottom: 12, zIndex: 2 },
 
   backChip:      { borderRadius: 20, overflow: 'hidden' },

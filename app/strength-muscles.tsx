@@ -33,7 +33,7 @@ import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import TiltPressable from '../components/TiltPressable';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { MuscleBodyHeatmap } from '../components/MuscleBodyHeatmap';
 import { MuscleRadarChart } from '../components/MuscleRadarChart';
 import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
@@ -466,7 +466,7 @@ export default function StrengthMusclesScreen() {
   // ── Render ──────────────────────────────────────────────────
   return (
     <View style={p.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       <StickyGlassHeader
         title=""

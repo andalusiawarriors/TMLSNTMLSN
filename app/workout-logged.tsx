@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../constants/theme';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { toDisplayVolume, toDisplayWeight, formatWeightDisplay, formatVolumeDisplay } from '../utils/units';
 import { supabaseGetExercisePrescriptions } from '../utils/supabaseStorage';
@@ -339,7 +339,7 @@ export default function WorkoutLoggedScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.root}>
-        <HomeGradientBackground />
+        <FlatFitnessBackground />
 
         <ScrollView
           style={{ flex: 1 }}
@@ -456,7 +456,7 @@ export default function WorkoutLoggedScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
   },
   scroll: {
     paddingHorizontal: OUTER_PAD,

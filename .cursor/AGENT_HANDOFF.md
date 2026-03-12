@@ -28,6 +28,9 @@
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
 | | None | | | |
+*Just finished: Unified screen background — HomeGradientBackground (nutrition-hub gradient) applied to active workout, workout home, workout-save, workout-logged, workout-history, saved-foods, AppSettingsScreen, TrainingSystemSettings, and all other screens; widgets keep their fill colors. Workout home uses gradient instead of ImageBackground.*
+*Just finished: AI-assisted custom exercise creation — CreateExerciseAISheet (natural language → structured draft → confirmation card → save); extractExerciseFromNaturalLanguage (Groq); manual fallback via CreateExerciseSheet; wired into exercises index + ExercisePickerModal.*
+*Just finished: Custom vs built-in indicator — subtle pill in ExercisePickerModal + exercises index; source of truth: userExerciseIds.*
 *Just finished: Person 1 merge — feature/calorie-heading: ARCH-REDESIGN (CalorieArch, AddFoodCard, FoodDeckCards, MealSections), ai-food-chat, FoodDeckOverlay, LoggedFoodCard, ActionSheet, NotebookDotGrid.*
 *Just finished: Strength muscle spider/radar haptics audit — removed animation-based haptics from MuscleRadarChart; added haptic on muscle selection (body tap + MuscleRow tap) in DetailedBodyHeatmap and MuscleBodyHeatmap.*
 *Just finished: getWorkoutContext audit — removed workout_schedule and weekly_volume_summary queries (tables not in production); schedule from TMLSN_PROTOCOL_SCHEDULE or user_settings.weekPlan; weeklyVolume degrades to []; week-builder no longer writes to workout_schedule.*
@@ -81,6 +84,7 @@
 
 *List files or areas you just changed so the next agent knows what's fresh.*
 
+- `components/ExercisePickerModal.tsx`, `app/exercises/index.tsx` – Custom vs built-in indicator: subtle pill for "custom" in picker + library
 - `utils/exerciseDb/exerciseDatabase.ts`, `app/exercises/index.tsx`, `app/exercises/[id].tsx`, `components/ExercisePickerModal.tsx` – Exercise system polish: search normalization (tricep/triceps, bicep/biceps, lat/lateral, db/dumbbell, bb/barbell); built-in vs custom indicator on ExerciseRow, FavoritesSection, ExercisePickerModal; detail page loadEntryMode badge + Custom label
 - `app/exercises/index.tsx`, `app/exercises/[id].tsx` – Create Exercise in Fitness Hub: user exercises merged with built-in, alphabetical sort, searchExercises for search, CreateExerciseSheet + Create exercise row; detail page fallback to user exercises when id not in EXERCISE_MAP
 - `constants/typography.ts`, `components/ui/TmlsnText.tsx`, `components/AppSettingsScreen.tsx`, `components/StatisticsButtonWidget.tsx`, `components/StreakWidget.tsx`, `.cursor/rules/system-default-font.mdc` – Added SF/system typography foundation (`SystemTypography`, `TypographyFamilies`, `TmlsnText`) and migrated 3 shared components to default system font usage

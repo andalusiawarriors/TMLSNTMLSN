@@ -30,7 +30,7 @@ import Animated, {
 import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY, searchExercises } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
 import * as Theme from '../constants/theme';
-import { CreateExerciseSheet } from './CreateExerciseSheet';
+import { CreateExerciseAISheet } from './CreateExerciseAISheet';
 import type { CreateExerciseInput } from '../utils/exerciseDb/types';
 
 const { Colors, Typography, Spacing } = Theme;
@@ -279,7 +279,11 @@ export function ExercisePickerModal({
                     <View style={styles.rowText}>
                       <View style={styles.rowNameRow}>
                         <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-                        {isCustom && <Text style={styles.customTag}>custom</Text>}
+                        {isCustom && (
+                          <View style={styles.customPill}>
+                            <Text style={styles.customPillText}>custom</Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.rowMeta} numberOfLines={1}>
                         {item.equipment.join(', ')} · {item.movementType}
@@ -304,7 +308,7 @@ export function ExercisePickerModal({
         </Animated.View>
       </View>
 
-      <CreateExerciseSheet
+      <CreateExerciseAISheet
         visible={showCreateSheet}
         onClose={() => setShowCreateSheet(false)}
         onSave={handleCreateExercise}
@@ -495,10 +499,18 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight,
     flex: 1,
   },
-  customTag: {
+  customPill: {
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: Colors.primaryLight + '08',
+    borderWidth: 1,
+    borderColor: Colors.primaryLight + '18',
+  },
+  customPillText: {
     fontSize: 10,
     fontWeight: '500',
-    color: Colors.primaryLight + '70',
+    color: Colors.primaryLight + '65',
   },
   rowMeta: {
     fontSize: Typography.label,
