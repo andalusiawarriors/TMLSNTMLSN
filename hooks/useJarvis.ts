@@ -13,6 +13,8 @@ export type JarvisMessage = {
   timestamp: Date;
 };
 
+export type UseJarvisResult = ReturnType<typeof useJarvis>;
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'llama-3.3-70b-versatile';
 const MAX_TOKENS = 800;
@@ -286,15 +288,6 @@ ${deepDiveJson}`;
   return prompt;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    ),
-  ]);
-}
-
 export function useJarvis() {
   const [context, setContext] = useState<WorkoutContext | null>(null);
   const [noUser, setNoUser] = useState(false);
@@ -326,11 +319,7 @@ export function useJarvis() {
     setContextLoading(true);
     setContextError(null);
     try {
-      const ctx = await withTimeout(
-        getTodayWorkoutContext(user.id),
-        6000,
-        'getTodayWorkoutContext'
-      );
+      const ctx = await getTodayWorkoutContext(user.id);
       if (requestIdRef.current !== requestId) return;
       setContext(ctx);
       setContextError(null);

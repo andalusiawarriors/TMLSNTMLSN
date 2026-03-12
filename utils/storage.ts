@@ -56,6 +56,35 @@ export async function setSessionCompletedDate(
   await AsyncStorage.setItem(getSessionCompletedDateStorageKey(userId), dateYMD);
 }
 
+export async function clearSessionCompletedDate(userId?: string | null): Promise<void> {
+  await AsyncStorage.removeItem(getSessionCompletedDateStorageKey(userId));
+}
+
+function getWorkoutSessionLocalYMD(session: WorkoutSession): string | null {
+  if (!session?.date) return null;
+  const parsed = new Date(session.date);
+  if (Number.isNaN(parsed.getTime())) {
+    return typeof session.date === 'string' && session.date.length >= 10
+      ? session.date.slice(0, 10)
+      : null;
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+}
+
+async function syncSessionCompletedDateFromHistory(userId?: string | null): Promise<void> {
+  const todayYMD = new Date();
+  const today = `${todayYMD.getFullYear()}-${String(todayYMD.getMonth() + 1).padStart(2, '0')}-${String(todayYMD.getDate()).padStart(2, '0')}`;
+  const sessions = await getWorkoutSessions();
+  const hasWorkoutToday = sessions.some((session) => getWorkoutSessionLocalYMD(session) === today);
+
+  if (hasWorkoutToday) {
+    await setSessionCompletedDate(today, userId);
+    return;
+  }
+
+  await clearSessionCompletedDate(userId);
+}
+
 export async function getActiveWorkoutDraft(userId?: string | null): Promise<ActiveWorkoutDraft | null> {
   const raw = await AsyncStorage.getItem(getActiveWorkoutDraftStorageKey(userId));
   if (!raw) return null;
@@ -290,6 +319,10 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseDeleteWorkoutSession(uid, sessionId);
+      await syncSessionCompletedDateFromHistory(uid);
+      void import('../lib/getWorkoutContext')
+        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
+        .catch(() => {});
       return;
     } catch (error) {
       console.error('Error deleting workout session:', error);
@@ -300,6 +333,10 @@ export const deleteWorkoutSession = async (sessionId: string): Promise<void> => 
     const existingSessions = await getWorkoutSessions();
     const updatedSessions = existingSessions.filter((s) => s.id !== sessionId);
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+    await syncSessionCompletedDateFromHistory(uid ?? undefined);
+    void import('../lib/getWorkoutContext')
+      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
+      .catch(() => {});
   } catch (error) {
     console.error('Error deleting workout session:', error);
     throw error;
@@ -314,6 +351,10 @@ export const deleteAllWorkoutSessions = async (): Promise<void> => {
   if (uid && isSupabaseConfigured()) {
     try {
       await supabaseStorage.supabaseDeleteAllWorkoutSessions(uid);
+      await clearSessionCompletedDate(uid);
+      void import('../lib/getWorkoutContext')
+        .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid))
+        .catch(() => {});
       return;
     } catch (error) {
       console.error('Error deleting all workout sessions:', error);
@@ -322,6 +363,10 @@ export const deleteAllWorkoutSessions = async (): Promise<void> => {
   }
   try {
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify([]));
+    await clearSessionCompletedDate(uid ?? undefined);
+    void import('../lib/getWorkoutContext')
+      .then(({ invalidateTodayWorkoutContextCache }) => invalidateTodayWorkoutContextCache(uid ?? undefined))
+      .catch(() => {});
   } catch (error) {
     console.error('Error deleting all workout sessions:', error);
     throw error;

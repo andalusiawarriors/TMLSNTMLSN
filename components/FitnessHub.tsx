@@ -24,6 +24,7 @@ import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
+import { useJarvis } from '../hooks/useJarvis';
 
 import { EXERCISE_DATABASE } from '../utils/exerciseDb/exerciseDatabase';
 import { getUserSettings } from '../utils/storage';
@@ -126,6 +127,7 @@ export function FitnessHub() {
   const [training, setTraining]               = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
   const { activeWorkout, setOriginRoute }     = useActiveWorkout();
   const router                                = useRouter();
+  const jarvis                                = useJarvis();
 
   useFocusEffect(
     useCallback(() => {
@@ -183,8 +185,8 @@ export function FitnessHub() {
     <View style={S.container}>
 
       {/* ── Zone 1 ── */}
-      <ZoneOneCard />
-      <TodaysSessionCarousel animTrigger={animTrigger} />
+      <ZoneOneCard jarvis={jarvis} />
+      <TodaysSessionCarousel animTrigger={animTrigger} jarvis={jarvis} />
 
       {/* ── Zone 2: Tools ── */}
       <View style={S.toolsSection}>

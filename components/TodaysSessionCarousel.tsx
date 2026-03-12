@@ -31,7 +31,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { useRouter } from 'expo-router';
 import { ShinyText } from './ShinyText';
-import { useJarvis } from '../hooks/useJarvis';
+import type { UseJarvisResult } from '../hooks/useJarvis';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { useAuth } from '../context/AuthContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
@@ -40,9 +40,6 @@ import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
 import { formatLocalYMD } from '../lib/time';
 import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
 import type { WeightUnit } from '../utils/units';
-import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
-import { EXERCISE_MAP } from '../utils/exerciseDb/exerciseDatabase';
-import type { OverloadCategory } from '../lib/progression/decideNextPrescription';
 import { getSessionCompletedDate } from '../utils/storage';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -139,48 +136,23 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
       return { name, sets: baseSets, reps: displayReps, weightVal, weightLabel, weightUnit, percentChange, signal, isNew: false, overloadType, prevWeight: baseWeight, prevSets: lastSets.length, prevReps: lastSets[0]?.reps ?? repRangeLow };
     }
 
-    // Fallback: run engine with state from todayExerciseDetails (from exercise_progress_state) or defaults
-    const exerciseId = todayPlan.exerciseIds[i];
-    const overloadCategory: OverloadCategory =
-      (exerciseId ? EXERCISE_MAP.get(exerciseId)?.overloadCategory : undefined) ?? 'compound_small';
-
-    const decision = decideNextPrescription({
-      sets: lastSets.map((s) => ({
-        weight: s.weight ?? 0,
-        reps: s.reps ?? 0,
-        rpe: s.rpe ?? null,
-        completed: true,
-      })),
-      repRangeLow,
-      repRangeHigh,
-      overloadCategory,
-      currentBand: (exDetail?.currentBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy',
-      consecutiveSuccess: exDetail?.consecutiveSuccess ?? 0,
-      consecutiveFailure: exDetail?.consecutiveFailure ?? 0,
-      isCalibrating: false,
-      isDeloadWeek: false,
-      blitzMode: false,
-    });
-
-    const targetWeightDisplay = weightUnit === 'kg'
-      ? (decision?.nextWeightKg ?? baseWeight)
-      : toDisplayWeight(decision?.nextWeightLb ?? baseWeightStored, weightUnit);
-    const overloadType = decision?.action === 'add_weight' ? 'up' : 'same';
-    const displayReps = decision?.nextRepTarget ?? repRangeHigh;
-
-    const weightVal   = targetWeightDisplay > 0 ? formatWeightDisplay(targetWeightDisplay, weightUnit) : '—';
-    const weightLabel = targetWeightDisplay > 0 ? weightUnit : '';
-    const signal      = overloadType === 'up' ? '↑' : '';
-
-    let percentChange: string | null = null;
-    if (baseWeight > 0 && targetWeightDisplay !== baseWeight) {
-      const pct = ((targetWeightDisplay - baseWeight) / baseWeight) * 100;
-      percentChange = pct > 0 ? `+${pct.toFixed(1)}%` : `${pct.toFixed(1)}%`;
-    } else if (baseWeight > 0 && overloadType === 'same') {
-      percentChange = '0%';
-    }
-
-    return { name, sets: baseSets, reps: displayReps, weightVal, weightLabel, weightUnit, percentChange, signal, isNew: false, overloadType, prevWeight: baseWeight, prevSets: lastSets.length, prevReps: lastSets[0]?.reps ?? repRangeLow };
+    const fallbackWeightVal = baseWeight > 0 ? formatWeightDisplay(baseWeight, weightUnit) : '—';
+    const fallbackWeightLabel = baseWeight > 0 ? weightUnit : '';
+    return {
+      name,
+      sets: baseSets,
+      reps: repRangeLow,
+      weightVal: fallbackWeightVal,
+      weightLabel: fallbackWeightLabel,
+      weightUnit,
+      percentChange: baseWeight > 0 ? '0%' : null,
+      signal: '',
+      isNew: false,
+      overloadType: null,
+      prevWeight: baseWeight,
+      prevSets: lastSets.length,
+      prevReps: lastSets[0]?.reps ?? repRangeLow,
+    };
   });
 }
 
@@ -387,11 +359,17 @@ function StartButton({ label, onPress }: { label: string; onPress: () => void })
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function TodaysSessionCarousel({ animTrigger = 0 }: { animTrigger?: number }) {
+export function TodaysSessionCarousel({
+  animTrigger = 0,
+  jarvis,
+}: {
+  animTrigger?: number;
+  jarvis: UseJarvisResult;
+}) {
   const router              = useRouter();
   const { activeWorkout }   = useActiveWorkout();
   const { user } = useAuth();
-  const { context, contextLoading, refresh } = useJarvis();
+  const { context, contextLoading, refresh } = jarvis;
   const [showAll, setShowAll] = useState(false);
   const [sessionDoneToday, setSessionDoneToday] = useState(false);
 

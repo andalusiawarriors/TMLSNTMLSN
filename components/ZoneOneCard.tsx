@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { getUserSettings, getWorkoutSessions } from '../utils/storage';
-import { useJarvis } from '../hooks/useJarvis';
+import type { UseJarvisResult } from '../hooks/useJarvis';
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
 import { ShinyText } from './ShinyText';
 import type { TrainingSettings, WorkoutSession } from '../types';
@@ -91,11 +91,11 @@ function LastSessionCard({ session }: { session: WorkoutSession }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ZoneOneCard() {
+export function ZoneOneCard({ jarvis }: { jarvis: UseJarvisResult }) {
   const [training,    setTraining]    = useState<TrainingSettings | null>(null);
   const [lastSession, setLastSession] = useState<WorkoutSession | null>(null);
   const [hasHistory,  setHasHistory]  = useState(false);
-  const { context, contextLoading, contextError, refresh } = useJarvis();
+  const { context, contextLoading, contextError, refresh } = jarvis;
   const router                        = useRouter();
 
   // Hide when TodaysSessionCarousel is handling it (full session, named session, or rest day)
@@ -210,8 +210,8 @@ export function ZoneOneCard() {
 
   // ── TMLSN mode (no plan yet) ──
   if (scheduleMode === 'tmlsn') {
-    // Context failed to load — show error with retry rather than infinite "loading"
-    if (contextError || context === null) {
+    // A missing plan after load is not a real loading state; surface retry instead.
+    if (contextError || context === null || context.todayPlan === null) {
       return (
         <View style={S.hero}>
           <ShinyText
@@ -231,18 +231,6 @@ export function ZoneOneCard() {
         </View>
       );
     }
-    return (
-      <View style={S.hero}>
-        <ShinyText
-          text="Setting up your session..."
-          speed={5} delay={0} spread={120} yoyo={false}
-          color="#b5b5b5" shineColor="#ffffff" direction="right"
-          style={titleStyle} containerStyle={titleContainerStyle}
-        />
-        <Text style={S.eyebrow}>today's session</Text>
-        <Text style={S.sub}>TMLSN is calculating today's plan.</Text>
-      </View>
-    );
   }
 
   return null;
