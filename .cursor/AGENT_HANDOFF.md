@@ -27,7 +27,19 @@
 
 | Area / agent | What’s being done | Files I’m editing (paths) | Branch (if any) | Updated |
 |--------------|-------------------|---------------------------|-----------------|---------|
-| *(none — merged)* | Person 1 (nutrition) + Person 2 (workout) work merged | — | — | Mar 2 2026 |
+| | None | | | |
+*Just finished: Person 1 merge — feature/calorie-heading: ARCH-REDESIGN (CalorieArch, AddFoodCard, FoodDeckCards, MealSections), ai-food-chat, FoodDeckOverlay, LoggedFoodCard, ActionSheet, NotebookDotGrid.*
+*Just finished: Strength muscle spider/radar haptics audit — removed animation-based haptics from MuscleRadarChart; added haptic on muscle selection (body tap + MuscleRow tap) in DetailedBodyHeatmap and MuscleBodyHeatmap.*
+*Just finished: getWorkoutContext audit — removed workout_schedule and weekly_volume_summary queries (tables not in production); schedule from TMLSN_PROTOCOL_SCHEDULE or user_settings.weekPlan; weeklyVolume degrades to []; week-builder no longer writes to workout_schedule.*
+*Just finished: Streak sync verification — loadPersistedState now prefers newer of (remote, local) to prevent offline rollback; pushes local to remote when local is newer.*
+*Just finished: tmlsnAI prescription explanation tightening — structured prescription with workingSetsAnalyzed/allSetsAtTopRange; strict EXERCISE_EXPLANATION_TEMPLATE for build_reps; precise wording rules; no single-set attribution.*
+*Just finished: Progressive overload canonical engine — generateBriefing + tmlsnai now use decideNextPrescription; removed builder/ghost framework-specific logic from both.*
+*Just finished: Workout navigation overhaul — eliminated router.back()+setTimeout race in fitness-hub flat routes (now use router.dismiss()+router.navigate); fixed "Go to home" flash by guarding startEmpty param; fixed fallback paths in workout/tmlsn-routines and workout/your-routines to use /(tabs)/workout; fixed FitnessGraphWidget and progress-graph "Start workout" to go to /(tabs)/nutrition instead of /(tabs)/workout.*
+*Just finished: Workout home "Recent" screen removed — replaced with minimal "Go to home" redirect; removed exploreHeader, Recent list, settings/history links; unused imports (Gear, List, Clock, Database, ImageBackground) cleaned.*
+*Just finished: FitnessHub wrong-page fix + polish — WorkoutPill: replaced TiltPressable with Pressable (fixes Your workouts → Empty bug); pass route explicitly to onPress; collapsable={false}; hitSlop; PILL_GAP 14, PILL_HEIGHT 76; overlay modal card styling; CaretRight on pills; pill icon/label polish.*
+*Just finished: FitnessHub Back fix — use root-level modals (tmlsn-routines-modal, your-routines-modal, start-empty-workout-modal) instead of router.replace to workout tab; Back now returns to FitnessHub without crash.*
+*Just finished: JARVIS ghost/rep range/weight increment/kg-lb — getWorkoutContext: TodayExerciseDetail, buildTodayExerciseDetails, weightUnit, todayExerciseDetails; useJarvis: formatTodayExerciseDetails, TMLSN progressive overload block, WEIGHT_UNIT rules, formatExerciseHistory/formatAllExerciseHistory/formatHistorySummary use toDisplayWeight+formatWeightDisplay for correct kg/lb.*
+*Just finished: Finish workout hardening — finalizeWorkoutSession in utils/storage.ts (single canonical finalize: persist session+exercises+sets, prescriptions, mark complete, idempotent); workout-save calls it on Save and uses activeWorkout when sessionId matches; Finish on workout tab only navigates to workout-save (no persist); supabaseStorage idempotency comment.*
 *Just finished: StickyGlassHeader + Progress Graph wiring — StickyGlassHeader.tsx (blur+gradient on scroll), progress-graph.tsx uses Animated.ScrollView + StickyGlassHeader (title, pills sticky; glass effect ramps 0→0.92 opacity as scrollY 0→140).*
 *Just finished: Add Meal popup redesign — Calories 48px showcase, P/C/F read-only card, unit wheel picker, meal type at bottom; manual add shows editable calories + macros; main + obh synced (nutrition.tsx, search-food.tsx, UnitWheelPicker.tsx, package.json).*
 *Just finished: Add Meal UI artist fix — BackButton asModal prop for 54px placement; Button gradient variant (FAB style); TMLSN label smaller than title (11px vs 20px); removed Cancel buttons; calories showcase (dataValue font, larger); meal type chip no blue; unit/amount controls (tbsp/tsp/cup/100g/1g + amount); main + obh synced (nutrition.tsx, search-food.tsx, BackButton, Button).*
@@ -69,6 +81,20 @@
 
 *List files or areas you just changed so the next agent knows what’s fresh.*
 
+<<<<<<< Updated upstream
+=======
+- `components/MuscleRadarChart.tsx`, `components/DetailedBodyHeatmap.tsx`, `components/MuscleBodyHeatmap.tsx` – Strength muscle haptics: removed animation-based haptics from radar; added haptic on muscle selection (body tap + MuscleRow tap)
+- `lib/getWorkoutContext.ts`, `app/week-builder.tsx` – Removed workout_schedule and weekly_volume_summary dependencies (tables not in production)
+- `utils/streak.ts` – Streak sync: preferNewer merge in loadPersistedState to prevent offline rollback
+- `app/_layout.tsx`, `app/fitness-hub-tmlsn-routines.tsx`, `app/fitness-hub-your-routines.tsx`, `app/fitness-hub-start-empty.tsx` – Workout screen regression fix: root Stack gestureEnabled: !activeWorkout; fitness-hub flows use router.dismiss()+router.navigate to land on (tabs)/workout with params
+- `hooks/useJarvis.ts` – tmlsnAI prescription: formatExercisePrescriptionForQuestion (workingSetsAnalyzed, allSetsAtTopRange, lastSessionDate); EXERCISE_EXPLANATION_TEMPLATE; strict build_reps wording
+- `supabase/migrations/010_workout_posts_no_cascade.sql`, `components/explore/ExplorePostDetailModal.tsx` – Deleting workouts no longer deletes posts: migration drops CASCADE FK; modal shows "Workout no longer available" when post has session_id but workout data is gone
+- `components/ShinyText.tsx`, `components/TodaysSessionCarousel.tsx` – ShinyText: Customize settings (speed 5s, delay 0s, spread 120°, #b5b5b5/#ffffff, left, no yoyo) + silver-gradient style
+- `components/FitnessHub.tsx` – FitnessHub Back fix: use root modals instead of workout tab nav
+- `lib/getWorkoutContext.ts`, `hooks/useJarvis.ts` – JARVIS: ghost reps/sets, rep range low/high, weight increment (lb+kg), TMLSN progressive overload algorithm, WEIGHT_UNIT, todayExerciseDetails
+- `utils/rpe.ts`, `utils/workoutSetTable.ts`, `components/WorkoutSetTable.tsx`, `app/(tabs)/workout/index.tsx`, `app/workout-edit.tsx` – Zero-divergence set table: shared WorkoutSetTable (SET|PREVIOUS|KG/LB|REPS|RPE|✓), editing/RPE popup/ghost apply/swipe-to-delete inside component; buildPrevSetsAndGhost helper; active workout and edit past workout both use same component; no UI/design changes.
+- `utils/storage.ts`, `utils/supabaseStorage.ts`, `app/workout-save.tsx`, `app/(tabs)/workout/index.tsx` – Finish workout hardening: finalizeWorkoutSession, workout-save uses it + activeWorkout, Finish only navigates
+>>>>>>> Stashed changes
 - `components/ProgressHub.tsx` – Reorder UX: blur+dark overlay, jiggle, long-press-to-drag (activateAfterLongPress), floating tile position, snap-into-place; fixed lint
 - `app/(tabs)/nutrition.tsx`, `components/ProgressHub.tsx` – Scroll fix: scrollViewLayer flex:1 so main ScrollView gets bounded height; ProgressHub root View no flex:1 so content sizes naturally
 - `components/ui/StickyGlassHeader.tsx`, `app/progress-graph.tsx` – Sticky filter header (Stoic-style): liquid glass on scroll, pills sticky, Animated.ScrollView

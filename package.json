@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test:food": "npx tsx scripts/test-food-search.ts",
+    "test:streak": "npx tsx scripts/test-prefer-newer.ts",
     "start": "expo start",
     "start:clear": "expo start --clear",
     "reload": "lsof -ti:8082 | xargs kill -9 2>/dev/null; lsof -ti:8081 | xargs kill -9 2>/dev/null; expo start --ios --port 8082",
