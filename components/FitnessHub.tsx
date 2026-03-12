@@ -13,7 +13,6 @@ import {
   Pressable,
   TouchableOpacity,
   Modal,
-  Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -65,12 +64,10 @@ function InProgressWorkoutCard({
   workoutName,
   elapsedSeconds,
   onResume,
-  onDiscard,
 }: {
   workoutName: string;
   elapsedSeconds: number;
   onResume: () => void;
-  onDiscard: () => void;
 }) {
   return (
     <View style={S.hero}>
@@ -89,7 +86,7 @@ function InProgressWorkoutCard({
       />
       <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
       <View style={S.startBtnWrap}>
-        <Pressable onPress={onResume} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginBottom: 3 })}>
+        <Pressable onPress={onResume} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
           <LinearGradient
             colors={SILVER}
             locations={SILVER_LOCS}
@@ -100,9 +97,6 @@ function InProgressWorkoutCard({
             <Text style={S.resumeBtnIcon}>▶</Text>
             <Text style={S.resumeBtnText}>Resume</Text>
           </LinearGradient>
-        </Pressable>
-        <Pressable onPress={onDiscard} style={{ marginTop: 10 }}>
-          <Text style={S.discardLink}>Discard workout</Text>
         </Pressable>
       </View>
     </View>
@@ -199,7 +193,6 @@ export function FitnessHub() {
     activeWorkout,
     minimized,
     expandWorkout,
-    discardWorkout,
     setOriginRoute,
     reconcileActiveWorkoutState,
     workoutStartTime,
@@ -251,17 +244,6 @@ export function FitnessHub() {
     router.replace('/(tabs)/workout' as any);
   }, [expandWorkout, pathname, segments, setOriginRoute, router]);
 
-  const handleDiscardMinimizedWorkout = useCallback(() => {
-    Alert.alert(
-      'Discard workout?',
-      'Your progress will be lost. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: () => discardWorkout(() => {}) },
-      ]
-    );
-  }, [discardWorkout]);
-
   const scheduleMode = training.scheduleMode ?? 'ghost';
   const isBuilder    = scheduleMode === 'builder';
   const exCount      = EXERCISE_DATABASE.length;
@@ -306,7 +288,6 @@ export function FitnessHub() {
           workoutName={activeWorkout.name ?? 'Workout'}
           elapsedSeconds={elapsedSeconds}
           onResume={handleResumeMinimizedWorkout}
-          onDiscard={handleDiscardMinimizedWorkout}
         />
       ) : (
         <TodaysSessionCarousel animTrigger={animTrigger} jarvis={jarvis} />
@@ -406,6 +387,7 @@ const S = StyleSheet.create({
   startBtnWrap: {
     marginLeft: -(PAD + 4),
     marginRight: 4 - PAD,
+    marginTop: -6,
   },
   resumeBtn: {
     width: '100%',
@@ -427,13 +409,6 @@ const S = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -0.3,
   },
-  discardLink: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#FF3B30',
-    textAlign: 'center',
-  },
-
   toolsSection: {
     paddingHorizontal: PAD,
     paddingBottom: 32,
