@@ -336,25 +336,6 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   const goal: ProgressionDecision['goal'] =
     action === 'add_weight' ? 'add_load' : 'add_reps';
 
-  if (__DEV__) {
-    console.log('[Progression AUDIT]', {
-      overloadCategory,
-      currentBand,
-      nextBand,
-      activeBand,
-      incrementKg,
-      hitThreshold,
-      hitPercent: `${Math.round(hitPercent * 100)}%`,
-      setsAtTop,
-      totalSets: workSets.length,
-      maxRpe,
-      avgRpe,
-      blitzMode,
-      action,
-      branch,
-    });
-  }
-
   return {
     action,
     nextWeightKg,
