@@ -5,21 +5,15 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Alert,
   Dimensions,
   ImageBackground,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { saveWorkoutSession } from '../../utils/storage';
-import { setSessionCompletedDate } from '../../utils/storage';
-import { logStreakWorkout } from '../../utils/streak';
 import { WorkoutSession } from '../../types';
 import { useTheme } from '../../context/ThemeContext';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
 import { Gear, List } from 'phosphor-react-native';
 import { AnimatedPressable } from '../../components/AnimatedPressable';
 import { WorkoutCore } from '../../components/WorkoutCore';
@@ -27,7 +21,6 @@ import { DynamicIslandRPEWarning } from '../../components/DynamicIslandRPEWarnin
 import { useButtonSound } from '../../hooks/useButtonSound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { formatLocalYMD } from '../../lib/time';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const BUTTON_WIDTH = Math.min(380, SCREEN_WIDTH - 40);
@@ -47,8 +40,7 @@ export default function WorkoutScreen({
 }: WorkoutScreenModalProps = {}) {
   const router = useRouter();
   const { colors } = useTheme();
-  const { activeWorkout, setActiveWorkout } = useActiveWorkout();
-  const { user } = useAuth();
+  const { activeWorkout } = useActiveWorkout();
   const insets = useSafeAreaInsets();
   const { playIn, playOut } = useButtonSound();
   const windowHeight = Dimensions.get('window').height;
@@ -65,25 +57,10 @@ export default function WorkoutScreen({
   const handleWeightUnitReady = useCallback((w: 'kg' | 'lb') => setWeightUnit(w), []);
 
   const handleFinish = useCallback(async (payload: WorkoutSession) => {
-    await saveWorkoutSession(payload);
-    await logStreakWorkout();
-    await setSessionCompletedDate(formatLocalYMD(new Date()), user?.id);
-    setActiveWorkout(null);
-
-    const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
-    if (!session) {
-      if (__DEV__) console.log('[Workout] blocked post-save: no session');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onCloseModal?.();
-      Alert.alert('Saved locally', 'Log in to post this workout to Explore.');
-      router.push('/workout-history');
-      return;
-    }
-
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onCloseModal?.();
     router.push({ pathname: '/workout-save', params: { sessionId: payload.id } });
-  }, [setActiveWorkout, onCloseModal, router, user?.id]);
+  }, [onCloseModal, router]);
 
   const handleRpeWarning = useCallback((rpe: number, exerciseName: string, weightBumpDisplay?: string | null) => {
     setRpeWarning({ visible: true, rpe, exerciseName, weightBumpDisplay });
