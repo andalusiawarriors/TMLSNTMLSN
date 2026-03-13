@@ -38,11 +38,11 @@ import type { TrainingSettings } from '../types';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const PAD    = 16;
-const MUTED  = '#404a52';
-const QS     = '#ABABAB';
 const GOLD   = '#D4B896';
-const SUB    = '#7a8690';
 const BORDER = 'rgba(255,255,255,0.05)';
+// AddFoodCard-inspired glass style for interactive rows
+const GLASS_BG     = 'rgba(47, 48, 49, 0.55)';
+const GLASS_BORDER = 'rgba(255, 255, 255, 0.16)';
 
 
 function formatElapsed(sec: number): string {
@@ -73,7 +73,7 @@ function InProgressWorkoutCard({
   return (
     // Gradient border shell
     <LinearGradient
-      colors={['#525354', '#48494A']}
+      colors={['#5a5b5c', '#44454A']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={S.inProgressBorderGrad}
@@ -157,15 +157,16 @@ function ToolRow({
 
 const T = StyleSheet.create({
   card: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
+    backgroundColor: GLASS_BG,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    minHeight: 55,
+    borderColor: GLASS_BORDER,
+    minHeight: 62,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
   },
   textBlock: {
     flex: 1,
@@ -173,34 +174,37 @@ const T = StyleSheet.create({
   },
   name: {
     fontSize: 15,
-    fontWeight: '500',
-    color: Colors.primaryLight,
+    fontWeight: '600',
+    color: '#FFFFFF',
     letterSpacing: -0.2,
   },
   sub: {
     fontSize: 12,
-    color: '#ABABAB',
-    marginTop: 2,
+    fontWeight: '400',
+    color: 'rgba(198,198,198,0.6)',
+    marginTop: 3,
+    letterSpacing: -0.1,
   },
   tagWrap: {
-    backgroundColor: 'rgba(212,184,150,0.07)',
+    backgroundColor: 'rgba(212,184,150,0.09)',
     borderWidth: 1,
-    borderColor: 'rgba(212,184,150,0.14)',
-    borderRadius: 5,
+    borderColor: 'rgba(212,184,150,0.22)',
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   tagText: {
     fontSize: 9,
-    fontWeight: '600',
+    fontWeight: '700',
     color: GOLD,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   chevron: {
-    fontSize: 20,
-    color: '#ABABAB',
+    fontSize: 18,
+    color: 'rgba(198,198,198,0.35)',
     fontWeight: '300',
-    lineHeight: 24,
+    lineHeight: 22,
   },
 });
 
@@ -392,19 +396,19 @@ export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
 const S = StyleSheet.create({
   container: {},
 
-  // In-progress card — gradient border/fill wrapper
+  // In-progress card — full width, more prominent
   inProgressBorderGrad: {
-    marginHorizontal: PAD,
+    marginHorizontal: 0,
     marginBottom: 24,
-    borderRadius: 16,
+    borderRadius: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
   },
   inProgressFillGrad: {
-    borderRadius: 15, // inset 1px from border shell
+    borderRadius: 19,
     padding: 24,
   },
   inProgressHeader: {
@@ -483,7 +487,7 @@ const S = StyleSheet.create({
     paddingBottom: 32,
   },
   toolList: {
-    gap: 6,
+    gap: 8,
   },
   divider: {
     height: 1,
