@@ -46,6 +46,7 @@ export type ProgressionDecision = {
     maxRpe: number | null;
     avgRpe: number | null;
     rpeDelta: number | null;
+    intraSessionFatigue: boolean;
     baseWeightKg: number;
     incrementKg: number;
     workingSetCount: number;
@@ -224,6 +225,9 @@ export function getMaxJumpForRangeWidth(rangeWidth: number): number {
  *  rpeDelta > +1  → user is struggling more than usual → cap at +1 regardless of reps
  *  rpeDelta < -1  → user is cruising easier than usual → apply +1 bonus (capped by maxJump)
  *
+ * Intra-session fatigue (item #6):
+ *  reps dropped >25% from set 1 to last → cap at +1 (user didn't recover between sets)
+ *
  * Always capped by getMaxJumpForRangeWidth.
  */
 export function computeAdaptiveJump(
@@ -232,12 +236,16 @@ export function computeAdaptiveJump(
   repRangeLow: number,
   repRangeHigh: number,
   rpeDelta?: number | null,
+  intraSessionFatigue?: boolean,
 ): number {
   const rangeWidth = repRangeHigh - repRangeLow;
   const maxJump = getMaxJumpForRangeWidth(rangeWidth);
 
   // RPE struggling guard: if this session is noticeably harder than baseline, be conservative.
   if (rpeDelta != null && rpeDelta > 1) return 1;
+
+  // Intra-session fatigue guard: significant rep drop means recovery is incomplete.
+  if (intraSessionFatigue) return 1;
 
   // Min-set guard: need ≥3 completed work sets to justify a larger jump.
   if (workSets.length < 3) return 1;
@@ -265,6 +273,26 @@ export function computeAdaptiveJump(
   }
 
   return Math.min(selectedJump, maxJump);
+}
+
+// ─── Intra-session fatigue detection ──────────────────────────────────────────
+
+/**
+ * Detects meaningful rep drop across a session — a proxy for under-recovery.
+ * TRUE when reps in the last working set are >25% lower than the first working set.
+ * Requires at least 2 sets.
+ *
+ * Used as a conservative modifier in computeAdaptiveJump:
+ *   if fatigued → cap adaptive jump at +1 even if rep signal says +2/+3.
+ *
+ * Note: only considers same-weight sets (mixed-weight drop-sets are excluded).
+ */
+export function detectIntraSessionFatigue(workSets: WorkingSet[]): boolean {
+  if (workSets.length < 2) return false;
+  const firstReps = workSets[0].reps;
+  if (firstReps <= 0) return false;
+  const lastReps = workSets[workSets.length - 1].reps;
+  return lastReps < firstReps * 0.75; // >25% drop
 }
 
 // ─── Main engine ──────────────────────────────────────────────────────────────
@@ -312,6 +340,9 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     ? avgRpe - input.rpeBaseline
     : null;
 
+  // Intra-session fatigue: reps dropped >25% from set 1 to last set.
+  const intraSessionFatigue = detectIntraSessionFatigue(workSets);
+
   // How many sets hit the top of the absolute rep range (for debug/display).
   const setsAtTop = workSets.filter((s) => s.reps >= repRangeHigh).length;
   // How many sets hit the current target cursor (drives progression decisions).
@@ -347,6 +378,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         maxRpe,
         avgRpe,
         rpeDelta,
+        intraSessionFatigue,
         baseWeightKg,
         incrementKg: 0,
         workingSetCount: workSets.length,
@@ -391,6 +423,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         maxRpe,
         avgRpe,
         rpeDelta,
+        intraSessionFatigue,
         baseWeightKg,
         incrementKg,
         workingSetCount: workSets.length,
@@ -459,7 +492,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     // Hit current target but not yet at top — advance the cursor adaptively.
     action = 'build_reps';
     nextWeightKg = baseWeightKg;
-    const jump = computeAdaptiveJump(workSets, effectiveTarget, repRangeLow, repRangeHigh, rpeDelta);
+    const jump = computeAdaptiveJump(workSets, effectiveTarget, repRangeLow, repRangeHigh, rpeDelta, intraSessionFatigue);
     nextRepTarget = Math.min(effectiveTarget + jump, repRangeHigh);
     nextConsecutiveAtTop = 0;
     reason = jump > 1
@@ -503,6 +536,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       maxRpe,
       avgRpe,
       rpeDelta,           // deviation from personal baseline (null = no baseline yet)
+      intraSessionFatigue,  // reps dropped >25% from set 1 to last (under-recovery signal)
       baseWeightKg,
       incrementKg,
       workingSetCount: workSets.length,
@@ -553,6 +587,7 @@ export function prescriptionToDecision(
       maxRpe: null,
       avgRpe: null,
       rpeDelta: null,
+      intraSessionFatigue: false,
       baseWeightKg: nextWeightKg,
       incrementKg: 2.5,
       workingSetCount: 0,
