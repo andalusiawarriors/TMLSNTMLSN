@@ -27,7 +27,6 @@ import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
-import { ShinyText } from './ShinyText';
 import { useJarvis } from '../hooks/useJarvis';
 import { emitWorkoutExpandOrigin, emitClosePopup } from '../utils/fabBridge';
 
@@ -44,9 +43,6 @@ const GOLD   = '#D4B896';
 const SUB    = '#7a8690';
 const BORDER = 'rgba(255,255,255,0.05)';
 
-// Silver gradient (matches TodaysSessionCarousel StartButton)
-const SILVER = ['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74'] as const;
-const SILVER_LOCS = [0, 0.37, 0.69, 1] as const;
 
 function formatElapsed(sec: number): string {
   if (sec < 60) return `${sec}s`;
@@ -66,42 +62,62 @@ function InProgressWorkoutCard({
   workoutName,
   elapsedSeconds,
   onResume,
+  onMinimize,
 }: {
   workoutName: string;
   elapsedSeconds: number;
   onResume: () => void;
+  onMinimize?: () => void;
 }) {
   return (
-    <View style={S.hero}>
-      <Text style={S.inProgressEyebrow}>in progress</Text>
-      <ShinyText
-        text={workoutName}
-        speed={5}
-        delay={0}
-        spread={120}
-        yoyo={false}
-        color="#b5b5b5"
-        shineColor="#ffffff"
-        direction="right"
-        style={S.inProgressTitle}
-        containerStyle={{ marginBottom: 4, marginLeft: -(PAD + 4) }}
-      />
-      <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
-      <View style={S.startBtnWrap}>
-        <Pressable onPress={onResume} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-          <LinearGradient
-            colors={SILVER}
-            locations={SILVER_LOCS}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={S.resumeBtn}
+    // Gradient border shell
+    <LinearGradient
+      colors={['#525354', '#48494A']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={S.inProgressBorderGrad}
+    >
+      {/* Gradient fill inset 1px */}
+      <LinearGradient
+        colors={['#363738', '#2E2F30']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={S.inProgressFillGrad}
+      >
+        {/* Header row: label + active dot */}
+        <View style={S.inProgressHeader}>
+          <Text style={S.inProgressEyebrow}>IN PROGRESS</Text>
+          <View style={S.activeDot} />
+        </View>
+
+        {/* Workout name */}
+        <Text style={S.inProgressTitle} numberOfLines={1}>{workoutName}</Text>
+
+        {/* Divider */}
+        <View style={S.inProgressDivider} />
+
+        {/* Timer */}
+        <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
+
+        {/* Buttons row */}
+        <View style={S.inProgressBtnRow}>
+          <Pressable
+            onPress={onResume}
+            style={({ pressed }) => [S.pillPrimary, pressed && { opacity: 0.85 }]}
           >
-            <Text style={S.resumeBtnIcon}>▶</Text>
-            <Text style={S.resumeBtnText}>Resume</Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
-    </View>
+            <Text style={S.pillPrimaryText}>Resume</Text>
+          </Pressable>
+          {onMinimize && (
+            <Pressable
+              onPress={onMinimize}
+              style={({ pressed }) => [S.pillOutline, pressed && { opacity: 0.75 }]}
+            >
+              <Text style={S.pillOutlineText}>Minimize</Text>
+            </Pressable>
+          )}
+        </View>
+      </LinearGradient>
+    </LinearGradient>
   );
 }
 
@@ -374,62 +390,91 @@ export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
 const S = StyleSheet.create({
   container: {},
 
-  hero: {
-    paddingHorizontal: PAD,
-    paddingBottom: 24,
-  },
-  inProgressEyebrow: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#979798',
-    letterSpacing: -0.8,
-    marginTop: -8,
-    marginBottom: 10,
-    marginLeft: -(PAD + 4),
-    alignSelf: 'flex-start',
-  },
-  inProgressTitle: {
-    height: 42,
-    fontSize: 35,
-    fontWeight: '600',
-    letterSpacing: -1.75,
-    lineHeight: 41,
-    textAlign: 'left',
-    textTransform: 'lowercase',
-    color: '#b5b5b5',
-  },
-  inProgressElapsed: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#ABABAB',
-    marginLeft: -(PAD + 4),
-    marginTop: -4,
-    marginBottom: 20,
-  },
-  startBtnWrap: {
-    marginLeft: -(PAD + 4),
-    marginRight: 4 - PAD,
-    marginTop: -6,
-  },
-  resumeBtn: {
-    width: '100%',
-    height: 55,
+  // In-progress card — gradient border/fill wrapper
+  inProgressBorderGrad: {
+    marginHorizontal: PAD,
+    marginBottom: 24,
     borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  inProgressFillGrad: {
+    borderRadius: 15, // inset 1px from border shell
+    padding: 24,
+  },
+  inProgressHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  inProgressEyebrow: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#C6C6C6',
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34C759',
+  },
+  inProgressTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    color: '#FFFFFF',
+    marginBottom: 16,
+  },
+  inProgressDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 16,
+  },
+  inProgressElapsed: {
+    fontSize: 20,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
+    marginBottom: 20,
+  },
+  inProgressBtnRow: {
+    flexDirection: 'row',
     gap: 8,
   },
-  resumeBtnIcon: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  pillPrimary: {
+    height: 44,
+    borderRadius: 38,
+    backgroundColor: '#C6C6C6',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  resumeBtnText: {
-    fontSize: 15,
+  pillPrimaryText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
+    color: '#2F3032',
+  },
+  pillOutline: {
+    height: 44,
+    borderRadius: 38,
+    backgroundColor: 'rgba(198,198,198,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillOutlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#C6C6C6',
   },
   toolsSection: {
     paddingHorizontal: PAD,
