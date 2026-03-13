@@ -408,7 +408,7 @@ export function WorkoutSetTable({
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });
                             tooltipTimerRef.current = setTimeout(() => setGhostTooltip(null), 2500);
                           } : undefined}
-                          style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                          style={[styles.setInputPlaceholder]}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
                           <Text style={[styles.setInputPlaceholderText, set.weight > 0 ? { color: colors.primaryLight } : effectiveGhostWeight ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
@@ -464,7 +464,7 @@ export function WorkoutSetTable({
                             setGhostTooltip({ lastText: _lastText, targetText: `${_tw}×${_tr}` });
                             tooltipTimerRef.current = setTimeout(() => setGhostTooltip(null), 2500);
                           } : undefined}
-                          style={[styles.setInputPlaceholder, { backgroundColor: colors.primaryLight + '0A' }]}
+                          style={[styles.setInputPlaceholder]}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
                           <Text style={[styles.setInputPlaceholderText, set.reps > 0 ? { color: colors.primaryLight } : effectiveGhostReps ? { color: colors.primaryLight + '50' } : { color: colors.primaryLight + '40' }]}>
@@ -726,7 +726,7 @@ export function WorkoutSetTable({
               setGhostTooltip(null);
             }}
           >
-            <Pressable style={[styles.ghostTooltipCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]} onPress={(e) => e.stopPropagation()}>
+            <Pressable style={[styles.ghostTooltipCard, { backgroundColor: 'rgba(35, 36, 37, 0.97)', borderColor: 'rgba(255, 255, 255, 0.14)' }]} onPress={(e) => e.stopPropagation()}>
               <Text style={styles.ghostTooltipLine}>
                 <Text style={[styles.ghostTooltipLabel, { color: colors.primaryLight + '55' }]}>Last time: </Text>
                 <Text style={[styles.ghostTooltipValue, { color: colors.primaryLight + 'CC' }]}>{ghostTooltip.lastText}</Text>
@@ -818,10 +818,10 @@ const styles = StyleSheet.create({
     maxWidth: SET_INPUT_MAX_WIDTH,
     minWidth: SET_INPUT_MIN_WIDTH,
     alignSelf: 'center' as const,
-    borderRadius: 8,
+    borderRadius: SET_INPUT_BORDER_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(198,198,198,0.18)',
-    backgroundColor: '#2F3031',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(47, 48, 49, 0.6)',
   },
   setInputCellActiveVisual: {
     shadowColor: Colors.primaryLight,
@@ -860,10 +860,10 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2F3031',
-    borderRadius: 8,
+    backgroundColor: 'rgba(47, 48, 49, 0.6)',
+    borderRadius: SET_INPUT_BORDER_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(198,198,198,0.18)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     paddingHorizontal: SET_INPUT_PADDING_H,
   },
   setInputPlaceholderText: { fontSize: 20, fontWeight: '600' as const, color: Colors.primaryLight + '40', letterSpacing: -0.2 },
@@ -987,12 +987,12 @@ const styles = StyleSheet.create({
   rpeModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   rpePopupCard: {
     width: '100%',
-    backgroundColor: '#2F3031',
-    borderTopLeftRadius: 38,
-    borderTopRightRadius: 38,
+    backgroundColor: 'rgba(35, 36, 37, 0.97)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     paddingTop: 14,
     paddingBottom: 44,
     paddingHorizontal: 24,
@@ -1019,7 +1019,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     padding: 3,
     marginBottom: 24,
   },
