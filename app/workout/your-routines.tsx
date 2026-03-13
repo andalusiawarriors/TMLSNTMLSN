@@ -289,7 +289,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
       {/* ─── ROUTINE BUILDER OVERLAY (matches workout log design) ─── */}
       {showRoutineBuilder && (
-        <View style={[styles.overlay, { height: windowHeight, backgroundColor: '#1A1A1A' }]}>
+        <View style={[styles.overlay, { height: windowHeight, backgroundColor: 'rgba(47, 48, 49, 0.97)' }]}>
           <KeyboardAvoidingView
             style={styles.overlayKeyboardWrap}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -455,7 +455,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'transparent',
   },
   titleRow: {
     position: 'absolute',
@@ -483,22 +483,20 @@ const styles = StyleSheet.create({
 
   // ─── NEW ROUTINE BUTTON ───────────────────────────────────────────────────
   newRoutineButton: {
-    backgroundColor: Colors.primaryLight + '15',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 38,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
-    borderStyle: 'dashed',
-    paddingVertical: 14,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   newRoutineButtonText: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.primaryLight + '80',
-    letterSpacing: 0.3,
+    color: '#FFFFFF',
+    letterSpacing: -0.11,
   },
 
   // ─── EMPTY STATE ──────────────────────────────────────────────────────────
@@ -765,8 +763,10 @@ const styles = StyleSheet.create({
   // ─── BUILDER ADD BUTTON (matches addSetButtonBlock) ────────────────────────
   builderAddButton: {
     alignSelf: 'stretch',
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 198, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,

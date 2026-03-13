@@ -191,7 +191,7 @@ function SkeletonBlock({
   return (
     <Animated.View
       style={[
-        { height, borderRadius, backgroundColor: '#2F3031' },
+        { height, borderRadius, backgroundColor: 'rgba(47, 48, 49, 0.55)' },
         width !== undefined ? { width: width as any } : { alignSelf: 'stretch' },
         animStyle,
         style,
@@ -645,8 +645,10 @@ const S = StyleSheet.create({
     overflow: 'visible',
   },
   exRowRect: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     minHeight: 55,
     overflow: 'visible',
     justifyContent: 'center',
@@ -770,8 +772,8 @@ const S = StyleSheet.create({
   // Start button (gradient applied via LinearGradient child)
   startBtn: {
     width: '100%',
-    height: 55,
-    borderRadius: 16,
+    height: 44,
+    borderRadius: 38,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

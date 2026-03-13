@@ -17,8 +17,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
+import { BackButton } from '../components/BackButton';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { getUserSettings, saveUserSettings, getSavedRoutines, getStorageUserId } from '../utils/storage';
 import { DEFAULT_TRAINING_SETTINGS } from '../constants/storageDefaults';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
@@ -168,14 +168,14 @@ const P = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   sheet: {
-    backgroundColor: S1,
+    backgroundColor: '#2F3031',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingTop: 12,
     paddingHorizontal: 22,
     maxHeight: '80%',
     borderTopWidth: 1,
-    borderColor: BORDER,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   handle: {
     width: 36,
@@ -221,7 +221,7 @@ const P = StyleSheet.create({
   rowName: {
     fontSize: 14,
     fontWeight: '500',
-    color: QS,
+    color: '#FFFFFF',
     flex: 1,
     letterSpacing: -0.2,
   },
@@ -279,8 +279,10 @@ function DayRow({
 
 const D = StyleSheet.create({
   card: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     minHeight: 55,
     flexDirection: 'row',
     alignItems: 'center',
@@ -414,15 +416,9 @@ export default function WeekBuilderScreen() {
       <FlatFitnessBackground />
 
       {/* ── Header ── */}
+      <BackButton />
       <View style={S.header}>
-        <Pressable
-          style={({ pressed }) => [S.backBtn, pressed && { opacity: 0.6 }]}
-          onPress={() => router.back()}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="chevron-back" size={22} color={QS} />
-        </Pressable>
-        <View style={{ flex: 1, marginLeft: 8 }}>
+        <View style={{ flex: 1, marginLeft: 54 }}>
           <Text style={S.headerEyebrow}>Builder</Text>
           <Text style={S.headerTitle}>Build your week.</Text>
         </View>
@@ -504,14 +500,8 @@ const S = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: PAD,
-    paddingTop: 12,
+    paddingTop: 60,
     paddingBottom: 16,
-  },
-  backBtn: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   headerEyebrow: {
     fontSize: 11,
@@ -536,8 +526,10 @@ const S = StyleSheet.create({
 
   // Summary card — matches FitnessHub card style
   summaryCard: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

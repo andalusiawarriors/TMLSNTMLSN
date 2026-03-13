@@ -138,7 +138,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'transparent',
   },
   titleRow: {
     position: 'absolute',
@@ -289,17 +289,17 @@ const styles = StyleSheet.create({
 
   // ─── START BUTTON ─────────────────────────────────────────────────────────
   startButton: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    paddingVertical: 10,
+    backgroundColor: '#C6C6C6',
+    borderRadius: 38,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
   },
   startButtonText: {
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '700' as const,
     letterSpacing: -0.11,
-    color: Colors.primaryDark,
+    color: '#2F3032',
   },
 });
