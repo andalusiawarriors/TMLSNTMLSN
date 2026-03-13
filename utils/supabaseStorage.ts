@@ -155,6 +155,12 @@ type PrescriptionMeta = {
    * null = no history yet.
    */
   rpeBaseline?: number | null;
+  /** Rolling window of last ≤3 session hit-% scores (item #10). */
+  recentSessionScores?: number[];
+  /** Consecutive genuine misses without rep cursor advancing (item #12). */
+  sessionsWithoutProgress?: number;
+  /** EMA of sessions-per-weight-increase for this exercise (item #9). */
+  avgSessionsPerWeightIncrease?: number | null;
 };
 
 type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
@@ -236,7 +242,19 @@ function computeNextPrescription(
   meta: PrescriptionMeta,
   sets: PrescriptionSet[],
   _weightUnit: 'kg' | 'lb'
-): { nextWeight: number; nextRepTarget: number; nextConsecutiveAtTop: number; nextSessionsAtCurrentWeight: number; nextRpeBaseline: number | null; goal: 'add_load' | 'add_reps' | 'reduce_load'; nextBand: DifficultyBand; reason: string } | null {
+): {
+  nextWeight: number;
+  nextRepTarget: number;
+  nextConsecutiveAtTop: number;
+  nextSessionsAtCurrentWeight: number;
+  nextRpeBaseline: number | null;
+  nextRecentSessionScores: number[];
+  nextSessionsWithoutProgress: number;
+  nextAvgSessionsPerWeightIncrease: number | null;
+  goal: 'add_load' | 'add_reps' | 'reduce_load';
+  nextBand: DifficultyBand;
+  reason: string;
+} | null {
   const decision = decideNextPrescription({
     sets,
     repRangeLow: meta.repRangeLow,
@@ -252,6 +270,9 @@ function computeNextPrescription(
     currentTargetReps: meta.currentTargetReps ?? undefined,
     consecutiveAtTop: meta.consecutiveAtTop ?? 0,
     rpeBaseline: meta.rpeBaseline ?? null,
+    recentSessionScores: meta.recentSessionScores ?? [],
+    sessionsWithoutProgress: meta.sessionsWithoutProgress ?? 0,
+    avgSessionsPerWeightIncrease: meta.avgSessionsPerWeightIncrease ?? null,
   });
   if (!decision) return null;
 
@@ -267,6 +288,9 @@ function computeNextPrescription(
     nextConsecutiveAtTop: decision.nextConsecutiveAtTop,
     nextSessionsAtCurrentWeight: decision.nextSessionsAtCurrentWeight,
     nextRpeBaseline,
+    nextRecentSessionScores: decision.nextRecentSessionScores,
+    nextSessionsWithoutProgress: decision.nextSessionsWithoutProgress,
+    nextAvgSessionsPerWeightIncrease: decision.nextAvgSessionsPerWeightIncrease,
     goal: decision.goal,
     nextBand: decision.nextBand,
     reason: decision.reason,
@@ -291,6 +315,9 @@ async function saveExercisePrescription(params: {
   nextConsecutiveAtTop: number;
   nextSessionsAtCurrentWeight: number;
   nextRpeBaseline: number | null;
+  nextRecentSessionScores: number[];
+  nextSessionsWithoutProgress: number;
+  nextAvgSessionsPerWeightIncrease: number | null;
   repRangeLow: number;
   repRangeHigh: number;
   goal: 'add_load' | 'add_reps' | 'reduce_load';
@@ -311,6 +338,9 @@ async function saveExercisePrescription(params: {
       consecutive_at_top: params.nextConsecutiveAtTop,
       sessions_at_current_weight: params.nextSessionsAtCurrentWeight,
       rpe_baseline: params.nextRpeBaseline,
+      recent_session_scores: params.nextRecentSessionScores,
+      sessions_without_progress: params.nextSessionsWithoutProgress,
+      avg_sessions_per_weight_increase: params.nextAvgSessionsPerWeightIncrease,
       rep_range_low: params.repRangeLow,
       rep_range_high: params.repRangeHigh,
       next_goal_type: params.goal,
@@ -408,6 +438,9 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
     consecutiveAtTop: number;
     sessionsAtCurrentWeight: number;
     rpeBaseline: number | null;
+    recentSessionScores: number[];
+    sessionsWithoutProgress: number;
+    avgSessionsPerWeightIncrease: number | null;
     repRangeLow: number;
     repRangeHigh: number;
     goal: 'add_load' | 'add_reps' | 'reduce_load';
@@ -439,6 +472,9 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
       const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
       const sessionsAtCurrentWeight = existing?.sessionsAtCurrentWeight ?? 0;
       const rpeBaseline = existing?.rpeBaseline ?? null;
+      const recentSessionScores = existing?.recentSessionScores ?? [];
+      const sessionsWithoutProgress = existing?.sessionsWithoutProgress ?? 0;
+      const avgSessionsPerWeightIncrease = existing?.avgSessionsPerWeightIncrease ?? null;
 
       const meta: PrescriptionMeta = {
         repRangeLow,
@@ -456,6 +492,9 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
         consecutiveAtTop,
         sessionsAtCurrentWeight,
         rpeBaseline,
+        recentSessionScores,
+        sessionsWithoutProgress,
+        avgSessionsPerWeightIncrease,
       };
 
       const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
@@ -474,6 +513,9 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
         consecutiveAtTop: prescription.nextConsecutiveAtTop,
         sessionsAtCurrentWeight: prescription.nextSessionsAtCurrentWeight,
         rpeBaseline: prescription.nextRpeBaseline,
+        recentSessionScores: prescription.nextRecentSessionScores,
+        sessionsWithoutProgress: prescription.nextSessionsWithoutProgress,
+        avgSessionsPerWeightIncrease: prescription.nextAvgSessionsPerWeightIncrease,
         repRangeLow,
         repRangeHigh,
         goal: prescription.goal,
@@ -506,6 +548,9 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
     consecutive_at_top: state.consecutiveAtTop,
     sessions_at_current_weight: state.sessionsAtCurrentWeight,
     rpe_baseline: state.rpeBaseline,
+    recent_session_scores: state.recentSessionScores,
+    sessions_without_progress: state.sessionsWithoutProgress,
+    avg_sessions_per_weight_increase: state.avgSessionsPerWeightIncrease,
     rep_range_low: state.repRangeLow,
     rep_range_high: state.repRangeHigh,
     next_goal_type: state.goal,
@@ -1175,9 +1220,9 @@ export async function supabaseSaveWorkoutSession(
       // Fetch existing band state for all exercises in this session
       const canonicalIds = session.exercises.map((ex) => toExerciseProgressId(ex.exerciseDbId ?? ex.name ?? ex.id));
       const { data: progressRows } = supabase
-        ? await supabase.from('exercise_progress_state').select('exercise_id,difficulty_band,consecutive_success,consecutive_failure,is_calibrating,next_target_reps,consecutive_at_top,sessions_at_current_weight,rpe_baseline,rep_range_low,rep_range_high').eq('user_id', userId).in('exercise_id', canonicalIds)
+        ? await supabase.from('exercise_progress_state').select('exercise_id,difficulty_band,consecutive_success,consecutive_failure,is_calibrating,next_target_reps,consecutive_at_top,sessions_at_current_weight,rpe_baseline,recent_session_scores,sessions_without_progress,avg_sessions_per_weight_increase,rep_range_low,rep_range_high').eq('user_id', userId).in('exercise_id', canonicalIds)
         : { data: null };
-      const progressByExId = new Map<string, { band: DifficultyBand; success: number; failure: number; calibrating: boolean; nextTargetReps: number | null; consecutiveAtTop: number; sessionsAtCurrentWeight: number; rpeBaseline: number | null }>();
+      const progressByExId = new Map<string, { band: DifficultyBand; success: number; failure: number; calibrating: boolean; nextTargetReps: number | null; consecutiveAtTop: number; sessionsAtCurrentWeight: number; rpeBaseline: number | null; recentSessionScores: number[]; sessionsWithoutProgress: number; avgSessionsPerWeightIncrease: number | null }>();
       for (const row of (progressRows ?? [])) {
         progressByExId.set(String(row.exercise_id), {
           band: (row.difficulty_band as DifficultyBand) ?? 'easy',
@@ -1188,6 +1233,9 @@ export async function supabaseSaveWorkoutSession(
           consecutiveAtTop: row.consecutive_at_top != null ? Number(row.consecutive_at_top) : 0,
           sessionsAtCurrentWeight: row.sessions_at_current_weight != null ? Number(row.sessions_at_current_weight) : 0,
           rpeBaseline: row.rpe_baseline != null ? Number(row.rpe_baseline) : null,
+          recentSessionScores: Array.isArray((row as any).recent_session_scores) ? (row as any).recent_session_scores.map(Number) : [],
+          sessionsWithoutProgress: (row as any).sessions_without_progress != null ? Number((row as any).sessions_without_progress) : 0,
+          avgSessionsPerWeightIncrease: (row as any).avg_sessions_per_weight_increase != null ? Number((row as any).avg_sessions_per_weight_increase) : null,
         });
       }
 
@@ -1209,6 +1257,9 @@ export async function supabaseSaveWorkoutSession(
         const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
         const sessionsAtCurrentWeight = existing?.sessionsAtCurrentWeight ?? 0;
         const rpeBaseline = existing?.rpeBaseline ?? null;
+        const recentSessionScores = existing?.recentSessionScores ?? [];
+        const sessionsWithoutProgress = existing?.sessionsWithoutProgress ?? 0;
+        const avgSessionsPerWeightIncrease = existing?.avgSessionsPerWeightIncrease ?? null;
 
         const meta: PrescriptionMeta = {
           repRangeLow,
@@ -1226,6 +1277,9 @@ export async function supabaseSaveWorkoutSession(
           consecutiveAtTop,
           sessionsAtCurrentWeight,
           rpeBaseline,
+          recentSessionScores,
+          sessionsWithoutProgress,
+          avgSessionsPerWeightIncrease,
         };
         const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
           weight: Number(s.weight ?? 0),
@@ -1247,6 +1301,9 @@ export async function supabaseSaveWorkoutSession(
           nextConsecutiveAtTop: prescription.nextConsecutiveAtTop,
           nextSessionsAtCurrentWeight: prescription.nextSessionsAtCurrentWeight,
           nextRpeBaseline: prescription.nextRpeBaseline,
+          nextRecentSessionScores: prescription.nextRecentSessionScores,
+          nextSessionsWithoutProgress: prescription.nextSessionsWithoutProgress,
+          nextAvgSessionsPerWeightIncrease: prescription.nextAvgSessionsPerWeightIncrease,
           repRangeLow,
           repRangeHigh,
           goal: prescription.goal,

@@ -12,6 +12,11 @@
  *  - Relative RPE delta: compares session RPE to personal per-exercise baseline (EMA)
  *    rpeDelta > +1 → struggling, cap adaptive jump at +1
  *    rpeDelta < -1 → cruising, add +1 bonus to adaptive jump
+ *  - Rolling session score (item #10): 3-session hit-% avg smooths band decisions
+ *  - Performance trend (item #11): linear slope of recent scores surfaces improvement / decline
+ *  - Plateau detection (item #12): 3+ consecutive genuine misses → plateauDetected flag
+ *  - Volume suggestion (item #8): 4+ sessions stuck → suggest adding a set in reason
+ *  - Velocity memory (item #9): EMA of sessions-per-weight-step per exercise
  */
 
 import { KG_PER_LB, LB_PER_KG, roundToGymPrecision } from '../../utils/units';
@@ -41,6 +46,21 @@ export type ProgressionDecision = {
    * Reset to 0 on weight increase, incremented each session otherwise.
    */
   nextSessionsAtCurrentWeight: number;
+  /**
+   * Rolling window of the last ≤3 session hit-% scores (0.0–1.0).
+   * Used for rolling avg score (#10) and performance trend (#11).
+   */
+  nextRecentSessionScores: number[];
+  /**
+   * Consecutive genuine misses (hold_cursor branch, excluding grace and confirm_top).
+   * ≥3 → plateau; ≥4 → volume suggestion (#8). Reset on any progress or weight increase.
+   */
+  nextSessionsWithoutProgress: number;
+  /**
+   * EMA (α=0.3) of sessions needed per weight step for this exercise.
+   * Updated on every weight increase. NULL until first increment. Velocity memory (#9).
+   */
+  nextAvgSessionsPerWeightIncrease: number | null;
   /** Legacy goal for exercise_progress_state compatibility */
   goal: 'add_load' | 'add_reps' | 'reduce_load';
   debug: {
@@ -52,6 +72,16 @@ export type ProgressionDecision = {
     avgRpe: number | null;
     rpeDelta: number | null;
     intraSessionFatigue: boolean;
+    /** Raw hit-% for this session (0.0–1.0). */
+    sessionScore: number;
+    /** Rolling avg of recent session scores (null = < 2 sessions of history). */
+    rollingAvgScore: number | null;
+    /** Linear slope of recent scores: positive = improving, negative = declining. */
+    performanceTrend: number | null;
+    /** TRUE when sessionsWithoutProgress ≥ 3 — user is genuinely plateaued. */
+    plateauDetected: boolean;
+    /** TRUE when sessionsWithoutProgress ≥ 4 — engine is suggesting adding a set. */
+    volumeSuggested: boolean;
     baseWeightKg: number;
     incrementKg: number;
     workingSetCount: number;
@@ -121,6 +151,23 @@ export type ProgressionInput = {
    * Defaults to 0 (no grace protection) for existing exercises.
    */
   sessionsAtCurrentWeight?: number;
+  /**
+   * Rolling window of the last ≤3 session hit-% scores (0.0–1.0).
+   * [] = no history yet. Appended each session and trimmed to 3.
+   * Used for rolling avg score (item #10) and performance trend (item #11).
+   */
+  recentSessionScores?: number[];
+  /**
+   * Consecutive sessions where the rep cursor did not advance (genuine miss, not grace).
+   * ≥3 → plateauDetected; ≥4 → volume suggestion (#8/#12).
+   * Defaults to 0.
+   */
+  sessionsWithoutProgress?: number;
+  /**
+   * EMA (α=0.3) of sessions-to-weight-increase for this exercise.
+   * Updated on add_weight. NULL = no weight increase yet. Velocity memory (#9).
+   */
+  avgSessionsPerWeightIncrease?: number | null;
 };
 
 // ─── Increment table ──────────────────────────────────────────────────────────
@@ -365,6 +412,31 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   // Is the cursor already at the top of the range? If so, hitting it means: add weight.
   const atTopOfRange = effectiveTarget >= repRangeHigh;
 
+  // ── Multi-session scoring (items #10, #11, #12) ───────────────────────────
+  // sessionScore: raw hit-% for this session (identical to hitPercent but named explicitly).
+  const sessionScore = hitPercent;
+
+  // Rolling window: append this session's score and keep the last 3.
+  const prevScores = input.recentSessionScores ?? [];
+  const nextRecentSessionScores = [...prevScores, sessionScore].slice(-3);
+
+  // Rolling avg: average of the last ≤3 session scores.
+  // < 2 data points → too noisy to be meaningful, return null.
+  const rollingAvgScore = nextRecentSessionScores.length >= 2
+    ? nextRecentSessionScores.reduce((a, b) => a + b, 0) / nextRecentSessionScores.length
+    : null;
+
+  // Performance trend: linear slope of recent scores, (last − first) / (n − 1).
+  // Positive = improving, negative = declining. null when < 2 data points.
+  const performanceTrend = nextRecentSessionScores.length >= 2
+    ? (nextRecentSessionScores[nextRecentSessionScores.length - 1] - nextRecentSessionScores[0]) /
+      (nextRecentSessionScores.length - 1)
+    : null;
+
+  // Plateau and volume counters — resolved per branch below.
+  const currentSWP = input.sessionsWithoutProgress ?? 0;
+  const currentAvgSPWI = input.avgSessionsPerWeightIncrease ?? null;
+
   // ── Step 1: Calibration ───────────────────────────────────────────────────
   // First session on a new exercise — record baseline only, no increment applied.
   if (isCalibrating) {
@@ -382,6 +454,9 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       nextBand: 'easy',
       nextConsecutiveAtTop: 0,
       nextSessionsAtCurrentWeight: 0,
+      nextRecentSessionScores: [],
+      nextSessionsWithoutProgress: 0,
+      nextAvgSessionsPerWeightIncrease: null,
       goal: 'add_reps',
       debug: {
         hitThreshold,
@@ -392,6 +467,11 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         avgRpe,
         rpeDelta,
         intraSessionFatigue,
+        sessionScore,
+        rollingAvgScore,
+        performanceTrend,
+        plateauDetected: false,
+        volumeSuggested: false,
         baseWeightKg,
         incrementKg: 0,
         workingSetCount: workSets.length,
@@ -428,6 +508,9 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       nextBand: currentBand, // band never changes during a deload week
       nextConsecutiveAtTop: 0,
       nextSessionsAtCurrentWeight: (input.sessionsAtCurrentWeight ?? 0) + 1,
+      nextRecentSessionScores, // record the deload session score
+      nextSessionsWithoutProgress: 0, // deload resets the plateau counter
+      nextAvgSessionsPerWeightIncrease: currentAvgSPWI,
       goal: 'reduce_load',
       debug: {
         hitThreshold,
@@ -438,6 +521,11 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         avgRpe,
         rpeDelta,
         intraSessionFatigue,
+        sessionScore,
+        rollingAvgScore,
+        performanceTrend,
+        plateauDetected: false,
+        volumeSuggested: false,
         baseWeightKg,
         incrementKg,
         workingSetCount: workSets.length,
@@ -485,6 +573,8 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   let nextRepTarget: number;
   let nextConsecutiveAtTop: number;
   let nextSessionsAtCurrentWeight: number;
+  let nextSessionsWithoutProgress: number;
+  let nextAvgSessionsPerWeightIncrease: number | null;
   let reason: string;
   let branch: string;
 
@@ -502,6 +592,11 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextRepTarget = repRangeLow;
     nextConsecutiveAtTop = 0;
     nextSessionsAtCurrentWeight = 0; // reset: new weight starts a fresh grace window
+    nextSessionsWithoutProgress = 0; // weight increased — progress made, reset plateau counter
+    // Velocity memory (#9): EMA of sessions needed to earn each weight step.
+    nextAvgSessionsPerWeightIncrease = currentAvgSPWI == null
+      ? currentSessionsAtWeight
+      : currentAvgSPWI * 0.7 + currentSessionsAtWeight * 0.3;
     reason = `Hit ${repRangeHigh} reps for ${WEIGHT_GATE} sessions in a row — weight goes up next session.`;
     branch = blitzMode ? 'blitz_add_weight' : 'hit_top_add_weight';
   } else if (hitThreshold && atTopOfRange) {
@@ -511,6 +606,8 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextRepTarget = repRangeHigh;
     nextConsecutiveAtTop = currentConsecutiveAtTop + 1;
     nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
+    nextSessionsWithoutProgress = 0; // confirm_top is on-track, not a plateau
+    nextAvgSessionsPerWeightIncrease = currentAvgSPWI;
     reason = `Hit ${repRangeHigh} reps — do it again next session to earn the weight increase.`;
     branch = 'confirm_top';
   } else if (hitThreshold) {
@@ -521,6 +618,8 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextRepTarget = Math.min(effectiveTarget + jump, repRangeHigh);
     nextConsecutiveAtTop = 0;
     nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
+    nextSessionsWithoutProgress = 0; // cursor advanced — not stuck
+    nextAvgSessionsPerWeightIncrease = currentAvgSPWI;
     reason = jump > 1
       ? `Hit ${effectiveTarget} reps comfortably (+${jump}) — aiming for ${nextRepTarget} next session.`
       : `Hit ${effectiveTarget} reps — aiming for ${nextRepTarget} next session.`;
@@ -532,11 +631,31 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextRepTarget = effectiveTarget;
     nextConsecutiveAtTop = 0;
     nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
-    reason = inGracePeriod
-      ? `Adaptation session ${currentSessionsAtWeight + 1}/${GRACE_SESSIONS} at this weight — keep going.`
-      : `Aim for ${effectiveTarget} reps — hit 70%+ of sets to advance.`;
-    branch = inGracePeriod ? 'grace_period' : 'hold_cursor';
+    nextAvgSessionsPerWeightIncrease = currentAvgSPWI;
+    if (inGracePeriod) {
+      // Grace period miss: expected adaptation, don't count as plateau.
+      nextSessionsWithoutProgress = 0;
+      reason = `Adaptation session ${currentSessionsAtWeight + 1}/${GRACE_SESSIONS} at this weight — keep going.`;
+      branch = 'grace_period';
+    } else {
+      // Genuine miss: increment plateau counter (#12).
+      nextSessionsWithoutProgress = currentSWP + 1;
+      const PLATEAU_THRESHOLD = 3;
+      const VOLUME_THRESHOLD = 4;
+      if (nextSessionsWithoutProgress >= VOLUME_THRESHOLD) {
+        // #8: suggest adding a set to break the plateau.
+        reason = `Aim for ${effectiveTarget} reps — you've been stuck here a while. Consider adding 1 extra set next session to build work capacity.`;
+      } else if (nextSessionsWithoutProgress >= PLATEAU_THRESHOLD) {
+        reason = `Aim for ${effectiveTarget} reps — you're plateauing. Focus on quality reps and make sure recovery is solid.`;
+      } else {
+        reason = `Aim for ${effectiveTarget} reps — hit 70%+ of sets to advance.`;
+      }
+      branch = 'hold_cursor';
+    }
   }
+
+  const plateauDetected = nextSessionsWithoutProgress >= 3;
+  const volumeSuggested = nextSessionsWithoutProgress >= 4;
 
   const nextWeightLb =
     action === 'build_reps'
@@ -557,16 +676,24 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextBand,
     nextConsecutiveAtTop,
     nextSessionsAtCurrentWeight,
+    nextRecentSessionScores,
+    nextSessionsWithoutProgress,
+    nextAvgSessionsPerWeightIncrease,
     goal,
     debug: {
-      hitThreshold,       // true = hit effectiveTarget (drives cursor advance)
+      hitThreshold,         // true = hit effectiveTarget (drives cursor advance)
       setsAtTopRange: setsAtTop,  // sets that hit absolute repRangeHigh (display only)
       totalSets: workSets.length,
-      hitPercent,         // % of sets at effectiveTarget
+      hitPercent,           // % of sets at effectiveTarget
       maxRpe,
       avgRpe,
-      rpeDelta,           // deviation from personal baseline (null = no baseline yet)
+      rpeDelta,             // deviation from personal baseline (null = no baseline yet)
       intraSessionFatigue,  // reps dropped >25% from set 1 to last (under-recovery signal)
+      sessionScore,         // raw hit-% for this session (= hitPercent, named explicitly)
+      rollingAvgScore,      // avg of ≤3 recent scores (null if < 2 sessions)
+      performanceTrend,     // slope of recent scores (null if < 2 sessions)
+      plateauDetected,      // sessionsWithoutProgress ≥ 3
+      volumeSuggested,      // sessionsWithoutProgress ≥ 4 → engine suggested +1 set
       baseWeightKg,
       incrementKg,
       workingSetCount: workSets.length,
@@ -609,6 +736,9 @@ export function prescriptionToDecision(
     nextBand: 'easy',
     nextConsecutiveAtTop: 0,
     nextSessionsAtCurrentWeight: 0,
+    nextRecentSessionScores: [],
+    nextSessionsWithoutProgress: 0,
+    nextAvgSessionsPerWeightIncrease: null,
     goal,
     debug: {
       hitThreshold: false,
@@ -619,6 +749,11 @@ export function prescriptionToDecision(
       avgRpe: null,
       rpeDelta: null,
       intraSessionFatigue: false,
+      sessionScore: 0,
+      rollingAvgScore: null,
+      performanceTrend: null,
+      plateauDetected: false,
+      volumeSuggested: false,
       baseWeightKg: nextWeightKg,
       incrementKg: 2.5,
       workingSetCount: 0,
