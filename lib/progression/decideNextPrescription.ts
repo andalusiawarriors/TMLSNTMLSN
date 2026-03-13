@@ -9,6 +9,9 @@
  *  - New exercise calibration: first session sets baseline, no increment applied
  *  - RPE band accelerator: avg RPE < 6 across last 3 sessions bumps band up
  *  - Blitz Mode: forces Extreme band, disables coaching, caps weekly increase at 10%
+ *  - Relative RPE delta: compares session RPE to personal per-exercise baseline (EMA)
+ *    rpeDelta > +1 → struggling, cap adaptive jump at +1
+ *    rpeDelta < -1 → cruising, add +1 bonus to adaptive jump
  */
 
 import { KG_PER_LB, LB_PER_KG, roundToGymPrecision } from '../../utils/units';
@@ -42,6 +45,7 @@ export type ProgressionDecision = {
     hitPercent: number;
     maxRpe: number | null;
     avgRpe: number | null;
+    rpeDelta: number | null;
     baseWeightKg: number;
     incrementKg: number;
     workingSetCount: number;
@@ -96,6 +100,14 @@ export type ProgressionInput = {
    * Defaults to 0.
    */
   consecutiveAtTop?: number;
+  /**
+   * Personal RPE baseline for this exercise — rolling EMA of past session avg RPEs.
+   * null = not enough history yet (less than 1 session with RPE data).
+   * Used to compute rpeDelta = sessionAvgRpe − rpeBaseline.
+   *   rpeDelta > +1 → user is struggling more than usual → cap adaptive jump at +1
+   *   rpeDelta < -1 → user is cruising easier than usual → +1 bonus to jump
+   */
+  rpeBaseline?: number | null;
 };
 
 // ─── Increment table ──────────────────────────────────────────────────────────
@@ -208,18 +220,24 @@ export function getMaxJumpForRangeWidth(rangeWidth: number): number {
  *  +2: avg reps ≥ target+1, range ≥4 wide, ≥2 sets at target+1
  *  +1: default (also forced when workSets < 3)
  *
- * Always capped by getMaxJumpForRangeWidth.
+ * RPE delta modifier (item #5 — relative to personal per-exercise baseline):
+ *  rpeDelta > +1  → user is struggling more than usual → cap at +1 regardless of reps
+ *  rpeDelta < -1  → user is cruising easier than usual → apply +1 bonus (capped by maxJump)
  *
- * Note: RPE delta modifier will be applied here in a later step (item #4).
+ * Always capped by getMaxJumpForRangeWidth.
  */
 export function computeAdaptiveJump(
   workSets: WorkingSet[],
   effectiveTarget: number,
   repRangeLow: number,
   repRangeHigh: number,
+  rpeDelta?: number | null,
 ): number {
   const rangeWidth = repRangeHigh - repRangeLow;
   const maxJump = getMaxJumpForRangeWidth(rangeWidth);
+
+  // RPE struggling guard: if this session is noticeably harder than baseline, be conservative.
+  if (rpeDelta != null && rpeDelta > 1) return 1;
 
   // Min-set guard: need ≥3 completed work sets to justify a larger jump.
   if (workSets.length < 3) return 1;
@@ -227,19 +245,26 @@ export function computeAdaptiveJump(
   const avgReps = workSets.reduce((sum, s) => sum + s.reps, 0) / workSets.length;
   const delta = avgReps - effectiveTarget;
 
+  let selectedJump = 1;
+
   // +3: consistently crushed the target across all sets.
   const setsAtTargetPlus2 = workSets.filter((s) => s.reps >= effectiveTarget + 2).length;
   if (delta >= 1.5 && rangeWidth >= 6 && setsAtTargetPlus2 >= 3) {
-    return Math.min(3, maxJump);
+    selectedJump = 3;
+  } else {
+    // +2: clearly above target in most sets.
+    const setsAtTargetPlus1 = workSets.filter((s) => s.reps >= effectiveTarget + 1).length;
+    if (delta >= 0.5 && rangeWidth >= 4 && setsAtTargetPlus1 >= 2) {
+      selectedJump = 2;
+    }
   }
 
-  // +2: clearly above target in most sets.
-  const setsAtTargetPlus1 = workSets.filter((s) => s.reps >= effectiveTarget + 1).length;
-  if (delta >= 0.5 && rangeWidth >= 4 && setsAtTargetPlus1 >= 2) {
-    return Math.min(2, maxJump);
+  // RPE cruising bonus: if this session is noticeably easier than baseline, add +1.
+  if (rpeDelta != null && rpeDelta < -1) {
+    selectedJump = Math.min(selectedJump + 1, maxJump);
   }
 
-  return 1;
+  return Math.min(selectedJump, maxJump);
 }
 
 // ─── Main engine ──────────────────────────────────────────────────────────────
@@ -281,6 +306,12 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   const maxRpe = rpeVals.length > 0 ? Math.max(...rpeVals) : null;
   const avgRpe = rpeVals.length > 0 ? rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length : null;
 
+  // Relative RPE delta: how much harder/easier this session felt vs. personal baseline.
+  // Positive = harder than usual, negative = easier than usual.
+  const rpeDelta = avgRpe != null && input.rpeBaseline != null
+    ? avgRpe - input.rpeBaseline
+    : null;
+
   // How many sets hit the top of the absolute rep range (for debug/display).
   const setsAtTop = workSets.filter((s) => s.reps >= repRangeHigh).length;
   // How many sets hit the current target cursor (drives progression decisions).
@@ -315,6 +346,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         hitPercent,
         maxRpe,
         avgRpe,
+        rpeDelta,
         baseWeightKg,
         incrementKg: 0,
         workingSetCount: workSets.length,
@@ -358,6 +390,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
         hitPercent,
         maxRpe,
         avgRpe,
+        rpeDelta,
         baseWeightKg,
         incrementKg,
         workingSetCount: workSets.length,
@@ -426,7 +459,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     // Hit current target but not yet at top — advance the cursor adaptively.
     action = 'build_reps';
     nextWeightKg = baseWeightKg;
-    const jump = computeAdaptiveJump(workSets, effectiveTarget, repRangeLow, repRangeHigh);
+    const jump = computeAdaptiveJump(workSets, effectiveTarget, repRangeLow, repRangeHigh, rpeDelta);
     nextRepTarget = Math.min(effectiveTarget + jump, repRangeHigh);
     nextConsecutiveAtTop = 0;
     reason = jump > 1
@@ -469,6 +502,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       hitPercent,         // % of sets at effectiveTarget
       maxRpe,
       avgRpe,
+      rpeDelta,           // deviation from personal baseline (null = no baseline yet)
       baseWeightKg,
       incrementKg,
       workingSetCount: workSets.length,
@@ -518,6 +552,7 @@ export function prescriptionToDecision(
       hitPercent: 0,
       maxRpe: null,
       avgRpe: null,
+      rpeDelta: null,
       baseWeightKg: nextWeightKg,
       incrementKg: 2.5,
       workingSetCount: 0,
