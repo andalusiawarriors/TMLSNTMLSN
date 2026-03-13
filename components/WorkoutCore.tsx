@@ -993,7 +993,6 @@ export function WorkoutCore({
           style={[
             styles.workoutOverlay,
             {
-              backgroundColor: '#2F3031',
               height: windowHeight,
               justifyContent: 'center',
               alignItems: 'center',
@@ -1014,7 +1013,7 @@ export function WorkoutCore({
       <AnimatedReanimated.View
         style={[
           styles.workoutOverlay,
-          { backgroundColor: '#2F3031', height: windowHeight },
+          { height: windowHeight },
           overlayEntranceStyle,
         ]}
       >
@@ -1206,7 +1205,7 @@ export function WorkoutCore({
               {activeWorkout.exercises.map((exercise, exerciseIndex) => (
                 <AnimatedFadeInUp key={exercise.id} delay={100 + exerciseIndex * 45} duration={320} trigger={overlayTrigger} instant>
                   <View
-                    style={[styles.exerciseBlock, { backgroundColor: colors.primaryLight + '08', borderColor: colors.primaryLight + '15' }, reorderHandle.getCardStyle(exerciseIndex)]}
+                    style={[styles.exerciseBlock, reorderHandle.getCardStyle(exerciseIndex)]}
                     onLayout={(e) => setTableBlockYRef.current.set(exerciseIndex, e.nativeEvent.layout.y)}
                   >
                     <View style={styles.exerciseBlockHeader}>
@@ -1365,7 +1364,7 @@ export function WorkoutCore({
         <Modal visible animationType="fade" transparent>
           <Pressable style={styles.exerciseMenuOverlay} onPress={() => setRestTimeEditExerciseIndex(null)}>
             <Pressable
-              style={[styles.restTimeEditCard, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
+              style={[styles.restTimeEditCard]}
               onPress={(e) => e.stopPropagation()}
             >
               <Text style={[styles.restTimeEditTitle, { color: colors.primaryLight }]}>Edit rest time</Text>
@@ -1434,7 +1433,7 @@ export function WorkoutCore({
                 </Text>
                 <View style={styles.exerciseMenuButtons}>
                   <AnimatedPressable
-                    style={[styles.exerciseMenuButtonReplace, { backgroundColor: colors.primaryDark, borderColor: colors.primaryLight + '20' }]}
+                    style={[styles.exerciseMenuButtonReplace, { backgroundColor: 'rgba(47, 48, 49, 0.55)', borderColor: 'rgba(255, 255, 255, 0.16)' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={handleReplaceFromMenu}
@@ -1450,7 +1449,7 @@ export function WorkoutCore({
                     <Text style={styles.exerciseMenuButtonDeleteText}>Delete exercise</Text>
                   </AnimatedPressable>
                   <AnimatedPressable
-                    style={[styles.exerciseMenuButtonCancel, { borderColor: colors.primaryLight + '15' }]}
+                    style={[styles.exerciseMenuButtonCancel, { borderColor: 'rgba(255, 255, 255, 0.16)' }]}
                     onPressIn={playIn}
                     onPressOut={playOut}
                     onPress={closeExerciseMenu}
@@ -1553,7 +1552,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#2F3031',
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
     zIndex: 10,
   },
   logTopBar: {
@@ -1725,12 +1724,17 @@ const styles = StyleSheet.create({
   },
   exerciseBlock: {
     marginBottom: 24,
-    backgroundColor: Colors.primaryLight + '08',
-    borderRadius: 20,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '15',
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     padding: Spacing.md,
     paddingBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
   },
   exerciseBlockHeader: {
     flexDirection: 'row',
@@ -1869,8 +1873,10 @@ const styles = StyleSheet.create({
   restTimeEditCard: {
     width: '100%',
     maxWidth: 340,
-    borderRadius: BorderRadius.xl,
+    borderRadius: 24,
     borderWidth: 1,
+    backgroundColor: 'rgba(35, 36, 37, 0.97)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     padding: Spacing.lg,
     ...Shadows.card,
   },
@@ -1973,13 +1979,13 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   setNotesSheet: {
-    backgroundColor: Colors.primaryDark,
-    borderTopLeftRadius: 38,
-    borderTopRightRadius: 38,
+    backgroundColor: 'rgba(35, 36, 37, 0.97)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     minHeight: 340,
     paddingBottom: 40,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   modalHeader: {
     paddingTop: 12,
@@ -2010,15 +2016,15 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   setNotesInput: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(47, 48, 49, 0.6)',
+    borderRadius: 10,
     padding: 16,
     height: 140,
     color: Colors.primaryLight,
     fontSize: 16,
     textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   saveNotesButton: {
     height: 44,
