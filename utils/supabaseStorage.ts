@@ -34,6 +34,7 @@ import { resolveExerciseDbIdFromName } from './workoutMuscles';
 import {
   decideNextPrescription,
   isDeloadWeek,
+  type DifficultyBand,
   type OverloadCategory,
 } from '../lib/progression/decideNextPrescription';
 import { EXERCISE_MAP } from './exerciseDb/exerciseDatabase';
@@ -132,13 +133,21 @@ async function updateDeloadWeekCounter(
 type PrescriptionMeta = {
   repRangeLow: number;
   repRangeHigh: number;
-  currentTargetReps: number;
+  smallestIncrement: number;
+  defaultTargetRpe: number;
+  // Band system fields (from exercise_progress_state)
   overloadCategory: OverloadCategory;
-  currentBand: 'easy' | 'medium' | 'hard' | 'extreme';
+  currentBand: DifficultyBand;
   consecutiveSuccess: number;
   consecutiveFailure: number;
   isCalibrating: boolean;
   isDeloadWeek: boolean;
+  blitzMode: boolean;
+  avgRpeLast3Sessions?: number | null;
+  /** Persisted rep cursor from next_target_reps. Null/undefined → defaults to repRangeLow. */
+  currentTargetReps?: number | null;
+  /** Sessions in a row where cursor was at repRangeHigh and threshold was hit. */
+  consecutiveAtTop?: number;
 };
 
 type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
@@ -215,45 +224,35 @@ export async function supabaseDeleteWorkoutStreak(userId: string): Promise<void>
   }
 }
 
-/** Uses bodybuilding progression engine. */
+/** Uses canonical progression engine with full band system. */
 function computeNextPrescription(
   meta: PrescriptionMeta,
   sets: PrescriptionSet[],
   _weightUnit: 'kg' | 'lb'
-): {
-  nextWeight: number;
-  goal: 'add_load' | 'add_reps' | 'reduce_load';
-  nextTargetReps: number;
-  repRangeLow: number;
-  repRangeHigh: number;
-  reason: string;
-  nextBand: 'easy' | 'medium' | 'hard' | 'extreme';
-  newConsecutiveSuccess: number;
-  newConsecutiveFailure: number;
-} | null {
+): { nextWeight: number; nextRepTarget: number; nextConsecutiveAtTop: number; goal: 'add_load' | 'add_reps' | 'reduce_load'; nextBand: DifficultyBand; reason: string } | null {
   const decision = decideNextPrescription({
     sets,
     repRangeLow: meta.repRangeLow,
     repRangeHigh: meta.repRangeHigh,
-    currentTargetReps: meta.currentTargetReps,
     overloadCategory: meta.overloadCategory,
     currentBand: meta.currentBand,
     consecutiveSuccess: meta.consecutiveSuccess,
     consecutiveFailure: meta.consecutiveFailure,
     isCalibrating: meta.isCalibrating,
     isDeloadWeek: meta.isDeloadWeek,
+    blitzMode: meta.blitzMode,
+    avgRpeLast3Sessions: meta.avgRpeLast3Sessions,
+    currentTargetReps: meta.currentTargetReps ?? undefined,
+    consecutiveAtTop: meta.consecutiveAtTop ?? 0,
   });
   if (!decision) return null;
   return {
     nextWeight: decision.nextWeightLb,
+    nextRepTarget: decision.nextRepTarget,
+    nextConsecutiveAtTop: decision.nextConsecutiveAtTop,
     goal: decision.goal,
-    nextTargetReps: decision.nextRepTarget,
-    repRangeLow: decision.repRangeLow,
-    repRangeHigh: decision.repRangeHigh,
-    reason: decision.reason,
     nextBand: decision.nextBand,
-    newConsecutiveSuccess: decision.debug.newConsecutiveSuccess,
-    newConsecutiveFailure: decision.debug.newConsecutiveFailure,
+    reason: decision.reason,
   };
 }
 
@@ -271,11 +270,12 @@ async function saveExercisePrescription(params: {
   userId: string;
   exerciseId: string;
   nextWeight: number;
-  goal: 'add_load' | 'add_reps' | 'reduce_load';
-  nextTargetReps: number;
+  nextRepTarget: number;
+  nextConsecutiveAtTop: number;
   repRangeLow: number;
   repRangeHigh: number;
-  nextBand: 'easy' | 'medium' | 'hard' | 'extreme';
+  goal: 'add_load' | 'add_reps' | 'reduce_load';
+  nextBand: DifficultyBand;
   consecutiveSuccess: number;
   consecutiveFailure: number;
   isCalibrating: boolean;
@@ -288,10 +288,11 @@ async function saveExercisePrescription(params: {
       exercise_id: params.exerciseId,
       variant_key: 'default',
       next_target_weight: params.nextWeight,
-      next_goal_type: params.goal,
-      next_target_reps: params.nextTargetReps,
+      next_target_reps: params.nextRepTarget,
+      consecutive_at_top: params.nextConsecutiveAtTop,
       rep_range_low: params.repRangeLow,
       rep_range_high: params.repRangeHigh,
+      next_goal_type: params.goal,
       difficulty_band: params.nextBand,
       consecutive_success: params.consecutiveSuccess,
       consecutive_failure: params.consecutiveFailure,
@@ -362,11 +363,7 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
   const sessions = sortSessionsChronologically(await supabaseGetWorkoutSessions(userId));
 
   if (sessions.length === 0) {
-    const { error: deleteError } = await supabase
-      .from('exercise_progress_state')
-      .delete()
-      .eq('user_id', userId);
-    if (deleteError) throw deleteError;
+    await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
     await supabase
       .from('training_settings')
       .upsert(
@@ -386,11 +383,12 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
 
   const progressByExercise = new Map<string, {
     nextWeight: number | null;
-    goal: 'add_load' | 'add_reps' | 'reduce_load';
-    nextTargetReps: number;
+    nextTargetReps: number | null;
+    consecutiveAtTop: number;
     repRangeLow: number;
     repRangeHigh: number;
-    currentBand: 'easy' | 'medium' | 'hard' | 'extreme';
+    goal: 'add_load' | 'add_reps' | 'reduce_load';
+    band: DifficultyBand;
     success: number;
     failure: number;
     calibrating: boolean;
@@ -409,22 +407,28 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
       const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
       const exerciseId = toExerciseProgressId(canonicalId);
       const existing = progressByExercise.get(exerciseId);
-      const repRangeLow = ex.repRangeLow ?? 10;
-      const repRangeHigh = ex.repRangeHigh ?? 12;
-      const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
-      const currentBand = existing?.currentBand ?? 'easy';
       const isCalibrating = existing ? existing.calibrating : true;
+
+      const repRangeLow = ex.repRangeLow ?? 8;
+      const repRangeHigh = ex.repRangeHigh ?? 12;
+      // Cursor: use what was computed last session, or start at repRangeLow.
+      const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
+      const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
 
       const meta: PrescriptionMeta = {
         repRangeLow,
         repRangeHigh,
-        currentTargetReps,
+        smallestIncrement: ex.smallestIncrement ?? 2.5,
+        defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
         overloadCategory: resolveOverloadCategory(ex.exerciseDbId, ex.name),
-        currentBand,
+        currentBand: existing?.band ?? 'easy',
         consecutiveSuccess: existing?.success ?? 0,
         consecutiveFailure: existing?.failure ?? 0,
         isCalibrating,
         isDeloadWeek: deloadThisWeek,
+        blitzMode: false,
+        currentTargetReps,
+        consecutiveAtTop,
       };
 
       const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
@@ -439,13 +443,14 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
 
       progressByExercise.set(exerciseId, {
         nextWeight: prescription.nextWeight,
+        nextTargetReps: prescription.nextRepTarget,
+        consecutiveAtTop: prescription.nextConsecutiveAtTop,
+        repRangeLow,
+        repRangeHigh,
         goal: prescription.goal,
-        nextTargetReps: prescription.nextTargetReps,
-        repRangeLow: prescription.repRangeLow,
-        repRangeHigh: prescription.repRangeHigh,
-        currentBand: prescription.nextBand,
-        success: prescription.newConsecutiveSuccess,
-        failure: prescription.newConsecutiveFailure,
+        band: prescription.nextBand,
+        success: prescription.goal === 'add_load' ? (existing?.success ?? 0) + 1 : 0,
+        failure: prescription.goal === 'add_reps' && !isCalibrating ? (existing?.failure ?? 0) + 1 : 0,
         calibrating: false,
         reason: prescription.reason ?? '',
       });
@@ -461,22 +466,19 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
     lastWorkoutDate = deloadState.nextLastWorkoutDate;
   }
 
-  const { error: deleteError } = await supabase
-    .from('exercise_progress_state')
-    .delete()
-    .eq('user_id', userId);
-  if (deleteError) throw deleteError;
+  await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
 
   const rows = Array.from(progressByExercise.entries()).map(([exerciseId, state]) => ({
     user_id: userId,
     exercise_id: exerciseId,
     variant_key: 'default',
     next_target_weight: state.nextWeight,
-    next_goal_type: state.goal,
     next_target_reps: state.nextTargetReps,
+    consecutive_at_top: state.consecutiveAtTop,
     rep_range_low: state.repRangeLow,
     rep_range_high: state.repRangeHigh,
-    difficulty_band: state.currentBand,
+    next_goal_type: state.goal,
+    difficulty_band: state.band,
     consecutive_success: state.success,
     consecutive_failure: state.failure,
     is_calibrating: state.calibrating,
@@ -487,7 +489,7 @@ async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
   if (rows.length > 0) {
     const { error: progressError } = await supabase
       .from('exercise_progress_state')
-      .upsert(rows, { onConflict: 'user_id,exercise_id,variant_key' });
+      .insert(rows);
     if (progressError) throw progressError;
   }
 
@@ -1088,7 +1090,7 @@ export async function supabaseSaveWorkoutSession(
       rest_timer: ex.restTimer ?? null,
       notes: ex.notes ?? null,
       exercise_db_id: ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? null,
-      rep_range_low: ex.repRangeLow ?? 10,
+      rep_range_low: ex.repRangeLow ?? 8,
       rep_range_high: ex.repRangeHigh ?? 12,
       smallest_increment: ex.smallestIncrement ?? 2.5,
       default_target_rpe: ex.defaultTargetRpe ?? 8.5,
@@ -1131,29 +1133,28 @@ export async function supabaseSaveWorkoutSession(
       const userSettings = await supabaseGetUserSettings(userId);
       const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
 
-      // Fetch deload week counter
+      // Fetch training settings for Blitz Mode and deload week counter
       const { data: trainingSettingsRow } = supabase
-        ? await supabase.from('training_settings').select('deload_week_counter').eq('user_id', userId).maybeSingle()
+        ? await supabase.from('training_settings').select('blitz_mode,deload_week_counter').eq('user_id', userId).maybeSingle()
         : { data: null };
+      const blitzMode = Boolean(trainingSettingsRow?.blitz_mode ?? false);
       const deloadWeekCounter = Number(trainingSettingsRow?.deload_week_counter ?? 0);
       deloadThisWeek = isDeloadWeek(deloadWeekCounter);
 
-      // Fetch existing progression state for all exercises in this session
+      // Fetch existing band state for all exercises in this session
       const canonicalIds = session.exercises.map((ex) => toExerciseProgressId(ex.exerciseDbId ?? ex.name ?? ex.id));
       const { data: progressRows } = supabase
-        ? await supabase.from('exercise_progress_state').select('exercise_id,next_target_reps,rep_range_low,rep_range_high,difficulty_band,consecutive_success,consecutive_failure,is_calibrating').eq('user_id', userId).in('exercise_id', canonicalIds)
+        ? await supabase.from('exercise_progress_state').select('exercise_id,difficulty_band,consecutive_success,consecutive_failure,is_calibrating,next_target_reps,consecutive_at_top,rep_range_low,rep_range_high').eq('user_id', userId).in('exercise_id', canonicalIds)
         : { data: null };
-      const progressByExId = new Map<string, { nextTargetReps: number | null; repRangeLow: number | null; repRangeHigh: number | null; currentBand: 'easy' | 'medium' | 'hard' | 'extreme'; success: number; failure: number; calibrating: boolean }>();
+      const progressByExId = new Map<string, { band: DifficultyBand; success: number; failure: number; calibrating: boolean; nextTargetReps: number | null; consecutiveAtTop: number }>();
       for (const row of (progressRows ?? [])) {
-        const band = (row.difficulty_band as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy';
         progressByExId.set(String(row.exercise_id), {
-          nextTargetReps: row.next_target_reps != null ? Number(row.next_target_reps) : null,
-          repRangeLow: row.rep_range_low != null ? Number(row.rep_range_low) : null,
-          repRangeHigh: row.rep_range_high != null ? Number(row.rep_range_high) : null,
-          currentBand: band,
+          band: (row.difficulty_band as DifficultyBand) ?? 'easy',
           success: Number(row.consecutive_success ?? 0),
           failure: Number(row.consecutive_failure ?? 0),
           calibrating: Boolean(row.is_calibrating ?? true),
+          nextTargetReps: row.next_target_reps != null ? Number(row.next_target_reps) : null,
+          consecutiveAtTop: row.consecutive_at_top != null ? Number(row.consecutive_at_top) : 0,
         });
       }
 
@@ -1162,24 +1163,32 @@ export async function supabaseSaveWorkoutSession(
         const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
         const exerciseId = toExerciseProgressId(canonicalId);
         const existing = progressByExId.get(exerciseId);
-        const repRangeLow = ex.repRangeLow ?? 10;
-        const repRangeHigh = ex.repRangeHigh ?? 12;
-        const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
-        const currentBand = existing?.currentBand ?? 'easy';
+        const currentBand: DifficultyBand = existing?.band ?? 'easy';
         const consecutiveSuccess = existing?.success ?? 0;
         const consecutiveFailure = existing?.failure ?? 0;
+        // First time we see this exercise → calibration session
         const isCalibrating = existing ? existing.calibrating : true;
+
+        const repRangeLow = ex.repRangeLow ?? 8;
+        const repRangeHigh = ex.repRangeHigh ?? 12;
+        // Cursor: use persisted value from DB, fall back to repRangeLow for new exercises.
+        const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
+        const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
 
         const meta: PrescriptionMeta = {
           repRangeLow,
           repRangeHigh,
-          currentTargetReps,
+          smallestIncrement: ex.smallestIncrement ?? 2.5,
+          defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
           overloadCategory: resolveOverloadCategory(ex.exerciseDbId, ex.name),
           currentBand,
           consecutiveSuccess,
           consecutiveFailure,
           isCalibrating,
           isDeloadWeek: deloadThisWeek,
+          blitzMode,
+          currentTargetReps,
+          consecutiveAtTop,
         };
         const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
           weight: Number(s.weight ?? 0),
@@ -1190,18 +1199,22 @@ export async function supabaseSaveWorkoutSession(
         const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
         if (!prescription) continue;
 
+        // Exit calibration mode after the first real session
+        const nextIsCalibrating = false;
+
         await saveExercisePrescription({
           userId,
           exerciseId,
           nextWeight: prescription.nextWeight,
+          nextRepTarget: prescription.nextRepTarget,
+          nextConsecutiveAtTop: prescription.nextConsecutiveAtTop,
+          repRangeLow,
+          repRangeHigh,
           goal: prescription.goal,
-          nextTargetReps: prescription.nextTargetReps,
-          repRangeLow: prescription.repRangeLow,
-          repRangeHigh: prescription.repRangeHigh,
           nextBand: prescription.nextBand,
-          consecutiveSuccess: prescription.newConsecutiveSuccess,
-          consecutiveFailure: prescription.newConsecutiveFailure,
-          isCalibrating: false,
+          consecutiveSuccess: prescription.goal === 'add_load' ? consecutiveSuccess + 1 : 0,
+          consecutiveFailure: prescription.goal === 'add_reps' && !isCalibrating ? consecutiveFailure + 1 : 0,
+          isCalibrating: nextIsCalibrating,
           reason: prescription.reason ?? '',
         });
       }
@@ -1220,17 +1233,14 @@ export async function supabaseSaveWorkoutSession(
 export type ExercisePrescriptionRow = {
   /** Next target weight in lb; null when row has state but no target yet. */
   nextWeight: number | null;
-  goal: string;
-  /** Live rep target (e.g. 10, 11, 12 for 10–12). */
+  /** Rep cursor — where the user is targeting within the range. Null = use repRangeLow. */
   nextTargetReps: number | null;
-  repRangeLow: number | null;
-  repRangeHigh: number | null;
+  goal: string;
+  difficultyBand: string;
   consecutiveSuccess: number;
   consecutiveFailure: number;
   isCalibrating: boolean;
   reason: string;
-  /** @deprecated Kept for backward compat; no longer used by bodybuilding algorithm. */
-  difficultyBand: string;
 };
 
 export async function supabaseGetExercisePrescriptions(
@@ -1245,7 +1255,7 @@ export async function supabaseGetExercisePrescriptions(
   const { data, error } = await supabase
     .from('exercise_progress_state')
     .select(
-      'exercise_id, next_target_weight, next_goal_type, next_target_reps, rep_range_low, rep_range_high, difficulty_band, consecutive_success, consecutive_failure, is_calibrating, progression_reason'
+      'exercise_id, next_target_weight, next_target_reps, next_goal_type, difficulty_band, consecutive_success, consecutive_failure, is_calibrating, progression_reason'
     )
     .eq('user_id', userId)
     .in('exercise_id', progressIds);
@@ -1257,15 +1267,13 @@ export async function supabaseGetExercisePrescriptions(
     const canonical = progressToCanonical[row.exercise_id] ?? row.exercise_id;
     result[canonical] = {
       nextWeight:         row.next_target_weight ?? null,
-      goal:               row.next_goal_type         ?? 'add_reps',
       nextTargetReps:     row.next_target_reps != null ? Number(row.next_target_reps) : null,
-      repRangeLow:        row.rep_range_low != null ? Number(row.rep_range_low) : null,
-      repRangeHigh:       row.rep_range_high != null ? Number(row.rep_range_high) : null,
+      goal:               row.next_goal_type         ?? 'add_reps',
+      difficultyBand:     row.difficulty_band         ?? 'easy',
       consecutiveSuccess: row.consecutive_success     ?? 0,
       consecutiveFailure: row.consecutive_failure     ?? 0,
       isCalibrating:      row.is_calibrating          ?? false,
       reason:             row.progression_reason      ?? '',
-      difficultyBand:     row.difficulty_band         ?? 'easy',
     };
   }
   return result;
@@ -1561,7 +1569,7 @@ function mapSavedRoutineRowToRoutine(row: Record<string, unknown>): SavedRoutine
       restTimer: Number(e?.restTimer ?? 0),
       exerciseDbId: e?.exerciseDbId,
       targetSets: Number(e?.targetSets ?? 3),
-      targetReps: Number(e?.targetReps ?? 10),
+      targetReps: Number(e?.targetReps ?? 8),
       suggestedWeight:
         e?.suggestedWeight != null && e.suggestedWeight >= 0 ? Number(e.suggestedWeight) : undefined,
     }))

@@ -1,9 +1,7 @@
-/**
- * Display-side snapshot: reads persisted progression state only.
- * Does NOT call decideNextPrescription. Save/recompute is the primary source of truth.
- */
 import { formatWeightDisplay, toDisplayWeight } from '../../utils/units';
+import { decideNextPrescription, type DifficultyBand } from './decideNextPrescription';
 import type { ExercisePrescriptionRow } from '../../utils/supabaseStorage';
+import { resolveOverloadCategory } from '../../utils/supabaseStorage';
 
 export type DisplayHistorySet = {
   weight: number;
@@ -31,14 +29,15 @@ type BuildDisplayPrescriptionSnapshotInput = {
   repRangeLow: number;
   repRangeHigh: number;
   recentSets: DisplayHistorySet[];
-  prescription?: ExercisePrescriptionRow | { nextWeight: number | null; goal: string; nextTargetReps?: number } | null;
+  prescription?: ExercisePrescriptionRow | { nextWeight: number | null; goal: string } | null;
   weightUnit: 'kg' | 'lb';
   isDeloadWeek?: boolean;
+  blitzMode?: boolean;
 };
 
-function goalToAction(goal: string): DisplayPrescriptionSnapshot['action'] {
-  if (goal === 'add_load') return 'increase weight';
-  if (goal === 'reduce_load') return 'deload';
+function toActionPhrase(action: 'deload' | 'add_weight' | 'build_reps' | 'calibrate'): DisplayPrescriptionSnapshot['action'] {
+  if (action === 'deload') return 'deload';
+  if (action === 'add_weight') return 'increase weight';
   return 'build reps';
 }
 
@@ -46,63 +45,79 @@ export function buildDisplayPrescriptionSnapshot(
   input: BuildDisplayPrescriptionSnapshotInput
 ): DisplayPrescriptionSnapshot {
   const {
+    exerciseName,
+    exerciseDbId,
     repRangeLow,
     repRangeHigh,
     recentSets,
     prescription,
     weightUnit,
+    isDeloadWeek = false,
+    blitzMode = false,
   } = input;
 
-  const workingSets = recentSets.filter((set) => set.weight > 0 && set.reps > 0);
-  const lastSet = workingSets.length > 0 ? workingSets[workingSets.length - 1] : null;
+  const difficultyBand: DifficultyBand =
+    (prescription && 'difficultyBand' in prescription ? prescription.difficultyBand : 'easy') as DifficultyBand;
+  const consecutiveSuccess =
+    prescription && 'consecutiveSuccess' in prescription ? prescription.consecutiveSuccess : 0;
+  const consecutiveFailure =
+    prescription && 'consecutiveFailure' in prescription ? prescription.consecutiveFailure : 0;
+  const isCalibrating =
+    prescription && 'isCalibrating' in prescription ? prescription.isCalibrating : false;
 
-  const hasPrescription =
-    prescription &&
-    (prescription.nextWeight != null || ('nextTargetReps' in prescription && prescription.nextTargetReps != null));
+  const workingSets = recentSets
+    .filter((set) => set.weight > 0 && set.reps > 0)
+    .map((set) => ({
+      weight: set.weight,
+      reps: set.reps,
+      rpe: set.rpe ?? null,
+      completed: true,
+    }));
 
-  // 1. When prescription exists: use persisted state directly (no re-decision)
-  if (hasPrescription && prescription) {
-    const nextWeight = prescription.nextWeight ?? lastSet?.weight ?? 0;
-    const nextTargetReps =
-      (prescription && 'nextTargetReps' in prescription && prescription.nextTargetReps != null)
-        ? prescription.nextTargetReps
-        : repRangeLow;
-    const goal = prescription.goal ?? 'add_reps';
+  if (workingSets.length > 0) {
+    const decision = decideNextPrescription({
+      sets: workingSets,
+      repRangeLow,
+      repRangeHigh,
+      overloadCategory: resolveOverloadCategory(exerciseDbId, exerciseName),
+      currentBand: difficultyBand,
+      consecutiveSuccess,
+      consecutiveFailure,
+      isCalibrating,
+      isDeloadWeek,
+      blitzMode,
+    });
 
-    let loadChangePercent: number | null = null;
-    if (lastSet && lastSet.weight > 0 && (goal === 'add_load' || goal === 'reduce_load') && nextWeight > 0) {
-      loadChangePercent = Math.round(((nextWeight - lastSet.weight) / lastSet.weight) * 1000) / 10;
+    if (decision) {
+      const previousWeight = workingSets[workingSets.length - 1]?.weight ?? 0;
+      const loadChangePercent =
+        previousWeight > 0 && (decision.action === 'add_weight' || decision.action === 'deload')
+          ? Math.round(((decision.nextWeightLb - previousWeight) / previousWeight) * 1000) / 10
+          : null;
+      const maxRpe = decision.debug.maxRpe ?? null;
+      return {
+        ghostWeight: formatWeightDisplay(toDisplayWeight(decision.nextWeightLb, weightUnit), weightUnit),
+        ghostReps: String(decision.nextRepTarget),
+        nextWeightLb: decision.nextWeightLb,
+        action: toActionPhrase(decision.action),
+        reason: decision.reason,
+        goal: decision.goal,
+        loadChangePercent,
+        fromProgressionEngine: true,
+        workingSetsAnalyzed: workingSets.length,
+        maxRpe,
+        hitTopRange: decision.debug.hitThreshold,
+      };
     }
 
-    const maxRpe = workingSets.reduce<number | null>((acc, set) => {
-      if (set.rpe == null || set.rpe <= 0) return acc;
-      return acc == null ? set.rpe : Math.max(acc, set.rpe);
-    }, null);
-
-    return {
-      ghostWeight: formatWeightDisplay(toDisplayWeight(nextWeight, weightUnit), weightUnit),
-      ghostReps: String(nextTargetReps),
-      nextWeightLb: nextWeight > 0 ? nextWeight : null,
-      action: goalToAction(goal),
-      reason: 'reason' in prescription ? prescription.reason : null,
-      goal,
-      loadChangePercent,
-      fromProgressionEngine: true,
-      workingSetsAnalyzed: 0,
-      maxRpe,
-      hitTopRange: null,
-    };
-  }
-
-  // 2. No prescription but has recentSets: fallback to last set
-  if (lastSet) {
+    const lastSet = workingSets[workingSets.length - 1];
     const maxRpe = workingSets.reduce<number | null>((acc, set) => {
       if (set.rpe == null || set.rpe <= 0) return acc;
       return acc == null ? set.rpe : Math.max(acc, set.rpe);
     }, null);
     return {
       ghostWeight: formatWeightDisplay(toDisplayWeight(lastSet.weight, weightUnit), weightUnit),
-      ghostReps: String(repRangeLow),
+      ghostReps: String(lastSet.reps),
       nextWeightLb: lastSet.weight,
       action: null,
       reason: 'Last session',
@@ -115,7 +130,33 @@ export function buildDisplayPrescriptionSnapshot(
     };
   }
 
-  // 3. No prescription, no sets
+  if (prescription?.nextWeight != null) {
+    const persistedTarget =
+      'nextTargetReps' in prescription && prescription.nextTargetReps != null
+        ? prescription.nextTargetReps
+        : prescription.goal === 'add_load'
+          ? repRangeLow
+          : repRangeHigh;
+    return {
+      ghostWeight: formatWeightDisplay(toDisplayWeight(prescription.nextWeight, weightUnit), weightUnit),
+      ghostReps: String(persistedTarget),
+      nextWeightLb: prescription.nextWeight,
+      action:
+        prescription.goal === 'add_load'
+          ? 'increase weight'
+          : prescription.goal === 'reduce_load'
+            ? 'deload'
+            : 'build reps',
+      reason: 'reason' in prescription ? prescription.reason : null,
+      goal: prescription.goal,
+      loadChangePercent: null,
+      fromProgressionEngine: false,
+      workingSetsAnalyzed: 0,
+      maxRpe: null,
+      hitTopRange: null,
+    };
+  }
+
   return {
     ghostWeight: null,
     ghostReps: null,
