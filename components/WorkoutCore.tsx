@@ -1403,23 +1403,21 @@ export function WorkoutCore({
                 <Text style={[styles.restTimeEditValue, { color: colors.primaryLight }]}>{restEditSeconds} s</Text>
               </View>
               <View style={styles.restTimeEditButtons}>
-                <TouchableOpacity
-                  style={[styles.restTimeEditButton, { backgroundColor: colors.primaryLight + '20' }]}
+                <AnimatedPressable
+                  style={[styles.restTimeEditButton, { backgroundColor: 'rgba(198,198,198,0.06)', borderWidth: 1, borderColor: 'rgba(198,198,198,0.18)' }]}
                   onPress={() => setRestTimeEditExerciseIndex(null)}
-                  activeOpacity={0.8}
                 >
                   <Text style={[styles.restTimeEditButtonText, { color: colors.primaryLight }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </AnimatedPressable>
+                <AnimatedPressable
                   style={[styles.restTimeEditButton, styles.restTimeEditButtonPrimary, { backgroundColor: colors.primaryLight }]}
                   onPress={() => {
                     updateExerciseRestTimer(restTimeEditExerciseIndex, restEditMinutes * 60 + restEditSeconds);
                     setRestTimeEditExerciseIndex(null);
                   }}
-                  activeOpacity={0.8}
                 >
                   <Text style={[styles.restTimeEditButtonText, styles.restTimeEditButtonTextPrimary, { color: colors.primaryDark }]}>Done</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </Pressable>
           </Pressable>
@@ -1530,12 +1528,12 @@ export function WorkoutCore({
                   autoFocus
                   textAlignVertical="top"
                 />
-                <TouchableOpacity
+                <AnimatedPressable
                   style={[styles.saveNotesButton, { backgroundColor: colors.primaryLight }]}
                   onPress={saveNotes}
                 >
                   <Text style={[styles.saveNotesButtonText, { color: colors.primaryDark }]}>Save Note</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -1614,7 +1612,7 @@ const styles = StyleSheet.create({
   finishButtonText: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: '#2F3032',
+    color: Colors.primaryDark,
     letterSpacing: -0.11,
   },
   summaryRow: {
@@ -1699,9 +1697,11 @@ const styles = StyleSheet.create({
   },
   restTimerAdjustButton: {
     backgroundColor: Colors.primaryLight + '15',
-    paddingVertical: 8,
+    height: 36,
     paddingHorizontal: 20,
-    borderRadius: 16,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   restTimerAdjustButtonText: {
     fontSize: Typography.label,
@@ -1711,9 +1711,11 @@ const styles = StyleSheet.create({
   },
   restTimerSkipButton: {
     backgroundColor: Colors.primaryLight,
-    paddingVertical: 8,
+    height: 36,
     paddingHorizontal: 24,
-    borderRadius: 16,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   restTimerSkipButtonText: {
     fontSize: Typography.label,
@@ -1815,8 +1817,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   exerciseMenuTitle: {
-    fontSize: Typography.h2,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     letterSpacing: -0.11,
     color: Colors.primaryLight,
     marginBottom: Spacing.md,
@@ -1829,40 +1831,40 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   exerciseMenuButtonReplace: {
-    height: 40,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
     borderWidth: 1,
   },
   exerciseMenuButtonText: {
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '600',
     letterSpacing: -0.11,
   },
   exerciseMenuButtonDelete: {
-    height: 40,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
     backgroundColor: '#C6C6C6',
   },
   exerciseMenuButtonDeleteText: {
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '600',
     letterSpacing: -0.11,
-    color: '#2F3032',
+    color: '#2F3031',
   },
   exerciseMenuButtonCancel: {
-    height: 40,
-    borderRadius: 20,
+    height: 44,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
     borderWidth: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(198,198,198,0.06)',
   },
   restTimeEditCard: {
     width: '100%',
@@ -1906,14 +1908,16 @@ const styles = StyleSheet.create({
   },
   restTimeEditButton: {
     flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
+    height: 44,
+    borderRadius: 38,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   restTimeEditButtonPrimary: {},
   restTimeEditButtonText: {
-    fontSize: Typography.body,
+    fontSize: 14,
     fontWeight: '600',
+    letterSpacing: -0.11,
   },
   restTimeEditButtonTextPrimary: {},
   restTimerBadge: {
@@ -2017,7 +2021,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.06)',
   },
   saveNotesButton: {
-    height: 56,
+    height: 44,
     borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',

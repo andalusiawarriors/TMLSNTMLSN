@@ -25,6 +25,7 @@ import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { useAuth } from '../context/AuthContext';
 import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
+import { AnimatedPressable } from './AnimatedPressable';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
 import { useJarvis } from '../hooks/useJarvis';
@@ -101,19 +102,19 @@ function InProgressWorkoutCard({
 
         {/* Buttons row */}
         <View style={S.inProgressBtnRow}>
-          <Pressable
+          <AnimatedPressable
             onPress={onResume}
-            style={({ pressed }) => [S.pillPrimary, pressed && { opacity: 0.85 }]}
+            style={S.pillPrimary}
           >
             <Text style={S.pillPrimaryText}>Resume</Text>
-          </Pressable>
+          </AnimatedPressable>
           {onMinimize && (
-            <Pressable
+            <AnimatedPressable
               onPress={onMinimize}
-              style={({ pressed }) => [S.pillOutline, pressed && { opacity: 0.75 }]}
+              style={S.pillOutline}
             >
               <Text style={S.pillOutlineText}>Minimize</Text>
-            </Pressable>
+            </AnimatedPressable>
           )}
         </View>
       </LinearGradient>
@@ -135,8 +136,8 @@ function ToolRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      style={({ pressed }) => [T.card, pressed && { opacity: 0.6 }]}
+    <AnimatedPressable
+      style={T.card}
       onPress={onPress}
     >
       <View style={T.textBlock}>
@@ -150,7 +151,7 @@ function ToolRow({
       ) : (
         <Text style={T.chevron}>›</Text>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -158,6 +159,8 @@ const T = StyleSheet.create({
   card: {
     backgroundColor: '#2F3031',
     borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
     minHeight: 55,
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,7 +174,7 @@ const T = StyleSheet.create({
   name: {
     fontSize: 15,
     fontWeight: '500',
-    color: QS,
+    color: Colors.primaryLight,
     letterSpacing: -0.2,
   },
   sub: {
@@ -369,13 +372,12 @@ export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
               <Text style={S.overlayText}>
                 A workout can't be started while one is already in progress.
               </Text>
-              <TouchableOpacity
+              <AnimatedPressable
                 onPress={() => setShowWorkoutBlock(false)}
                 style={S.overlayBtn}
-                activeOpacity={0.85}
               >
                 <Text style={S.overlayBtnText}>Got it</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
         </Pressable>
@@ -482,8 +484,6 @@ const S = StyleSheet.create({
   },
   toolList: {
     gap: 6,
-    marginLeft: -(PAD + 4),
-    marginRight: 4 - PAD,
   },
   divider: {
     height: 1,
@@ -502,7 +502,7 @@ const S = StyleSheet.create({
   overlayRoot:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
   overlayContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28 },
   overlayCard: {
-    backgroundColor: 'rgba(28,29,30,0.97)',
+    backgroundColor: Colors.primaryDark,
     borderRadius: 24,
     paddingHorizontal: 28,
     paddingVertical: 28,
@@ -519,13 +519,15 @@ const S = StyleSheet.create({
     marginBottom: 22,
   },
   overlayBtn: {
-    paddingVertical: 12,
+    height: 44,
     paddingHorizontal: 28,
-    borderRadius: 20,
+    borderRadius: 38,
     backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   overlayBtnText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.primaryDark,
   },
