@@ -6,7 +6,6 @@ import { TMLSN_SPLITS } from '../../constants/workoutSplits';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import type { WorkoutSplit } from '../../types';
 import { useButtonSound } from '../../hooks/useButtonSound';
-import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
 import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
@@ -65,7 +64,7 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
         const totalSets = split.exercises.reduce((acc, ex) => acc + ex.targetSets, 0);
 
         return (
-          <Card key={split.id} gradientFill borderRadius={20} style={styles.routineCard}>
+          <View key={split.id} style={styles.routineCard}>
             {/* Header – tappable to expand/collapse */}
             <Pressable
               style={styles.cardHeader}
@@ -124,7 +123,7 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
             >
               <Text style={styles.startButtonText}>Start Routine</Text>
             </Pressable>
-          </Card>
+          </View>
         );
       })}
       </ScrollView>
@@ -165,10 +164,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  // ─── ROUTINE CARD (Hevy-style) ────────────────────────────────────────────
+  // ─── ROUTINE CARD ─────────────────────────────────────────────────────────
   routineCard: {
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     padding: Spacing.md,
-    marginVertical: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',

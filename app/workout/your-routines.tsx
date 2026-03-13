@@ -256,30 +256,30 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                 friction={2}
                 rightThreshold={40}
               >
-                <Pressable
-                  style={({ pressed }) => [styles.routineCardWrap, pressed && { opacity: 0.9 }]}
-                  onPressIn={playIn}
-                  onPressOut={playOut}
-                  onPress={() => handleStartRoutine(routine)}
-                >
-                <Card gradientFill borderRadius={20} style={styles.routineCard}>
-                <View style={styles.routineCardLeft}>
-                  <View style={styles.routineCardIcon}>
-                    <Text style={styles.routineCardIconText}>◆</Text>
-                  </View>
-                  <View style={styles.routineCardContent}>
-                    <Text style={styles.routineCardName}>{routine.name}</Text>
-                    <View style={styles.routineCardStatsRow}>
-                      <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
+                <View style={styles.routineCard}>
+                  <View style={styles.routineCardLeft}>
+                    <View style={styles.routineCardIcon}>
+                      <Text style={styles.routineCardIconText}>◆</Text>
                     </View>
-                    <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
-                      {routine.exercises.map((e) => e.name).join(' · ')}
-                    </Text>
+                    <View style={styles.routineCardContent}>
+                      <Text style={styles.routineCardName}>{routine.name}</Text>
+                      <View style={styles.routineCardStatsRow}>
+                        <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
+                      </View>
+                      <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
+                        {routine.exercises.map((e) => e.name).join(' · ')}
+                      </Text>
+                    </View>
                   </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={() => handleStartRoutine(routine)}
+                  >
+                    <Text style={styles.startButtonText}>Start Routine</Text>
+                  </Pressable>
                 </View>
-                <Text style={styles.routineCardChevron}>›</Text>
-                </Card>
-              </Pressable>
               </Swipeable>
             ))}
           </View>
@@ -530,11 +530,16 @@ const styles = StyleSheet.create({
   },
   routineCardWrap: {},
   routineCard: {
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     padding: Spacing.md,
-    marginVertical: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
   },
   routineCardLeft: {
     flexDirection: 'row',
@@ -582,11 +587,19 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '40',
     letterSpacing: -0.11,
   },
-  routineCardChevron: {
-    fontSize: 24,
-    fontWeight: '500' as const,
-    color: Colors.primaryLight + '50',
-    paddingLeft: 8,
+  startButton: {
+    backgroundColor: '#C6C6C6',
+    borderRadius: 38,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.sm,
+  },
+  startButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    letterSpacing: -0.11,
+    color: '#2F3032',
   },
   routineDeleteAction: {
     backgroundColor: Colors.accentRed,
