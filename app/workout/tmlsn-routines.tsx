@@ -319,6 +319,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
     letterSpacing: -0.11,
-    color: '#2F3032',
+    color: '#FFFFFF',
   },
 });
