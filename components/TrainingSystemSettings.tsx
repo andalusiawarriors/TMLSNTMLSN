@@ -386,13 +386,11 @@ type ConfigSummaryProps = { training: TrainingSettings };
 
 function ConfigSummary({ training }: ConfigSummaryProps) {
   const arch = ARCHETYPES.find(a => a.id === training.archetype);
-  const vf = VOLUME_FRAMEWORKS.find(f => f.id === training.volumeFramework);
   const sm = SCHEDULE_MODES.find(m => m.id === training.scheduleMode);
   const wr = WEEK_RESETS.find(w => w.id === training.weekReset);
 
   const rows: [string, string][] = [
     ['Archetype', arch?.label ?? '—'],
-    ['Volume', vf?.label ?? '—'],
     ['Schedule', sm?.label ?? '—'],
     ['Week Reset', wr?.label ?? '—'],
   ];
@@ -457,9 +455,6 @@ export default function TrainingSystemSettings() {
 
   const setArchetype = (id: TrainingArchetype) =>
     setTraining(prev => ({ ...prev, archetype: id }));
-
-  const setVolumeFramework = (id: VolumeFramework) =>
-    setTraining(prev => ({ ...prev, volumeFramework: id }));
 
   const setScheduleMode = (id: ScheduleMode) =>
     setTraining(prev => ({ ...prev, scheduleMode: id }));
@@ -534,45 +529,6 @@ export default function TrainingSystemSettings() {
         <Text style={styles.archetypeLockNote}>
           Only the Bodybuilder archetype is available in this build. Others are coming soon.
         </Text>
-
-        <View style={styles.divider} />
-
-        {/* ── Volume Framework ── */}
-        <SectionLabel>VOLUME FRAMEWORK</SectionLabel>
-        <View style={styles.cardGroup}>
-          {VOLUME_FRAMEWORKS.map(fw => (
-            <SelectionCard
-              key={fw.id}
-              icon={fw.icon}
-              label={fw.label}
-              tag={fw.tag}
-              description={fw.description}
-              detail={fw.detail}
-              selected={training.volumeFramework === fw.id}
-              onSelect={() => setVolumeFramework(fw.id)}
-            >
-              {training.volumeFramework === fw.id && fw.id === 'rp' && (
-                <RPEditor
-                  targets={training.rpMuscleTargets}
-                  onChange={handleRPChange}
-                />
-              )}
-              {training.volumeFramework === fw.id && fw.id === 'range' && (
-                <RangeEditor
-                  targets={training.rangeMuscleTargets}
-                  onChange={handleRangeChange}
-                />
-              )}
-              {training.volumeFramework === fw.id && fw.id === 'custom' && (
-                <View style={styles.customHint}>
-                  <Text style={styles.customHintText}>
-                    → Custom muscle target editor available in Volume Settings
-                  </Text>
-                </View>
-              )}
-            </SelectionCard>
-          ))}
-        </View>
 
         <View style={styles.divider} />
 
