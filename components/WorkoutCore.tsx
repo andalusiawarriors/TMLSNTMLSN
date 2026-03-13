@@ -993,7 +993,7 @@ export function WorkoutCore({
           style={[
             styles.workoutOverlay,
             {
-              backgroundColor: '#1A1A1A',
+              backgroundColor: '#2F3031',
               height: windowHeight,
               justifyContent: 'center',
               alignItems: 'center',
@@ -1014,7 +1014,7 @@ export function WorkoutCore({
       <AnimatedReanimated.View
         style={[
           styles.workoutOverlay,
-          { backgroundColor: '#1A1A1A', height: windowHeight },
+          { backgroundColor: '#2F3031', height: windowHeight },
           overlayEntranceStyle,
         ]}
       >
@@ -1035,7 +1035,7 @@ export function WorkoutCore({
               onMinimize={handleMinimize}
               paddingTop={insets.top}
               colors={{
-                primaryDark: '#1A1A1A',
+                primaryDark: '#2F3031',
                 primaryLight: colors.primaryLight,
                 tabBarBorder: colors.tabBarBorder as [string, string],
                 tabBarFill: colors.tabBarFill as [string, string],
@@ -1087,13 +1087,13 @@ export function WorkoutCore({
                       <Text style={[styles.logTimer, { color: colors.primaryLight + '99' }]}>{formatElapsed(elapsedSeconds)}</Text>
                     </View>
                     <AnimatedPressable
-                      style={[styles.finishButton, { backgroundColor: colors.primaryLight }]}
+                      style={styles.finishButton}
                       onPressIn={playIn}
                       onPressOut={playOut}
                       onPress={handleFinishPress}
                       disabled={isSavingWorkout}
                     >
-                      <Text style={[styles.finishButtonText, { color: colors.primaryDark }]}>Finish</Text>
+                      <Text style={styles.finishButtonText}>Finish</Text>
                     </AnimatedPressable>
                   </View>
                 </AnimatedFadeInUp>
@@ -1198,7 +1198,7 @@ export function WorkoutCore({
                     onPressOut={playOut}
                     onPress={openExercisePicker}
                   >
-                    <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add exercise</Text>
+                    <Text style={styles.addSetButtonBlockText}>+ Add exercise</Text>
                   </AnimatedPressable>
                 </AnimatedFadeInUp>
               ) : null}
@@ -1223,7 +1223,18 @@ export function WorkoutCore({
                         <View style={[styles.exerciseBlockIcon, { backgroundColor: colors.primaryLight + '15' }]}>
                           <Text style={[styles.exerciseBlockIconText, { color: colors.primaryLight + '80' }]}>◆</Text>
                         </View>
-                        <Text style={[styles.exerciseBlockName, { color: colors.primaryLight }]}>{exercise.name}</Text>
+                        <View style={styles.exerciseBlockNameCol}>
+                          <Text style={styles.exerciseBlockName}>{exercise.name}</Text>
+                          {(() => {
+                            const dbEx = (exercise.exerciseDbId && EXERCISE_MAP.get(exercise.exerciseDbId))
+                              ?? userExercises.find((ue) => ue.id === exercise.exerciseDbId || ue.name === exercise.name);
+                            const category = dbEx?.category;
+                            if (!category) return null;
+                            return (
+                              <Text style={styles.exerciseBlockSubtitle}>{category.replace(/_/g, ' ')}</Text>
+                            );
+                          })()}
+                        </View>
                       </View>
                       {enableReorder && reorderHandle.activeIndex === exerciseIndex ? (
                         <View style={styles.reorderControls}>
@@ -1544,7 +1555,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#2F3031',
     zIndex: 10,
   },
   logTopBar: {
@@ -1591,19 +1602,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   finishButton: {
-    backgroundColor: Colors.primaryLight,
-    height: 40,
+    backgroundColor: '#C6C6C6',
+    height: 44,
     paddingVertical: 0,
-    paddingHorizontal: 18,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    borderRadius: 38,
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
   },
   finishButtonText: {
-    fontSize: Typography.label,
-    fontWeight: '700' as const,
-    color: Colors.primaryDark,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#2F3032',
     letterSpacing: -0.11,
   },
   summaryRow: {
@@ -1711,7 +1722,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
   },
   exerciseBlock: {
-    marginBottom: 12,
+    marginBottom: 24,
     backgroundColor: Colors.primaryLight + '08',
     borderRadius: 20,
     borderWidth: 1,
@@ -1759,11 +1770,27 @@ const styles = StyleSheet.create({
     color: Colors.primaryLight + '80',
   },
   exerciseBlockName: {
-    fontSize: Typography.body,
-    fontWeight: '500',
-    color: Colors.primaryLight,
-    letterSpacing: -0.11,
+    fontSize: Typography.h2,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: -0.5,
+  },
+  exerciseBlockNameCol: {
     flex: 1,
+    flexDirection: 'column',
+  },
+  exerciseBlockSubtitle: {
+    fontSize: Typography.label,
+    fontWeight: '500',
+    color: '#C6C6C6',
+    letterSpacing: -0.1,
+    textTransform: 'capitalize',
+    marginTop: 1,
+  },
+  exerciseBlockDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 24,
   },
   exerciseBlockMenu: {
     fontSize: 20,
@@ -1915,10 +1942,12 @@ const styles = StyleSheet.create({
   },
   addSetButtonBlock: {
     alignSelf: 'stretch',
-    height: 36,
-    backgroundColor: Colors.primaryLight + '15',
+    height: 44,
+    backgroundColor: 'rgba(198,198,198,0.06)',
     marginTop: 6,
-    borderRadius: 10,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1928,7 +1957,7 @@ const styles = StyleSheet.create({
   addSetButtonBlockText: {
     fontSize: Typography.label,
     fontWeight: '600' as const,
-    color: Colors.primaryLight + '90',
+    color: '#C6C6C6',
     letterSpacing: -0.11,
   },
   modalBackdrop: {

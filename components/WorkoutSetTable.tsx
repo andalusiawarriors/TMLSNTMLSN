@@ -336,8 +336,8 @@ export function WorkoutSetTable({
               <View
                 style={[
                   styles.setRowWrapper,
-                  isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20' },
-                  pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25' },
+                  isCompleted && pressedCheckRowKey !== rowKey && { backgroundColor: colors.primaryLight + '0A', borderColor: colors.primaryLight + '20', borderLeftColor: '#34C759', borderLeftWidth: 3 },
+                  pressedCheckRowKey === rowKey && { backgroundColor: colors.primaryLight + '18', borderColor: colors.primaryLight + '25', borderLeftColor: '#34C759', borderLeftWidth: 3 },
                 ]}
               >
                 <View style={[styles.setRow, { borderBottomWidth: 1 }]}>
@@ -366,7 +366,7 @@ export function WorkoutSetTable({
                   <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.weight, zIndex: 1 }]}>
                     <View style={styles.setCellContentCenter}>
                       {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'weight' ? (
-                        <View style={[styles.setInputCellBase, { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' }, styles.setInputCellActiveVisual, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]} collapsable={false}>
+                        <View style={[styles.setInputCellBase, styles.setInputCellActiveVisual]} collapsable={false}>
                           <Input
                             value={editingCellValue}
                             onChangeText={setDraftValue}
@@ -422,7 +422,7 @@ export function WorkoutSetTable({
                   <View style={[styles.setTableCell, styles.setInputCell, styles.setTableCellFlex, { flex: SET_TABLE_FLEX.reps, zIndex: 1 }]}>
                     <View style={styles.setCellContentCenter}>
                       {editingCell?.exerciseIndex === exerciseIndex && editingCell?.setIndex === setIndex && editingCell?.field === 'reps' ? (
-                        <View style={[styles.setInputCellBase, { borderColor: colors.primaryLight + '25', backgroundColor: colors.primaryLight + '08' }, styles.setInputCellActiveVisual, { borderColor: colors.primaryLight + '45', backgroundColor: colors.primaryLight + '12' }]} collapsable={false}>
+                        <View style={[styles.setInputCellBase, styles.setInputCellActiveVisual]} collapsable={false}>
                           <Input
                             value={editingCellValue}
                             onChangeText={setDraftValue}
@@ -595,7 +595,7 @@ export function WorkoutSetTable({
         onPressOut={playOut}
         onPress={() => onAddSet(exerciseIndex)}
       >
-        <Text style={[styles.addSetButtonBlockText, { color: colors.primaryLight + '90' }]}>+ Add Set</Text>
+        <Text style={styles.addSetButtonBlockText}>Add Set</Text>
       </Pressable>
 
       {Platform.OS === 'ios' && editingCell && (
@@ -789,12 +789,12 @@ const styles = StyleSheet.create({
   },
   setPreviousTextWrap: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' },
   setInputTextVisible: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: 20,
+    fontWeight: '600' as const,
     color: Colors.primaryLight,
     textAlign: 'center',
-    letterSpacing: -0.11,
-    lineHeight: 16,
+    letterSpacing: -0.2,
+    lineHeight: 22,
     width: '100%',
     paddingVertical: 0,
   },
@@ -807,8 +807,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  setDotText: { fontSize: 11, fontWeight: '700' as const, color: Colors.primaryLight + '80', letterSpacing: -0.11 },
-  setCellDim: { fontSize: 12, fontWeight: '500', color: Colors.primaryLight + '50', letterSpacing: -0.11, textAlign: 'center' },
+  setDotText: { fontSize: 13, fontWeight: '500' as const, color: Colors.primaryLight + '80', letterSpacing: -0.1 },
+  setCellDim: { fontSize: 13, fontWeight: '500', color: Colors.primaryLight + '50', letterSpacing: -0.1, textAlign: 'center' },
   setInputCellBase: {
     marginBottom: 0,
     minHeight: SET_INPUT_PILL_HEIGHT,
@@ -818,8 +818,10 @@ const styles = StyleSheet.create({
     maxWidth: SET_INPUT_MAX_WIDTH,
     minWidth: SET_INPUT_MIN_WIDTH,
     alignSelf: 'center' as const,
-    borderRadius: SET_INPUT_BORDER_RADIUS,
+    borderRadius: 8,
     borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+    backgroundColor: '#2F3031',
   },
   setInputCellActiveVisual: {
     shadowColor: Colors.primaryLight,
@@ -858,11 +860,13 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primaryLight + '0A',
-    borderRadius: SET_INPUT_BORDER_RADIUS,
+    backgroundColor: '#2F3031',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
     paddingHorizontal: SET_INPUT_PADDING_H,
   },
-  setInputPlaceholderText: { fontSize: 15, fontWeight: '600' as const, color: Colors.primaryLight + '40', letterSpacing: -0.11 },
+  setInputPlaceholderText: { fontSize: 20, fontWeight: '600' as const, color: Colors.primaryLight + '40', letterSpacing: -0.2 },
   setRpeInactivePill: {
     height: SET_INPUT_PILL_HEIGHT,
     width: '90%',
@@ -877,7 +881,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryLight + '08',
     paddingHorizontal: 4,
   },
-  setRpePillText: { fontSize: 14, fontWeight: '600' as const, letterSpacing: -0.1, textAlign: 'center' as const },
+  setRpePillText: { fontSize: 13, fontWeight: '500' as const, letterSpacing: -0.1, textAlign: 'center' as const, color: Colors.primaryLight + '80' },
   setCheckWrap: {
     width: SET_CHECK_BUTTON_SIZE,
     height: SET_CHECK_BUTTON_SIZE,
@@ -938,14 +942,16 @@ const styles = StyleSheet.create({
   setNoteEditButtonText: { fontSize: 11, fontWeight: '600' as const, color: Colors.primaryLight + '99', letterSpacing: -0.11 },
   addSetButtonBlock: {
     alignSelf: 'stretch',
-    height: 36,
-    backgroundColor: Colors.primaryLight + '15',
+    height: 44,
+    backgroundColor: 'rgba(198,198,198,0.06)',
     marginTop: 6,
-    borderRadius: 10,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addSetButtonBlockText: { fontSize: Typography.label, fontWeight: '600' as const, color: Colors.primaryLight + '90', letterSpacing: -0.11 },
+  addSetButtonBlockText: { fontSize: Typography.label, fontWeight: '600' as const, color: '#C6C6C6', letterSpacing: -0.11 },
   keyboardAccessoryBar: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
