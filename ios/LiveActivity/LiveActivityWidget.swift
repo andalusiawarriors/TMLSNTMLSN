@@ -92,10 +92,9 @@ struct LiveActivityWidget: Widget {
             .frame(maxWidth: 23, maxHeight: 23)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else {
-          // Fallback: title text (exercise / workout name)
+          // Workout name — bold 14, truncated
           Text(context.state.title)
-            .font(.caption2)
-            .fontWeight(.bold)
+            .font(.system(size: 14, weight: .bold))
             .foregroundStyle(.white)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -104,21 +103,21 @@ struct LiveActivityWidget: Widget {
         }
       } compactTrailing: {
         if let date = context.state.timerEndDateInMilliseconds {
-          // Countdown timer (rest timer, RPE warning)
+          // Countdown timer (rest timer)
           compactTimer(
             endDate: date,
             timerType: context.attributes.timerType ?? .circular,
             progressViewTint: context.attributes.progressViewTint
           ).applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
-          // Elapsed (count-up) timer (active workout session)
+          // Elapsed (count-up) timer — monospaced bold
           elapsedTimer(startDate: startDate)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else if let subtitle = context.state.subtitle {
-          // Fallback: subtitle text (e.g. "Set 2 of 4")
+          // Fallback: set progress (e.g. "3/5 sets")
           Text(subtitle)
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.75))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color(white: 0.78))
             .lineLimit(1)
             .frame(maxWidth: 60)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
@@ -131,12 +130,12 @@ struct LiveActivityWidget: Widget {
             progressViewTint: context.attributes.progressViewTint
           ).applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else if let startDate = context.state.elapsedTimerStartDateInMilliseconds {
+          // Minimal: just the timer, monospaced
           elapsedTimer(startDate: startDate)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
         } else {
           Text(context.state.title)
-            .font(.caption2)
-            .fontWeight(.bold)
+            .font(.system(size: 12, weight: .bold))
             .foregroundStyle(.white)
             .lineLimit(1)
             .applyWidgetURL(from: context.attributes.deepLinkUrl)
@@ -155,9 +154,9 @@ struct LiveActivityWidget: Widget {
   ) -> some View {
     if timerType == .digital {
       Text(timerInterval: Date.toTimerInterval(miliseconds: endDate))
-        .font(.system(size: 15))
+        .font(.system(size: 16, weight: .bold))
         .minimumScaleFactor(0.8)
-        .fontWeight(.semibold)
+        .monospacedDigit()
         .frame(maxWidth: 60)
         .multilineTextAlignment(.trailing)
     } else {
@@ -166,35 +165,42 @@ struct LiveActivityWidget: Widget {
     }
   }
 
-  /// Count-up elapsed timer for Dynamic Island compact trailing (active workout).
+  /// Count-up elapsed timer for Dynamic Island compact trailing / minimal (active workout).
   private func elapsedTimer(startDate: Double) -> some View {
     let start = Date(timeIntervalSince1970: startDate / 1000)
     return Text(
       timerInterval: start...Date.distantFuture,
       countsDown: false
     )
-    .font(.system(size: 14))
+    .font(.system(size: 16, weight: .bold))
     .minimumScaleFactor(0.7)
-    .fontWeight(.semibold)
+    .monospacedDigit()
     .frame(maxWidth: 60)
     .multilineTextAlignment(.trailing)
-    .monospacedDigit()
   }
 
   // MARK: - Expanded DI region helpers
 
+  /// Top row: workout name + green active dot.
   private func dynamicIslandExpandedLeading(title: String, subtitle: String?) -> some View {
-    VStack(alignment: .leading) {
+    VStack(alignment: .leading, spacing: 4) {
       Spacer()
-      Text(title)
-        .font(.title2)
-        .foregroundStyle(.white)
-        .fontWeight(.semibold)
+      // Row 1: workout name + green dot
+      HStack(spacing: 5) {
+        Text(title)
+          .font(.system(size: 14, weight: .bold))
+          .foregroundStyle(.white)
+          .lineLimit(1)
+        Circle()
+          .fill(Color(red: 0.2, green: 0.78, blue: 0.35))
+          .frame(width: 6, height: 6)
+      }
+      // Row 2: exercise name + set progress
       if let subtitle {
         Text(subtitle)
-          .font(.title3)
-          .minimumScaleFactor(0.8)
-          .foregroundStyle(.white.opacity(0.75))
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.white)
+          .lineLimit(1)
       }
       Spacer()
     }
@@ -208,32 +214,40 @@ struct LiveActivityWidget: Widget {
     }
   }
 
-  /// Countdown progress bar for expanded DI bottom (rest timer).
+  /// Row 3: rest countdown timer — large monospaced.
   private func dynamicIslandExpandedCountdownBottom(endDate: Double, progressViewTint: String?) -> some View {
-    ProgressView(timerInterval: Date.toTimerInterval(miliseconds: endDate))
-      .foregroundStyle(.white)
-      .tint(progressViewTint.map { Color(hex: $0) })
-      .padding(.top, 5)
+    HStack {
+      Text("Rest")
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(Color(white: 0.78))
+      Spacer()
+      Text(timerInterval: Date.toTimerInterval(miliseconds: endDate))
+        .font(.system(size: 16, weight: .bold))
+        .monospacedDigit()
+        .foregroundStyle(.white)
+        .multilineTextAlignment(.trailing)
+    }
+    .padding(.top, 6)
   }
 
-  /// Elapsed time text for expanded DI bottom (workout).
+  /// Row 3: elapsed time — large monospaced.
   private func dynamicIslandExpandedElapsedBottom(startDate: Double) -> some View {
     let start = Date(timeIntervalSince1970: startDate / 1000)
     return HStack {
       Text("Elapsed")
-        .font(.caption)
-        .foregroundStyle(.white.opacity(0.65))
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(Color(white: 0.78))
       Spacer()
       Text(
         timerInterval: start...Date.distantFuture,
         countsDown: false
       )
-      .font(.system(size: 14))
-      .fontWeight(.semibold)
-      .foregroundStyle(.white)
+      .font(.system(size: 16, weight: .bold))
       .monospacedDigit()
+      .foregroundStyle(.white)
+      .multilineTextAlignment(.trailing)
     }
-    .padding(.top, 5)
+    .padding(.top, 6)
   }
 
   private func circularTimer(endDate: Double) -> some View {
