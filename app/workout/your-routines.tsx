@@ -20,7 +20,7 @@ import { ExercisePickerModal } from '../../components/ExercisePickerModal';
 import { Input } from '../../components/Input';
 import { Swipeable } from 'react-native-gesture-handler';
 import { getSavedRoutines, saveSavedRoutine, deleteSavedRoutine } from '../../utils/storage';
-import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { SavedRoutine, SavedRoutineExercise } from '../../types';
 import { generateId, formatDuration } from '../../utils/helpers';
 import { useButtonSound } from '../../hooks/useButtonSound';
@@ -262,7 +262,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                   onPressOut={playOut}
                   onPress={() => handleStartRoutine(routine)}
                 >
-                <Card gradientFill borderRadius={18} style={styles.routineCard}>
+                <Card gradientFill borderRadius={20} style={styles.routineCard}>
                 <View style={styles.routineCardLeft}>
                   <View style={styles.routineCardIcon}>
                     <Text style={styles.routineCardIconText}>◆</Text>
@@ -511,26 +511,26 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   emptyText: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '60',
+    letterSpacing: -0.11,
     marginBottom: 4,
   },
   emptySubtext: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '40',
+    letterSpacing: -0.11,
   },
 
   // ─── ROUTINE LIST ─────────────────────────────────────────────────────────
   routineList: {
-    gap: 10,
+    gap: 12,
   },
-  routineCardWrap: {
-    marginBottom: 10,
-  },
+  routineCardWrap: {},
   routineCard: {
-    padding: 14,
+    padding: Spacing.md,
     marginVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
@@ -558,10 +558,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   routineCardName: {
-    fontFamily: Font.extraBold,
     fontSize: Typography.body,
+    fontWeight: '600' as const,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.11,
     marginBottom: 2,
   },
   routineCardStatsRow: {
@@ -571,21 +571,21 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   routineCardStat: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '60',
-    letterSpacing: 0.2,
+    letterSpacing: -0.11,
   },
   routineCardPreview: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '40',
-    letterSpacing: -0.2,
+    letterSpacing: -0.11,
   },
   routineCardChevron: {
-    fontFamily: Font.monoMedium,
-    fontSize: 22,
-    color: Colors.primaryLight + '40',
+    fontSize: 24,
+    fontWeight: '500' as const,
+    color: Colors.primaryLight + '50',
     paddingLeft: 8,
   },
   routineDeleteAction: {
