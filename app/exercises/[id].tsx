@@ -28,6 +28,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   getExerciseSettings,
   saveExerciseSettings,
+  resetRepRangesToDefault,
   toggleFavorite,
   DEFAULT_EXERCISE_SETTINGS,
 } from '../../utils/exerciseSettings';
@@ -418,6 +419,19 @@ export default function ExerciseDetailScreen() {
     setTimeout(() => setSaveState('idle'), 2000);
   }, [id, repLow, repHigh, incIdx]);
 
+  // ── Reset rep ranges to default ──
+  const handleResetToDefault = useCallback(async () => {
+    if (!id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await resetRepRangesToDefault(id);
+    setRepLow(DEFAULT_EXERCISE_SETTINGS.repRangeLow);
+    setRepHigh(DEFAULT_EXERCISE_SETTINGS.repRangeHigh);
+    const idx = INCREMENT_OPTIONS.indexOf(DEFAULT_EXERCISE_SETTINGS.smallestIncrement);
+    setIncIdx(idx !== -1 ? idx : 1);
+    setSaveState('saved');
+    setTimeout(() => setSaveState('idle'), 2000);
+  }, [id]);
+
   // ── Top muscles (must be before early returns to satisfy rules of hooks) ──
   const topMuscles = useMemo(
     () =>
@@ -606,6 +620,15 @@ export default function ExerciseDetailScreen() {
           >
             <Text style={styles.saveBtnText}>
               {saveState === 'saved' ? 'Saved ✓' : 'Save Settings'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleResetToDefault}
+            style={({ pressed }) => [{ alignSelf: 'center', marginTop: 12, paddingVertical: 6, paddingHorizontal: 12 }, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={{ color: TEXT_DIM, fontSize: 13, textDecorationLine: 'underline' }}>
+              Reset rep ranges to default
             </Text>
           </Pressable>
         </GCard>

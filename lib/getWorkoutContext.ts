@@ -311,7 +311,7 @@ async function buildTodayExerciseDetails(
 
   return todayPlan.exerciseIds.map((exerciseId, i) => {
     const exerciseName = todayPlan.exerciseNames?.[i] ?? uuidToExerciseName(exerciseId) ?? 'Unknown';
-    const r = resolved.get(exerciseId) ?? { repRangeLow: 8, repRangeHigh: 12, smallestIncrement: 2.5 };
+    const r = resolved.get(exerciseId) ?? { repRangeLow: 10, repRangeHigh: 12, smallestIncrement: 2.5 };
     const repRangeLow = r.repRangeLow;
     const repRangeHigh = r.repRangeHigh;
     const incrementKg = r.smallestIncrement;
@@ -358,7 +358,6 @@ async function buildTodayExerciseDetails(
         prescription,
         weightUnit,
         isDeloadWeek: isDeloadWeek(Number(trainingSettings?.deloadWeekCounter ?? 0)),
-        blitzMode: Boolean(trainingSettings?.blitzMode ?? false),
       });
 
       if (snapshot.ghostWeight && snapshot.ghostReps) {

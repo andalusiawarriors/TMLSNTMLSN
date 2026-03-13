@@ -1820,12 +1820,15 @@ export default function NutritionScreen({
   const refreshStartTimeRef = useRef<number>(0);
   const mainScrollRef = useRef<ScrollView>(null);
   const releaseLockRef = useRef(false); // true when we're done and should stop forcing -70 and rise back
+  const fitnessRefreshRef = useRef<(() => Promise<void>) | null>(null);
 
   const handleRefresh = useCallback(() => {
     releaseLockRef.current = false;
     refreshStartTimeRef.current = Date.now();
     setRefreshing(true);
-    loadData().then(() => {
+    const fitnessRefresh =
+      homeTab === 'fitness' ? (fitnessRefreshRef.current?.() ?? Promise.resolve()) : Promise.resolve();
+    Promise.all([loadData(), fitnessRefresh]).then(() => {
       const elapsed = Date.now() - refreshStartTimeRef.current;
       const waitBeforeRise = Math.max(0, MIN_REFRESH_HOLD_MS - elapsed);
       setTimeout(() => {
@@ -1842,7 +1845,7 @@ export default function NutritionScreen({
         }, FLYWHEEL_RISE_MS);
       }, waitBeforeRise);
     });
-  }, [loadData, spinAnim, flywheelTranslateY, flywheelFadeOut]);
+  }, [loadData, homeTab, spinAnim, flywheelTranslateY, flywheelFadeOut]);
 
   // Force content to stay pulled down while refreshing (skip when we're releasing so content can rise)
   useEffect(() => {
@@ -2098,7 +2101,7 @@ export default function NutritionScreen({
           </View>
         ) : (
           <View style={{ overflow: 'visible' as const }}>
-            <FitnessHub />
+            <FitnessHub refreshRef={fitnessRefreshRef} />
           </View>
         )}
         </View>

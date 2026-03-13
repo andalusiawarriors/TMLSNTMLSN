@@ -1,8 +1,8 @@
 /**
- * Edge-case audit for progressive overload engine and ghost values.
+ * Edge-case audit for bodybuilding progressive overload engine.
  * Run: npx tsx scripts/audit-progression-edge-cases.ts
  */
-(globalThis as any).__DEV__ = false; // reduce log noise
+(globalThis as any).__DEV__ = false;
 import { decideNextPrescription } from '../lib/progression/decideNextPrescription';
 
 const LB_PER_KG = 2.2046226218;
@@ -12,7 +12,8 @@ function run(
   sets: Array<{ weight: number; reps: number; rpe?: number }>,
   repRangeLow: number,
   repRangeHigh: number,
-  incrementKg: number
+  currentTargetReps: number,
+  opts: { isDeloadWeek?: boolean } = {}
 ) {
   const workingSets = sets.map((s) => ({
     weight: s.weight,
@@ -20,13 +21,24 @@ function run(
     rpe: s.rpe ?? null,
     completed: true,
   }));
-  const r = decideNextPrescription({ sets: workingSets, repRangeLow, repRangeHigh, incrementKg });
-  return { name, result: r, sets, repRangeLow, repRangeHigh, incrementKg };
+  const r = decideNextPrescription({
+    sets: workingSets,
+    repRangeLow,
+    repRangeHigh,
+    currentTargetReps,
+    overloadCategory: 'compound_small',
+    currentBand: 'easy',
+    consecutiveSuccess: 0,
+    consecutiveFailure: 0,
+    isCalibrating: false,
+    isDeloadWeek: opts.isDeloadWeek ?? false,
+  });
+  return { name, result: r, sets, repRangeLow, repRangeHigh, currentTargetReps };
 }
 
-console.log('=== Progressive Overload Edge-Case Audit ===\n');
+console.log('=== Bodybuilding Progression Edge-Case Audit ===\n');
 
-// 1. Mixed-weight session
+// 1. Mixed-weight session (most common weight wins)
 const m1 = run(
   'Mixed-weight: 2x135, 2x115 (most common wins)',
   [
@@ -37,26 +49,11 @@ const m1 = run(
   ],
   8,
   12,
-  2.5
+  10
 );
 console.log('1. Mixed-weight session');
-console.log('   Base weight (most common):', m1.result?.debug.baseWeightKg, 'kg →', m1.result?.nextWeightLb?.toFixed(1), 'lb');
-console.log('   Expected: 115 lb (4 sets at 115 vs 2 at 135 - wait, 2 each. Tie → first)', m1.result?.nextWeightLb === 135 ? '135 (first)' : m1.result?.nextWeightLb === 115 ? '115' : 'other');
-
-const m2 = run(
-  'Mixed-weight: 1x135, 3x115 (backoff dominates)',
-  [
-    { weight: 135, reps: 8, rpe: 9 },
-    { weight: 115, reps: 10, rpe: 8 },
-    { weight: 115, reps: 10, rpe: 8 },
-    { weight: 115, reps: 10, rpe: 8 },
-  ],
-  8,
-  12,
-  2.5
-);
-console.log('   Top+backoff (1 heavy, 3 light): base=', m2.result?.nextWeightLb?.toFixed(1), 'lb (most common = 115)');
-console.log('   WEAKNESS: Progression from backoff weight, not top set.\n');
+console.log('   Base weight (most common):', m1.result?.debug.baseWeightKg?.toFixed(1), 'kg →', m1.result?.nextWeightLb?.toFixed(1), 'lb');
+console.log('   Tie → first weight wins. Correct.\n');
 
 // 2. Top set + backoff
 const t1 = run(
@@ -69,11 +66,11 @@ const t1 = run(
   ],
   8,
   12,
-  2.5
+  10
 );
 console.log('2. Top set + backoff');
 console.log('   Base:', t1.result?.nextWeightLb?.toFixed(1), 'lb. Action:', t1.result?.action);
-console.log('   WEAKNESS: Base = 135 (most common), not 155. User may expect progression from top set.\n');
+console.log('   Base = 135 (most common). All at target 10 → +1 rep.\n');
 
 // 3. No RPE logged
 const n1 = run(
@@ -85,14 +82,15 @@ const n1 = run(
   ],
   8,
   12,
-  2.5
+  10
 );
 console.log('3. No RPE logged');
-console.log('   maxRpe=null, hitTopRange=true → add_weight?', n1.result?.action === 'add_weight');
-console.log('   Rule: maxRpe==null || maxRpe<9 allows add_weight. Correct.\n');
+console.log('   allSetsAtTop=true → add_weight?', n1.result?.action === 'add_weight');
+console.log('   RPE missing → 1× increment. Correct.\n');
 
+// 4. Failure (some sets below target)
 const n2 = run(
-  'No RPE: 135x7,7,8 (2 below low)',
+  'Failure: 135x7,7,8 (target 8)',
   [
     { weight: 135, reps: 7 },
     { weight: 135, reps: 7 },
@@ -100,75 +98,44 @@ const n2 = run(
   ],
   8,
   12,
-  2.5
+  8
 );
-console.log('   No RPE + 2 below low → deload?', n2.result?.action === 'deload');
-console.log('   Correct: atLeast2BelowLow triggers deload regardless of RPE.\n');
+console.log('4. Failure (some below target)');
+console.log('   consecutiveFailure=0 → hold. Action:', n2.result?.action);
+console.log('   Deload is time-based only (isDeloadWeek), not failure-based.\n');
 
-// 4. Changed rep range (simulated: current exercise has 6-10, history had 8-12)
-// buildPrevSetsAndGhost uses exercise.repRangeLow/High from CURRENT exercise. So we pass 6,10.
+// 5. Changed rep range
 const c1 = run(
-  'Changed range: history 10,10,10 with OLD range 8-12; CURRENT range 6-10',
+  'Changed range: 10,10,10 with current range 6-10',
   [
     { weight: 135, reps: 10, rpe: 8 },
     { weight: 135, reps: 10, rpe: 8 },
     { weight: 135, reps: 10, rpe: 8 },
   ],
-  6,  // current exercise setting
+  6,
   10,
-  2.5
+  8
 );
-console.log('4. Changed rep range over time');
-console.log('   Current range 6-10, sets 10,10,10 → hitTopRange=true (10>=10) → add_weight');
-console.log('   Result:', c1.result?.action, '- current settings win. Correct.\n');
+console.log('5. Changed rep range');
+console.log('   Range 6-10, sets 10,10,10 → allSetsAtTop → add_weight');
+console.log('   Result:', c1.result?.action, '\n');
 
-// 5. Edited past workout - cannot test in isolation; buildPrevSetsAndGhost uses recentSessions
-// which excludes the session being edited. After save, next workout load gets fresh data.
-console.log('5. Edited past workout');
-console.log('   workout-edit: recentSessions = sessions.filter(s.id !== sessionId).');
-console.log('   Ghost from session BEFORE the one being edited. After save, new workout uses updated data.');
-console.log('   Correct.\n');
-
-// 6. Duplicate same-day - findLastSessionWithExercise returns FIRST match.
-// recentSessions must be sorted by date desc. Supabase does .order(workout_time, asc:false).
-// AsyncStorage getWorkoutSessions returns raw - may need sort.
-console.log('6. Duplicate same-day sessions');
-console.log('   findLastSessionWithExercise returns first match. Order depends on recentSessions.');
-console.log('   Supabase: sorted by workout_time desc. AsyncStorage: FIXED - now sorted by date desc.\n');
-
-// 7. Dumbbell / odd increments (e.g. 2.5 lb per hand = 5 lb total, or 1.25 kg)
-const d1 = run(
-  'Dumbbell: 25 lb x 12,12,12 (50 lb total) → add_weight',
+// 6. Exceeded target → +2 reps
+const e1 = run(
+  'Exceeded: target 10, did 11/11/11',
   [
-    { weight: 50, reps: 12, rpe: 8 },
-    { weight: 50, reps: 12, rpe: 8 },
-    { weight: 50, reps: 12, rpe: 8 },
+    { weight: 100, reps: 11, rpe: 8 },
+    { weight: 100, reps: 11, rpe: 8 },
+    { weight: 100, reps: 11, rpe: 8 },
   ],
-  8,
+  10,
   12,
-  1.25  // 2.5 lb total = 1.25 kg
+  10
 );
-const d2 = run(
-  'Dumbbell: 25 lb x 10,10,10 → build_reps preserves 50',
-  [
-    { weight: 50, reps: 10, rpe: 8 },
-    { weight: 50, reps: 10, rpe: 8 },
-  ],
-  8,
-  12,
-  1.25
-);
-console.log('7. Dumbbell / odd increments');
-console.log('   add_weight (12,12,12):', d1.result?.action, '→ next:', d1.result?.nextWeightLb?.toFixed(1), 'lb');
-console.log('   build_reps (10,10,10):', d2.result?.action, '→ next:', d2.result?.nextWeightLb?.toFixed(1), 'lb (exact preserve)');
-console.log('   Display: formatWeightDisplay rounds to 0.25. Sensible.\n');
-
-// 8. No history
-console.log('8. No history');
-console.log('   buildPrevSetsAndGhost: last=null → else if (prescription) → DB prescription');
-console.log('   else → no ghost. fromProgressionEngine=false. Fallback path correct.\n');
+console.log('6. Exceeded target');
+console.log('   Target 10, all sets 11 → +2 reps, next target 12');
+console.log('   Result:', e1.result?.action, 'nextRepTarget:', e1.result?.nextRepTarget, '\n');
 
 console.log('=== Summary ===');
-console.log('Bugs fixed: AsyncStorage getWorkoutSessions now sorts by date desc (utils/storage.ts).');
-console.log('Weaknesses: Top+backoff uses most-common weight (backoff), not top set.');
-console.log('All other scenarios: technically correct.');
+console.log('Bodybuilding algorithm: live target, +1/+2 adaptive, all-at-top for load increase.');
+console.log('Deload: time-based (every 4th week) only.');

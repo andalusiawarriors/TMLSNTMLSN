@@ -19,11 +19,12 @@ import {
   Platform,
   TextInput,
   AppState,
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, usePathname } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { TMLSN_SPLITS } from '../constants/workoutSplits';
@@ -76,7 +77,6 @@ import type { Exercise as DbExercise, CreateExerciseInput } from '../utils/exerc
 import { EXERCISE_MAP, getLoadEntryModeForExercise } from '../utils/exerciseDb/exerciseDatabase';
 import { LB_PER_KG } from '../utils/units';
 import { getIncrementKg } from '../lib/progression/decideNextPrescription';
-import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 
 // ─── Exports ─────────────────────────────────────────────────────────────────
 
@@ -157,6 +157,8 @@ export type WorkoutCoreProps = {
   asModal?: boolean;
   initialActiveWorkout?: WorkoutSession | null;
   onCloseModal?: () => void;
+  /** Called when user pulls to refresh; parent should refetch recentSessions. */
+  onRefresh?: () => Promise<void>;
 };
 
 const STICKY_HEADER_HEIGHT = 105;
@@ -174,8 +176,10 @@ export function WorkoutCore({
   asModal = false,
   initialActiveWorkout = null,
   onCloseModal,
+  onRefresh,
 }: WorkoutCoreProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { colors } = useTheme();
   const { user } = useAuth();
   const {
@@ -186,7 +190,9 @@ export function WorkoutCore({
     minimized,
     minimizeWorkout,
     expandWorkout,
+    reconcileActiveWorkoutState,
   } = useActiveWorkout();
+  const [refreshing, setRefreshing] = useState(false);
 
   const minimizedRef = useRef(minimized);
   useEffect(() => { minimizedRef.current = minimized; }, [minimized]);
@@ -535,6 +541,8 @@ export function WorkoutCore({
       }, 120);
       const resolvedTargetReps = getResolvedTargetReps(resolvedDetail, template.targetReps);
       const resolvedTargetWeightLb = getResolvedTargetWeightLb(resolvedDetail);
+      const repRangeLow = resolvedDetail?.repRangeLow ?? manual?.repRangeLow ?? template.targetReps;
+      const repRangeHigh = resolvedDetail?.repRangeHigh ?? manual?.repRangeHigh ?? template.targetReps;
       return {
         ...built,
         sets: built.sets.map((set) => ({
@@ -543,8 +551,8 @@ export function WorkoutCore({
           weight: resolvedTargetWeightLb ?? set.weight,
         })),
         exerciseDbId,
-        repRangeLow: resolvedDetail?.repRangeLow ?? manual?.repRangeLow ?? template.targetReps,
-        repRangeHigh: resolvedDetail?.repRangeHigh ?? manual?.repRangeHigh ?? template.targetReps,
+        repRangeLow,
+        repRangeHigh,
         smallestIncrement: resolvedDetail?.smallestIncrementKg ?? manual?.smallestIncrement ?? 2.5,
       };
     });
@@ -764,8 +772,8 @@ export function WorkoutCore({
     const exName = exercise?.name ?? '';
     const exKey = exercise?.exerciseDbId ?? exercise?.name;
     const prescription = exKey ? prescriptions[exKey] : null;
-    const band = ((prescription?.difficultyBand ?? 'easy') as DifficultyBand);
     const category = resolveOverloadCategory(exercise?.exerciseDbId, exName);
+    const band = (prescription?.difficultyBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy';
     const incrementKg = getIncrementKg(category, band);
     const currentWeightLb = exercise?.sets[setIndex]?.weight ?? 0;
     const bumpedWeightLb = currentWeightLb > 0 ? currentWeightLb + incrementKg * LB_PER_KG : 0;
@@ -941,6 +949,39 @@ export function WorkoutCore({
     }
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    if (!onRefresh) return;
+    setRefreshing(true);
+    try {
+      lastProcessedSplitId.current = null;
+      lastProcessedRoutineId.current = null;
+      await reconcileActiveWorkoutState(pathname);
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefresh, pathname, reconcileActiveWorkoutState]);
+
+  const scrollProps = onRefresh
+    ? {
+        refreshControl: (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primaryLight + '80'}
+          />
+        ),
+      }
+    : {};
+
+  const handleFinishPress = () => {
+    if (isSavingWorkout) return;
+    Alert.alert('Finish Workout', 'Save this workout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Save', onPress: finishWorkout },
+    ]);
+  };
+
   const insets = useSafeAreaInsets();
 
   // When activeWorkout is null but we have start params, effects will re-process (refs cleared above).
@@ -967,16 +1008,6 @@ export function WorkoutCore({
     }
     return null;
   }
-
-  const scrollProps = {};
-
-  const handleFinishPress = () => {
-    if (isSavingWorkout) return;
-    Alert.alert('Finish Workout', 'Save this workout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Save', onPress: finishWorkout },
-    ]);
-  };
 
   return (
     <>

@@ -65,7 +65,7 @@ export const sanitizeNumberInput = (value: string): string => {
 
 // Routine template → workout mapping
 const DEFAULT_TARGET_SETS = 3;
-const DEFAULT_TARGET_REPS = 8;
+const DEFAULT_TARGET_REPS = 10;
 const DEFAULT_REST_TIMER = 120;
 
 /**

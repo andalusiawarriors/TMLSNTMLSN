@@ -1,14 +1,12 @@
 /**
- * Canonical progressive overload decision engine.
- * Implements the full algorithm from progressive_overload_algorithm.docx:
+ * Bodybuilding progressive overload decision engine (Phase 1 + Phase 2).
  *
- *  - 70% rule: weight goes up when 70%+ of sets hit the top of the rep range
- *  - 4-band difficulty system: easy → medium → hard → extreme (per exercise)
- *  - Category-based increments: compound_big / compound_small / isolation
- *  - Automatic deload every 4th week (50% weight reduction)
- *  - New exercise calibration: first session sets baseline, no increment applied
- *  - RPE band accelerator: avg RPE < 6 across last 3 sessions bumps band up
- *  - Blitz Mode: forces Extreme band, disables coaching, caps weekly increase at 10%
+ * Phase 1: Threshold-based; atTop first, then atTarget, then hold.
+ * Phase 2: Adaptive rep jumps when at target:
+ *   - 10–12 (width 2–3): +1 only
+ *   - 8–12 (width 4–5): +1 or +2 when overshoot
+ *   - 6–12 (width 6+): +1, +2, or rare +3 when clearly underloaded at bottom
+ * Band-based increment (difficulty_band retained).
  */
 
 import { KG_PER_LB, LB_PER_KG, roundToGymPrecision } from '../../utils/units';
@@ -28,22 +26,17 @@ export type ProgressionDecision = {
   repRangeHigh: number;
   reason: string;
   nextBand: DifficultyBand;
-  /** Legacy goal for exercise_progress_state compatibility */
   goal: 'add_load' | 'add_reps' | 'reduce_load';
   debug: {
-    hitThreshold: boolean;
-    setsAtTopRange: number;
-    totalSets: number;
-    hitPercent: number;
-    maxRpe: number | null;
-    avgRpe: number | null;
+    branch: string;
+    atTargetThreshold: boolean;
+    atTopThreshold: boolean;
+    allSetsAtTop: boolean;
     baseWeightKg: number;
     incrementKg: number;
     workingSetCount: number;
-    branch: string;
-    isCalibrating: boolean;
-    isDeloadWeek: boolean;
-    blitzMode: boolean;
+    newConsecutiveSuccess: number;
+    newConsecutiveFailure: number;
   };
 };
 
@@ -55,33 +48,23 @@ export type WorkingSet = {
 };
 
 export type ProgressionInput = {
-  /** Working sets; weight is in lb (storage format) */
   sets: WorkingSet[];
   repRangeLow: number;
   repRangeHigh: number;
-  /** Exercise category — drives which increment table row to use */
+  currentTargetReps: number;
   overloadCategory: OverloadCategory;
-  /** Current difficulty band for this exercise */
   currentBand: DifficultyBand;
-  /** How many consecutive sessions the user has succeeded (hit 70%+ of max reps) */
   consecutiveSuccess: number;
-  /** How many consecutive sessions the user has failed */
   consecutiveFailure: number;
-  /** TRUE on the very first session for a new exercise — no increment, just record baseline */
   isCalibrating: boolean;
-  /** TRUE if this is week 4 of the 4-week cycle */
   isDeloadWeek: boolean;
-  /** Blitz Mode: forces Extreme band, disables coaching, caps at 10% weekly increase */
-  blitzMode: boolean;
-  /**
-   * Average RPE across the last 3 sessions on this exercise.
-   * Used for the RPE band accelerator (avg < 6 → bump band up regardless of reps).
-   */
-  avgRpeLast3Sessions?: number | null;
 };
 
-// ─── Increment table ──────────────────────────────────────────────────────────
-// Matches the document exactly (values in kg).
+// ─── Threshold constant ───────────────────────────────────────────────────────
+
+const THRESHOLD = 0.70;
+
+// ─── Band-based increments (kg) ───────────────────────────────────────────────
 
 export const INCREMENTS: Record<OverloadCategory, Record<DifficultyBand, number>> = {
   compound_big:   { easy: 2.5,  medium: 5,   hard: 7.5, extreme: 10  },
@@ -89,23 +72,102 @@ export const INCREMENTS: Record<OverloadCategory, Record<DifficultyBand, number>
   isolation:      { easy: 0.5,  medium: 1,   hard: 1.5, extreme: 2.5 },
 };
 
-/** Return the kg increment for a given category + band. */
 export function getIncrementKg(category: OverloadCategory, band: DifficultyBand): number {
   return INCREMENTS[category][band];
 }
 
-const BANDS: DifficultyBand[] = ['easy', 'medium', 'hard', 'extreme'];
+// ─── Threshold helpers ────────────────────────────────────────────────────────
+
+/** 70%+ of working sets have reps >= currentTargetReps */
+function atTargetThreshold(sets: WorkingSet[], currentTargetReps: number): boolean {
+  const completed = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+  if (completed.length === 0) return false;
+  const hits = completed.filter((s) => s.reps >= currentTargetReps).length;
+  return hits / completed.length >= THRESHOLD;
+}
+
+/** 70%+ of working sets have reps >= repRangeHigh */
+function atTopThreshold(sets: WorkingSet[], repRangeHigh: number): boolean {
+  const completed = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+  if (completed.length === 0) return false;
+  const hits = completed.filter((s) => s.reps >= repRangeHigh).length;
+  return hits / completed.length >= THRESHOLD;
+}
+
+/** 100% of working sets at top (optional stronger signal) */
+function allSetsAtTop(sets: WorkingSet[], repRangeHigh: number): boolean {
+  const completed = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
+  return completed.length > 0 && completed.every((s) => s.reps >= repRangeHigh);
+}
+
+/** Mean reps across completed working sets (Phase 2 adaptive jump). */
+function getAvgReps(workSets: WorkingSet[]): number {
+  if (workSets.length === 0) return 0;
+  const sum = workSets.reduce((acc, s) => acc + s.reps, 0);
+  return sum / workSets.length;
+}
+
+/** Count sets with reps >= threshold (Phase 2 guards against outlier-driven jumps). */
+function countSetsAtOrAbove(workSets: WorkingSet[], threshold: number): number {
+  return workSets.filter((s) => s.reps >= threshold).length;
+}
+
+/** Max allowed jump by range width (Phase 2). */
+function getMaxJumpForRangeWidth(rangeWidth: number): number {
+  if (rangeWidth <= 3) return 1;
+  if (rangeWidth <= 5) return 2;
+  return 3;
+}
+
+/**
+ * Phase 2 adaptive jump: +1 default, +2 when overshoot and width >= 4, +3 rare when underloaded at bottom.
+ * Only called when atTargetThreshold (not at top).
+ * Guards: require set-count thresholds to avoid outlier-driven jumps (audit tightening).
+ */
+function computeAdaptiveJump(
+  workSets: WorkingSet[],
+  repRangeLow: number,
+  repRangeHigh: number,
+  currentTargetReps: number
+): number {
+  const rangeWidth = repRangeHigh - repRangeLow;
+  const avgReps = getAvgReps(workSets);
+  const maxJump = getMaxJumpForRangeWidth(rangeWidth);
+
+  // Minimum set count: +2/+3 only with 3+ sets (avoid 1–2 outlier sets driving jump)
+  if (workSets.length < 3) return 1;
+
+  let selectedJump = 1;
+  const setsAtTargetPlus2 = countSetsAtOrAbove(workSets, currentTargetReps + 2);
+  const setsAtTargetPlus1 = countSetsAtOrAbove(workSets, currentTargetReps + 1);
+
+  // +3 guard: avgReps + at least 3 sets at target+2 (not just one outlier)
+  if (
+    avgReps >= currentTargetReps + 2 &&
+    rangeWidth >= 6 &&
+    currentTargetReps <= repRangeLow + 2 &&
+    setsAtTargetPlus2 >= 3
+  ) {
+    selectedJump = 3;
+  } else if (
+    avgReps >= currentTargetReps + 1 &&
+    rangeWidth >= 4 &&
+    setsAtTargetPlus1 >= 2
+  ) {
+    selectedJump = 2;
+  }
+
+  return Math.min(selectedJump, maxJump);
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Round to nearest valid exercise increment to avoid ugly decimals (e.g. 42.75 kg). */
 function roundToIncrement(valueKg: number, incrementKg: number): number {
   const inc = incrementKg > 0 ? incrementKg : 2.5;
   const r = Math.round(valueKg / inc) * inc;
   return roundToGymPrecision(r);
 }
 
-/** Prefer most common working weight; if tied, use first working-set weight. Returns lb. */
 function getBaseWeightLb(workSets: WorkingSet[]): number {
   if (workSets.length === 0) return 0;
   const firstWeightLb = workSets[0].weight;
@@ -124,70 +186,28 @@ function getBaseWeightLb(workSets: WorkingSet[]): number {
   return bestWeightLb;
 }
 
-/**
- * Resolve the next band based on consecutive success / failure counts.
- *  - 1+ consecutive success  → move up one band
- *  - 2+ consecutive failures → drop one band
- *  - RPE accelerator: avg RPE < 6 across last 3 sessions → bump up regardless of reps
- *  - Otherwise               → stay
- */
-export function getNextBand(
-  currentBand: DifficultyBand,
-  consecutiveSuccess: number,
-  consecutiveFailure: number,
-  avgRpeLast3Sessions?: number | null
-): DifficultyBand {
-  const i = BANDS.indexOf(currentBand);
-
-  if (avgRpeLast3Sessions != null && avgRpeLast3Sessions < 6) {
-    return BANDS[Math.min(i + 1, BANDS.length - 1)];
-  }
-  if (consecutiveFailure >= 2) return BANDS[Math.max(i - 1, 0)];
-  if (consecutiveSuccess >= 1) return BANDS[Math.min(i + 1, BANDS.length - 1)];
-  return currentBand;
-}
-
-/**
- * Did the user hit 70%+ of sets at the top of the rep range?
- * This is the core trigger for a weight increase per the 70% rule.
- */
-export function didHitRepThreshold(sets: WorkingSet[], repRangeHigh: number): boolean {
-  const completedSets = sets.filter((s) => s.completed && s.reps > 0);
-  if (completedSets.length === 0) return false;
-  const hitsAtTop = completedSets.filter((s) => s.reps >= repRangeHigh).length;
-  return hitsAtTop / completedSets.length >= 0.70;
-}
-
-/** Is this week a deload week? Counter is a multiple of 4 and greater than 0. */
 export function isDeloadWeek(weekCounter: number): boolean {
   return weekCounter > 0 && weekCounter % 4 === 0;
 }
 
-/** Deload weight: 50% of current working weight. */
 export function getDeloadWeight(currentWeightKg: number): number {
-  return currentWeightKg * 0.50;
+  return currentWeightKg * 0.5;
 }
 
 // ─── Main engine ──────────────────────────────────────────────────────────────
 
-/**
- * Decide the next prescription after a logged session.
- * Runs through the full 6-step decision tree from the spec.
- * All internal calculations use kg; returns both kg and lb for callers.
- */
 export function decideNextPrescription(input: ProgressionInput): ProgressionDecision | null {
   const {
     sets,
     repRangeLow,
     repRangeHigh,
+    currentTargetReps,
     overloadCategory,
     currentBand,
     consecutiveSuccess,
     consecutiveFailure,
     isCalibrating,
     isDeloadWeek: deloadWeek,
-    blitzMode,
-    avgRpeLast3Sessions,
   } = input;
 
   const workSets = sets.filter((s) => s.completed && s.weight > 0 && s.reps > 0);
@@ -196,20 +216,14 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   const baseWeightLb = getBaseWeightLb(workSets);
   const baseWeightKg = baseWeightLb * KG_PER_LB;
 
-  const rpeVals = workSets.map((s) => s.rpe).filter((r): r is number => r != null && r > 0);
-  const maxRpe = rpeVals.length > 0 ? Math.max(...rpeVals) : null;
-  const avgRpe = rpeVals.length > 0 ? rpeVals.reduce((a, b) => a + b, 0) / rpeVals.length : null;
+  const atTop = atTopThreshold(workSets, repRangeHigh);
+  const atTarget = atTargetThreshold(workSets, currentTargetReps);
+  const allTop = allSetsAtTop(workSets, repRangeHigh);
 
-  const setsAtTop = workSets.filter((s) => s.reps >= repRangeHigh).length;
-  const hitPercent = workSets.length > 0 ? setsAtTop / workSets.length : 0;
-  const hitThreshold = didHitRepThreshold(workSets, repRangeHigh);
+  const incrementKg = getIncrementKg(overloadCategory, currentBand);
 
   // ── Step 1: Calibration ───────────────────────────────────────────────────
-  // First session on a new exercise — record baseline only, no increment applied.
   if (isCalibrating) {
-    if (__DEV__) {
-      console.log('[Progression] Calibration session — baseline recorded, no increment.');
-    }
     return {
       action: 'calibrate',
       nextWeightKg: baseWeightKg,
@@ -217,40 +231,28 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       nextRepTarget: repRangeLow,
       repRangeLow,
       repRangeHigh,
-      reason: 'Calibrating — your first session sets your baseline. Progression starts next session.',
-      nextBand: 'easy',
+      reason: 'First session — baseline set. Progression starts next time.',
+      nextBand: currentBand,
       goal: 'add_reps',
       debug: {
-        hitThreshold,
-        setsAtTopRange: setsAtTop,
-        totalSets: workSets.length,
-        hitPercent,
-        maxRpe,
-        avgRpe,
+        branch: 'calibration',
+        atTargetThreshold: atTarget,
+        atTopThreshold: atTop,
+        allSetsAtTop: allTop,
         baseWeightKg,
         incrementKg: 0,
         workingSetCount: workSets.length,
-        branch: 'calibration',
-        isCalibrating: true,
-        isDeloadWeek: false,
-        blitzMode,
+        newConsecutiveSuccess: 0,
+        newConsecutiveFailure: 0,
       },
     };
   }
 
-  // ── Step 2: Blitz Mode forces Extreme band ────────────────────────────────
-  const activeBand: DifficultyBand = blitzMode ? 'extreme' : currentBand;
-
-  // ── Step 3: Deload week (auto, every 4th week, disabled in Blitz Mode) ───
-  if (deloadWeek && !blitzMode) {
+  // ── Step 2: Deload week ───────────────────────────────────────────────────
+  if (deloadWeek) {
     const deloadWeightKg = getDeloadWeight(baseWeightKg);
-    const incrementKg = INCREMENTS[overloadCategory][activeBand];
     const nextWeightKg = roundToIncrement(deloadWeightKg, incrementKg);
     const nextWeightLb = roundToGymPrecision(nextWeightKg * LB_PER_KG);
-
-    if (__DEV__) {
-      console.log('[Progression] Deload week — weight reduced to 50%.');
-    }
 
     return {
       action: 'deload',
@@ -259,107 +261,105 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       nextRepTarget: repRangeLow,
       repRangeLow,
       repRangeHigh,
-      reason: 'This is your deload week. Weight reduced to 50% to allow full recovery.',
-      nextBand: currentBand, // band never changes during a deload week
+      reason: 'Deload week — weight reduced for recovery.',
+      nextBand: currentBand,
       goal: 'reduce_load',
       debug: {
-        hitThreshold,
-        setsAtTopRange: setsAtTop,
-        totalSets: workSets.length,
-        hitPercent,
-        maxRpe,
-        avgRpe,
+        branch: 'deload_week',
+        atTargetThreshold: atTarget,
+        atTopThreshold: atTop,
+        allSetsAtTop: allTop,
         baseWeightKg,
         incrementKg,
         workingSetCount: workSets.length,
-        branch: 'deload_week',
-        isCalibrating: false,
-        isDeloadWeek: true,
-        blitzMode,
+        newConsecutiveSuccess: 0,
+        newConsecutiveFailure: 0,
       },
     };
   }
 
-  // ── Step 4: Evaluate rep performance and update band ─────────────────────
-  let newConsecutiveSuccess = consecutiveSuccess;
-  let newConsecutiveFailure = consecutiveFailure;
+  // ── Step 3: atTopThreshold (70%+ at repRangeHigh) → add weight ──────────────
+  if (atTop) {
+    const nextWeightKg = roundToIncrement(baseWeightKg + incrementKg, incrementKg);
+    const nextWeightLb = roundToGymPrecision(nextWeightKg * LB_PER_KG);
 
-  if (hitThreshold) {
-    newConsecutiveSuccess += 1;
-    newConsecutiveFailure = 0;
-  } else {
-    newConsecutiveFailure += 1;
-    newConsecutiveSuccess = 0;
+    return {
+      action: 'add_weight',
+      nextWeightKg,
+      nextWeightLb,
+      nextRepTarget: repRangeLow,
+      repRangeLow,
+      repRangeHigh,
+      reason: `Hit 70%+ of sets at ${repRangeHigh} reps — weight increases, target resets to ${repRangeLow}.`,
+      nextBand: currentBand,
+      goal: 'add_load',
+      debug: {
+        branch: 'at_top_threshold',
+        atTargetThreshold: atTarget,
+        atTopThreshold: atTop,
+        allSetsAtTop: allTop,
+        baseWeightKg,
+        incrementKg,
+        workingSetCount: workSets.length,
+        newConsecutiveSuccess: consecutiveSuccess + 1,
+        newConsecutiveFailure: 0,
+      },
+    };
   }
 
-  const nextBand: DifficultyBand = blitzMode
-    ? 'extreme'
-    : getNextBand(currentBand, newConsecutiveSuccess, newConsecutiveFailure, avgRpeLast3Sessions);
+  // ── Step 4: atTargetThreshold (and not at top) → adaptive jump (+1, +2, or +3) ─
+  if (atTarget) {
+    const jump = computeAdaptiveJump(workSets, repRangeLow, repRangeHigh, currentTargetReps);
+    const nextTarget = Math.min(currentTargetReps + jump, repRangeHigh);
+    const branch = jump === 3 ? 'plus_3_rep' : jump === 2 ? 'plus_2_rep' : 'plus_1_rep';
 
-  // ── Step 5: Calculate next weight ────────────────────────────────────────
-  const incrementKg = INCREMENTS[overloadCategory][nextBand];
-
-  let action: ProgressionAction;
-  let nextWeightKg: number;
-  let nextRepTarget: number;
-  let reason: string;
-  let branch: string;
-
-  if (hitThreshold) {
-    action = 'add_weight';
-    let rawNextKg = baseWeightKg + incrementKg;
-
-    // Blitz Mode cap: weekly increase cannot exceed 10% of current working weight
-    if (blitzMode) {
-      const cap = baseWeightKg * 1.10;
-      rawNextKg = Math.min(rawNextKg, cap);
-    }
-
-    nextWeightKg = roundToIncrement(rawNextKg, incrementKg);
-    nextRepTarget = repRangeLow;
-    reason = `Hit 70%+ of sets at ${repRangeHigh} reps — weight goes up next session.`;
-    branch = blitzMode ? 'blitz_add_weight' : 'hit_threshold_add_weight';
-  } else {
-    action = 'build_reps';
-    // Keep exact base weight — only add_weight and deload round to increment
-    nextWeightKg = baseWeightKg;
-    nextRepTarget = repRangeHigh;
-    reason = `Keep the weight and build to ${repRangeHigh} reps — you haven't earned the increase yet.`;
-    branch = 'build_reps';
+    return {
+      action: 'build_reps',
+      nextWeightKg: baseWeightKg,
+      nextWeightLb: baseWeightLb,
+      nextRepTarget: nextTarget,
+      repRangeLow,
+      repRangeHigh,
+      reason: jump > 1
+        ? `Hit target with overshoot — next target ${nextTarget} (+${jump}).`
+        : `Hit target — next target ${nextTarget}.`,
+      nextBand: currentBand,
+      goal: 'add_reps',
+      debug: {
+        branch,
+        atTargetThreshold: atTarget,
+        atTopThreshold: atTop,
+        allSetsAtTop: allTop,
+        baseWeightKg,
+        incrementKg,
+        workingSetCount: workSets.length,
+        newConsecutiveSuccess: consecutiveSuccess + 1,
+        newConsecutiveFailure: 0,
+      },
+    };
   }
 
-  const nextWeightLb =
-    action === 'build_reps'
-      ? baseWeightLb
-      : roundToGymPrecision(nextWeightKg * LB_PER_KG);
-
-  const goal: ProgressionDecision['goal'] =
-    action === 'add_weight' ? 'add_load' : 'add_reps';
-
+  // ── Step 5: Miss → hold ─────────────────────────────────────────────────────
   return {
-    action,
-    nextWeightKg,
-    nextWeightLb,
-    nextRepTarget,
+    action: 'build_reps',
+    nextWeightKg: baseWeightKg,
+    nextWeightLb: baseWeightLb,
+    nextRepTarget: currentTargetReps,
     repRangeLow,
     repRangeHigh,
-    reason,
-    nextBand,
-    goal,
+    reason: "Didn't hit target — same target next time.",
+    nextBand: currentBand,
+    goal: 'add_reps',
     debug: {
-      hitThreshold,
-      setsAtTopRange: setsAtTop,
-      totalSets: workSets.length,
-      hitPercent,
-      maxRpe,
-      avgRpe,
+      branch: 'hold',
+      atTargetThreshold: atTarget,
+      atTopThreshold: atTop,
+      allSetsAtTop: allTop,
       baseWeightKg,
       incrementKg,
       workingSetCount: workSets.length,
-      branch,
-      isCalibrating: false,
-      isDeloadWeek: deloadWeek,
-      blitzMode,
+      newConsecutiveSuccess: 0,
+      newConsecutiveFailure: consecutiveFailure + 1,
     },
   };
 }
@@ -371,18 +371,20 @@ export function prescriptionToDecision(
   nextWeightLb: number,
   goal: 'add_load' | 'add_reps' | 'reduce_load',
   repRangeLow: number,
-  repRangeHigh: number
+  repRangeHigh: number,
+  nextTargetReps?: number
 ): ProgressionDecision {
   const nextWeightKg = nextWeightLb * KG_PER_LB;
   const action: ProgressionAction =
     goal === 'reduce_load' ? 'deload' : goal === 'add_load' ? 'add_weight' : 'build_reps';
-  const nextRepTarget = action === 'add_weight' ? repRangeLow : repRangeHigh;
+  const nextRepTarget =
+    nextTargetReps ?? (action === 'add_weight' ? repRangeLow : repRangeHigh);
   const reason =
     action === 'deload'
       ? 'Deload prescribed — weight reduced to allow recovery.'
       : action === 'add_weight'
-        ? 'Sets hit the 70% threshold — load increases.'
-        : 'Keep the weight and build reps to earn the next increase.';
+        ? 'Load increased — target resets to bottom of range.'
+        : 'Keep the weight and build reps.';
 
   return {
     action,
@@ -395,19 +397,15 @@ export function prescriptionToDecision(
     nextBand: 'easy',
     goal,
     debug: {
-      hitThreshold: false,
-      setsAtTopRange: 0,
-      totalSets: 0,
-      hitPercent: 0,
-      maxRpe: null,
-      avgRpe: null,
+      branch: 'from_prescription',
+      atTargetThreshold: false,
+      atTopThreshold: false,
+      allSetsAtTop: false,
       baseWeightKg: nextWeightKg,
       incrementKg: 2.5,
       workingSetCount: 0,
-      branch: 'from_prescription',
-      isCalibrating: false,
-      isDeloadWeek: false,
-      blitzMode: false,
+      newConsecutiveSuccess: 0,
+      newConsecutiveFailure: 0,
     },
   };
 }

@@ -40,7 +40,8 @@ import type { WorkoutContext, ScheduledSet } from '../lib/getWorkoutContext';
 import { formatLocalYMD } from '../lib/time';
 import { toDisplayWeight, formatWeightDisplay } from '../utils/units';
 import type { WeightUnit } from '../utils/units';
-import { getSessionCompletedDate } from '../utils/storage';
+import { getSessionCompletedDate, clearSessionCompletedDate } from '../utils/storage';
+import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const PAD    = 16;
@@ -101,8 +102,9 @@ function computeLiftRows(context: WorkoutContext | null): LiftRow[] {
     const splitEx  = split?.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
 
     // ── Rep range: todayExerciseDetails (manual → split → history → default) first, then split, then history fallback ─
-    const repRangeLow  = exDetail?.repRangeLow ?? splitEx?.targetReps ?? lastSets.find((s) => s.targetReps != null)?.targetReps ?? 8;
-    const repRangeHigh = exDetail?.repRangeHigh ?? splitEx?.targetReps ?? (repRangeLow + 4);
+    const repRangeLowSrc = exDetail?.repRangeLow ?? splitEx?.targetReps ?? lastSets.find((s) => s.targetReps != null)?.targetReps;
+    const repRangeLow  = repRangeLowSrc ?? 10;
+    const repRangeHigh = exDetail?.repRangeHigh ?? splitEx?.targetReps ?? (repRangeLowSrc != null ? repRangeLow + 4 : 12);
 
     // ── Sets: split definition or workout history ─────────────────────────────
     const baseSets = splitEx?.targetSets ?? (lastSets.length || 3);
@@ -373,6 +375,7 @@ export function TodaysSessionCarousel({
   const { context, contextLoading, refresh } = jarvis;
   const [showAll, setShowAll] = useState(false);
   const [sessionDoneToday, setSessionDoneToday] = useState(false);
+  const [sessionRefreshTrigger, setSessionRefreshTrigger] = useState(0);
 
   // Check if user already completed today's recommended session
   useEffect(() => {
@@ -385,7 +388,7 @@ export function TodaysSessionCarousel({
         setSessionDoneToday(false);
       }
     })();
-  }, [animTrigger, user?.id]); // re-check on focus and auth switch
+  }, [animTrigger, user?.id, sessionRefreshTrigger]); // re-check on focus and auth switch
 
   // Refresh Jarvis context every time the Fitness tab is focused
   const firstMountRef = useRef(false);
@@ -399,6 +402,12 @@ export function TodaysSessionCarousel({
 
   // ── Session already done today ──
   if (sessionDoneToday && !activeWorkout && !contextLoading) {
+    const handleClearForQA = async () => {
+      await clearSessionCompletedDate(user?.id);
+      setSessionRefreshTrigger((t) => t + 1);
+      if (user?.id) invalidateTodayWorkoutContextCache(user.id);
+      await refresh();
+    };
     return (
       <View style={S.hero}>
         <ShinyText
@@ -414,6 +423,16 @@ export function TodaysSessionCarousel({
           containerStyle={{ marginBottom: 0, marginLeft: -(PAD + 4) }}
         />
         <Text style={S.eyebrow}>see you tomorrow</Text>
+        {__DEV__ && (
+          <Pressable
+            onPress={handleClearForQA}
+            style={{ marginTop: 16, paddingVertical: 8, paddingHorizontal: 12, alignSelf: 'center' }}
+          >
+            <Text style={{ color: SUB, fontSize: 12, textDecorationLine: 'underline' }}>
+              Clear for QA
+            </Text>
+          </Pressable>
+        )}
       </View>
     );
   }

@@ -84,6 +84,7 @@
 
 *List files or areas you just changed so the next agent knows what's fresh.*
 
+- `lib/progression/decideNextPrescription.ts`, `lib/progression/buildDisplayPrescriptionSnapshot.ts`, `utils/supabaseStorage.ts`, `components/WorkoutCore.tsx`, `app/tmlsnai.tsx`, `lib/generateBriefing.ts`, `scripts/test-progression.ts`, `scripts/audit-progression-edge-cases.ts` – Bodybuilding Progression V1: threshold logic, currentBand, band-based increments, persistence
 - `components/ExercisePickerModal.tsx`, `app/exercises/index.tsx` – Custom vs built-in indicator: subtle pill for "custom" in picker + library
 - `utils/exerciseDb/exerciseDatabase.ts`, `app/exercises/index.tsx`, `app/exercises/[id].tsx`, `components/ExercisePickerModal.tsx` – Exercise system polish: search normalization (tricep/triceps, bicep/biceps, lat/lateral, db/dumbbell, bb/barbell); built-in vs custom indicator on ExerciseRow, FavoritesSection, ExercisePickerModal; detail page loadEntryMode badge + Custom label
 - `app/exercises/index.tsx`, `app/exercises/[id].tsx` – Create Exercise in Fitness Hub: user exercises merged with built-in, alphabetical sort, searchExercises for search, CreateExerciseSheet + Create exercise row; detail page fallback to user exercises when id not in EXERCISE_MAP

@@ -82,7 +82,7 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
     const lastStr = lastSummary(lastSets, weightUnit);
 
     const exDetail = details[i];
-    const repRangeLow = exDetail?.repRangeLow ?? 8;
+    const repRangeLow = exDetail?.repRangeLow ?? 10;
     const repRangeHigh = exDetail?.repRangeHigh ?? 12;
 
     const workingSets = lastSets.map((s) => ({
@@ -96,13 +96,13 @@ function computeExercisePlans(context: WorkoutContext | null): ExercisePlan[] {
       sets: workingSets,
       repRangeLow,
       repRangeHigh,
+      currentTargetReps: repRangeLow,
       overloadCategory: 'compound_small',
-      currentBand: 'easy',
-      consecutiveSuccess: 0,
-      consecutiveFailure: 0,
+      currentBand: (exDetail?.currentBand as 'easy' | 'medium' | 'hard' | 'extreme') ?? 'easy',
+      consecutiveSuccess: exDetail?.consecutiveSuccess ?? 0,
+      consecutiveFailure: exDetail?.consecutiveFailure ?? 0,
       isCalibrating: false,
       isDeloadWeek: false,
-      blitzMode: false,
     });
 
     const targetWeight =

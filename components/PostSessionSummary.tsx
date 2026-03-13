@@ -24,7 +24,6 @@ import BottomSheet, {
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 import { shouldTriggerLowRpeWarning } from '../utils/rpe';
 
 const { width: SW } = Dimensions.get('window');
@@ -35,21 +34,6 @@ const C_DIM   = 'rgba(198,198,198,0.55)';
 const C_DIM2  = '#7a8690';
 const C_BG    = '#111112';
 const C_CARD  = 'rgba(47,48,49,0.85)';
-
-// Band colours
-const BAND_COLORS: Record<DifficultyBand, { bg: string; border: string; text: string }> = {
-  easy:    { bg: 'rgba(52,199,89,0.14)',   border: 'rgba(52,199,89,0.32)',   text: '#34C759' },
-  medium:  { bg: 'rgba(10,132,255,0.14)',  border: 'rgba(10,132,255,0.32)',  text: '#0A84FF' },
-  hard:    { bg: 'rgba(255,149,0,0.14)',   border: 'rgba(255,149,0,0.32)',   text: '#FF9500' },
-  extreme: { bg: 'rgba(255,59,48,0.14)',   border: 'rgba(255,59,48,0.32)',   text: '#FF3B30' },
-};
-
-const BAND_LABELS: Record<DifficultyBand, string> = {
-  easy:    'Easy',
-  medium:  'Medium',
-  hard:    'Hard',
-  extreme: 'Extreme',
-};
 
 const ACTION_ICONS: Record<string, string> = {
   add_weight:  '↑',
@@ -65,7 +49,8 @@ export type ExerciseSummaryItem = {
   action: 'add_weight' | 'build_reps' | 'deload' | 'calibrate';
   nextWeightDisplay: number;
   weightUnit: 'kg' | 'lb';
-  nextBand: DifficultyBand;
+  /** Live rep target for next session (e.g. 10, 11, 12 for 10–12). */
+  nextTargetReps: number | null;
   reason: string;
   isCalibrating: boolean;
   avgRpe?: number | null;
@@ -83,11 +68,11 @@ export type PostSessionSummaryProps = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function BandBadge({ band }: { band: DifficultyBand }) {
-  const c = BAND_COLORS[band];
+function TargetRepsBadge({ nextTargetReps }: { nextTargetReps: number | null }) {
+  if (nextTargetReps == null) return null;
   return (
-    <View style={[badge.root, { backgroundColor: c.bg, borderColor: c.border }]}>
-      <Text style={[badge.text, { color: c.text }]}>{BAND_LABELS[band]}</Text>
+    <View style={[badge.root, { backgroundColor: 'rgba(10,132,255,0.14)', borderColor: 'rgba(10,132,255,0.32)' }]}>
+      <Text style={[badge.text, { color: '#0A84FF' }]}>Target: {nextTargetReps} reps</Text>
     </View>
   );
 }
@@ -127,10 +112,10 @@ function ExerciseRow({ item }: { item: ExerciseSummaryItem }) {
 
   return (
     <View style={row.root}>
-      {/* Top: exercise name + band */}
+      {/* Top: exercise name + target reps */}
       <View style={row.header}>
         <Text style={row.name} numberOfLines={1}>{item.exerciseName}</Text>
-        <BandBadge band={item.nextBand} />
+        <TargetRepsBadge nextTargetReps={item.nextTargetReps} />
       </View>
 
       {/* Middle: action + next weight */}

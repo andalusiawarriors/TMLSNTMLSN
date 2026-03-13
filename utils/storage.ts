@@ -5,17 +5,9 @@ import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import * as supabaseStorage from './supabaseStorage';
 import { DEFAULT_GOALS, DEFAULT_SETTINGS, DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
 import { logStreakWorkout } from './streak';
+import { setStorageUserId, getStorageUserId } from './storageUserId';
 
-// Current user ID for Supabase-backed storage (set by AuthContext on login/logout)
-let _storageUserId: string | null = null;
-
-export function setStorageUserId(userId: string | null): void {
-  _storageUserId = userId;
-}
-
-export function getStorageUserId(): string | null {
-  return _storageUserId;
-}
+export { setStorageUserId, getStorageUserId };
 
 // Storage Keys (used when not logged in)
 const KEYS = {

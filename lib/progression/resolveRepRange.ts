@@ -2,7 +2,7 @@
  * Canonical rep range resolution with strict priority order:
  * 1. Manual exercise setting (AsyncStorage)
  * 2. History fallback (from past sessions)
- * 3. Hardcoded default (8–12)
+ * 3. Hardcoded default (10–12)
  *
  * Manual settings always win; history never overrides explicit exercise config.
  */
@@ -58,7 +58,7 @@ export type ResolveRepRangeResult = {
   smallestIncrement: number;
 };
 
-const DEFAULT_LOW = 8;
+const DEFAULT_LOW = 10;
 const DEFAULT_HIGH = 12;
 const DEFAULT_INCREMENT = 2.5;
 
@@ -88,14 +88,17 @@ export async function resolveRepRangeForExercise(
     historyRepRangeLow > 0 &&
     historyRepRangeHigh >= historyRepRangeLow
   ) {
+    const isLegacyBodybuildingDefault = historyRepRangeLow === 8 && (historyRepRangeHigh === 8 || historyRepRangeHigh === 12);
+    const effectiveLow = isLegacyBodybuildingDefault ? DEFAULT_LOW : historyRepRangeLow;
+    const effectiveHigh = isLegacyBodybuildingDefault ? DEFAULT_HIGH : historyRepRangeHigh;
     return {
-      repRangeLow: historyRepRangeLow,
-      repRangeHigh: historyRepRangeHigh,
+      repRangeLow: effectiveLow,
+      repRangeHigh: effectiveHigh,
       smallestIncrement: historySmallestIncrement ?? DEFAULT_INCREMENT,
     };
   }
 
-  // 3. Hardcoded default (8–12)
+  // 3. Hardcoded default (10–12)
   return {
     repRangeLow: DEFAULT_LOW,
     repRangeHigh: DEFAULT_HIGH,
@@ -125,9 +128,14 @@ export async function resolveRepRangesForExercises(
       historyRepRangeLow > 0 &&
       historyRepRangeHigh >= historyRepRangeLow
     ) {
+      // Legacy bodybuilding default: persisted sessions may have rep_range_low: 8 from old split.
+      // Treat 8 as stale and use current default (10–12) so UI shows 10.
+      const isLegacyBodybuildingDefault = historyRepRangeLow === 8 && (historyRepRangeHigh === 8 || historyRepRangeHigh === 12);
+      const effectiveLow = isLegacyBodybuildingDefault ? DEFAULT_LOW : historyRepRangeLow;
+      const effectiveHigh = isLegacyBodybuildingDefault ? DEFAULT_HIGH : historyRepRangeHigh;
       result.set(exerciseId, {
-        repRangeLow: historyRepRangeLow,
-        repRangeHigh: historyRepRangeHigh,
+        repRangeLow: effectiveLow,
+        repRangeHigh: effectiveHigh,
         smallestIncrement: historySmallestIncrement ?? DEFAULT_INCREMENT,
       });
     } else {
@@ -207,9 +215,12 @@ export function resolveRepRangeSync(
     historyRepRangeLow > 0 &&
     historyRepRangeHigh >= historyRepRangeLow
   ) {
+    const isLegacyBodybuildingDefault = historyRepRangeLow === 8 && (historyRepRangeHigh === 8 || historyRepRangeHigh === 12);
+    const effectiveLow = isLegacyBodybuildingDefault ? DEFAULT_LOW : historyRepRangeLow;
+    const effectiveHigh = isLegacyBodybuildingDefault ? DEFAULT_HIGH : historyRepRangeHigh;
     return {
-      repRangeLow: historyRepRangeLow,
-      repRangeHigh: historyRepRangeHigh,
+      repRangeLow: effectiveLow,
+      repRangeHigh: effectiveHigh,
       smallestIncrement: historySmallestIncrement ?? DEFAULT_INCREMENT,
     };
   }

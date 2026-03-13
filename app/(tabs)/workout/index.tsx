@@ -44,10 +44,15 @@ export default function WorkoutScreen({
     return () => cancelAnimationFrame(id);
   }, []);
 
+  const refreshWorkout = useCallback(async () => {
+    const all = await getWorkoutSessions();
+    setRecentSessions(all.slice(0, 10));
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      getWorkoutSessions().then((all) => setRecentSessions(all.slice(0, 10)));
-    }, [])
+      refreshWorkout();
+    }, [refreshWorkout])
   );
 
   const handleFinish = async (payload: WorkoutSession) => {
@@ -78,6 +83,7 @@ export default function WorkoutScreen({
         asModal={asModal}
         initialActiveWorkout={initialActiveWorkout}
         onCloseModal={onCloseModal}
+        onRefresh={refreshWorkout}
       />
     </View>
   );

@@ -22,6 +22,8 @@ import { Platform } from 'react-native';
 
 import { Colors } from '../constants/theme';
 import { useActiveWorkout } from '../context/ActiveWorkoutContext';
+import { useAuth } from '../context/AuthContext';
+import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
@@ -185,7 +187,12 @@ const T = StyleSheet.create({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function FitnessHub() {
+export type FitnessHubProps = {
+  /** When provided, FitnessHub registers its refresh function here for parent pull-to-refresh. */
+  refreshRef?: React.MutableRefObject<(() => Promise<void>) | null>;
+};
+
+export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
   const [animTrigger, setAnimTrigger]         = useState(0);
   const [showWorkoutBlock, setShowWorkoutBlock] = useState(false);
   const [training, setTraining]               = useState<TrainingSettings>(DEFAULT_TRAINING_SETTINGS);
@@ -197,10 +204,25 @@ export function FitnessHub() {
     reconcileActiveWorkoutState,
     workoutStartTime,
   } = useActiveWorkout();
+  const { user } = useAuth();
   const router   = useRouter();
   const pathname = usePathname();
   const segments = useSegments();
   const jarvis   = useJarvis();
+
+  const performRefresh = useCallback(async () => {
+    if (user?.id) invalidateTodayWorkoutContextCache(user.id);
+    await jarvis.refresh();
+    await reconcileActiveWorkoutState(pathname);
+    setAnimTrigger((t) => t + 1);
+  }, [jarvis, pathname, reconcileActiveWorkoutState, user?.id]);
+
+  useEffect(() => {
+    if (refreshRef) {
+      refreshRef.current = performRefresh;
+      return () => { refreshRef.current = null; };
+    }
+  }, [refreshRef, performRefresh]);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {

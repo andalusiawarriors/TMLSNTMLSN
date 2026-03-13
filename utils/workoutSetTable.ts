@@ -75,9 +75,34 @@ export function buildPrevSetsAndGhost(
     const snapshot = buildDisplayPrescriptionSnapshot({
       exerciseName: exercise.name ?? '',
       exerciseDbId: exercise.exerciseDbId,
-      repRangeLow: exercise.repRangeLow ?? 8,
+      repRangeLow: exercise.repRangeLow ?? 10,
       repRangeHigh: exercise.repRangeHigh ?? 12,
       recentSets: doneSets,
+      prescription,
+      weightUnit,
+    });
+
+    ghostWeight = snapshot.ghostWeight;
+    ghostReps = snapshot.ghostReps;
+    loadChangePercent = snapshot.loadChangePercent;
+    ghostReason =
+      snapshot.action === 'increase weight'
+        ? 'Add weight'
+        : snapshot.action === 'deload'
+          ? 'Deload'
+          : snapshot.action === 'build reps'
+            ? 'Build reps'
+            : snapshot.reason;
+    fromProgressionEngine = snapshot.fromProgressionEngine;
+  } else if (prescription) {
+    // No last session in recentSessions, but prescription exists (e.g. from older session).
+    // Use persisted state so ghost reflects save/recompute output.
+    const snapshot = buildDisplayPrescriptionSnapshot({
+      exerciseName: exercise.name ?? '',
+      exerciseDbId: exercise.exerciseDbId,
+      repRangeLow: exercise.repRangeLow ?? 10,
+      repRangeHigh: exercise.repRangeHigh ?? 12,
+      recentSets: [],
       prescription,
       weightUnit,
     });

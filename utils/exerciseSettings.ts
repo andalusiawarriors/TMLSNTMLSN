@@ -5,8 +5,13 @@
 // ============================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getStorageUserId } from './storageUserId';
 
-const SETTINGS_KEY = '@tmlsn/exercise_settings_v1';
+const SETTINGS_KEY_PREFIX = '@tmlsn/exercise_settings_v1';
+
+function getSettingsKey(): string {
+  return `${SETTINGS_KEY_PREFIX}:${getStorageUserId() ?? 'anonymous'}`;
+}
 
 export interface ExerciseUserSettings {
   /** Minimum reps for the TMLSN auto-progression algorithm */
@@ -22,7 +27,7 @@ export interface ExerciseUserSettings {
 }
 
 export const DEFAULT_EXERCISE_SETTINGS: ExerciseUserSettings = {
-  repRangeLow: 8,
+  repRangeLow: 10,
   repRangeHigh: 12,
   smallestIncrement: 2.5,
   favorite: false,
@@ -34,7 +39,7 @@ type SettingsMap = Record<string, ExerciseUserSettings>;
 
 async function readAll(): Promise<SettingsMap> {
   try {
-    const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+    const raw = await AsyncStorage.getItem(getSettingsKey());
     return raw ? (JSON.parse(raw) as SettingsMap) : {};
   } catch {
     return {};
@@ -42,7 +47,7 @@ async function readAll(): Promise<SettingsMap> {
 }
 
 async function writeAll(map: SettingsMap): Promise<void> {
-  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(map));
+  await AsyncStorage.setItem(getSettingsKey(), JSON.stringify(map));
 }
 
 // ── Public API ───────────────────────────────────────────────
@@ -71,6 +76,37 @@ export async function saveExerciseSettings(
 /** Return the full settings map for all exercises that have been configured. */
 export async function getAllExerciseSettings(): Promise<SettingsMap> {
   return readAll();
+}
+
+/** Reset rep ranges and increment to defaults for an exercise. Preserves favorite and lastDoneAt. */
+export async function resetRepRangesToDefault(exerciseId: string): Promise<void> {
+  const map = await readAll();
+  const existing = map[exerciseId] ?? { ...DEFAULT_EXERCISE_SETTINGS };
+  map[exerciseId] = {
+    ...existing,
+    repRangeLow: DEFAULT_EXERCISE_SETTINGS.repRangeLow,
+    repRangeHigh: DEFAULT_EXERCISE_SETTINGS.repRangeHigh,
+    smallestIncrement: DEFAULT_EXERCISE_SETTINGS.smallestIncrement,
+  };
+  await writeAll(map);
+}
+
+/** Reset rep ranges and increment to defaults for all exercises. Preserves favorites and lastDoneAt. */
+export async function resetAllRepRangesToDefault(): Promise<number> {
+  const map = await readAll();
+  let count = 0;
+  for (const exerciseId of Object.keys(map)) {
+    const existing = map[exerciseId] ?? { ...DEFAULT_EXERCISE_SETTINGS };
+    map[exerciseId] = {
+      ...existing,
+      repRangeLow: DEFAULT_EXERCISE_SETTINGS.repRangeLow,
+      repRangeHigh: DEFAULT_EXERCISE_SETTINGS.repRangeHigh,
+      smallestIncrement: DEFAULT_EXERCISE_SETTINGS.smallestIncrement,
+    };
+    count++;
+  }
+  if (count > 0) await writeAll(map);
+  return count;
 }
 
 /** Toggle the favorite flag for an exercise. Returns new state. */

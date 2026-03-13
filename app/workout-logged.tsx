@@ -21,7 +21,6 @@ import { PostSessionSummary, type ExerciseSummaryItem } from '../components/Post
 import { shouldTriggerLowRpeWarning } from '../utils/rpe';
 import { DynamicIslandRPEWarning } from '../components/DynamicIslandRPEWarning';
 import { startRPEActivity, stopRPEActivity, sendRPENotification } from '../lib/liveActivity';
-import type { DifficultyBand } from '../lib/progression/decideNextPrescription';
 import { isDeloadWeek } from '../lib/progression/decideNextPrescription';
 
 // ── Layout ─────────────────────────────────────────────────────
@@ -242,22 +241,22 @@ export default function WorkoutLoggedScreen() {
           else if (p?.goal === 'add_load')   action = 'add_weight';
           else if (p?.goal === 'reduce_load') action = 'deload';
 
-          // Convert stored weight (always kg) to display unit
-          const nextWeightKg   = p?.nextWeight ?? 0;
+          // Stored weight is in lb; convert to display unit
+          const nextWeightLb = p?.nextWeight ?? 0;
           const nextWeightDisp = settings.weightUnit === 'lb'
-            ? Number((nextWeightKg * 2.20462).toFixed(1))
-            : Number(nextWeightKg.toFixed(1));
+            ? Number(nextWeightLb.toFixed(1))
+            : Number((nextWeightLb / 2.20462).toFixed(1));
 
           return {
             exerciseName:      ex.name ?? 'Exercise',
             action,
             nextWeightDisplay: nextWeightDisp,
             weightUnit:        settings.weightUnit as 'kg' | 'lb',
-            nextBand:          (p?.difficultyBand ?? 'easy') as DifficultyBand,
+            nextTargetReps:    p?.nextTargetReps ?? null,
             reason:            p?.reason ?? '',
             isCalibrating:     p?.isCalibrating ?? false,
             avgRpe,
-            repRangeLow:       ex.repRangeLow  ?? 8,
+            repRangeLow:       ex.repRangeLow  ?? 10,
             repRangeHigh:      ex.repRangeHigh ?? 12,
           };
         });

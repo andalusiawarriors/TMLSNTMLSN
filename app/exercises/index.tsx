@@ -25,7 +25,7 @@ import { EXERCISE_DATABASE, searchExercises } from '../../utils/exerciseDb/exerc
 import type { Exercise } from '../../utils/exerciseDb/types';
 import type { CreateExerciseInput } from '../../utils/exerciseDb/types';
 import { getWorkoutSessions } from '../../utils/storage';
-import { getAllExerciseSettings } from '../../utils/exerciseSettings';
+import { getAllExerciseSettings, resetAllRepRangesToDefault } from '../../utils/exerciseSettings';
 import { supabaseFetchUserExercises, supabaseInsertUserExercise } from '../../utils/supabaseStorage';
 import { useAuth } from '../../context/AuthContext';
 import { CreateExerciseAISheet } from '../../components/CreateExerciseAISheet';
@@ -183,6 +183,7 @@ export default function ExerciseLibraryScreen() {
   const [recentIds,         setRecentIds]         = useState<string[]>([]);
   const [userExercises,     setUserExercises]     = useState<Exercise[]>([]);
   const [showCreateSheet,   setShowCreateSheet]   = useState(false);
+  const [resetAllState,    setResetAllState]     = useState<'idle' | 'saved'>('idle');
 
   // ── Load on focus ──
   const loadData = useCallback(async () => {
@@ -321,6 +322,14 @@ export default function ExerciseLibraryScreen() {
     },
     [user?.id],
   );
+
+  const handleResetAllRepRanges = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const count = await resetAllRepRangesToDefault();
+    setResetAllState('saved');
+    setTimeout(() => setResetAllState('idle'), 2000);
+    if (count > 0) loadData();
+  }, [loadData]);
 
   const renderSeparator = useCallback(() => <View style={styles.separator} />, []);
   const renderRow = useCallback(
@@ -480,9 +489,22 @@ export default function ExerciseLibraryScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListHeaderComponent={
-          filterMode !== 'recent' && filteredFavorites.length > 0
-            ? <FavoritesSection exercises={filteredFavorites} userExerciseIds={userExerciseIds} onPress={handlePress} />
-            : null
+          <View>
+            <Pressable
+              onPress={handleResetAllRepRanges}
+              style={({ pressed }) => [
+                styles.resetAllRow,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.resetAllText}>
+                {resetAllState === 'saved' ? 'Reset ✓' : 'Reset all rep ranges to default'}
+              </Text>
+            </Pressable>
+            {filterMode !== 'recent' && filteredFavorites.length > 0
+              ? <FavoritesSection exercises={filteredFavorites} userExerciseIds={userExerciseIds} onPress={handlePress} />
+              : null}
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
@@ -629,6 +651,20 @@ const styles = StyleSheet.create({
   separator: {
     height: 1, marginHorizontal: 16,
     backgroundColor: 'rgba(198,198,198,0.10)',
+  },
+
+  // Reset all
+  resetAllRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  resetAllText: {
+    color: TEXT_DIM,
+    fontSize: 13,
+    textDecorationLine: 'underline',
+    fontWeight: '500',
   },
 
   // Favorites section

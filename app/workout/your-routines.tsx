@@ -93,7 +93,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
           restTimer: exercise.restTimer,
           exerciseDbId: exercise.exerciseDbId,
           targetSets: 3,
-          targetReps: 8,
+          targetReps: 10,
           suggestedWeight: undefined,
         },
       ],

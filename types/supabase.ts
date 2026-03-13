@@ -20,6 +20,14 @@ export type Database = {
           exercise_id: string
           next_goal_type: string | null
           next_target_weight: number | null
+          next_target_reps: number | null
+          rep_range_low: number | null
+          rep_range_high: number | null
+          difficulty_band: string
+          consecutive_success: number
+          consecutive_failure: number
+          is_calibrating: boolean
+          progression_reason: string | null
           updated_at: string
           user_id: string
           variant_key: string
@@ -28,6 +36,14 @@ export type Database = {
           exercise_id: string
           next_goal_type?: string | null
           next_target_weight?: number | null
+          next_target_reps?: number | null
+          rep_range_low?: number | null
+          rep_range_high?: number | null
+          difficulty_band?: string
+          consecutive_success?: number
+          consecutive_failure?: number
+          is_calibrating?: boolean
+          progression_reason?: string | null
           updated_at?: string
           user_id: string
           variant_key?: string
@@ -36,6 +52,14 @@ export type Database = {
           exercise_id?: string
           next_goal_type?: string | null
           next_target_weight?: number | null
+          next_target_reps?: number | null
+          rep_range_low?: number | null
+          rep_range_high?: number | null
+          difficulty_band?: string
+          consecutive_success?: number
+          consecutive_failure?: number
+          is_calibrating?: boolean
+          progression_reason?: string | null
           updated_at?: string
           user_id?: string
           variant_key?: string
