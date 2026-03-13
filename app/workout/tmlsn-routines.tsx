@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../constants/workoutSplits';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import type { WorkoutSplit } from '../../types';
 import { useButtonSound } from '../../hooks/useButtonSound';
-import { Card } from '../../components/Card';
 import { BackButton } from '../../components/BackButton';
 import { FlatFitnessBackground } from '../../components/FlatFitnessBackground';
 
@@ -65,7 +65,7 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
         const totalSets = split.exercises.reduce((acc, ex) => acc + ex.targetSets, 0);
 
         return (
-          <Card key={split.id} gradientFill borderRadius={20} style={styles.routineCard}>
+          <View key={split.id} style={styles.routineCard}>
             {/* Header – tappable to expand/collapse */}
             <Pressable
               style={styles.cardHeader}
@@ -122,9 +122,17 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
               onPressOut={playOut}
               onPress={() => handleStartRoutine(split)}
             >
-              <Text style={styles.startButtonText}>Start Routine</Text>
+              <LinearGradient
+                colors={['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74']}
+                locations={[0, 0.37, 0.69, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.startButtonGradient}
+              >
+                <Text style={styles.startButtonText}>Start Routine</Text>
+              </LinearGradient>
             </Pressable>
-          </Card>
+          </View>
         );
       })}
       </ScrollView>
@@ -138,7 +146,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'transparent',
   },
   titleRow: {
     position: 'absolute',
@@ -165,10 +173,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  // ─── ROUTINE CARD (Hevy-style) ────────────────────────────────────────────
+  // ─── ROUTINE CARD ─────────────────────────────────────────────────────────
   routineCard: {
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     padding: Spacing.md,
-    marginVertical: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -289,17 +305,20 @@ const styles = StyleSheet.create({
 
   // ─── START BUTTON ─────────────────────────────────────────────────────────
   startButton: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    paddingVertical: 10,
+    borderRadius: 38,
+    height: 44,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
   },
   startButtonText: {
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '700' as const,
     letterSpacing: -0.11,
-    color: Colors.primaryDark,
+    color: '#FFFFFF',
   },
 });

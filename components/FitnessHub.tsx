@@ -25,9 +25,9 @@ import { useActiveWorkout } from '../context/ActiveWorkoutContext';
 import { useAuth } from '../context/AuthContext';
 import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import { AnimatedFadeInUp } from './AnimatedFadeInUp';
+import { AnimatedPressable } from './AnimatedPressable';
 import { TodaysSessionCarousel } from './TodaysSessionCarousel';
 import { ZoneOneCard } from './ZoneOneCard';
-import { ShinyText } from './ShinyText';
 import { useJarvis } from '../hooks/useJarvis';
 import { emitWorkoutExpandOrigin, emitClosePopup } from '../utils/fabBridge';
 
@@ -38,15 +38,12 @@ import type { TrainingSettings } from '../types';
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const PAD    = 16;
-const MUTED  = '#404a52';
-const QS     = '#ABABAB';
 const GOLD   = '#D4B896';
-const SUB    = '#7a8690';
 const BORDER = 'rgba(255,255,255,0.05)';
+// AddFoodCard-inspired glass style for interactive rows
+const GLASS_BG     = 'rgba(47, 48, 49, 0.55)';
+const GLASS_BORDER = 'rgba(255, 255, 255, 0.16)';
 
-// Silver gradient (matches TodaysSessionCarousel StartButton)
-const SILVER = ['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74'] as const;
-const SILVER_LOCS = [0, 0.37, 0.69, 1] as const;
 
 function formatElapsed(sec: number): string {
   if (sec < 60) return `${sec}s`;
@@ -66,42 +63,62 @@ function InProgressWorkoutCard({
   workoutName,
   elapsedSeconds,
   onResume,
+  onMinimize,
 }: {
   workoutName: string;
   elapsedSeconds: number;
   onResume: () => void;
+  onMinimize?: () => void;
 }) {
   return (
-    <View style={S.hero}>
-      <Text style={S.inProgressEyebrow}>in progress</Text>
-      <ShinyText
-        text={workoutName}
-        speed={5}
-        delay={0}
-        spread={120}
-        yoyo={false}
-        color="#b5b5b5"
-        shineColor="#ffffff"
-        direction="right"
-        style={S.inProgressTitle}
-        containerStyle={{ marginBottom: 4, marginLeft: -(PAD + 4) }}
-      />
-      <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
-      <View style={S.startBtnWrap}>
-        <Pressable onPress={onResume} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-          <LinearGradient
-            colors={SILVER}
-            locations={SILVER_LOCS}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={S.resumeBtn}
+    // Gradient border shell
+    <LinearGradient
+      colors={['#5a5b5c', '#44454A']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={S.inProgressBorderGrad}
+    >
+      {/* Gradient fill inset 1px */}
+      <LinearGradient
+        colors={['#363738', '#2E2F30']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={S.inProgressFillGrad}
+      >
+        {/* Header row: label + active dot */}
+        <View style={S.inProgressHeader}>
+          <Text style={S.inProgressEyebrow}>IN PROGRESS</Text>
+          <View style={S.activeDot} />
+        </View>
+
+        {/* Workout name */}
+        <Text style={S.inProgressTitle} numberOfLines={1}>{workoutName}</Text>
+
+        {/* Divider */}
+        <View style={S.inProgressDivider} />
+
+        {/* Timer */}
+        <Text style={S.inProgressElapsed}>{formatElapsed(elapsedSeconds)}</Text>
+
+        {/* Buttons row */}
+        <View style={S.inProgressBtnRow}>
+          <AnimatedPressable
+            onPress={onResume}
+            style={S.pillPrimary}
           >
-            <Text style={S.resumeBtnIcon}>▶</Text>
-            <Text style={S.resumeBtnText}>Resume</Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
-    </View>
+            <Text style={S.pillPrimaryText}>Resume</Text>
+          </AnimatedPressable>
+          {onMinimize && (
+            <AnimatedPressable
+              onPress={onMinimize}
+              style={S.pillOutline}
+            >
+              <Text style={S.pillOutlineText}>Minimize</Text>
+            </AnimatedPressable>
+          )}
+        </View>
+      </LinearGradient>
+    </LinearGradient>
   );
 }
 
@@ -119,8 +136,8 @@ function ToolRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      style={({ pressed }) => [T.card, pressed && { opacity: 0.6 }]}
+    <AnimatedPressable
+      style={T.card}
       onPress={onPress}
     >
       <View style={T.textBlock}>
@@ -134,19 +151,22 @@ function ToolRow({
       ) : (
         <Text style={T.chevron}>›</Text>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
 const T = StyleSheet.create({
   card: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
-    minHeight: 55,
+    backgroundColor: GLASS_BG,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+    minHeight: 62,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
   },
   textBlock: {
     flex: 1,
@@ -154,34 +174,37 @@ const T = StyleSheet.create({
   },
   name: {
     fontSize: 15,
-    fontWeight: '500',
-    color: QS,
+    fontWeight: '600',
+    color: '#FFFFFF',
     letterSpacing: -0.2,
   },
   sub: {
     fontSize: 12,
-    color: '#ABABAB',
-    marginTop: 2,
+    fontWeight: '400',
+    color: 'rgba(198,198,198,0.6)',
+    marginTop: 3,
+    letterSpacing: -0.1,
   },
   tagWrap: {
-    backgroundColor: 'rgba(212,184,150,0.07)',
+    backgroundColor: 'rgba(212,184,150,0.09)',
     borderWidth: 1,
-    borderColor: 'rgba(212,184,150,0.14)',
-    borderRadius: 5,
+    borderColor: 'rgba(212,184,150,0.22)',
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   tagText: {
     fontSize: 9,
-    fontWeight: '600',
+    fontWeight: '700',
     color: GOLD,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   chevron: {
-    fontSize: 20,
-    color: '#ABABAB',
+    fontSize: 18,
+    color: 'rgba(198,198,198,0.35)',
     fontWeight: '300',
-    lineHeight: 24,
+    lineHeight: 22,
   },
 });
 
@@ -353,13 +376,12 @@ export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
               <Text style={S.overlayText}>
                 A workout can't be started while one is already in progress.
               </Text>
-              <TouchableOpacity
+              <AnimatedPressable
                 onPress={() => setShowWorkoutBlock(false)}
                 style={S.overlayBtn}
-                activeOpacity={0.85}
               >
                 <Text style={S.overlayBtnText}>Got it</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
         </Pressable>
@@ -374,76 +396,104 @@ export function FitnessHub({ refreshRef }: FitnessHubProps = {}) {
 const S = StyleSheet.create({
   container: {},
 
-  hero: {
-    paddingHorizontal: PAD,
-    paddingBottom: 24,
+  // In-progress card — full width, more prominent
+  inProgressBorderGrad: {
+    marginHorizontal: 0,
+    marginBottom: 24,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  inProgressEyebrow: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#979798',
-    letterSpacing: -0.8,
-    marginTop: -8,
-    marginBottom: 10,
-    marginLeft: -(PAD + 4),
-    alignSelf: 'flex-start',
+  inProgressFillGrad: {
+    borderRadius: 19,
+    padding: 24,
   },
-  inProgressTitle: {
-    height: 42,
-    fontSize: 35,
-    fontWeight: '600',
-    letterSpacing: -1.75,
-    lineHeight: 41,
-    textAlign: 'left',
-    textTransform: 'lowercase',
-    color: '#b5b5b5',
-  },
-  inProgressElapsed: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#ABABAB',
-    marginLeft: -(PAD + 4),
-    marginTop: -4,
-    marginBottom: 20,
-  },
-  startBtnWrap: {
-    marginLeft: -(PAD + 4),
-    marginRight: 4 - PAD,
-    marginTop: -6,
-  },
-  resumeBtn: {
-    width: '100%',
-    height: 55,
-    borderRadius: 16,
+  inProgressHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  inProgressEyebrow: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: '#C6C6C6',
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#34C759',
+  },
+  inProgressTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    color: '#FFFFFF',
+    marginBottom: 16,
+  },
+  inProgressDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 16,
+  },
+  inProgressElapsed: {
+    fontSize: 20,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
+    marginBottom: 20,
+  },
+  inProgressBtnRow: {
+    flexDirection: 'row',
     gap: 8,
   },
-  resumeBtnIcon: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  pillPrimary: {
+    height: 44,
+    borderRadius: 38,
+    backgroundColor: '#C6C6C6',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  resumeBtnText: {
-    fontSize: 15,
+  pillPrimaryText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
+    color: '#2F3032',
+  },
+  pillOutline: {
+    height: 44,
+    borderRadius: 38,
+    backgroundColor: 'rgba(198,198,198,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillOutlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#C6C6C6',
   },
   toolsSection: {
-    paddingHorizontal: PAD,
+    paddingHorizontal: 4,
     paddingBottom: 32,
   },
   toolList: {
-    gap: 6,
-    marginLeft: -(PAD + 4),
-    marginRight: 4 - PAD,
+    gap: 8,
   },
   divider: {
     height: 1,
     backgroundColor: BORDER,
     marginBottom: 20,
+    marginHorizontal: 12,
   },
   toolsLabel: {
     fontSize: 11,
@@ -452,12 +502,13 @@ const S = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#ABABAB',
     marginBottom: 14,
+    paddingHorizontal: 12,
   },
 
   overlayRoot:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
   overlayContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28 },
   overlayCard: {
-    backgroundColor: 'rgba(28,29,30,0.97)',
+    backgroundColor: Colors.primaryDark,
     borderRadius: 24,
     paddingHorizontal: 28,
     paddingVertical: 28,
@@ -474,13 +525,15 @@ const S = StyleSheet.create({
     marginBottom: 22,
   },
   overlayBtn: {
-    paddingVertical: 12,
+    height: 44,
     paddingHorizontal: 28,
-    borderRadius: 20,
+    borderRadius: 38,
     backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   overlayBtnText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.primaryDark,
   },

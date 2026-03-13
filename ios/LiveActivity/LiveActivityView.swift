@@ -181,81 +181,67 @@ import WidgetKit
           ?? defaultPadding
       )
 
-      VStack(alignment: .leading) {
-        let position = attributes.imagePosition ?? "right"
-        let isStretch = position.contains("Stretch")
-        let isLeftImage = position.hasPrefix("left")
-        let hasImage = contentState.imageName != nil
-        let effectiveStretch = isStretch && hasImage
+      // 3-row fitness layout
+      VStack(alignment: .leading, spacing: 6) {
+        // Row 1: workout name + green active dot
+        HStack(spacing: 5) {
+          Text(contentState.title)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+          Circle()
+            .fill(Color(red: 0.2, green: 0.78, blue: 0.35))
+            .frame(width: 6, height: 6)
+          Spacer()
+        }
 
-        HStack(alignment: .center) {
-          if hasImage, isLeftImage {
-            if let imageName = contentState.imageName {
-              alignedImage(imageName: imageName)
-            }
-          }
-
-          VStack(alignment: .leading, spacing: 2) {
-            Text(contentState.title)
-              .font(.title2)
-              .fontWeight(.semibold)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.titleColor))
-
-            if let subtitle = contentState.subtitle {
-              Text(subtitle)
-                .font(.title3)
-                .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
-            }
-
-            if effectiveStretch {
-              if let date = contentState.timerEndDateInMilliseconds {
-                ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
-                  .tint(progressViewTint)
-                  .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-              } else if let startDate = contentState.elapsedTimerStartDateInMilliseconds {
-                Text(
-                  timerInterval: Date(timeIntervalSince1970: startDate / 1000)...Date.distantFuture,
-                  countsDown: false
-                )
-                .font(.system(size: 14))
-                .fontWeight(.semibold)
-                .monospacedDigit()
-                .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-              } else if let progress = contentState.progress {
-                ProgressView(value: progress)
-                  .tint(progressViewTint)
-                  .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-              }
-            }
-          }.layoutPriority(1)
-
-          if hasImage, !isLeftImage { // right side (default)
+        // Row 2: exercise name + set progress
+        if let subtitle = contentState.subtitle {
+          HStack {
+            Text(subtitle)
+              .font(.system(size: 12, weight: .semibold))
+              .foregroundStyle(.white)
+              .lineLimit(1)
             Spacer()
-            if let imageName = contentState.imageName {
-              alignedImage(imageName: imageName)
+            if let progress = contentState.progress {
+              Text(String(format: "%.0f%%", progress * 100))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(white: 0.78))
             }
           }
         }
 
-        if !effectiveStretch {
-          if let date = contentState.timerEndDateInMilliseconds {
-            ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
-              .tint(progressViewTint)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-          } else if let startDate = contentState.elapsedTimerStartDateInMilliseconds {
+        // Row 3: rest countdown or elapsed timer, large monospaced
+        if let date = contentState.timerEndDateInMilliseconds {
+          HStack {
+            Text("Rest")
+              .font(.system(size: 10, weight: .medium))
+              .foregroundStyle(Color(white: 0.78))
+            Spacer()
+            Text(timerInterval: Date.toTimerInterval(miliseconds: date))
+              .font(.system(size: 16, weight: .bold))
+              .monospacedDigit()
+              .foregroundStyle(.white)
+              .multilineTextAlignment(.trailing)
+          }
+        } else if let startDate = contentState.elapsedTimerStartDateInMilliseconds {
+          HStack {
+            Text("Elapsed")
+              .font(.system(size: 10, weight: .medium))
+              .foregroundStyle(Color(white: 0.78))
+            Spacer()
             Text(
               timerInterval: Date(timeIntervalSince1970: startDate / 1000)...Date.distantFuture,
               countsDown: false
             )
-            .font(.system(size: 14))
-            .fontWeight(.semibold)
+            .font(.system(size: 16, weight: .bold))
             .monospacedDigit()
-            .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-          } else if let progress = contentState.progress {
-            ProgressView(value: progress)
-              .tint(progressViewTint)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.trailing)
           }
+        } else if let progress = contentState.progress, contentState.subtitle == nil {
+          ProgressView(value: progress)
+            .tint(progressViewTint ?? Color(red: 0.2, green: 0.78, blue: 0.35))
         }
       }
       .padding(EdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing))

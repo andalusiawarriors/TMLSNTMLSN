@@ -284,8 +284,10 @@ const S = StyleSheet.create({
     marginBottom: 6,
   },
   lastCard: {
-    backgroundColor: '#2F3031',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: 18,
     minHeight: 55,
     flexDirection: 'row',
     alignItems: 'center',
@@ -363,9 +365,10 @@ const S = StyleSheet.create({
   // Setup button (getting started state)
   setupBtn: {
     alignSelf: 'flex-start',
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
     borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 10,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginTop: 4,

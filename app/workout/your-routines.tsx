@@ -15,12 +15,15 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+// silver gradient matches TodaysSessionCarousel start button
+const SILVER_COLORS = ['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74'] as const;
+const SILVER_LOCS   = [0, 0.37, 0.69, 1] as const;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ExercisePickerModal } from '../../components/ExercisePickerModal';
 import { Input } from '../../components/Input';
 import { Swipeable } from 'react-native-gesture-handler';
 import { getSavedRoutines, saveSavedRoutine, deleteSavedRoutine } from '../../utils/storage';
-import { Colors, Typography, Spacing, BorderRadius, Font, HeadingLetterSpacing } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { SavedRoutine, SavedRoutineExercise } from '../../types';
 import { generateId, formatDuration } from '../../utils/helpers';
 import { useButtonSound } from '../../hooks/useButtonSound';
@@ -256,30 +259,38 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                 friction={2}
                 rightThreshold={40}
               >
-                <Pressable
-                  style={({ pressed }) => [styles.routineCardWrap, pressed && { opacity: 0.9 }]}
-                  onPressIn={playIn}
-                  onPressOut={playOut}
-                  onPress={() => handleStartRoutine(routine)}
-                >
-                <Card gradientFill borderRadius={18} style={styles.routineCard}>
-                <View style={styles.routineCardLeft}>
-                  <View style={styles.routineCardIcon}>
-                    <Text style={styles.routineCardIconText}>◆</Text>
-                  </View>
-                  <View style={styles.routineCardContent}>
-                    <Text style={styles.routineCardName}>{routine.name}</Text>
-                    <View style={styles.routineCardStatsRow}>
-                      <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
+                <View style={styles.routineCard}>
+                  <View style={styles.routineCardLeft}>
+                    <View style={styles.routineCardIcon}>
+                      <Text style={styles.routineCardIconText}>◆</Text>
                     </View>
-                    <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
-                      {routine.exercises.map((e) => e.name).join(' · ')}
-                    </Text>
+                    <View style={styles.routineCardContent}>
+                      <Text style={styles.routineCardName}>{routine.name}</Text>
+                      <View style={styles.routineCardStatsRow}>
+                        <Text style={styles.routineCardStat}>{routine.exercises.length} exercises</Text>
+                      </View>
+                      <Text style={styles.routineCardPreview} numberOfLines={1} ellipsizeMode="tail">
+                        {routine.exercises.map((e) => e.name).join(' · ')}
+                      </Text>
+                    </View>
                   </View>
+                  <Pressable
+                    style={({ pressed }) => [styles.startButton, pressed && { opacity: 0.85 }]}
+                    onPressIn={playIn}
+                    onPressOut={playOut}
+                    onPress={() => handleStartRoutine(routine)}
+                  >
+                    <LinearGradient
+                      colors={SILVER_COLORS}
+                      locations={SILVER_LOCS}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.startButtonGradient}
+                    >
+                      <Text style={styles.startButtonText}>Start Routine</Text>
+                    </LinearGradient>
+                  </Pressable>
                 </View>
-                <Text style={styles.routineCardChevron}>›</Text>
-                </Card>
-              </Pressable>
               </Swipeable>
             ))}
           </View>
@@ -289,7 +300,7 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
 
       {/* ─── ROUTINE BUILDER OVERLAY (matches workout log design) ─── */}
       {showRoutineBuilder && (
-        <View style={[styles.overlay, { height: windowHeight, backgroundColor: '#1A1A1A' }]}>
+        <View style={[styles.overlay, { height: windowHeight, backgroundColor: 'rgba(47, 48, 49, 0.97)' }]}>
           <KeyboardAvoidingView
             style={styles.overlayKeyboardWrap}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -455,7 +466,7 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: 'transparent',
   },
   titleRow: {
     position: 'absolute',
@@ -483,22 +494,20 @@ const styles = StyleSheet.create({
 
   // ─── NEW ROUTINE BUTTON ───────────────────────────────────────────────────
   newRoutineButton: {
-    backgroundColor: Colors.primaryLight + '15',
-    borderRadius: 16,
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 38,
     borderWidth: 1,
-    borderColor: Colors.primaryLight + '20',
-    borderStyle: 'dashed',
-    paddingVertical: 14,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   newRoutineButtonText: {
-    fontFamily: Font.monoMedium,
-    fontSize: Typography.label,
+    fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.primaryLight + '80',
-    letterSpacing: 0.3,
+    color: '#FFFFFF',
+    letterSpacing: -0.11,
   },
 
   // ─── EMPTY STATE ──────────────────────────────────────────────────────────
@@ -513,30 +522,35 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   emptyText: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '60',
+    letterSpacing: -0.11,
     marginBottom: 4,
   },
   emptySubtext: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '40',
+    letterSpacing: -0.11,
   },
 
   // ─── ROUTINE LIST ─────────────────────────────────────────────────────────
   routineList: {
-    gap: 10,
+    gap: 12,
   },
-  routineCardWrap: {
-    marginBottom: 10,
-  },
+  routineCardWrap: {},
   routineCard: {
-    padding: 14,
-    marginVertical: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: 'rgba(47, 48, 49, 0.55)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    padding: Spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 2,
   },
   routineCardLeft: {
     flexDirection: 'row',
@@ -560,10 +574,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   routineCardName: {
-    fontFamily: Font.extraBold,
     fontSize: Typography.body,
+    fontWeight: '600' as const,
     color: Colors.primaryLight,
-    letterSpacing: HeadingLetterSpacing,
+    letterSpacing: -0.11,
     marginBottom: 2,
   },
   routineCardStatsRow: {
@@ -573,22 +587,33 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   routineCardStat: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '60',
-    letterSpacing: 0.2,
+    letterSpacing: -0.11,
   },
   routineCardPreview: {
-    fontFamily: Font.mono,
     fontSize: Typography.label,
+    fontWeight: '500' as const,
     color: Colors.primaryLight + '40',
-    letterSpacing: -0.2,
+    letterSpacing: -0.11,
   },
-  routineCardChevron: {
-    fontFamily: Font.monoMedium,
-    fontSize: 22,
-    color: Colors.primaryLight + '40',
-    paddingLeft: 8,
+  startButton: {
+    borderRadius: 38,
+    height: 44,
+    marginTop: Spacing.sm,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  startButtonText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    letterSpacing: -0.11,
+    color: '#FFFFFF',
   },
   routineDeleteAction: {
     backgroundColor: Colors.accentRed,
@@ -765,8 +790,10 @@ const styles = StyleSheet.create({
   // ─── BUILDER ADD BUTTON (matches addSetButtonBlock) ────────────────────────
   builderAddButton: {
     alignSelf: 'stretch',
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198, 198, 198, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
