@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { TMLSN_SPLITS } from '../../constants/workoutSplits';
@@ -121,7 +122,15 @@ export default function TmlsnRoutinesScreen({ onStartRoutine: onStartRoutineProp
               onPressOut={playOut}
               onPress={() => handleStartRoutine(split)}
             >
-              <Text style={styles.startButtonText}>Start Routine</Text>
+              <LinearGradient
+                colors={['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74']}
+                locations={[0, 0.37, 0.69, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.startButtonGradient}
+              >
+                <Text style={styles.startButtonText}>Start Routine</Text>
+              </LinearGradient>
             </Pressable>
           </View>
         );
@@ -296,12 +305,15 @@ const styles = StyleSheet.create({
 
   // ─── START BUTTON ─────────────────────────────────────────────────────────
   startButton: {
-    backgroundColor: '#C6C6C6',
     borderRadius: 38,
     height: 44,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
   },
   startButtonText: {
     fontSize: 14,

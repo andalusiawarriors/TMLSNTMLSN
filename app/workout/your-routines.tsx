@@ -15,6 +15,9 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+// silver gradient matches TodaysSessionCarousel start button
+const SILVER_COLORS = ['#B8BABC', '#D6D8DA', '#A0A4A8', '#6B6F74'] as const;
+const SILVER_LOCS   = [0, 0.37, 0.69, 1] as const;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ExercisePickerModal } from '../../components/ExercisePickerModal';
 import { Input } from '../../components/Input';
@@ -277,7 +280,15 @@ export default function YourRoutinesScreen({ onStartRoutine: onStartRoutineProp 
                     onPressOut={playOut}
                     onPress={() => handleStartRoutine(routine)}
                   >
-                    <Text style={styles.startButtonText}>Start Routine</Text>
+                    <LinearGradient
+                      colors={SILVER_COLORS}
+                      locations={SILVER_LOCS}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.startButtonGradient}
+                    >
+                      <Text style={styles.startButtonText}>Start Routine</Text>
+                    </LinearGradient>
                   </Pressable>
                 </View>
               </Swipeable>
@@ -588,12 +599,15 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
   },
   startButton: {
-    backgroundColor: '#C6C6C6',
     borderRadius: 38,
     height: 44,
+    marginTop: Spacing.sm,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: Spacing.sm,
   },
   startButtonText: {
     fontSize: 14,

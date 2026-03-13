@@ -483,7 +483,7 @@ const S = StyleSheet.create({
     color: '#C6C6C6',
   },
   toolsSection: {
-    paddingHorizontal: PAD,
+    paddingHorizontal: 4,
     paddingBottom: 32,
   },
   toolList: {
@@ -493,6 +493,7 @@ const S = StyleSheet.create({
     height: 1,
     backgroundColor: BORDER,
     marginBottom: 20,
+    marginHorizontal: 12,
   },
   toolsLabel: {
     fontSize: 11,
@@ -501,6 +502,7 @@ const S = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#ABABAB',
     marginBottom: 14,
+    paddingHorizontal: 12,
   },
 
   overlayRoot:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
