@@ -36,6 +36,11 @@ export type ProgressionDecision = {
    * Weight increases when this reaches 2. Reset to 0 after weight increase or miss.
    */
   nextConsecutiveAtTop: number;
+  /**
+   * Updated sessions-at-current-weight counter.
+   * Reset to 0 on weight increase, incremented each session otherwise.
+   */
+  nextSessionsAtCurrentWeight: number;
   /** Legacy goal for exercise_progress_state compatibility */
   goal: 'add_load' | 'add_reps' | 'reduce_load';
   debug: {
@@ -109,6 +114,13 @@ export type ProgressionInput = {
    *   rpeDelta < -1 → user is cruising easier than usual → +1 bonus to jump
    */
   rpeBaseline?: number | null;
+  /**
+   * Sessions completed at the current working weight since the last weight increase.
+   * During the grace period (< GRACE_SESSIONS), a miss does NOT increment consecutiveFailure
+   * and the band cannot drop — the user is still adapting to the new load.
+   * Defaults to 0 (no grace protection) for existing exercises.
+   */
+  sessionsAtCurrentWeight?: number;
 };
 
 // ─── Increment table ──────────────────────────────────────────────────────────
@@ -369,6 +381,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       reason: 'Calibrating — your first session sets your baseline. Progression starts next session.',
       nextBand: 'easy',
       nextConsecutiveAtTop: 0,
+      nextSessionsAtCurrentWeight: 0,
       goal: 'add_reps',
       debug: {
         hitThreshold,
@@ -414,6 +427,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
       reason: 'This is your deload week. Weight reduced to 50% to allow full recovery.',
       nextBand: currentBand, // band never changes during a deload week
       nextConsecutiveAtTop: 0,
+      nextSessionsAtCurrentWeight: (input.sessionsAtCurrentWeight ?? 0) + 1,
       goal: 'reduce_load',
       debug: {
         hitThreshold,
@@ -436,16 +450,24 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   }
 
   // ── Step 4: Evaluate rep performance and update band ─────────────────────
+  const currentSessionsAtWeight = input.sessionsAtCurrentWeight ?? 0;
+  // Grace period: first 2 sessions at a new weight are adaptation sessions.
+  // Misses during grace don't count as failures (band can't drop, counter unchanged).
+  const GRACE_SESSIONS = 2;
+  const inGracePeriod = currentSessionsAtWeight < GRACE_SESSIONS;
+
   let newConsecutiveSuccess = consecutiveSuccess;
   let newConsecutiveFailure = consecutiveFailure;
 
   if (hitThreshold) {
     newConsecutiveSuccess += 1;
     newConsecutiveFailure = 0;
-  } else {
+  } else if (!inGracePeriod) {
+    // Only penalise misses outside the grace window
     newConsecutiveFailure += 1;
     newConsecutiveSuccess = 0;
   }
+  // (during grace: leave both counters unchanged on a miss)
 
   const nextBand: DifficultyBand = blitzMode
     ? 'extreme'
@@ -462,6 +484,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
   let nextWeightKg: number;
   let nextRepTarget: number;
   let nextConsecutiveAtTop: number;
+  let nextSessionsAtCurrentWeight: number;
   let reason: string;
   let branch: string;
 
@@ -478,6 +501,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextWeightKg = roundToIncrement(rawNextKg, incrementKg);
     nextRepTarget = repRangeLow;
     nextConsecutiveAtTop = 0;
+    nextSessionsAtCurrentWeight = 0; // reset: new weight starts a fresh grace window
     reason = `Hit ${repRangeHigh} reps for ${WEIGHT_GATE} sessions in a row — weight goes up next session.`;
     branch = blitzMode ? 'blitz_add_weight' : 'hit_top_add_weight';
   } else if (hitThreshold && atTopOfRange) {
@@ -486,6 +510,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextWeightKg = baseWeightKg;
     nextRepTarget = repRangeHigh;
     nextConsecutiveAtTop = currentConsecutiveAtTop + 1;
+    nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
     reason = `Hit ${repRangeHigh} reps — do it again next session to earn the weight increase.`;
     branch = 'confirm_top';
   } else if (hitThreshold) {
@@ -495,6 +520,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     const jump = computeAdaptiveJump(workSets, effectiveTarget, repRangeLow, repRangeHigh, rpeDelta, intraSessionFatigue);
     nextRepTarget = Math.min(effectiveTarget + jump, repRangeHigh);
     nextConsecutiveAtTop = 0;
+    nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
     reason = jump > 1
       ? `Hit ${effectiveTarget} reps comfortably (+${jump}) — aiming for ${nextRepTarget} next session.`
       : `Hit ${effectiveTarget} reps — aiming for ${nextRepTarget} next session.`;
@@ -505,8 +531,11 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     nextWeightKg = baseWeightKg;
     nextRepTarget = effectiveTarget;
     nextConsecutiveAtTop = 0;
-    reason = `Aim for ${effectiveTarget} reps — hit 70%+ of sets to advance.`;
-    branch = 'hold_cursor';
+    nextSessionsAtCurrentWeight = currentSessionsAtWeight + 1;
+    reason = inGracePeriod
+      ? `Adaptation session ${currentSessionsAtWeight + 1}/${GRACE_SESSIONS} at this weight — keep going.`
+      : `Aim for ${effectiveTarget} reps — hit 70%+ of sets to advance.`;
+    branch = inGracePeriod ? 'grace_period' : 'hold_cursor';
   }
 
   const nextWeightLb =
@@ -527,6 +556,7 @@ export function decideNextPrescription(input: ProgressionInput): ProgressionDeci
     reason,
     nextBand,
     nextConsecutiveAtTop,
+    nextSessionsAtCurrentWeight,
     goal,
     debug: {
       hitThreshold,       // true = hit effectiveTarget (drives cursor advance)
@@ -578,6 +608,7 @@ export function prescriptionToDecision(
     reason,
     nextBand: 'easy',
     nextConsecutiveAtTop: 0,
+    nextSessionsAtCurrentWeight: 0,
     goal,
     debug: {
       hitThreshold: false,
