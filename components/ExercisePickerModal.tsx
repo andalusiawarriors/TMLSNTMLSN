@@ -12,7 +12,7 @@ import {
   Pressable,
   ScrollView,
   TextInput,
-  FlatList,
+  SectionList,
   Platform,
   Dimensions,
 } from 'react-native';
@@ -27,9 +27,11 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY } from '../utils/exerciseDb/exerciseDatabase';
+import { EXERCISE_DATABASE, EXERCISES_BY_CATEGORY, searchExercises } from '../utils/exerciseDb/exerciseDatabase';
 import type { Exercise as DbExercise } from '../utils/exerciseDb/types';
 import * as Theme from '../constants/theme';
+import { CreateExerciseAISheet } from './CreateExerciseAISheet';
+import type { CreateExerciseInput } from '../utils/exerciseDb/types';
 
 const { Colors, Typography, Spacing } = Theme;
 
@@ -61,6 +63,10 @@ interface ExercisePickerModalProps {
   onClose: () => void;
   onSelect: (exercise: { id: string; name: string; exerciseDbId: string; restTimer: number }) => void;
   defaultRestTimer?: number;
+  /** User-created exercises to merge with built-in. Fetched from user_exercises when signed in. */
+  userExercises?: DbExercise[];
+  /** Create custom exercise. When provided, shows "Create exercise" row. Returns created exercise or null. */
+  onCreateExercise?: (data: CreateExerciseInput) => Promise<DbExercise | null>;
 }
 
 export function ExercisePickerModal({
@@ -68,10 +74,14 @@ export function ExercisePickerModal({
   onClose,
   onSelect,
   defaultRestTimer = 120,
+  userExercises = [],
+  onCreateExercise,
 }: ExercisePickerModalProps) {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showCreateSheet, setShowCreateSheet] = useState(false);
+  const [localUserExercises, setLocalUserExercises] = useState<DbExercise[]>(userExercises);
 
   // ── Drag-to-close (attached to header only) ──────
   const translateY = useSharedValue(CLOSED_Y);
@@ -115,24 +125,51 @@ export function ExercisePickerModal({
     }
   }, [visible, translateY, backdropOpacity]);
 
-  const categories = useMemo(
-    () => Object.keys(EXERCISES_BY_CATEGORY).sort(),
-    []
-  );
+  const effectiveUserExercises = localUserExercises.length > 0 ? localUserExercises : (userExercises ?? []);
+
+  const categories = useMemo(() => {
+    const fromBuiltIn = new Set(Object.keys(EXERCISES_BY_CATEGORY));
+    effectiveUserExercises.forEach((ex) => fromBuiltIn.add(ex.category));
+    return Array.from(fromBuiltIn).sort();
+  }, [effectiveUserExercises]);
+
+  const handleCreateExercise = async (data: CreateExerciseInput) => {
+    if (!onCreateExercise) return null;
+    const created = await onCreateExercise(data);
+    if (created) {
+      setShowCreateSheet(false);
+      setLocalUserExercises((prev) => [...prev, created]);
+      onSelect({ id: created.id, name: created.name, exerciseDbId: created.id, restTimer: defaultRestTimer });
+      closeWithAnimation();
+      return created;
+    }
+    return null;
+  };
 
   const filteredExercises = useMemo(() => {
-    const cat = selectedCategory
-      ? EXERCISES_BY_CATEGORY[selectedCategory] ?? []
-      : EXERCISE_DATABASE;
-    const q = search.toLowerCase().trim();
-    if (!q) return cat;
-    return cat.filter(
-      (ex) =>
-        ex.name.toLowerCase().includes(q) ||
-        ex.category.toLowerCase().includes(q) ||
-        ex.equipment.some((e) => e.toLowerCase().includes(q))
-    );
-  }, [search, selectedCategory]);
+    const builtIn = EXERCISE_DATABASE;
+    const user = effectiveUserExercises;
+    const base = search.trim()
+      ? searchExercises(search, builtIn, user)
+      : [...builtIn, ...user];
+    if (selectedCategory) {
+      return base.filter((ex) => ex.category === selectedCategory);
+    }
+    return base;
+  }, [search, selectedCategory, effectiveUserExercises]);
+
+  // Group exercises into alphabetical sections for SectionList
+  const exerciseSections = useMemo(() => {
+    const map: Record<string, DbExercise[]> = {};
+    for (const ex of filteredExercises) {
+      const letter = ex.name[0]?.toUpperCase() ?? '#';
+      if (!map[letter]) map[letter] = [];
+      map[letter].push(ex);
+    }
+    return Object.keys(map)
+      .sort()
+      .map((letter) => ({ title: letter, data: map[letter] }));
+  }, [filteredExercises]);
 
   const handleSelect = (ex: DbExercise) => {
     onSelect({ id: ex.id, name: ex.name, exerciseDbId: ex.id, restTimer: defaultRestTimer });
@@ -162,23 +199,25 @@ export function ExercisePickerModal({
               <View style={styles.grabber} />
               <View style={styles.headerRow}>
                 <Text style={styles.title}>add exercise</Text>
-                <Pressable
-                  style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-                  onPress={closeWithAnimation}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="close" size={18} color={Colors.primaryLight} />
-                </Pressable>
+                <View style={styles.headerActions}>
+                  <Pressable
+                    style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
+                    onPress={closeWithAnimation}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={18} color={Colors.primaryLight} />
+                  </Pressable>
+                </View>
               </View>
 
               {/* SEARCH */}
               <View style={styles.searchWrap}>
-                <Ionicons name="search" size={18} color={Colors.primaryLight + '60'} style={styles.searchIcon} />
+                <Ionicons name="search" size={18} color="#C6C6C6" style={styles.searchIcon} />
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
                   placeholder="search exercises..."
-                  placeholderTextColor={Colors.primaryLight + '40'}
+                  placeholderTextColor="rgba(198,198,198,0.4)"
                   style={styles.searchInput}
                   autoCorrect={false}
                   autoCapitalize="none"
@@ -228,28 +267,58 @@ export function ExercisePickerModal({
 
           {/* LIST (only this scrolls) */}
           <View style={styles.listWrap}>
-            <FlatList
-              data={filteredExercises}
+            <SectionList
+              sections={exerciseSections}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <Pressable
-                  style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                  onPress={() => handleSelect(item)}
-                >
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {item.equipment.join(', ')} · {item.movementType}
-                    </Text>
-                  </View>
-                  <View style={styles.addBtn}>
-                    <Ionicons name="add" size={16} color={Colors.primaryLight + '60'} />
-                  </View>
-                </Pressable>
+              stickySectionHeadersEnabled={false}
+              renderSectionHeader={({ section: { title } }) => (
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionHeaderText}>{title}</Text>
+                </View>
               )}
+              renderItem={({ item, index, section }) => {
+                const isCustom = effectiveUserExercises.some((e) => e.id === item.id);
+                const isLast = index === section.data.length - 1;
+                return (
+                  <Pressable
+                    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                    onPress={() => handleSelect(item)}
+                  >
+                    <View style={styles.rowInner}>
+                      <View style={styles.rowText}>
+                        <View style={styles.rowNameRow}>
+                          <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                          {isCustom && (
+                            <View style={styles.customPill}>
+                              <Text style={styles.customPillText}>custom</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.rowMeta} numberOfLines={1}>
+                          {item.equipment.join(', ')} · {item.movementType}
+                        </Text>
+                      </View>
+                      <View style={styles.addBtn}>
+                        <Ionicons name="add" size={16} color="#C6C6C6" />
+                      </View>
+                    </View>
+                    {!isLast && <View style={styles.rowDivider} />}
+                  </Pressable>
+                );
+              }}
+              ListHeaderComponent={
+                onCreateExercise ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.createPill, pressed && styles.createPillPressed]}
+                    onPress={() => setShowCreateSheet(true)}
+                  >
+                    <Text style={styles.createPillText}>+ Create Exercise</Text>
+                  </Pressable>
+                ) : null
+              }
               ListEmptyComponent={
                 <View style={styles.emptyWrap}>
                   <Text style={styles.emptyText}>No exercises match your search.</Text>
@@ -262,6 +331,12 @@ export function ExercisePickerModal({
           </Pressable>
         </Animated.View>
       </View>
+
+      <CreateExerciseAISheet
+        visible={showCreateSheet}
+        onClose={() => setShowCreateSheet(false)}
+        onSave={handleCreateExercise}
+      />
     </Modal>
   );
 }
@@ -290,7 +365,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderTopLeftRadius: 38,
     borderTopRightRadius: 38,
-    backgroundColor: Colors.primaryDarkLighter,
+    backgroundColor: '#2F3031',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
@@ -323,6 +398,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.11,
     color: Colors.primaryLight,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   closeBtn: {
     width: 36,
     height: 36,
@@ -336,30 +416,29 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   searchWrap: {
-    height: 48,
-    borderRadius: 38,
+    height: 44,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(198,198,198,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(198,198,198,0.18)',
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
   },
   searchIcon: {
-    marginRight: 10,
+    marginRight: 8,
     alignSelf: 'center',
   },
   searchInput: {
     flex: 1,
-    height: 48,
+    height: 44,
     paddingVertical: 0,
     marginTop: 0,
     marginBottom: 0,
     fontSize: 15,
-    lineHeight: 17,
-    color: Colors.primaryLight,
+    color: '#FFFFFF',
     ...(Platform.OS === 'android' ? { textAlignVertical: 'center' } : {}),
   },
   chipsWrap: {
@@ -403,46 +482,97 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.xs,
     paddingBottom: Spacing.md,
-    gap: 7,
+  },
+  sectionHeader: {
+    backgroundColor: 'rgba(198,198,198,0.04)',
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.md,
+  },
+  sectionHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: '#C6C6C6',
+    textTransform: 'uppercase',
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
     paddingHorizontal: Spacing.md,
-    borderRadius: R,
-    backgroundColor: Colors.primaryLight + '09',
   },
   rowPressed: {
-    backgroundColor: Colors.primaryLight + '15',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  rowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 64,
+    paddingVertical: 12,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginLeft: 0,
   },
   rowText: {
     flex: 1,
     marginRight: Spacing.sm,
   },
+  rowNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   rowName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
-    letterSpacing: -0.11,
-    color: Colors.primaryLight,
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  customPill: {
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(198,198,198,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+  },
+  customPillText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#C6C6C6',
   },
   rowMeta: {
-    fontSize: Typography.label,
+    fontSize: 12,
     fontWeight: '500',
-    letterSpacing: -0.11,
-    color: Colors.primaryLight + '70',
+    color: '#C6C6C6',
     marginTop: 2,
   },
   addBtn: {
     width: 28,
     height: 28,
     borderRadius: R,
-    backgroundColor: Colors.primaryLight + '0E',
+    backgroundColor: 'rgba(198,198,198,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  createPill: {
+    height: 44,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(198,198,198,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  createPillPressed: {
+    backgroundColor: 'rgba(198,198,198,0.06)',
+  },
+  createPillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#C6C6C6',
   },
   emptyWrap: {
     paddingTop: Spacing.xl,

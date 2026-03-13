@@ -51,9 +51,19 @@ export type ExerciseCategory =
 export type MovementType = 'compound' | 'isolation';
 export type ForceType = 'push' | 'pull' | 'legs' | 'static' | 'hinge' | 'rotation';
 
+/** How weight should be entered for this exercise. Resolves ambiguity for dumbbell/bilateral movements. */
+export type LoadEntryMode = 'total' | 'per_hand' | 'per_side';
+
+/** Bilateral = both arms/legs; unilateral = single arm/leg. */
+export type Laterality = 'bilateral' | 'unilateral';
+
+/** builtin = from EXERCISE_DATABASE; user = from user_exercises table. */
+export type ExerciseScope = 'builtin' | 'user';
+
 export interface Exercise {
   id: string;
   name: string;
+  overloadCategory: 'compound_big' | 'compound_small' | 'isolation';
   category: ExerciseCategory;
   equipment: EquipmentType[];
   movementType: MovementType;
@@ -61,6 +71,28 @@ export interface Exercise {
   muscles: MuscleTarget[];
   description: string;
   tips?: string;
+  /** Search aliases (e.g. "single arm lateral raise", "one arm curl"). */
+  aliases?: string[];
+  /** Bilateral vs unilateral. */
+  laterality?: Laterality;
+  /** Base movement family for grouping (e.g. "lateral_raise", "curl"). */
+  baseMovementId?: string;
+  /** How weight is entered: total, per hand, or per side. */
+  loadEntryMode?: LoadEntryMode;
+  /** builtin = from DB; user = from user_exercises. */
+  scope?: ExerciseScope;
+  /** Only when scope === 'user'. */
+  userId?: string;
+}
+
+/** Input for creating a user exercise. */
+export interface CreateExerciseInput {
+  name: string;
+  category: ExerciseCategory;
+  equipment: EquipmentType[];
+  laterality: Laterality;
+  loadEntryMode: LoadEntryMode;
+  description?: string;
 }
 
 // ── Weekly Muscle Tracking ──────────────────────────────────

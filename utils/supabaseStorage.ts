@@ -13,7 +13,9 @@
  * - prompts: user_id + id PK; title, summary, full_text, source, source_url, date_added, category
  */
 
+import { v5 as uuidv5 } from 'uuid';
 import { supabase } from '../lib/supabase';
+import type { Database } from '../types/supabase';
 import {
   NutritionLog,
   WorkoutSession,
@@ -21,6 +23,7 @@ import {
   Set,
   Prompt,
   UserSettings,
+  TrainingSettings,
   SavedRoutine,
   SavedFood,
   Meal,
@@ -28,9 +31,557 @@ import {
 } from '../types';
 import { DEFAULT_SETTINGS } from '../constants/storageDefaults';
 import { resolveExerciseDbIdFromName } from './workoutMuscles';
+import {
+  decideNextPrescription,
+  isDeloadWeek,
+  type DifficultyBand,
+  type OverloadCategory,
+} from '../lib/progression/decideNextPrescription';
+import { EXERCISE_MAP } from './exerciseDb/exerciseDatabase';
+import type { Exercise as DbExercise, CreateExerciseInput } from './exerciseDb/types';
 
 // workout_sets column for set ordering (DB may use set_number, set_order, order, etc.)
 const SET_ORDER_COLUMN = 'set_number';
+
+// --- Deload week counter helpers ---
+
+/** Returns the ISO week number (1-53) for a given date. */
+function getISOWeek(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+/** Returns "YYYY-WW" string for comparing calendar weeks. */
+function isoWeekKey(date: Date): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const year = d.getUTCFullYear();
+  const week = getISOWeek(date);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/**
+ * Update the deload week counter in training_settings after a session is saved.
+ *
+ * Rules from the spec:
+ *  - Same calendar week as last session → counter stays the same
+ *  - New calendar week → counter increments by 1
+ *  - Gap of 7+ days (natural break) → counter resets to 0 (acts as a deload)
+ *  - If this session WAS a deload week → reset counter to 0 after it
+ */
+async function updateDeloadWeekCounter(
+  userId: string,
+  sessionDateStr: string,
+  wasDeloadWeek: boolean
+): Promise<void> {
+  if (!supabase) return;
+
+  const { data: row } = await supabase
+    .from('training_settings')
+    .select('deload_week_counter,last_workout_date')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const sessionDate = new Date(sessionDateStr);
+  const currentCounter = Number(row?.deload_week_counter ?? 0);
+  const lastWorkoutDate = row?.last_workout_date ? new Date(row.last_workout_date) : null;
+
+  let nextCounter: number;
+
+  if (wasDeloadWeek) {
+    // Just completed a deload week — reset so the next 4-week cycle starts fresh
+    nextCounter = 0;
+  } else if (!lastWorkoutDate) {
+    // First ever session
+    nextCounter = 1;
+  } else {
+    const daysBetween = Math.floor(
+      (sessionDate.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysBetween >= 7) {
+      // Natural break of 7+ days acts as a deload — reset counter
+      nextCounter = 1;
+    } else if (isoWeekKey(sessionDate) !== isoWeekKey(lastWorkoutDate)) {
+      // New calendar week — increment
+      nextCounter = currentCounter + 1;
+    } else {
+      // Same week — no change
+      nextCounter = currentCounter;
+    }
+  }
+
+  await supabase
+    .from('training_settings')
+    .upsert(
+      {
+        user_id: userId,
+        deload_week_counter: nextCounter,
+        last_workout_date: sessionDateStr.split('T')[0], // store DATE only
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+}
+
+// --- Progressive overload (canonical engine) ---
+
+type PrescriptionMeta = {
+  repRangeLow: number;
+  repRangeHigh: number;
+  smallestIncrement: number;
+  defaultTargetRpe: number;
+  // Band system fields (from exercise_progress_state)
+  overloadCategory: OverloadCategory;
+  currentBand: DifficultyBand;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  isCalibrating: boolean;
+  isDeloadWeek: boolean;
+  blitzMode: boolean;
+  avgRpeLast3Sessions?: number | null;
+  /** Persisted rep cursor from next_target_reps. Null/undefined → defaults to repRangeLow. */
+  currentTargetReps?: number | null;
+  /** Sessions in a row where cursor was at repRangeHigh and threshold was hit. */
+  consecutiveAtTop?: number;
+  /** Sessions at current working weight. < 2 = grace period (misses don't penalise). */
+  sessionsAtCurrentWeight?: number;
+  /**
+   * Personal RPE baseline for this exercise — rolling EMA (α=0.3) of past session avg RPEs.
+   * null = no history yet.
+   */
+  rpeBaseline?: number | null;
+  /** Rolling window of last ≤3 session hit-% scores (item #10). */
+  recentSessionScores?: number[];
+  /** Consecutive genuine misses without rep cursor advancing (item #12). */
+  sessionsWithoutProgress?: number;
+  /** EMA of sessions-per-weight-increase for this exercise (item #9). */
+  avgSessionsPerWeightIncrease?: number | null;
+};
+
+type PrescriptionSet = { weight: number; reps: number; rpe: number | null; completed: boolean };
+
+export type WorkoutStreakStateRow = {
+  streakStartYmd: string | null;
+  lastWorkoutYmd: string | null;
+  lastWorkoutAt: string | null;
+  streakDead: boolean;
+  exemptWeek: string | null;
+};
+
+export async function supabaseGetWorkoutStreak(userId: string): Promise<WorkoutStreakStateRow | null> {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('workout_streaks')
+    .select('streak_start_ymd,last_workout_ymd,last_workout_at,streak_dead,exempt_week')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase get workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+
+  if (!data) return null;
+  return {
+    streakStartYmd: data.streak_start_ymd != null ? String(data.streak_start_ymd) : null,
+    lastWorkoutYmd: data.last_workout_ymd != null ? String(data.last_workout_ymd) : null,
+    lastWorkoutAt: data.last_workout_at != null ? String(data.last_workout_at) : null,
+    streakDead: Boolean(data.streak_dead ?? false),
+    exemptWeek: data.exempt_week != null ? String(data.exempt_week) : null,
+  };
+}
+
+export async function supabaseUpsertWorkoutStreak(
+  userId: string,
+  state: WorkoutStreakStateRow
+): Promise<void> {
+  if (!supabase) return;
+
+  const row: Database['public']['Tables']['workout_streaks']['Insert'] = {
+    user_id: userId,
+    streak_start_ymd: state.streakStartYmd,
+    last_workout_ymd: state.lastWorkoutYmd,
+    last_workout_at: state.lastWorkoutAt,
+    streak_dead: state.streakDead,
+    exempt_week: state.exemptWeek,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('workout_streaks')
+    .upsert(row, { onConflict: 'user_id' });
+
+  if (error) {
+    console.error('Supabase upsert workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+}
+
+export async function supabaseDeleteWorkoutStreak(userId: string): Promise<void> {
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from('workout_streaks')
+    .delete()
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('Supabase delete workout streak:', JSON.stringify(error, null, 2));
+    throw error;
+  }
+}
+
+/** Uses canonical progression engine with full band system. */
+function computeNextPrescription(
+  meta: PrescriptionMeta,
+  sets: PrescriptionSet[],
+  _weightUnit: 'kg' | 'lb'
+): {
+  nextWeight: number;
+  nextRepTarget: number;
+  nextConsecutiveAtTop: number;
+  nextSessionsAtCurrentWeight: number;
+  nextRpeBaseline: number | null;
+  nextRecentSessionScores: number[];
+  nextSessionsWithoutProgress: number;
+  nextAvgSessionsPerWeightIncrease: number | null;
+  goal: 'add_load' | 'add_reps' | 'reduce_load';
+  nextBand: DifficultyBand;
+  reason: string;
+} | null {
+  const decision = decideNextPrescription({
+    sets,
+    repRangeLow: meta.repRangeLow,
+    repRangeHigh: meta.repRangeHigh,
+    overloadCategory: meta.overloadCategory,
+    currentBand: meta.currentBand,
+    consecutiveSuccess: meta.consecutiveSuccess,
+    consecutiveFailure: meta.consecutiveFailure,
+    isCalibrating: meta.isCalibrating,
+    isDeloadWeek: meta.isDeloadWeek,
+    blitzMode: meta.blitzMode,
+    avgRpeLast3Sessions: meta.avgRpeLast3Sessions,
+    currentTargetReps: meta.currentTargetReps ?? undefined,
+    consecutiveAtTop: meta.consecutiveAtTop ?? 0,
+    rpeBaseline: meta.rpeBaseline ?? null,
+    recentSessionScores: meta.recentSessionScores ?? [],
+    sessionsWithoutProgress: meta.sessionsWithoutProgress ?? 0,
+    avgSessionsPerWeightIncrease: meta.avgSessionsPerWeightIncrease ?? null,
+  });
+  if (!decision) return null;
+
+  // Update RPE baseline via EMA (α=0.3): blends new session avg into personal history.
+  const sessionAvgRpe = decision.debug.avgRpe;
+  const nextRpeBaseline = sessionAvgRpe != null
+    ? (meta.rpeBaseline == null ? sessionAvgRpe : meta.rpeBaseline * 0.7 + sessionAvgRpe * 0.3)
+    : meta.rpeBaseline ?? null;
+
+  return {
+    nextWeight: decision.nextWeightLb,
+    nextRepTarget: decision.nextRepTarget,
+    nextConsecutiveAtTop: decision.nextConsecutiveAtTop,
+    nextSessionsAtCurrentWeight: decision.nextSessionsAtCurrentWeight,
+    nextRpeBaseline,
+    nextRecentSessionScores: decision.nextRecentSessionScores,
+    nextSessionsWithoutProgress: decision.nextSessionsWithoutProgress,
+    nextAvgSessionsPerWeightIncrease: decision.nextAvgSessionsPerWeightIncrease,
+    goal: decision.goal,
+    nextBand: decision.nextBand,
+    reason: decision.reason,
+  };
+}
+
+/** Resolve overload category from exercise DB id or name. Defaults to compound_small. */
+export function resolveOverloadCategory(exerciseDbId: string | null | undefined, exerciseName: string): OverloadCategory {
+  const id = exerciseDbId ?? resolveExerciseDbIdFromName(exerciseName);
+  if (id) {
+    const ex = EXERCISE_MAP.get(id);
+    if (ex?.overloadCategory) return ex.overloadCategory as OverloadCategory;
+  }
+  return 'compound_small';
+}
+
+async function saveExercisePrescription(params: {
+  userId: string;
+  exerciseId: string;
+  nextWeight: number;
+  nextRepTarget: number;
+  nextConsecutiveAtTop: number;
+  nextSessionsAtCurrentWeight: number;
+  nextRpeBaseline: number | null;
+  nextRecentSessionScores: number[];
+  nextSessionsWithoutProgress: number;
+  nextAvgSessionsPerWeightIncrease: number | null;
+  repRangeLow: number;
+  repRangeHigh: number;
+  goal: 'add_load' | 'add_reps' | 'reduce_load';
+  nextBand: DifficultyBand;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  isCalibrating: boolean;
+  reason: string;
+}): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('exercise_progress_state').upsert(
+    {
+      user_id: params.userId,
+      exercise_id: params.exerciseId,
+      variant_key: 'default',
+      next_target_weight: params.nextWeight,
+      next_target_reps: params.nextRepTarget,
+      consecutive_at_top: params.nextConsecutiveAtTop,
+      sessions_at_current_weight: params.nextSessionsAtCurrentWeight,
+      rpe_baseline: params.nextRpeBaseline,
+      recent_session_scores: params.nextRecentSessionScores,
+      sessions_without_progress: params.nextSessionsWithoutProgress,
+      avg_sessions_per_weight_increase: params.nextAvgSessionsPerWeightIncrease,
+      rep_range_low: params.repRangeLow,
+      rep_range_high: params.repRangeHigh,
+      next_goal_type: params.goal,
+      difficulty_band: params.nextBand,
+      consecutive_success: params.consecutiveSuccess,
+      consecutive_failure: params.consecutiveFailure,
+      is_calibrating: params.isCalibrating,
+      progression_reason: params.reason,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,exercise_id,variant_key' }
+  );
+  if (error) {
+    console.error('Supabase save exercise prescription:', error);
+  }
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const EXERCISE_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+function toExerciseProgressId(exerciseId: string): string {
+  if (UUID_REGEX.test(exerciseId)) return exerciseId;
+  return uuidv5(exerciseId, EXERCISE_NAMESPACE);
+}
+
+function sortSessionsChronologically(sessions: WorkoutSession[]): WorkoutSession[] {
+  return [...sessions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+function toSessionDay(sessionDate: string): string {
+  return sessionDate.split('T')[0] ?? sessionDate;
+}
+
+function recomputeDeloadWeekCounterFromHistory(
+  currentCounter: number,
+  sessionDateStr: string,
+  wasDeloadWeek: boolean,
+  lastWorkoutDateStr: string | null
+): { nextCounter: number; nextLastWorkoutDate: string } {
+  const sessionDate = new Date(sessionDateStr);
+  const lastWorkoutDate = lastWorkoutDateStr ? new Date(lastWorkoutDateStr) : null;
+
+  let nextCounter: number;
+  if (wasDeloadWeek) {
+    nextCounter = 0;
+  } else if (!lastWorkoutDate) {
+    nextCounter = 1;
+  } else {
+    const daysBetween = Math.floor(
+      (sessionDate.getTime() - lastWorkoutDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysBetween >= 7) {
+      nextCounter = 1;
+    } else if (isoWeekKey(sessionDate) !== isoWeekKey(lastWorkoutDate)) {
+      nextCounter = currentCounter + 1;
+    } else {
+      nextCounter = currentCounter;
+    }
+  }
+
+  return {
+    nextCounter,
+    nextLastWorkoutDate: toSessionDay(sessionDateStr),
+  };
+}
+
+async function recomputeDerivedWorkoutState(userId: string): Promise<void> {
+  if (!supabase) return;
+
+  const sessions = sortSessionsChronologically(await supabaseGetWorkoutSessions(userId));
+
+  if (sessions.length === 0) {
+    await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
+    await supabase
+      .from('training_settings')
+      .upsert(
+        {
+          user_id: userId,
+          deload_week_counter: 0,
+          last_workout_date: null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+    return;
+  }
+
+  const userSettings = await supabaseGetUserSettings(userId);
+  const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+
+  const progressByExercise = new Map<string, {
+    nextWeight: number | null;
+    nextTargetReps: number | null;
+    consecutiveAtTop: number;
+    sessionsAtCurrentWeight: number;
+    rpeBaseline: number | null;
+    recentSessionScores: number[];
+    sessionsWithoutProgress: number;
+    avgSessionsPerWeightIncrease: number | null;
+    repRangeLow: number;
+    repRangeHigh: number;
+    goal: 'add_load' | 'add_reps' | 'reduce_load';
+    band: DifficultyBand;
+    success: number;
+    failure: number;
+    calibrating: boolean;
+    reason: string;
+  }>();
+
+  let deloadWeekCounter = 0;
+  let lastWorkoutDate: string | null = null;
+
+  for (const session of sessions) {
+    const deloadThisWeek = isDeloadWeek(deloadWeekCounter);
+
+    for (const ex of session.exercises ?? []) {
+      if (!ex.sets?.length) continue;
+
+      const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
+      const exerciseId = toExerciseProgressId(canonicalId);
+      const existing = progressByExercise.get(exerciseId);
+      const isCalibrating = existing ? existing.calibrating : true;
+
+      const repRangeLow = ex.repRangeLow ?? 8;
+      const repRangeHigh = ex.repRangeHigh ?? 12;
+      // Cursor: use what was computed last session, or start at repRangeLow.
+      const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
+      const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
+      const sessionsAtCurrentWeight = existing?.sessionsAtCurrentWeight ?? 0;
+      const rpeBaseline = existing?.rpeBaseline ?? null;
+      const recentSessionScores = existing?.recentSessionScores ?? [];
+      const sessionsWithoutProgress = existing?.sessionsWithoutProgress ?? 0;
+      const avgSessionsPerWeightIncrease = existing?.avgSessionsPerWeightIncrease ?? null;
+
+      const meta: PrescriptionMeta = {
+        repRangeLow,
+        repRangeHigh,
+        smallestIncrement: ex.smallestIncrement ?? 2.5,
+        defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
+        overloadCategory: resolveOverloadCategory(ex.exerciseDbId, ex.name),
+        currentBand: existing?.band ?? 'easy',
+        consecutiveSuccess: existing?.success ?? 0,
+        consecutiveFailure: existing?.failure ?? 0,
+        isCalibrating,
+        isDeloadWeek: deloadThisWeek,
+        blitzMode: false,
+        currentTargetReps,
+        consecutiveAtTop,
+        sessionsAtCurrentWeight,
+        rpeBaseline,
+        recentSessionScores,
+        sessionsWithoutProgress,
+        avgSessionsPerWeightIncrease,
+      };
+
+      const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
+        weight: Number(s.weight ?? 0),
+        reps: Number(s.reps ?? 0),
+        rpe: s.rpe ?? null,
+        completed: Boolean(s.completed ?? false),
+      }));
+
+      const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
+      if (!prescription) continue;
+
+      progressByExercise.set(exerciseId, {
+        nextWeight: prescription.nextWeight,
+        nextTargetReps: prescription.nextRepTarget,
+        consecutiveAtTop: prescription.nextConsecutiveAtTop,
+        sessionsAtCurrentWeight: prescription.nextSessionsAtCurrentWeight,
+        rpeBaseline: prescription.nextRpeBaseline,
+        recentSessionScores: prescription.nextRecentSessionScores,
+        sessionsWithoutProgress: prescription.nextSessionsWithoutProgress,
+        avgSessionsPerWeightIncrease: prescription.nextAvgSessionsPerWeightIncrease,
+        repRangeLow,
+        repRangeHigh,
+        goal: prescription.goal,
+        band: prescription.nextBand,
+        success: prescription.goal === 'add_load' ? (existing?.success ?? 0) + 1 : 0,
+        failure: prescription.goal === 'add_reps' && !isCalibrating ? (existing?.failure ?? 0) + 1 : 0,
+        calibrating: false,
+        reason: prescription.reason ?? '',
+      });
+    }
+
+    const deloadState = recomputeDeloadWeekCounterFromHistory(
+      deloadWeekCounter,
+      session.date,
+      deloadThisWeek,
+      lastWorkoutDate
+    );
+    deloadWeekCounter = deloadState.nextCounter;
+    lastWorkoutDate = deloadState.nextLastWorkoutDate;
+  }
+
+  await supabase.from('exercise_progress_state').delete().eq('user_id', userId);
+
+  const rows = Array.from(progressByExercise.entries()).map(([exerciseId, state]) => ({
+    user_id: userId,
+    exercise_id: exerciseId,
+    variant_key: 'default',
+    next_target_weight: state.nextWeight,
+    next_target_reps: state.nextTargetReps,
+    consecutive_at_top: state.consecutiveAtTop,
+    sessions_at_current_weight: state.sessionsAtCurrentWeight,
+    rpe_baseline: state.rpeBaseline,
+    recent_session_scores: state.recentSessionScores,
+    sessions_without_progress: state.sessionsWithoutProgress,
+    avg_sessions_per_weight_increase: state.avgSessionsPerWeightIncrease,
+    rep_range_low: state.repRangeLow,
+    rep_range_high: state.repRangeHigh,
+    next_goal_type: state.goal,
+    difficulty_band: state.band,
+    consecutive_success: state.success,
+    consecutive_failure: state.failure,
+    is_calibrating: state.calibrating,
+    progression_reason: state.reason,
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (rows.length > 0) {
+    const { error: progressError } = await supabase
+      .from('exercise_progress_state')
+      .insert(rows);
+    if (progressError) throw progressError;
+  }
+
+  const { error: trainingError } = await supabase
+    .from('training_settings')
+    .upsert(
+      {
+        user_id: userId,
+        deload_week_counter: deloadWeekCounter,
+        last_workout_date: lastWorkoutDate,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+  if (trainingError) throw trainingError;
+}
 
 /** Generate a UUID v4 for Supabase columns that expect UUID type. */
 function generateUuid(): string {
@@ -39,6 +590,77 @@ function generateUuid(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+// --- User Exercises (custom exercises) ---
+
+function mapUserExerciseRowToDbExercise(row: Record<string, unknown>, userId: string): DbExercise {
+  const muscles = (row.muscles as Array<{ muscleId: string; activationPercent: number }>) ?? [];
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    overloadCategory: (row.overload_category as 'compound_big' | 'compound_small' | 'isolation') ?? 'isolation',
+    category: row.category as DbExercise['category'],
+    equipment: (row.equipment as DbExercise['equipment']) ?? [],
+    movementType: (row.movement_type as DbExercise['movementType']) ?? 'isolation',
+    forceType: (row.force_type as DbExercise['forceType']) ?? 'push',
+    muscles,
+    description: (row.description as string) ?? '',
+    tips: row.tips as string | undefined,
+    laterality: row.laterality as DbExercise['laterality'],
+    loadEntryMode: row.load_entry_mode as DbExercise['loadEntryMode'],
+    baseMovementId: row.base_movement_id as string | undefined,
+    aliases: row.aliases as string[] | undefined,
+    scope: 'user',
+    userId,
+  };
+}
+
+export async function supabaseFetchUserExercises(userId: string): Promise<DbExercise[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('user_exercises')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Supabase fetch user exercises:', error);
+    return [];
+  }
+  return (data ?? []).map((row) => mapUserExerciseRowToDbExercise(row as Record<string, unknown>, userId));
+}
+
+export async function supabaseInsertUserExercise(
+  userId: string,
+  data: CreateExerciseInput
+): Promise<DbExercise | null> {
+  if (!supabase) return null;
+  const row = {
+    user_id: userId,
+    name: data.name,
+    category: data.category,
+    equipment: data.equipment,
+    movement_type: 'isolation',
+    force_type: 'push',
+    overload_category: 'isolation',
+    laterality: data.laterality,
+    load_entry_mode: data.loadEntryMode,
+    base_movement_id: null,
+    aliases: [],
+    muscles: [] as unknown,
+    description: data.description ?? null,
+    tips: null,
+  };
+  const { data: inserted, error } = await supabase
+    .from('user_exercises')
+    .insert(row)
+    .select()
+    .single();
+  if (error) {
+    console.error('Supabase insert user exercise:', error);
+    return null;
+  }
+  return mapUserExerciseRowToDbExercise(inserted as Record<string, unknown>, userId);
 }
 
 // --- User Settings ---
@@ -74,6 +696,21 @@ export async function supabaseSaveUserSettings(
     .from('user_settings')
     .upsert(row, { onConflict: 'user_id' });
   if (error) {
+    // PGRST204 means a column we're writing doesn't exist in the DB schema yet.
+    // Retry with only the core columns so the save doesn't crash while migrations
+    // are pending. Run the migration SQL to restore full persistence.
+    if ((error as { code?: string }).code === 'PGRST204') {
+      console.warn('Supabase save user settings: schema mismatch — retrying with core columns only. Run pending migrations to fix.', error.message);
+      const { progress_hub_order: _pho, ...coreRow } = row as Record<string, unknown>;
+      const { error: retryError } = await supabase
+        .from('user_settings')
+        .upsert(coreRow, { onConflict: 'user_id' });
+      if (retryError) {
+        console.error('Supabase save user settings (retry):', retryError);
+        throw retryError;
+      }
+      return;
+    }
     console.error('Supabase save user settings:', error);
     throw error;
   }
@@ -91,11 +728,16 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
       defaultRestTimer: s.defaultRestTimer,
       defaultRestTimerEnabled: s.defaultRestTimerEnabled,
       progressHubOrder: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : undefined,
+      bodyMapGender: s.bodyMapGender,
+      dumbbellWeightPreference: s.dumbbellWeightPreference,
     };
   }
   const pho = row.progress_hub_order as string[] | undefined;
   const progressHubOrder = Array.isArray(pho) ? pho : undefined;
   const dg = row.daily_goals as Record<string, number> | undefined;
+  const training = row.training_settings != null
+    ? (row.training_settings as TrainingSettings)
+    : undefined;
   return {
     progressHubOrder,
     dailyGoals: {
@@ -112,6 +754,9 @@ function mapRowToUserSettings(row: Record<string, unknown>): UserSettings {
     defaultRestTimer: row.default_rest_timer != null ? Number(row.default_rest_timer) : undefined,
     defaultRestTimerEnabled:
       row.default_rest_timer_enabled != null ? Boolean(row.default_rest_timer_enabled) : undefined,
+    training,
+    bodyMapGender: (row.body_map_gender as 'male' | 'female') ?? undefined,
+    dumbbellWeightPreference: (row.dumbbell_weight_preference as 'per_hand' | 'total') ?? undefined,
   };
 }
 
@@ -129,6 +774,9 @@ function mapUserSettingsToRow(
     default_rest_timer: s.defaultRestTimer ?? null,
     default_rest_timer_enabled: s.defaultRestTimerEnabled ?? null,
     progress_hub_order: Array.isArray(s.progressHubOrder) ? s.progressHubOrder : null,
+    training_settings: s.training ?? null,
+    body_map_gender: s.bodyMapGender ?? null,
+    dumbbell_weight_preference: s.dumbbellWeightPreference ?? null,
   };
 }
 
@@ -455,6 +1103,12 @@ export async function supabaseGetRecentWorkouts(
   return sessions.slice(0, limit);
 }
 
+/**
+ * Persist workout session, exercises, and sets; then run prescription compute and upsert
+ * exercise_progress_state. Idempotent for the same sessionId: repeat calls (e.g. double-tap
+ * Save) upsert session by id, delete exercises/sets for session_id then reinsert, so final
+ * DB state is the same and no duplicate rows.
+ */
 export async function supabaseSaveWorkoutSession(
   userId: string,
   session: WorkoutSession
@@ -500,6 +1154,9 @@ export async function supabaseSaveWorkoutSession(
     throw deleteExError;
   }
 
+  // Hoist deload flag so it is available for the counter update after all blocks
+  let deloadThisWeek = false;
+
   if (session.exercises && session.exercises.length > 0) {
     const exerciseRows = session.exercises.map((ex) => ({
       user_id: userId,
@@ -509,6 +1166,10 @@ export async function supabaseSaveWorkoutSession(
       rest_timer: ex.restTimer ?? null,
       notes: ex.notes ?? null,
       exercise_db_id: ex.exerciseDbId ?? resolveExerciseDbIdFromName(ex.name) ?? null,
+      rep_range_low: ex.repRangeLow ?? 8,
+      rep_range_high: ex.repRangeHigh ?? 12,
+      smallest_increment: ex.smallestIncrement ?? 2.5,
+      default_target_rpe: ex.defaultTargetRpe ?? 8.5,
     }));
     const { error: insertExError } = await supabase.from('workout_exercises').insert(exerciseRows);
     if (insertExError) {
@@ -531,16 +1192,213 @@ export async function supabaseSaveWorkoutSession(
           reps: Number(s.reps ?? 0),
           completed: Boolean(s.completed ?? false),
           notes: s.notes ?? null,
+          rpe: s.rpe != null ? Number(s.rpe) : null,
         });
       }
     }
     if (setRows.length > 0) {
-      const { error: insertSetsError } = await supabase.from('workout_sets').insert(setRows);
+      type WorkoutSetInsert = Database['public']['Tables']['workout_sets']['Insert'];
+      const { error: insertSetsError } = await supabase
+        .from('workout_sets')
+        .insert(setRows as WorkoutSetInsert[]);
       if (insertSetsError) {
         console.error('Supabase save workout session (insert sets):', JSON.stringify(insertSetsError, null, 2));
         throw insertSetsError;
       }
+
+      const userSettings = await supabaseGetUserSettings(userId);
+      const weightUnit = (userSettings.weightUnit ?? 'lb') as 'kg' | 'lb';
+
+      // Fetch training settings for Blitz Mode and deload week counter
+      const { data: trainingSettingsRow } = supabase
+        ? await supabase.from('training_settings').select('blitz_mode,deload_week_counter').eq('user_id', userId).maybeSingle()
+        : { data: null };
+      const blitzMode = Boolean(trainingSettingsRow?.blitz_mode ?? false);
+      const deloadWeekCounter = Number(trainingSettingsRow?.deload_week_counter ?? 0);
+      deloadThisWeek = isDeloadWeek(deloadWeekCounter);
+
+      // Fetch existing band state for all exercises in this session
+      const canonicalIds = session.exercises.map((ex) => toExerciseProgressId(ex.exerciseDbId ?? ex.name ?? ex.id));
+      const { data: progressRows } = supabase
+        ? await supabase.from('exercise_progress_state').select('exercise_id,difficulty_band,consecutive_success,consecutive_failure,is_calibrating,next_target_reps,consecutive_at_top,sessions_at_current_weight,rpe_baseline,recent_session_scores,sessions_without_progress,avg_sessions_per_weight_increase,rep_range_low,rep_range_high').eq('user_id', userId).in('exercise_id', canonicalIds)
+        : { data: null };
+      const progressByExId = new Map<string, { band: DifficultyBand; success: number; failure: number; calibrating: boolean; nextTargetReps: number | null; consecutiveAtTop: number; sessionsAtCurrentWeight: number; rpeBaseline: number | null; recentSessionScores: number[]; sessionsWithoutProgress: number; avgSessionsPerWeightIncrease: number | null }>();
+      for (const row of (progressRows ?? [])) {
+        progressByExId.set(String(row.exercise_id), {
+          band: (row.difficulty_band as DifficultyBand) ?? 'easy',
+          success: Number(row.consecutive_success ?? 0),
+          failure: Number(row.consecutive_failure ?? 0),
+          calibrating: Boolean(row.is_calibrating ?? true),
+          nextTargetReps: row.next_target_reps != null ? Number(row.next_target_reps) : null,
+          consecutiveAtTop: row.consecutive_at_top != null ? Number(row.consecutive_at_top) : 0,
+          sessionsAtCurrentWeight: row.sessions_at_current_weight != null ? Number(row.sessions_at_current_weight) : 0,
+          rpeBaseline: row.rpe_baseline != null ? Number(row.rpe_baseline) : null,
+          recentSessionScores: Array.isArray((row as any).recent_session_scores) ? (row as any).recent_session_scores.map(Number) : [],
+          sessionsWithoutProgress: (row as any).sessions_without_progress != null ? Number((row as any).sessions_without_progress) : 0,
+          avgSessionsPerWeightIncrease: (row as any).avg_sessions_per_weight_increase != null ? Number((row as any).avg_sessions_per_weight_increase) : null,
+        });
+      }
+
+      for (const ex of session.exercises) {
+        if (!ex.sets?.length) continue;
+        const canonicalId = ex.exerciseDbId ?? ex.name ?? ex.id;
+        const exerciseId = toExerciseProgressId(canonicalId);
+        const existing = progressByExId.get(exerciseId);
+        const currentBand: DifficultyBand = existing?.band ?? 'easy';
+        const consecutiveSuccess = existing?.success ?? 0;
+        const consecutiveFailure = existing?.failure ?? 0;
+        // First time we see this exercise → calibration session
+        const isCalibrating = existing ? existing.calibrating : true;
+
+        const repRangeLow = ex.repRangeLow ?? 8;
+        const repRangeHigh = ex.repRangeHigh ?? 12;
+        // Cursor: use persisted value from DB, fall back to repRangeLow for new exercises.
+        const currentTargetReps = existing?.nextTargetReps ?? repRangeLow;
+        const consecutiveAtTop = existing?.consecutiveAtTop ?? 0;
+        const sessionsAtCurrentWeight = existing?.sessionsAtCurrentWeight ?? 0;
+        const rpeBaseline = existing?.rpeBaseline ?? null;
+        const recentSessionScores = existing?.recentSessionScores ?? [];
+        const sessionsWithoutProgress = existing?.sessionsWithoutProgress ?? 0;
+        const avgSessionsPerWeightIncrease = existing?.avgSessionsPerWeightIncrease ?? null;
+
+        const meta: PrescriptionMeta = {
+          repRangeLow,
+          repRangeHigh,
+          smallestIncrement: ex.smallestIncrement ?? 2.5,
+          defaultTargetRpe: ex.defaultTargetRpe ?? 8.5,
+          overloadCategory: resolveOverloadCategory(ex.exerciseDbId, ex.name),
+          currentBand,
+          consecutiveSuccess,
+          consecutiveFailure,
+          isCalibrating,
+          isDeloadWeek: deloadThisWeek,
+          blitzMode,
+          currentTargetReps,
+          consecutiveAtTop,
+          sessionsAtCurrentWeight,
+          rpeBaseline,
+          recentSessionScores,
+          sessionsWithoutProgress,
+          avgSessionsPerWeightIncrease,
+        };
+        const prescriptionSets: PrescriptionSet[] = ex.sets.map((s) => ({
+          weight: Number(s.weight ?? 0),
+          reps: Number(s.reps ?? 0),
+          rpe: s.rpe ?? null,
+          completed: Boolean(s.completed ?? false),
+        }));
+        const prescription = computeNextPrescription(meta, prescriptionSets, weightUnit);
+        if (!prescription) continue;
+
+        // Exit calibration mode after the first real session
+        const nextIsCalibrating = false;
+
+        await saveExercisePrescription({
+          userId,
+          exerciseId,
+          nextWeight: prescription.nextWeight,
+          nextRepTarget: prescription.nextRepTarget,
+          nextConsecutiveAtTop: prescription.nextConsecutiveAtTop,
+          nextSessionsAtCurrentWeight: prescription.nextSessionsAtCurrentWeight,
+          nextRpeBaseline: prescription.nextRpeBaseline,
+          nextRecentSessionScores: prescription.nextRecentSessionScores,
+          nextSessionsWithoutProgress: prescription.nextSessionsWithoutProgress,
+          nextAvgSessionsPerWeightIncrease: prescription.nextAvgSessionsPerWeightIncrease,
+          repRangeLow,
+          repRangeHigh,
+          goal: prescription.goal,
+          nextBand: prescription.nextBand,
+          consecutiveSuccess: prescription.goal === 'add_load' ? consecutiveSuccess + 1 : 0,
+          consecutiveFailure: prescription.goal === 'add_reps' && !isCalibrating ? consecutiveFailure + 1 : 0,
+          isCalibrating: nextIsCalibrating,
+          reason: prescription.reason ?? '',
+        });
+      }
     }
+  }
+
+  // Update deload week counter based on this session's date
+  await updateDeloadWeekCounter(userId, session.date, deloadThisWeek);
+}
+
+/**
+ * Fetch the next-session prescription (target weight + goal) for a set of
+ * canonical exercise IDs.  Returns a map keyed by the same canonical ID that
+ * was passed in (exerciseDbId ?? exercise.name).
+ */
+export type ExercisePrescriptionRow = {
+  /** Next target weight in lb; null when row has state but no target yet. */
+  nextWeight: number | null;
+  /** Rep cursor — where the user is targeting within the range. Null = use repRangeLow. */
+  nextTargetReps: number | null;
+  goal: string;
+  difficultyBand: string;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  isCalibrating: boolean;
+  reason: string;
+};
+
+export async function supabaseGetExercisePrescriptions(
+  userId: string,
+  canonicalIds: string[]
+): Promise<Record<string, ExercisePrescriptionRow>> {
+  if (!supabase || canonicalIds.length === 0) return {};
+  const progressIds = canonicalIds.map((id) => toExerciseProgressId(id));
+  const progressToCanonical: Record<string, string> = {};
+  canonicalIds.forEach((id) => { progressToCanonical[toExerciseProgressId(id)] = id; });
+
+  const { data, error } = await supabase
+    .from('exercise_progress_state')
+    .select(
+      'exercise_id, next_target_weight, next_target_reps, next_goal_type, difficulty_band, consecutive_success, consecutive_failure, is_calibrating, progression_reason'
+    )
+    .eq('user_id', userId)
+    .in('exercise_id', progressIds);
+
+  if (error || !data) return {};
+
+  const result: Record<string, ExercisePrescriptionRow> = {};
+  for (const row of data) {
+    const canonical = progressToCanonical[row.exercise_id] ?? row.exercise_id;
+    result[canonical] = {
+      nextWeight:         row.next_target_weight ?? null,
+      nextTargetReps:     row.next_target_reps != null ? Number(row.next_target_reps) : null,
+      goal:               row.next_goal_type         ?? 'add_reps',
+      difficultyBand:     row.difficulty_band         ?? 'easy',
+      consecutiveSuccess: row.consecutive_success     ?? 0,
+      consecutiveFailure: row.consecutive_failure     ?? 0,
+      isCalibrating:      row.is_calibrating          ?? false,
+      reason:             row.progression_reason      ?? '',
+    };
+  }
+  return result;
+}
+
+/** Upsert exercise progression state rows. Used by storage.upsertExerciseProgressState. */
+export async function supabaseUpsertExerciseProgressState(
+  userId: string,
+  rows: Array<{ exerciseId: string; currentBand: string; consecutiveSuccess: number; consecutiveFailure: number; nextWeight?: number; goal?: string; reason?: string }>
+): Promise<void> {
+  if (!supabase || rows.length === 0) return;
+  for (const r of rows) {
+    const exerciseId = toExerciseProgressId(r.exerciseId);
+    const { error } = await supabase.from('exercise_progress_state').upsert(
+      {
+        user_id: userId,
+        exercise_id: exerciseId,
+        variant_key: 'default',
+        difficulty_band: r.currentBand,
+        consecutive_success: r.consecutiveSuccess,
+        consecutive_failure: r.consecutiveFailure,
+        next_target_weight: r.nextWeight ?? null,
+        next_goal_type: r.goal ?? 'add_reps',
+        progression_reason: r.reason ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,exercise_id,variant_key' }
+    );
+    if (error) console.error('Supabase upsert exercise progress state:', error);
   }
 }
 
@@ -562,6 +1420,24 @@ export async function supabaseUpdateWorkoutSessionName(
     console.error('Supabase update workout session name:', error);
     throw error;
   }
+}
+
+export async function supabaseDeleteWorkoutSession(userId: string, sessionId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not configured');
+  await supabase.from('workout_sets').delete().eq('user_id', userId).eq('session_id', sessionId);
+  await supabase.from('workout_exercises').delete().eq('user_id', userId).eq('session_id', sessionId);
+  const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId).eq('id', sessionId);
+  if (error) throw error;
+  await recomputeDerivedWorkoutState(userId);
+}
+
+export async function supabaseDeleteAllWorkoutSessions(userId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase client not configured');
+  await supabase.from('workout_sets').delete().eq('user_id', userId);
+  await supabase.from('workout_exercises').delete().eq('user_id', userId);
+  const { error } = await supabase.from('workout_sessions').delete().eq('user_id', userId);
+  if (error) throw error;
+  await recomputeDerivedWorkoutState(userId);
 }
 
 function groupBy<T extends Record<string, unknown>>(
@@ -599,6 +1475,7 @@ function assembleWorkoutSession(
         reps: Number(sr.reps ?? 0),
         completed: Boolean(sr.completed ?? false),
         notes: sr.notes != null ? String(sr.notes) : undefined,
+        rpe: sr.rpe != null ? Number(sr.rpe) : null,
       }));
       return {
         id: String(er.id ?? ''),
@@ -607,6 +1484,10 @@ function assembleWorkoutSession(
         restTimer: er.rest_timer != null ? Number(er.rest_timer) : undefined,
         notes: er.notes != null ? String(er.notes) : undefined,
         exerciseDbId: er.exercise_db_id != null ? String(er.exercise_db_id) : undefined,
+        repRangeLow: er.rep_range_low != null ? Number(er.rep_range_low) : undefined,
+        repRangeHigh: er.rep_range_high != null ? Number(er.rep_range_high) : undefined,
+        smallestIncrement: er.smallest_increment != null ? Number(er.smallest_increment) : undefined,
+        defaultTargetRpe: er.default_target_rpe != null ? Number(er.default_target_rpe) : undefined,
       };
     });
   return {

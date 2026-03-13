@@ -12,6 +12,7 @@ import {
   Dimensions,
   Pressable,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -323,7 +324,10 @@ export function MuscleBodyHeatmap({ heatmapData, period = 'week', externalGender
             sets={m.sets}
             maxSets={maxVolumeForDay}
             isSelected={pressedMuscleGroup === m.group}
-            onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group);
+            }}
           />
         ))}
 
@@ -346,7 +350,10 @@ export function MuscleBodyHeatmap({ heatmapData, period = 'week', externalGender
             sets={m.sets}
             maxSets={maxVolumeForDay}
             isSelected={pressedMuscleGroup === m.group}
-            onPress={() => setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group)}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setPressedMuscleGroup(pressedMuscleGroup === m.group ? null : m.group);
+            }}
           />
         ))}
       </View>

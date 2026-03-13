@@ -19,12 +19,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, emitWorkoutOriginRoute, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState } from '../../utils/fabBridge';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { emitCardSelect, onStreakPopupState, emitProfileSheetState, onProfileSheetState, onWorkoutExpandOrigin, onClosePopup, onHomeSearchState, onAiChatOverlayOpen, onAiChatOverlayClose, emitAiChatOverlayState } from '../../utils/fabBridge';
 import { StreakShiftContext } from '../../context/streakShiftContext';
 import { PopupOverlayAnimContext } from '../../context/popupOverlayAnimContext';
-import { BarbellIcon, BarcodeIcon, ClipboardText, MagnifyingGlass, PlayIcon, UserCircle } from 'phosphor-react-native';
+import { BarcodeIcon, ClipboardText, MagnifyingGlass, Robot, UserCircle } from 'phosphor-react-native';
 import { ProfileSheet } from '../../components/ProfileSheet';
 import { useActiveWorkout } from '../../context/ActiveWorkoutContext';
+import AiFoodChatScreen from '../ai-food-chat';
 
 // ── Pill constants ──
 const getTabLabelStyle = (labelColor: string) => ({
@@ -185,7 +187,7 @@ function TabBarPropsCapture({ props, onCapture }: { props: any; onCapture: (p: a
   return null;
 }
 
-const MODAL_ROUTES = ['food-action-modal', 'start-empty-workout-modal', 'tmlsn-routines-modal', 'your-routines-modal'];
+const MODAL_ROUTES = ['food-action-modal'];
 const isModalPath = (path: string) => MODAL_ROUTES.some((r) => path.includes(r));
 
 export default function TabsLayout() {
@@ -193,6 +195,7 @@ export default function TabsLayout() {
   const segments = useSegments();
   const router = useRouter();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const isNutritionSelected = pathname.includes('nutrition');
   const isWorkoutSelected = pathname.includes('workout');
   const isPromptsSelected = pathname.includes('prompts');
@@ -203,7 +206,6 @@ export default function TabsLayout() {
   const lastTabIndexRef = useRef(0);
   const openedFromWorkoutRef = useRef(false);
   const fabOpenedFromTabIndexRef = useRef(0);
-  const [showWorkoutBlockOverlay, setShowWorkoutBlockOverlay] = useState(false);
   const [showMinimizeOverlay, setShowMinimizeOverlay] = useState(false);
   // State (not ref) so tab bar re-renders when we open workout page from another tab — highlight stays on that tab
   const [tabHighlightLock, setTabHighlightLock] = useState<number | null>(null);
@@ -236,7 +238,13 @@ export default function TabsLayout() {
   const fabRotAnim = useRef(new RNAnimated.Value(0)).current;
   const [fabOpen, setFabOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showAiChatOverlay, setShowAiChatOverlay] = useState(false);
+  const [isClosingAiChat, setIsClosingAiChat] = useState(false);
   const [tabBarProps, setTabBarProps] = useState<any>(null);
+
+  const AI_CHAT_FADE_MS = 220;
+  const aiChatTabBarOpacity = useRef(new RNAnimated.Value(1)).current;
+  const aiChatOverlayOpacity = useRef(new RNAnimated.Value(0)).current;
 
   useEffect(() => {
     return onProfileSheetState((open) => setShowProfile(open));
@@ -315,6 +323,85 @@ export default function TabsLayout() {
     const unsub = onHomeSearchState((active) => setHomeSearchActive(active));
     return unsub;
   }, []);
+
+  // AI chat overlay: open from Add Food card or FAB tmlsnai card
+  useEffect(() => {
+    return onAiChatOverlayOpen(() => setShowAiChatOverlay(true));
+  }, []);
+
+  // AI chat overlay: close when user toggles nutrition/progress/fitness (or other close request)
+  useEffect(() => {
+    return onAiChatOverlayClose(() => {
+      if (showAiChatOverlay || isClosingAiChat) closeAiChatOverlay();
+    });
+  }, [showAiChatOverlay, isClosingAiChat, closeAiChatOverlay]);
+
+  const prevAiChatOpenRef = useRef(false);
+  const closeAiChatOverlay = useCallback(() => {
+    setIsClosingAiChat(true);
+    emitAiChatOverlayState(false);
+    RNAnimated.parallel([
+      RNAnimated.timing(aiChatOverlayOpacity, {
+        toValue: 0,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(aiChatTabBarOpacity, {
+        toValue: 1,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setShowAiChatOverlay(false);
+        setIsClosingAiChat(false);
+        prevAiChatOpenRef.current = false;
+        aiChatOverlayOpacity.setValue(0);
+        aiChatTabBarOpacity.setValue(1);
+      }
+    });
+  }, [aiChatOverlayOpacity, aiChatTabBarOpacity]);
+
+  useEffect(() => {
+    if (!showAiChatOverlay || isClosingAiChat) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeAiChatOverlay();
+      return true;
+    });
+    return () => sub.remove();
+  }, [showAiChatOverlay, isClosingAiChat, closeAiChatOverlay]);
+
+  // Notify nutrition when AI overlay opens/closes (hide greeting + Add button)
+  useEffect(() => {
+    emitAiChatOverlayState(showAiChatOverlay);
+  }, [showAiChatOverlay]);
+
+  // AI chat open: fade out tab bar, fade in overlay (only when transitioning to open)
+  useEffect(() => {
+    if (!showAiChatOverlay || isClosingAiChat) {
+      prevAiChatOpenRef.current = showAiChatOverlay;
+      return;
+    }
+    if (prevAiChatOpenRef.current) return;
+    prevAiChatOpenRef.current = true;
+    aiChatOverlayOpacity.setValue(0);
+    RNAnimated.parallel([
+      RNAnimated.timing(aiChatTabBarOpacity, {
+        toValue: 0,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(aiChatOverlayOpacity, {
+        toValue: 1,
+        duration: AI_CHAT_FADE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [showAiChatOverlay, isClosingAiChat, aiChatOverlayOpacity, aiChatTabBarOpacity]);
 
   // Clamp pill X so rebound never goes outside bar (fill still bounces, display is clamped)
   const pillTranslateXClamped = pillTranslateX.interpolate({
@@ -408,14 +495,10 @@ export default function TabsLayout() {
   const popupCard1Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard2Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCard3Anim = useRef(new RNAnimated.Value(0)).current;
-  const popupCard4Anim = useRef(new RNAnimated.Value(0)).current;
-  const popupCard5Anim = useRef(new RNAnimated.Value(0)).current;
   const popupCardPress0 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress1 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress2 = useRef(new RNAnimated.Value(1)).current;
   const popupCardPress3 = useRef(new RNAnimated.Value(1)).current;
-  const popupCardPress4 = useRef(new RNAnimated.Value(1)).current;
-  const popupCardPress5 = useRef(new RNAnimated.Value(1)).current;
 
   // ══════════════════════════════════════════
   // SOUNDS — FAB + Popup (expo-audio)
@@ -535,8 +618,8 @@ export default function TabsLayout() {
   const openPopup = useCallback(() => {
     popupOverlayAnim.setValue(0);
     popupContentAnim.setValue(0);
-    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim].forEach((a) => a.setValue(0));
-    [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5].forEach((p) => p.setValue(1));
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim].forEach((a) => a.setValue(0));
+    [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3].forEach((p) => p.setValue(1));
 
     setShowPopup(true);
 
@@ -554,7 +637,7 @@ export default function TabsLayout() {
       useNativeDriver: true,
     }).start();
 
-    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim].forEach((anim, i) => {
+    [popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim].forEach((anim, i) => {
       setTimeout(() => {
         RNAnimated.timing(anim, {
           toValue: 1,
@@ -574,7 +657,7 @@ export default function TabsLayout() {
       RNAnimated.timing(barOpacity, { toValue: 0.88, duration: 300, useNativeDriver: true }),
       RNAnimated.timing(pillOpacity, { toValue: 0.5, duration: 300, useNativeDriver: true }),
     ]).start();
-  }, [popupOverlayAnim, popupContentAnim, popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCard3Anim, popupCard4Anim, popupCard5Anim, popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5, playPopupOpen, playPopupAmbient, barScale, barTranslateY, barOpacity, pillOpacity]);
+  }, [popupOverlayAnim, popupContentAnim, popupCard0Anim, popupCard1Anim, popupCard2Anim, popupCardPress0, popupCardPress1, popupCardPress2, playPopupOpen, playPopupAmbient, barScale, barTranslateY, barOpacity, pillOpacity]);
 
   // ══════════════════════════════════════════
   // Close popup
@@ -638,21 +721,21 @@ export default function TabsLayout() {
   // ══════════════════════════════════════════
   // Popup card press animation
   // ══════════════════════════════════════════
-  const popupCardPressRefs = [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5];
-  const cardPressIn = useCallback((card: 0 | 1 | 2 | 3 | 4 | 5) => {
+  const popupCardPressRefs = [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3];
+  const cardPressIn = useCallback((card: 0 | 1 | 2 | 3) => {
     const sv = popupCardPressRefs[card];
     if (sv) RNAnimated.timing(sv, { toValue: 0.92, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5]);
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3]);
 
-  const cardPressOut = useCallback((card: 0 | 1 | 2 | 3 | 4 | 5) => {
+  const cardPressOut = useCallback((card: 0 | 1 | 2 | 3) => {
     const sv = popupCardPressRefs[card];
     if (sv) RNAnimated.timing(sv, { toValue: 1, duration: 100, useNativeDriver: true }).start();
-  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3, popupCardPress4, popupCardPress5]);
+  }, [popupCardPress0, popupCardPress1, popupCardPress2, popupCardPress3]);
 
   // ══════════════════════════════════════════
   // Popup card select handlers
   // ══════════════════════════════════════════
-  const handleCardSelect = useCallback((card: 'saved' | 'search' | 'scan') => {
+  const handleCardSelect = useCallback((card: 'saved' | 'search' | 'scan' | 'tmlsnai') => {
     stopPopupAmbient();
     rotateTo(false);
 
@@ -670,7 +753,9 @@ export default function TabsLayout() {
       // list food: emit on nutrition tab (opens List Food modal); from other tabs use food-action-modal.
       // search food: always push to full search-food page.
       // scan: emit on nutrition (camera overlay); from other tabs use food-action-modal.
-      if (card === 'saved') {
+      if (card === 'tmlsnai') {
+        setShowAiChatOverlay(true);
+      } else if (card === 'saved') {
         if (isNutritionSelected) emitCardSelect('saved');
         else router.push({ pathname: '/food-action-modal', params: { card: 'saved' } });
       } else if (card === 'search') {
@@ -681,38 +766,6 @@ export default function TabsLayout() {
       }
     });
   }, [popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router, isNutritionSelected]);
-
-  const handleWorkoutCardSelect = useCallback((card: 'tmlsn' | 'your-routines' | 'empty') => {
-    if (activeWorkout) {
-      setShowWorkoutBlockOverlay(true);
-      return;
-    }
-    stopPopupAmbient();
-    rotateTo(false);
-
-    RNAnimated.parallel([
-      RNAnimated.spring(barScale, { toValue: 1, damping: 16, stiffness: 100, mass: 1.2, useNativeDriver: true }),
-      RNAnimated.timing(barTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
-      RNAnimated.timing(barOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      RNAnimated.timing(pillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-    ]).start();
-
-    RNAnimated.timing(popupOverlayAnim, { toValue: 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    RNAnimated.spring(popupContentAnim, { toValue: 0, damping: 20, stiffness: 140, mass: 0.8, useNativeDriver: true }).start(() => {
-      setShowPopup(false);
-      // Always open the workout PAGE (no modals). Keep toolbar highlight on the tab where FAB was opened.
-      if (!openedFromWorkoutRef.current) setTabHighlightLock(fabOpenedFromTabIndexRef.current);
-      // Emit origin so ActiveWorkoutContext can navigate back on minimize
-      const originTabRoutes = ['/(tabs)/nutrition', '/(tabs)/workout', '/(tabs)/prompts', '/(tabs)/(profile)'];
-      const originByTab: Record<number, number> = { 0: 0, 1: 1, 3: 2, 4: 3 };
-      const routeIdx = originByTab[fabOpenedFromTabIndexRef.current] ?? 0;
-      const currentOrigin = originTabRoutes[routeIdx] ?? '/(tabs)/nutrition';
-      emitWorkoutOriginRoute(currentOrigin);
-      if (card === 'tmlsn') router.push('/workout/tmlsn-routines');
-      else if (card === 'your-routines') router.push('/workout/your-routines');
-      else router.push({ pathname: '/workout', params: { startEmpty: '1' } });
-    });
-  }, [activeWorkout, popupOverlayAnim, popupContentAnim, stopPopupAmbient, rotateTo, barScale, barTranslateY, barOpacity, pillOpacity, router]);
 
   // ══════════════════════════════════════════
   // Animated styles for popup
@@ -753,8 +806,6 @@ export default function TabsLayout() {
   const card1Style = makeCardStyle(popupCard1Anim, popupCardPress1);
   const card2Style = makeCardStyle(popupCard2Anim, popupCardPress2);
   const card3Style = makeCardStyle(popupCard3Anim, popupCardPress3);
-  const card4Style = makeCardStyle(popupCard4Anim, popupCardPress4);
-  const card5Style = makeCardStyle(popupCard5Anim, popupCardPress5);
 
   // ══════════════════════════════════════════════════════════════
   // CUSTOM TAB BAR — 3 layers: background, sliding pill, icons
@@ -1149,21 +1200,44 @@ export default function TabsLayout() {
 
       {/* Custom tab bar — rendered above ProfileSheet so pill stays visible in front */}
       {tabBarProps && (
-        <View
+        <RNAnimated.View
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
             bottom: 0,
             height: TAB_BAR_HEIGHT,
-            zIndex: homeSearchActive ? 0 : 99999,
-            elevation: homeSearchActive ? 0 : 99999,
-            opacity: homeSearchActive ? 0 : 1,
+            zIndex: homeSearchActive || showAiChatOverlay || isClosingAiChat ? 0 : 99999,
+            elevation: homeSearchActive || showAiChatOverlay || isClosingAiChat ? 0 : 99999,
+            opacity: homeSearchActive ? 0 : (showAiChatOverlay || isClosingAiChat ? aiChatTabBarOpacity : 1),
           }}
-          pointerEvents={homeSearchActive ? 'none' : 'box-none'}
+          pointerEvents={homeSearchActive || showAiChatOverlay || isClosingAiChat ? 'none' : 'box-none'}
         >
           {renderTabBar(tabBarProps)}
-        </View>
+        </RNAnimated.View>
+      )}
+
+      {/* AI chat overlay — over home; no dim so home visible; nav hidden; fade in/out */}
+      {(showAiChatOverlay || isClosingAiChat) && (
+        <RNAnimated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              zIndex: 99998,
+              elevation: 99998,
+              opacity: aiChatOverlayOpacity,
+            },
+          ]}
+          pointerEvents="box-none"
+        >
+          <View style={{ flex: 1, paddingTop: 110 }} pointerEvents="box-none">
+            <AiFoodChatScreen
+              overlayMode
+              onClose={closeAiChatOverlay}
+              backButtonTopOffset={insets.top + 73 + 8}
+            />
+          </View>
+        </RNAnimated.View>
       )}
 
       {/* ══════════════════════════════════════════════════════════ */}
@@ -1195,9 +1269,8 @@ export default function TabsLayout() {
                   {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
                 />
               </RNAnimated.View>
-              <View style={{ flexDirection: 'row', gap: POPUP_PILL_COLUMN_GAP }}>
-              {/* Left column: saved foods, search food, scan food */}
-              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+              <View style={{ width: '100%', maxWidth: 220, flexDirection: 'row', flexWrap: 'wrap', gap: POPUP_PILL_ROW_GAP, justifyContent: 'center' }}>
                 <RNAnimated.View style={[card0Style, popupStyles.pillRow]}>
                   <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('saved')} onPressIn={() => cardPressIn(0)} onPressOut={() => cardPressOut(0)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
@@ -1237,43 +1310,14 @@ export default function TabsLayout() {
                     </View>
                   </TouchableOpacity>
                 </RNAnimated.View>
-              </View>
-              {/* Right column: tmlsn workouts, your workouts, empty workout */}
-              <View style={{ flex: 1, gap: POPUP_PILL_ROW_GAP }}>
                 <RNAnimated.View style={[card3Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('tmlsn')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
+                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleCardSelect('tmlsnai')} onPressIn={() => cardPressIn(3)} onPressOut={() => cardPressOut(3)} activeOpacity={1}>
                     <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
                       <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
                       <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
                         <View style={popupStyles.pillInner}>
-                          <Image source={require('../../assets/tmlsn-routines-star.png')} style={{ width: POPUP_PILL_ICON_SIZE, height: POPUP_PILL_ICON_SIZE, tintColor: colors.cardIconTint }} resizeMode="contain" />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>tmlsn workouts</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card4Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('your-routines')} onPressIn={() => cardPressIn(4)} onPressOut={() => cardPressOut(4)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <BarbellIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>your workouts</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                </RNAnimated.View>
-                <RNAnimated.View style={[card5Style, popupStyles.pillRow]}>
-                  <TouchableOpacity style={popupStyles.pillTouchable} onPress={() => handleWorkoutCardSelect('empty')} onPressIn={() => cardPressIn(5)} onPressOut={() => cardPressOut(5)} activeOpacity={1}>
-                    <View style={[popupStyles.pill, popupStyles.pillBorderWrap]}>
-                      <LinearGradient colors={colors.tabBarBorder} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: POPUP_PILL_RADIUS }]} />
-                      <View style={[popupStyles.pillShell, { backgroundColor: colors.tabBarFill[1] }]}>
-                        <View style={popupStyles.pillInner}>
-                          <PlayIcon size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
-                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>empty workout</Text>
+                          <Robot size={POPUP_PILL_ICON_SIZE} color={colors.cardIconTint} />
+                          <Text style={[popupStyles.pillLabel, { color: colors.primaryLight }]} numberOfLines={1}>TMLSN AI</Text>
                         </View>
                       </View>
                     </View>
@@ -1285,30 +1329,6 @@ export default function TabsLayout() {
             </View>
           </RNAnimated.View>
 
-          {/* Workout block overlay — when user tries to start workout while one is active */}
-          {showWorkoutBlockOverlay && (
-            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-              <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowWorkoutBlockOverlay(false)}>
-                <BlurView
-                  intensity={40}
-                  tint="dark"
-                  style={StyleSheet.absoluteFill}
-                  {...(Platform.OS === 'android' ? { experimentalBlurMethod: 'dimezisBlurView' as const } : {})}
-                />
-              </Pressable>
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 }}>
-                <Text style={{ fontSize: 16, color: colors.primaryLight, textAlign: 'center', marginBottom: 24 }}>
-                  A workout can't be initiated when there's a current workout going on.
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowWorkoutBlockOverlay(false)}
-                  style={{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 20, backgroundColor: colors.primaryLight }}
-                >
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primaryDark }}>Back</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
         </View>
     </View>
     </PopupOverlayAnimContext.Provider>
@@ -1318,8 +1338,9 @@ export default function TabsLayout() {
 
 const popupStyles = StyleSheet.create({
   pillRow: {
-    alignSelf: 'stretch',
-    minWidth: 0,
+    flex: 1,
+    minWidth: 95,
+    maxWidth: 120,
     height: POPUP_PILL_HEIGHT,
   },
   pillTouchable: {

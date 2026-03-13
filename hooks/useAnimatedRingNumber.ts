@@ -38,7 +38,7 @@ export function useAnimatedRingNumber(
   useEffect(() => {
     const from = current.current;
     const range = Math.abs(target - from);
-    if (range === 0) {
+    if (range === 0 || duration === 0) {
       prevTarget.current = target;
       setDisplay(target);
       current.current = target;
@@ -65,7 +65,10 @@ export function useAnimatedRingNumber(
       MAX_DURATION_MS
     );
     const start = Date.now();
+    let rafId: number;
+    let cancelled = false;
     const tick = () => {
+      if (cancelled) return;
       const elapsed = Date.now() - start;
       const t = Math.min(elapsed / effectiveDuration, 1);
       const ease =
@@ -87,9 +90,13 @@ export function useAnimatedRingNumber(
           throttledSequenceHaptic(t);
         }
       }
-      if (t < 1) requestAnimationFrame(tick);
+      if (t < 1) rafId = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
   }, [target, duration, easing, haptic]);
   return display;
 }

@@ -86,19 +86,6 @@ export function onStreakPopupState(fn: BoolCb): VoidCb {
   };
 }
 
-// ── Workout origin route (layout → ActiveWorkoutContext, for navigate back on minimize) ──
-const originRouteListeners: ((route: string) => void)[] = [];
-export function emitWorkoutOriginRoute(route: string) {
-  originRouteListeners.forEach(fn => fn(route));
-}
-export function onWorkoutOriginRoute(fn: (route: string) => void): VoidCb {
-  originRouteListeners.push(fn);
-  return () => {
-    const i = originRouteListeners.indexOf(fn);
-    if (i >= 0) originRouteListeners.splice(i, 1);
-  };
-}
-
 // ── Workout expand from pill (ActiveWorkoutPill → layout, keep tab highlight on current tab) ──
 const expandOriginListeners: ((pathname: string) => void)[] = [];
 export function emitWorkoutExpandOrigin(pathname: string) {
@@ -135,5 +122,82 @@ export function onHomeSearchState(fn: BoolCb): VoidCb {
   return () => {
     const i = homeSearchListeners.indexOf(fn);
     if (i >= 0) homeSearchListeners.splice(i, 1);
+  };
+}
+
+// ── Home tab switch (FitnessHub → nutrition.tsx) ──
+type HomeTab = 'calories' | 'progress' | 'fitness';
+const homeTabListeners: ((tab: HomeTab) => void)[] = [];
+export function emitHomeTab(tab: HomeTab) {
+  homeTabListeners.forEach(fn => fn(tab));
+}
+export function onHomeTab(fn: (tab: HomeTab) => void): () => void {
+  homeTabListeners.push(fn);
+  return () => {
+    const i = homeTabListeners.indexOf(fn);
+    if (i >= 0) homeTabListeners.splice(i, 1);
+  };
+}
+
+// ── Home tab state for overlay (nutrition → layout; layout renders toggle above AI chat dots) ──
+const homeTabStateListeners: ((tab: HomeTab) => void)[] = [];
+export function emitHomeTabState(tab: HomeTab) {
+  homeTabStateListeners.forEach(fn => fn(tab));
+}
+export function onHomeTabState(fn: (tab: HomeTab) => void): () => void {
+  homeTabStateListeners.push(fn);
+  return () => {
+    const i = homeTabStateListeners.indexOf(fn);
+    if (i >= 0) homeTabStateListeners.splice(i, 1);
+  };
+}
+
+// ── AI chat overlay (open/close from nutrition or FAB; tabs layout renders overlay) ──
+const aiChatOverlayOpenListeners: VoidCb[] = [];
+const aiChatOverlayCloseListeners: VoidCb[] = [];
+export function emitOpenAiChatOverlay() {
+  aiChatOverlayOpenListeners.forEach(fn => fn());
+}
+export function emitCloseAiChatOverlay() {
+  aiChatOverlayCloseListeners.forEach(fn => fn());
+}
+export function onAiChatOverlayOpen(fn: VoidCb): VoidCb {
+  aiChatOverlayOpenListeners.push(fn);
+  return () => {
+    const i = aiChatOverlayOpenListeners.indexOf(fn);
+    if (i >= 0) aiChatOverlayOpenListeners.splice(i, 1);
+  };
+}
+export function onAiChatOverlayClose(fn: VoidCb): VoidCb {
+  aiChatOverlayCloseListeners.push(fn);
+  return () => {
+    const i = aiChatOverlayCloseListeners.indexOf(fn);
+    if (i >= 0) aiChatOverlayCloseListeners.splice(i, 1);
+  };
+}
+
+// ── AI chat overlay state (layout → nutrition; nutrition hides greeting + Add button when open) ──
+const aiChatOverlayStateListeners: BoolCb[] = [];
+export function emitAiChatOverlayState(open: boolean) {
+  aiChatOverlayStateListeners.forEach(fn => fn(open));
+}
+export function onAiChatOverlayState(fn: BoolCb): VoidCb {
+  aiChatOverlayStateListeners.push(fn);
+  return () => {
+    const i = aiChatOverlayStateListeners.indexOf(fn);
+    if (i >= 0) aiChatOverlayStateListeners.splice(i, 1);
+  };
+}
+
+// ── Nutrition log updated (ai-food-chat → nutrition; home arch refetches for live update) ──
+const nutritionLogUpdatedListeners: VoidCb[] = [];
+export function emitNutritionLogUpdated() {
+  nutritionLogUpdatedListeners.forEach(fn => fn());
+}
+export function onNutritionLogUpdated(fn: VoidCb): VoidCb {
+  nutritionLogUpdatedListeners.push(fn);
+  return () => {
+    const i = nutritionLogUpdatedListeners.indexOf(fn);
+    if (i >= 0) nutritionLogUpdatedListeners.splice(i, 1);
   };
 }

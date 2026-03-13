@@ -12,7 +12,7 @@ export function useAnimatedProgress(target: number, duration = 600): number {
 
   useEffect(() => {
     const from = currentRef.current;
-    if (Math.abs(from - target) < 0.001) {
+    if (Math.abs(from - target) < 0.001 || duration === 0) {
       currentRef.current = target;
       setCurrent(target);
       return;

@@ -45,7 +45,7 @@ import { Colors } from '../constants/theme';
 import { LiquidGlassSegmented, LiquidGlassPill } from '../components/ui/liquidGlass';
 import { StickyGlassHeader } from '../components/ui/StickyGlassHeader';
 import TiltPressable from '../components/TiltPressable';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import { AnimatedFadeInUp } from '../components/AnimatedFadeInUp';
 import { getWorkoutSessions, getUserSettings } from '../utils/storage';
 import { KG_PER_LB } from '../utils/units';
@@ -744,17 +744,21 @@ export default function ProgressGraphScreen() {
       dayDataInRange.forEach(d => { total += d.data; if (d.data > best) { best = d.data; bestLbl = format(d.date, 'd MMM'); } });
     }
     const fTotal = metric === 'duration' ? fmtDur(total * 60) : metric === 'volume' ? fmtVol(total, weightUnit) : `${Math.round(total)}`;
-    const fBest  = best > 0 ? (metric === 'duration' ? fmtDur(best * 60) : metric === 'volume' ? fmtVol(best, weightUnit) : `${Math.round(best)}`) : '—';
+    const fBest  =
+      best > 0 || (metric === 'duration' && sessionCount > 0)
+        ? (metric === 'duration' ? fmtDur(best * 60) : metric === 'volume' ? fmtVol(best, weightUnit) : `${Math.round(best)}`)
+        : '—';
     const avg    = sessionCount > 0 ? total / sessionCount : 0;
-    const fAvg   = avg > 0 ? (metric === 'duration' ? fmtDur(avg * 60) : metric === 'volume' ? fmtVol(avg, weightUnit) : `${Math.round(avg)}`) : '—';
+    const fAvg   =
+      avg > 0 || (metric === 'duration' && sessionCount > 0)
+        ? (metric === 'duration' ? fmtDur(avg * 60) : metric === 'volume' ? fmtVol(avg, weightUnit) : `${Math.round(avg)}`)
+        : '—';
     return { count: String(sessionCount), fTotal, fBest, bestLbl, fAvg };
   }, [dayDataInRange, monthlyData, yearlyData, sessionCount, isAllView, isYearView, metric, weightUnit, getValY, getValM]);
 
   const hasData = useMemo(() => {
-    if (isAllView)  return yearlyData.some(y => getValY(y) > 0);
-    if (isYearView) return monthlyData.some(m => getValM(m) > 0);
-    return dayDataInRange.some(d => d.data > 0);
-  }, [dayDataInRange, monthlyData, yearlyData, isAllView, isYearView, getValY, getValM]);
+    return sessionCount > 0;
+  }, [sessionCount]);
 
   // ── Selected bar display ───────────────────────────────────
   const selDisplay = useMemo(() => {
@@ -821,7 +825,7 @@ export default function ProgressGraphScreen() {
   // ── Render ─────────────────────────────────────────────────
   return (
     <View style={p.root}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
 
       <StickyGlassHeader
         title=""
@@ -1033,7 +1037,7 @@ export default function ProgressGraphScreen() {
               {/* Glass-prominent CTA — bright fill, dark text, specular rim */}
               <Pressable
                 style={({ pressed }) => [p.emptyBtn, pressed && { transform: [{ scale: 0.97 }], opacity: 0.88 }]}
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/workout' as any); }}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push('/(tabs)/nutrition' as any); }}
               >
                 {/* Bright base fill */}
                 <LinearGradient
@@ -1284,7 +1288,7 @@ export default function ProgressGraphScreen() {
 
 // ── Styles ─────────────────────────────────────────────────────
 const p = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: Colors.primaryDark },
+  root:   { flex: 1, backgroundColor: '#1A1A1A' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: OUTER_PAD, paddingBottom: 12, zIndex: 2 },
 
   backChip:      { borderRadius: 20, overflow: 'hidden' },

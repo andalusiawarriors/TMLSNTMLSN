@@ -21,12 +21,12 @@ import type { ParsedNutrition } from '../utils/foodApi';
 
 /**
  * Choose the best default unit and amount when a food is first selected.
- * Priority: whole-item USDA portion (e.g. "1 medium") > liquid (100ml) > 100g.
+ * Priority: whole-item portion (e.g. "1 slice", "1 medium", "1 cup") > liquid (100ml) > 100g.
  */
 export function getSmartDefaultUnit(food: ParsedNutrition): { unit: string; amount: string } {
   const portions = food.portions ?? [];
   const wholeItem = portions.find(p =>
-    /^1\s+(medium|large|small|extra\s+large|whole|unit|piece|serving|bar|packet|bottle|can|slice|scoop)\b/i.test(p.label)
+    /^1\s+(medium|large|small|extra\s+large|whole|unit|piece|serving|bar|packet|bottle|can|slice|scoop|egg|cup|carton)\b/i.test(p.label)
   );
   if (wholeItem) return { unit: wholeItem.label, amount: '' };
   if (food.unit === 'ml') return { unit: 'ml', amount: '' };

@@ -4,7 +4,7 @@
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Image, Pressable } from 'react-native';
+import { View, StyleSheet, Platform, Image, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -17,7 +17,8 @@ import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useButtonSound } from '../hooks/useButtonSound';
 import { getStreakData } from '../utils/streak';
-import { Colors, Font, Typography } from '../constants/theme';
+import { Colors, Typography } from '../constants/theme';
+import { TmlsnText } from './ui/TmlsnText';
 
 const ROTATION_PRESSED = -45; // degrees on press
 const ROTATION_RELEASED = 0; // anticlockwise back to original rest position
@@ -98,7 +99,7 @@ export function StreakWidget() {
               resizeMode="contain"
             />
           </Animated.View>
-          <Text style={styles.number}>{days}</Text>
+          <TmlsnText style={styles.number}>{days}</TmlsnText>
         </View>
       </View>
     </Pressable>
@@ -137,7 +138,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   number: {
-    fontFamily: Font.monoMedium,
     fontWeight: '500',
     fontSize: Typography.promptText,
     color: Colors.primaryLight,

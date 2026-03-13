@@ -1,19 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NutritionLog, WorkoutSession, Prompt, UserSettings, DailyGoals, SavedRoutine, SavedFood } from '../types';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { invalidateTodayWorkoutContextCache } from '../lib/getWorkoutContext';
 import * as supabaseStorage from './supabaseStorage';
 import { DEFAULT_GOALS, DEFAULT_SETTINGS, DEFAULT_PROGRESS_HUB_ORDER } from '../constants/storageDefaults';
+import { logStreakWorkout } from './streak';
+import { setStorageUserId, getStorageUserId } from './storageUserId';
 
-// Current user ID for Supabase-backed storage (set by AuthContext on login/logout)
-let _storageUserId: string | null = null;
-
-export function setStorageUserId(userId: string | null): void {
-  _storageUserId = userId;
-}
-
-export function getStorageUserId(): string | null {
-  return _storageUserId;
-}
+export { setStorageUserId, getStorageUserId };
 
 // Storage Keys (used when not logged in)
 const KEYS = {
@@ -26,13 +20,101 @@ const KEYS = {
   SAVED_FOODS: '@tmlsn/saved_foods',
 };
 
+const SESSION_COMPLETED_DATE_KEY = 'TMLSN_session_completed_date';
+const ACTIVE_WORKOUT_DRAFT_KEY = 'TMLSN_active_workout_draft';
+
+export type ActiveWorkoutDraft = {
+  version: 1;
+  savedAt: string;
+  workout: WorkoutSession;
+  currentExerciseIndex: number;
+};
+
+export function getSessionCompletedDateStorageKey(userId?: string | null): string {
+  return `${SESSION_COMPLETED_DATE_KEY}:${userId ?? getStorageUserId() ?? 'anonymous'}`;
+}
+
+export function getActiveWorkoutDraftStorageKey(userId?: string | null): string {
+  return `${ACTIVE_WORKOUT_DRAFT_KEY}:${userId ?? getStorageUserId() ?? 'anonymous'}`;
+}
+
+export async function getSessionCompletedDate(userId?: string | null): Promise<string | null> {
+  return AsyncStorage.getItem(getSessionCompletedDateStorageKey(userId));
+}
+
+export async function setSessionCompletedDate(
+  dateYMD: string,
+  userId?: string | null
+): Promise<void> {
+  await AsyncStorage.setItem(getSessionCompletedDateStorageKey(userId), dateYMD);
+}
+
+export async function clearSessionCompletedDate(userId?: string | null): Promise<void> {
+  await AsyncStorage.removeItem(getSessionCompletedDateStorageKey(userId));
+}
+
+function getWorkoutSessionLocalYMD(session: WorkoutSession): string | null {
+  if (!session?.date) return null;
+  const parsed = new Date(session.date);
+  if (Number.isNaN(parsed.getTime())) {
+    return typeof session.date === 'string' && session.date.length >= 10
+      ? session.date.slice(0, 10)
+      : null;
+  }
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+}
+
+async function syncSessionCompletedDateFromHistory(userId?: string | null): Promise<void> {
+  const todayYMD = new Date();
+  const today = `${todayYMD.getFullYear()}-${String(todayYMD.getMonth() + 1).padStart(2, '0')}-${String(todayYMD.getDate()).padStart(2, '0')}`;
+  const sessions = await getWorkoutSessions();
+  const hasWorkoutToday = sessions.some((session) => getWorkoutSessionLocalYMD(session) === today);
+
+  if (hasWorkoutToday) {
+    await setSessionCompletedDate(today, userId);
+    return;
+  }
+
+  await clearSessionCompletedDate(userId);
+}
+
+export async function getActiveWorkoutDraft(userId?: string | null): Promise<ActiveWorkoutDraft | null> {
+  const raw = await AsyncStorage.getItem(getActiveWorkoutDraftStorageKey(userId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as ActiveWorkoutDraft;
+    if (
+      parsed?.version !== 1 ||
+      !parsed?.savedAt ||
+      !parsed?.workout?.id ||
+      !parsed?.workout?.date ||
+      !Array.isArray(parsed?.workout?.exercises)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveActiveWorkoutDraft(
+  draft: ActiveWorkoutDraft,
+  userId?: string | null
+): Promise<void> {
+  await AsyncStorage.setItem(getActiveWorkoutDraftStorageKey(userId), JSON.stringify(draft));
+}
+
+export async function clearActiveWorkoutDraft(userId?: string | null): Promise<void> {
+  await AsyncStorage.removeItem(getActiveWorkoutDraftStorageKey(userId));
+}
+
 export { DEFAULT_GOALS, DEFAULT_SETTINGS };
 
 // Nutrition Storage Functions
 // TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
   if (isSupabaseConfigured() && !getStorageUserId()) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   try {
@@ -49,7 +131,6 @@ export const saveNutritionLog = async (log: NutritionLog): Promise<void> => {
 // TEMP: Nutrition uses AsyncStorage only while Supabase nutrition schema is being finalized.
 export const getNutritionLogs = async (): Promise<NutritionLog[]> => {
   if (isSupabaseConfigured() && !getStorageUserId()) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getNutritionLogs');
     return [];
   }
   try {
@@ -98,12 +179,16 @@ export const clearAllNutritionLogs = async (): Promise<void> => {
 export const saveWorkoutSession = async (session: WorkoutSession): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
+  const { sanitizeWorkoutSessionForSave } = await import('./workoutSetValidation');
+  const sessionSanitized = sanitizeWorkoutSessionForSave(session) as WorkoutSession;
+  const { resolveRepRangesForSession } = await import('@/lib/progression/resolveRepRange');
+  const sessionResolved = (await resolveRepRangesForSession(sessionSanitized)) as WorkoutSession;
   if (uid && isSupabaseConfigured()) {
     try {
-      await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
+      await supabaseStorage.supabaseSaveWorkoutSession(uid, sessionResolved);
+      invalidateTodayWorkoutContextCache(uid);
       return;
     } catch (error) {
       console.error('Error saving workout session:', error);
@@ -112,13 +197,53 @@ export const saveWorkoutSession = async (session: WorkoutSession): Promise<void>
   }
   try {
     const existingSessions = await getWorkoutSessions();
-    const updatedSessions = [...existingSessions, session];
+    // Upsert by id: replace existing session with same id (e.g. user edits then re-finishes)
+    const updatedSessions = [...existingSessions.filter((s: WorkoutSession) => s.id !== sessionResolved.id), sessionResolved];
     await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
   } catch (error) {
     console.error('Error saving workout session:', error);
     throw error;
   }
 };
+
+/**
+ * Single canonical finalize for finishing a workout. Persists session + exercises + sets once,
+ * runs progressive overload prescription compute + upserts to exercise_progress_state, then marks
+ * the session complete. Idempotent: calling again for the same sessionId (e.g. double-tap Save)
+ * re-persists the same data without duplicating rows (Supabase: upsert session, delete+reinsert
+ * exercises/sets for that sessionId; AsyncStorage: filter-by-id then push).
+ * Call this from workout-save Save button only; do not persist on Finish (Finish only navigates).
+ */
+export async function finalizeWorkoutSession(
+  session: WorkoutSession,
+  _opts?: { userId?: string | null }
+): Promise<string> {
+  const sessionId = session.id;
+  if (__DEV__) {
+    console.group('[Finalize] start sessionId=' + sessionId);
+  }
+  const duration =
+    session.duration != null && session.duration > 0
+      ? session.duration
+      : Math.round((Date.now() - new Date(session.date).getTime()) / 60000);
+  const sessionCompleted: WorkoutSession = {
+    ...session,
+    isComplete: true,
+    duration,
+  };
+  await saveWorkoutSession(sessionCompleted);
+  if (__DEV__) {
+    console.log('[Finalize] saved session/exercises/sets');
+  }
+  await logStreakWorkout();
+  if (__DEV__) {
+    console.log('[Finalize] prescriptions updated (via saveWorkoutSession); streak logged');
+    console.log('[Finalize] complete');
+    console.groupEnd();
+  }
+  return sessionId;
+}
 
 /** Update the name of an existing workout session. */
 export const updateWorkoutSessionName = async (sessionId: string, name: string): Promise<void> => {
@@ -147,7 +272,6 @@ export const updateWorkoutSessionName = async (sessionId: string, name: string):
 export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getWorkoutSessions');
     return [];
   }
   if (uid && isSupabaseConfigured()) {
@@ -155,7 +279,9 @@ export const getWorkoutSessions = async (): Promise<WorkoutSession[]> => {
   }
   try {
     const data = await AsyncStorage.getItem(KEYS.WORKOUT_SESSIONS);
-    return data ? JSON.parse(data) : [];
+    const sessions: WorkoutSession[] = data ? JSON.parse(data) : [];
+    // Match Supabase order: most recent first (progression uses first match as "last session")
+    return sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   } catch (error) {
     console.error('Error getting workout sessions:', error);
     return [];
@@ -174,11 +300,93 @@ export const getRecentWorkouts = async (limit: number = 10): Promise<WorkoutSess
   }
 };
 
+export const deleteWorkoutSession = async (sessionId: string): Promise<void> => {
+  const uid = getStorageUserId();
+  const draft = await getActiveWorkoutDraft(uid ?? undefined);
+  if (draft?.workout?.id === sessionId) {
+    await clearActiveWorkoutDraft(uid ?? undefined);
+  }
+  if (isSupabaseConfigured() && !uid) {
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseDeleteWorkoutSession(uid, sessionId);
+      await syncSessionCompletedDateFromHistory(uid);
+      invalidateTodayWorkoutContextCache(uid);
+      return;
+    } catch (error) {
+      console.error('Error deleting workout session:', error);
+      throw error;
+    }
+  }
+  try {
+    const existingSessions = await getWorkoutSessions();
+    const updatedSessions = existingSessions.filter((s) => s.id !== sessionId);
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+    await syncSessionCompletedDateFromHistory(uid ?? undefined);
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
+  } catch (error) {
+    console.error('Error deleting workout session:', error);
+    throw error;
+  }
+};
+
+export const deleteAllWorkoutSessions = async (): Promise<void> => {
+  const uid = getStorageUserId();
+  await clearActiveWorkoutDraft(uid ?? undefined);
+  if (isSupabaseConfigured() && !uid) {
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseDeleteAllWorkoutSessions(uid);
+      await clearSessionCompletedDate(uid);
+      invalidateTodayWorkoutContextCache(uid);
+      return;
+    } catch (error) {
+      console.error('Error deleting all workout sessions:', error);
+      throw error;
+    }
+  }
+  try {
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify([]));
+    await clearSessionCompletedDate(uid ?? undefined);
+    invalidateTodayWorkoutContextCache(uid ?? undefined);
+  } catch (error) {
+    console.error('Error deleting all workout sessions:', error);
+    throw error;
+  }
+};
+
+export const updateWorkoutSession = async (session: WorkoutSession): Promise<void> => {
+  const uid = getStorageUserId();
+  if (isSupabaseConfigured() && !uid) {
+    return;
+  }
+  if (uid && isSupabaseConfigured()) {
+    try {
+      await supabaseStorage.supabaseSaveWorkoutSession(uid, session);
+      return;
+    } catch (error) {
+      console.error('Error updating workout session:', error);
+      throw error;
+    }
+  }
+  try {
+    const existingSessions = await getWorkoutSessions();
+    const updatedSessions = existingSessions.map((s) => s.id === session.id ? session : s);
+    await AsyncStorage.setItem(KEYS.WORKOUT_SESSIONS, JSON.stringify(updatedSessions));
+  } catch (error) {
+    console.error('Error updating workout session:', error);
+    throw error;
+  }
+};
+
 // Saved Routines (templates for My Routines)
 export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getSavedRoutines');
     return [];
   }
   if (uid && isSupabaseConfigured()) {
@@ -196,7 +404,6 @@ export const getSavedRoutines = async (): Promise<SavedRoutine[]> => {
 export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   if (uid && isSupabaseConfigured()) {
@@ -222,7 +429,6 @@ export const saveSavedRoutine = async (routine: SavedRoutine): Promise<void> => 
 export const deleteSavedRoutine = async (routineId: string): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   if (uid && isSupabaseConfigured()) {
@@ -248,7 +454,6 @@ export const deleteSavedRoutine = async (routineId: string): Promise<void> => {
 export const getSavedFoods = async (): Promise<SavedFood[]> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getSavedFoods');
     return [];
   }
   if (uid && isSupabaseConfigured()) {
@@ -267,7 +472,6 @@ export const getSavedFoods = async (): Promise<SavedFood[]> => {
 export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'useCount'>): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   if (uid && isSupabaseConfigured()) {
@@ -309,7 +513,6 @@ export const saveSavedFood = async (food: Omit<SavedFood, 'id' | 'lastUsed' | 'u
 export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   if (uid && isSupabaseConfigured()) {
@@ -332,7 +535,6 @@ export const savePrompts = async (prompts: Prompt[]): Promise<void> => {
 export const getPrompts = async (): Promise<Prompt[]> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getPrompts');
     return [];
   }
   if (uid && isSupabaseConfigured()) {
@@ -351,7 +553,6 @@ export const getPrompts = async (): Promise<Prompt[]> => {
 export const saveUserSettings = async (settings: UserSettings): Promise<void> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    console.warn('[storage] blocked write: no authenticated user');
     return;
   }
   if (uid && isSupabaseConfigured()) {
@@ -374,7 +575,6 @@ export const saveUserSettings = async (settings: UserSettings): Promise<void> =>
 export const getUserSettings = async (): Promise<UserSettings> => {
   const uid = getStorageUserId();
   if (isSupabaseConfigured() && !uid) {
-    if (__DEV__) console.log('[storage] supabase enabled, no user -> returning empty for getUserSettings');
     return DEFAULT_SETTINGS;
   }
   if (uid && isSupabaseConfigured()) {
@@ -388,6 +588,49 @@ export const getUserSettings = async (): Promise<UserSettings> => {
     return DEFAULT_SETTINGS;
   }
 };
+
+// --- Exercise progression state (Supabase only) ---
+
+export type ExerciseProgressStateRow = {
+  exerciseId: string;
+  currentBand: string;
+  consecutiveSuccess: number;
+  consecutiveFailure: number;
+  updatedAt?: string;
+};
+
+/** Fetch progression state for exercises. Returns map keyed by exerciseId. Defaults when missing. */
+export async function getExerciseProgressState(
+  userId: string,
+  exerciseIds: string[]
+): Promise<Record<string, ExerciseProgressStateRow>> {
+  const uid = getStorageUserId();
+  if (!uid || !isSupabaseConfigured() || userId !== uid || exerciseIds.length === 0) {
+    return {};
+  }
+  const prescriptions = await supabaseStorage.supabaseGetExercisePrescriptions(uid, exerciseIds);
+  const result: Record<string, ExerciseProgressStateRow> = {};
+  for (const id of exerciseIds) {
+    const rx = prescriptions[id];
+    result[id] = {
+      exerciseId: id,
+      currentBand: rx?.difficultyBand ?? 'easy',
+      consecutiveSuccess: rx?.consecutiveSuccess ?? 0,
+      consecutiveFailure: rx?.consecutiveFailure ?? 0,
+    };
+  }
+  return result;
+}
+
+/** Upsert progression state rows. Used after workout save; storage layer delegates to Supabase. */
+export async function upsertExerciseProgressState(
+  userId: string,
+  rows: Array<{ exerciseId: string; currentBand: string; consecutiveSuccess: number; consecutiveFailure: number; nextWeight?: number; goal?: string; reason?: string }>
+): Promise<void> {
+  const uid = getStorageUserId();
+  if (!uid || !isSupabaseConfigured() || userId !== uid) return;
+  await supabaseStorage.supabaseUpsertExerciseProgressState(uid, rows);
+}
 
 /** Progress Hub widget order. Uses UserSettings.progressHubOrder. */
 export const getProgressHubOrder = async (): Promise<string[]> => {

@@ -9,13 +9,13 @@ export const TMLSN_SPLITS: WorkoutSplit[] = [
       {
         name: 'Bench Press',
         targetSets: 4,
-        targetReps: 8,
+        targetReps: 10,
         restTimer: 180, // 3 minutes
       },
       {
         name: 'Barbell Row',
         targetSets: 4,
-        targetReps: 8,
+        targetReps: 10,
         restTimer: 180,
       },
       {
@@ -51,7 +51,7 @@ export const TMLSN_SPLITS: WorkoutSplit[] = [
       {
         name: 'Squat',
         targetSets: 4,
-        targetReps: 8,
+        targetReps: 10,
         restTimer: 240, // 4 minutes
       },
       {

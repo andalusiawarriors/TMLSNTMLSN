@@ -42,6 +42,8 @@ import { AnimatedFadeInUp } from './AnimatedFadeInUp';
 import TiltPressable from './TiltPressable';
 
 import { getWorkoutSessions, getProgressHubOrder, saveProgressHubOrder } from '../utils/storage';
+import { EXERCISE_DATABASE } from '../utils/exerciseDb/exerciseDatabase';
+import { getAllExerciseSettings } from '../utils/exerciseSettings';
 import { getSessionDisplayName } from '../utils/workoutSessionDisplay';
 import { workoutsToSetRecordsForRange } from '../utils/workoutMuscles';
 import {
@@ -318,6 +320,7 @@ function TileCard({ item, index, animTrigger, children, reorderMode }: { item: T
           style={{ width: CARD_SIZE, height: CARD_SIZE }}
           borderRadius={TILE_RADIUS}
           shadowStyle={tileStyles.shadow}
+          longPressMs={210}
           onPress={reorderMode ? undefined : () => router.push(item.route as any)}
         >
           <View style={tileStyles.glass}>
@@ -374,6 +377,7 @@ const tileStyles = StyleSheet.create({
 const ALL_TILE_DEFS: Record<string, Omit<TileData, 'subtitle'>> = {
   progress: { id: 'progress', title: 'progress.', route: '/progress-graph' },
   strength: { id: 'strength', title: 'strength.', route: '/strength-muscles' },
+  exercises: { id: 'exercises', title: 'exercises.', route: '/exercises' },
   history: { id: 'history', title: 'history.', route: '/workout-history' },
   activity: { id: 'activity', title: 'activity', route: '/progress-heatmap' },
   'active-days': { id: 'active-days', title: 'active days', route: '/progress-heatmap' },
@@ -569,6 +573,7 @@ export function ProgressHub() {
   const [radarHeatmap, setRadarHeatmap] = useState<HeatmapData[]>([]);
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [order, setOrder] = useState<string[]>([...DEFAULT_PROGRESS_HUB_ORDER]);
+  const [favCount, setFavCount] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -580,6 +585,8 @@ export function ProgressHub() {
         ]);
         setSessions(allSessions);
         setOrder(savedOrder);
+        const exSettings = await getAllExerciseSettings();
+        setFavCount(Object.values(exSettings).filter((s) => s.favorite).length);
         const weekStart = getWeekStart();
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 7);
@@ -622,6 +629,7 @@ export function ProgressHub() {
     () => ({
       progress: 'tap to open',
       strength: 'tap to open',
+      exercises: `${EXERCISE_DATABASE.length} exercises`,
       history: 'all sessions',
       activity: periodLabel,
       'active-days': `${activeDays} ${periodLabel}`,
@@ -696,6 +704,13 @@ export function ProgressHub() {
         );
       } else if (item.id === 'strength') {
         content = <MiniRadar heatmapData={radarHeatmap} size={CARD_SIZE - 56} />;
+      } else if (item.id === 'exercises') {
+        content = (
+          <View style={{ alignSelf: 'flex-start', gap: 5 }}>
+            <MiniStatRow value={String(EXERCISE_DATABASE.length)} label="total" />
+            {favCount > 0 && <MiniStatRow value={String(favCount)} label="starred" />}
+          </View>
+        );
       } else if (item.id === 'activity') {
         content = <WeekDots sessions={sessions} />;
       } else if (item.id === 'history') {
@@ -711,7 +726,7 @@ export function ProgressHub() {
         </TileCard>
       );
     },
-    [animTrigger, radarHeatmap, sessions, progressStats, activeDays, totalWorkouts, isReorderMode],
+    [animTrigger, radarHeatmap, sessions, progressStats, activeDays, totalWorkouts, isReorderMode, favCount],
   );
 
   const reorderTiles = useMemo(() => {
@@ -727,12 +742,13 @@ export function ProgressHub() {
   const getTileContent = useCallback((item: TileData) => {
     if (item.id === 'progress') return <View style={{ alignSelf: 'flex-start', gap: 6 }}><MiniStatRow value={String(progressStats.count)} label="sessions" /><MiniStatRow value={`${progressStats.totalMins}m`} label="total" />{progressStats.best > 0 && <MiniStatRow value={`${progressStats.best}m`} label="best" />}</View>;
     if (item.id === 'strength') return <MiniRadar heatmapData={radarHeatmap} size={CARD_SIZE - 56} />;
+    if (item.id === 'exercises') return <View style={{ alignSelf: 'flex-start', gap: 5 }}><MiniStatRow value={String(EXERCISE_DATABASE.length)} label="total" />{favCount > 0 && <MiniStatRow value={String(favCount)} label="starred" />}</View>;
     if (item.id === 'activity') return <WeekDots sessions={sessions} />;
     if (item.id === 'history') return <View style={{ alignSelf: 'flex-start', width: '100%' }}><MiniHistory sessions={sessions} /></View>;
     if (item.id === 'active-days') return <BigStat value={String(activeDays)} sub="days active" />;
     if (item.id === 'workouts') return <BigStat value={String(totalWorkouts)} sub="sessions" />;
     return null;
-  }, [progressStats, radarHeatmap, sessions, activeDays, totalWorkouts]);
+  }, [progressStats, radarHeatmap, sessions, activeDays, totalWorkouts, favCount]);
 
   if (isReorderMode) {
     return (

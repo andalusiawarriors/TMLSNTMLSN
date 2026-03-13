@@ -24,6 +24,15 @@ export interface Meal {
   carbs: number;
   fat: number;
   imageUri?: string; // Optional photo
+  /** Stored when logging from search — used to show gold/quicksilver styling in recently uploaded */
+  fdcId?: number;
+  source?: 'usda' | 'off';
+  dataType?: string;
+  brand?: string;
+  /** Amount user entered (e.g. "2", "100") — pre-load when re-opening from recently uploaded */
+  amount?: string;
+  /** Unit user selected (e.g. "cup", "100g") — pre-load when re-opening from recently uploaded */
+  unit?: string;
 }
 
 export interface DailyGoals {
@@ -52,6 +61,10 @@ export interface Exercise {
   notes?: string;
   /** ID from exercise database for muscle heatmap mapping */
   exerciseDbId?: string;
+  repRangeLow?: number | null;
+  repRangeHigh?: number | null;
+  smallestIncrement?: number | null;
+  defaultTargetRpe?: number | null;
 }
 
 export interface Set {
@@ -59,6 +72,8 @@ export interface Set {
   weight: number;
   reps: number;
   completed: boolean;
+  rpe?: number | null;
+  notes?: string | null;
 }
 
 export interface WorkoutSplit {
@@ -104,6 +119,55 @@ export interface Prompt {
   category?: string;
 }
 
+// Training System Settings
+export type TrainingArchetype =
+  | 'bodybuilder'
+  | 'athlete'
+  | 'powerlifter'
+  | 'mdj'
+  | 'general';
+export type VolumeFramework = 'rp' | 'range' | 'custom';
+export type ScheduleMode = 'builder' | 'tmlsn' | 'ghost';
+export type WeekReset = 'monday' | 'rolling' | 'custom_day';
+
+export type WeekDayEntry = {
+  sessionName?: string;   // display label e.g. "Upper A"
+  isRest?: boolean;
+  splitId?: string;       // references a TMLSN split id
+  routineId?: string;     // references a saved routine id
+};
+
+export interface RpMuscleTarget {
+  mev: number;
+  mav: number;
+  mrv: number;
+}
+
+export interface RangeMuscleTarget {
+  min: number;
+  max: number;
+}
+
+export interface TrainingSettings {
+  archetype: TrainingArchetype;
+  volumeFramework: VolumeFramework;
+  scheduleMode: ScheduleMode;
+  weekReset: WeekReset;
+  allowMidWeekEdits: boolean;
+  scheduleNotifications: boolean;
+  scheduleReminderEnabled: boolean;
+  /** When true, progressive overload advancement requires achieving the target RPE range. */
+  useRpeForOverload: boolean;
+  rpMuscleTargets: Record<string, RpMuscleTarget>;
+  rangeMuscleTargets: Record<string, RangeMuscleTarget>;
+  /** Primary training goal — drives the progressive overload algorithm defaults. */
+  trainingFocus?: 'hypertrophy' | 'strength';
+  /** Builder mode week plan — 7 entries indexed 0=Mon … 6=Sun. */
+  weekPlan?: WeekDayEntry[];
+  /** Builder mode target session count per week. */
+  weeklySessionTarget?: number;
+}
+
 // User Settings
 export interface UserSettings {
   dailyGoals: DailyGoals;
@@ -115,6 +179,12 @@ export interface UserSettings {
   defaultRestTimerEnabled?: boolean; // if false, no default timer for new exercises
   /** Progress Hub widget order (ids). Saved per account. */
   progressHubOrder?: string[];
+  /** Training system settings (volume framework, schedule, archetype, etc.). */
+  training?: TrainingSettings;
+  /** Body map gender for heatmap display. */
+  bodyMapGender?: 'male' | 'female';
+  /** For bilateral dumbbell exercises: 'per_hand' (default) or 'total'. Overrides exercise default when ambiguous. */
+  dumbbellWeightPreference?: 'per_hand' | 'total';
 }
 
 // Saved Food (for quick re-logging)
@@ -141,6 +211,17 @@ export interface SavedFood {
   fat: number;
   lastUsed: string;
   useCount: number;
+}
+
+// Deck card (text-box natural language flow)
+export interface DeckItem {
+  id: string;
+  food: import('../utils/foodApi').ParsedNutrition;
+  amount: string;
+  unit: string;
+  mealType: MealType | null;
+  userInput: string;
+  excludedFdcIds?: number[];
 }
 
 // Notification Types

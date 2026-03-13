@@ -9,6 +9,9 @@ alwaysApply: true
 - **Do NOT set `fontFamily`** — use `fontWeight` instead for weight (e.g. `fontWeight: '600'`).
 - Platform default: San Francisco (iOS), Roboto (Android).
 - Applies to: modals, pills, buttons, data displays, labels, rest time edit, exercise blocks, and similar UI.
+- **Default component:** use `components/ui/TmlsnText.tsx` for new UI text.
+- **Default tokens:** use `constants/typography.ts` (`SystemTypography`) for variants/sizes/weights.
+- **Exceptions only:** custom families must be explicit and justified; prefer `TypographyFamilies` from `constants/typography.ts`.
 
 **Examples:**
 ```tsx

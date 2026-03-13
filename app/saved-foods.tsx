@@ -13,6 +13,7 @@ import { getSavedFoods } from '../utils/storage';
 import { SavedFood } from '../types';
 import { Colors, Spacing, Font } from '../constants/theme';
 import { BackButton } from '../components/BackButton';
+import { HomeGradientBackground } from '../components/HomeGradientBackground';
 
 export default function SavedFoodsScreen() {
   const router = useRouter();
@@ -46,6 +47,7 @@ export default function SavedFoodsScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
+        <HomeGradientBackground />
         <BackButton />
         <View style={styles.titleRow} pointerEvents="box-none">
           <Text style={styles.screenTitle}>Saved Foods</Text>
@@ -59,6 +61,7 @@ export default function SavedFoodsScreen() {
 
   return (
     <View style={styles.container}>
+      <HomeGradientBackground />
       <BackButton />
       <View style={styles.titleRow} pointerEvents="box-none">
         <Text style={styles.screenTitle}>Saved Foods</Text>
@@ -101,7 +104,6 @@ const TITLE_ROW_HEIGHT = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
   },
   titleRow: {
     position: 'absolute',

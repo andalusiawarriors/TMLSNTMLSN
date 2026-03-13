@@ -42,7 +42,7 @@ import { ADD_MEAL_UNITS, UNIT_TO_GRAMS, resolveGrams, type AddMealUnit } from '.
 import * as Theme from '../constants/theme';
 import type { MealType, DailyGoals } from '../types';
 import { DEFAULT_GOALS } from '../constants/storageDefaults';
-import type { ParsedNutrition } from '../utils/foodApi';
+import { inferHouseholdPortions, type ParsedNutrition } from '../utils/foodApi';
 import * as Haptics from 'expo-haptics';
 import { useAnimatedRingNumber } from '../hooks/useAnimatedRingNumber';
 import { useAnimatedProgress } from '../hooks/useAnimatedProgress';
@@ -366,6 +366,8 @@ export interface AddMealSheetProps {
   /** When provided, renders a live-preview calorie ring above the sheet */
   dayLog?: { calories: number; protein: number; carbs: number; fat: number };
   dailyGoals?: DailyGoals;
+  /** When true, ring does not animate on open (e.g. from recently uploaded card). Animation runs only when user changes quantity. */
+  skipInitialRingAnimation?: boolean;
 }
 
 export function AddMealSheet({
@@ -399,8 +401,10 @@ export function AddMealSheet({
   userVolumeUnit,
   dayLog,
   dailyGoals,
+  skipInitialRingAnimation = false,
 }: AddMealSheetProps) {
   const insets = useSafeAreaInsets();
+  const initialAmountUnitRef = useRef<{ amount: string; unit: string } | null>(null);
 
   // ── Live-preview ring constants (mirrors overlay in nutrition.tsx) ──
   const PR_W = 291;
@@ -414,7 +418,9 @@ export function AddMealSheet({
   // Backdrop starts below the ring + a little gap so the ring stays unmasked
   const BACKDROP_TOP = PR_TOP + PR_H + 8;
   const [isClosingRing, setIsClosingRing] = useState(false);
-  const RING_OUT_DURATION_MS = 500; // same as ring-in so out animates in the same way and fashion
+  const [hasUserInteractedWithQuantity, setHasUserInteractedWithQuantity] = useState(false);
+  const [closeValuesWillChange, setCloseValuesWillChange] = useState(false);
+  const RING_OUT_DURATION_MS = 180; // matches sheet close so ring + pills animate out with the card
   const amountEmpty = !addMealAmount.trim() || !Number.isFinite(parseFloat(addMealAmount)) || parseFloat(addMealAmount) <= 0;
   // Ring matches home screen: when amount empty, show day's current total (not 0)
   const previewCaloriesRaw = isClosingRing
@@ -423,14 +429,19 @@ export function AddMealSheet({
   const previewProteinRaw  = isClosingRing ? (dayLog?.protein ?? 0)  : amountEmpty ? (dayLog?.protein ?? 0)  : Math.round((dayLog?.protein ?? 0)  + (parseFloat(protein)  || 0));
   const previewCarbsRaw    = isClosingRing ? (dayLog?.carbs ?? 0)    : amountEmpty ? (dayLog?.carbs ?? 0)    : Math.round((dayLog?.carbs ?? 0)    + (parseFloat(carbs)    || 0));
   const previewFatRaw      = isClosingRing ? (dayLog?.fat ?? 0)      : amountEmpty ? (dayLog?.fat ?? 0)      : Math.round((dayLog?.fat ?? 0)      + (parseFloat(fat)      || 0));
-  // Haptic must be 'sequence' whenever sheet is open or closing so ring animates with feedback when user types quantity
+  const userHasChangedQuantity = !!(skipInitialRingAnimation && initialAmountUnitRef.current &&
+    (addMealAmount !== initialAmountUnitRef.current.amount || addMealUnit !== initialAmountUnitRef.current.unit));
+  // Haptic when user changes quantity (typing/unit), or when closing only if ring values actually change (revert).
   const sheetOpenOrClosing = visible || isClosingRing;
-  const calHapticOpts = { haptic: sheetOpenOrClosing ? 'sequence' as const : 'none' as const };
+  const calHapticOpts = { haptic: ((isClosingRing && closeValuesWillChange) || (visible && hasUserInteractedWithQuantity)) ? 'sequence' as const : 'none' as const };
   const silentOpts = { haptic: 'none' as const };
-  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, calHapticOpts);
-  const previewProtein  = useAnimatedRingNumber(previewProteinRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
-  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
-  const previewFat      = useAnimatedRingNumber(previewFatRaw, isClosingRing ? RING_OUT_DURATION_MS : 500, silentOpts);
+  const ringDuration = isClosingRing
+    ? RING_OUT_DURATION_MS
+    : (skipInitialRingAnimation && !userHasChangedQuantity) ? 0 : 500;
+  const previewCalories = useAnimatedRingNumber(previewCaloriesRaw, ringDuration, calHapticOpts);
+  const previewProtein  = useAnimatedRingNumber(previewProteinRaw, ringDuration, silentOpts);
+  const previewCarbs    = useAnimatedRingNumber(previewCarbsRaw, ringDuration, silentOpts);
+  const previewFat      = useAnimatedRingNumber(previewFatRaw, ringDuration, silentOpts);
   const goals = dailyGoals ?? DEFAULT_GOALS;
   const PR_ARC_LEN = Math.PI * PR_R;
   const PR_DASH = 2;
@@ -438,7 +449,7 @@ export function AddMealSheet({
   const PR_BOUNDARY_LINE_WIDTH = PR_DASH * 1.05;
   const PR_NUM_LINES = Math.ceil(PR_ARC_LEN / (PR_DASH + PR_DASH_GAP));
   const _prCalRatio = previewCaloriesRaw / goals.calories;
-  const _prProgressDuration = isClosingRing ? RING_OUT_DURATION_MS : (_prCalRatio > 1 ? 700 : 500);
+  const _prProgressDuration = isClosingRing ? RING_OUT_DURATION_MS : (skipInitialRingAnimation && !userHasChangedQuantity) ? 0 : (_prCalRatio > 1 ? 700 : 500);
   const animPrCalProgress = useAnimatedProgress(Math.min(_prCalRatio, 3), _prProgressDuration);
   const prFilledCount = Math.round(Math.min(animPrCalProgress, 1) * PR_NUM_LINES);
   const prOverflowCount = Math.round(Math.min(Math.max(animPrCalProgress - 1, 0), 1) * PR_NUM_LINES);
@@ -451,9 +462,9 @@ export function AddMealSheet({
   const _prProtRatio = previewProteinRaw / goals.protein;
   const _prCarbRatio = previewCarbsRaw / goals.carbs;
   const _prFatRatio  = previewFatRaw / goals.fat;
-  const animPrProteinProgress = useAnimatedProgress(Math.min(_prProtRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prProtRatio > 1 ? 700 : 500));
-  const animPrCarbsProgress   = useAnimatedProgress(Math.min(_prCarbRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prCarbRatio > 1 ? 700 : 500));
-  const animPrFatProgress     = useAnimatedProgress(Math.min(_prFatRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (_prFatRatio > 1 ? 700 : 500));
+  const animPrProteinProgress = useAnimatedProgress(Math.min(_prProtRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (skipInitialRingAnimation && !userHasChangedQuantity) ? 0 : (_prProtRatio > 1 ? 700 : 500));
+  const animPrCarbsProgress   = useAnimatedProgress(Math.min(_prCarbRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (skipInitialRingAnimation && !userHasChangedQuantity) ? 0 : (_prCarbRatio > 1 ? 700 : 500));
+  const animPrFatProgress     = useAnimatedProgress(Math.min(_prFatRatio, 3), isClosingRing ? RING_OUT_DURATION_MS : (skipInitialRingAnimation && !userHasChangedQuantity) ? 0 : (_prFatRatio > 1 ? 700 : 500));
   const previewMacros = [
     { value: previewProtein, label: 'protein', progress: animPrProteinProgress, left: 47, top: 63 },
     { value: previewCarbs,   label: 'carbs',   progress: animPrCarbsProgress,   left: (PR_W - PR_MACRO_SIZE) / 2, top: 95 },
@@ -483,10 +494,17 @@ export function AddMealSheet({
       setUnitDropdownOpen(false);
       dropdownProgress.value = 0;
       setIsClosingRing(false);
+      setCloseValuesWillChange(false);
+      if (skipInitialRingAnimation) {
+        initialAmountUnitRef.current = { amount: addMealAmount, unit: addMealUnit };
+      }
+    } else {
+      initialAmountUnitRef.current = null;
+      setHasUserInteractedWithQuantity(false);
     }
-  }, [visible]);
+  }, [visible, skipInitialRingAnimation, addMealAmount, addMealUnit]);
 
-  const SHEET_CLOSE_MS = 500; // same duration as ring-out so sheet and numbers animate out together, matching the in animation
+  const SHEET_CLOSE_MS = 180; // snappy close; ring-out matches so card + numbers animate together
 
   const runSheetClose = useCallback((opts: { closeDurationMs?: number } = {}) => {
     const closeDurationMs = opts.closeDurationMs ?? SHEET_CLOSE_MS;
@@ -505,7 +523,10 @@ export function AddMealSheet({
     }
     isExpanded.value = 0;
     setScrollEnabled(false);
-    if (dayLog != null) setIsClosingRing(true);
+    if (dayLog != null) {
+      setCloseValuesWillChange(!amountEmpty);
+      setIsClosingRing(true);
+    }
     runSheetClose();
   };
 
@@ -607,6 +628,7 @@ export function AddMealSheet({
         }
       }
       if (cleaned !== addMealAmount) {
+        setHasUserInteractedWithQuantity(true);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
       setAddMealAmount(cleaned);
@@ -690,14 +712,55 @@ export function AddMealSheet({
     transform: [{ translateX: marqueeX.value }],
   }));
 
-  const foodPortions = selectedFood?.portions;
+  const apiPortions = selectedFood?.portions ?? [];
+  // Merge inferred household portions (e.g. "1 slice" for bread) so toggle always has them
+  const nameForInfer = `${selectedFood?.name ?? ''} ${selectedFood?.originalDescription ?? ''}`.trim().toLowerCase();
+  const inferred = nameForInfer ? inferHouseholdPortions(nameForInfer, selectedFood?.unit ?? 'g') : [];
+  const portionLabels = new Set(apiPortions.map((p) => p.label.toLowerCase()));
+  const mergedPortions: Array<{ label: string; gramWeight: number }> = [...apiPortions];
+  for (const p of inferred) {
+    if (!portionLabels.has(p.label.toLowerCase())) {
+      mergedPortions.unshift(p);
+      portionLabels.add(p.label.toLowerCase());
+    }
+  }
+  const foodPortions = mergedPortions;
   const baseUnits = userVolumeUnit === 'ml'
     ? ([...ADD_MEAL_UNITS.filter(u => u !== 'oz'), 'oz'] as string[])
     : ([...ADD_MEAL_UNITS] as string[]);
   const allUnits: string[] = [
-    ...(foodPortions?.map(p => p.label) ?? []),
+    ...foodPortions.map((p) => p.label),
     ...baseUnits,
   ];
+
+  const handleUnitChange = useCallback((newUnit: string) => {
+    setHasUserInteractedWithQuantity(true);
+    const toggleUnits = ['cup', '2cup', '100g', '100ml'];
+    if (toggleUnits.includes(newUnit)) {
+      setAddMealUnit(newUnit);
+      setAddMealAmount('0');
+      return;
+    }
+    const amt = parseFloat(addMealAmount);
+    const hasValid = Number.isFinite(amt) && amt > 0;
+    const gramsPerNew = resolveGrams(newUnit, foodPortions);
+    if (!hasValid || gramsPerNew <= 0) {
+      setAddMealUnit(newUnit);
+      if (!hasValid) setAddMealAmount('1');
+      return;
+    }
+    if (toggleUnits.includes(addMealUnit)) {
+      setAddMealUnit(newUnit);
+      setAddMealAmount('0');
+      return;
+    }
+    const gramsPerOld = resolveGrams(addMealUnit, foodPortions);
+    const totalGrams = amt * gramsPerOld;
+    const newAmount = totalGrams / gramsPerNew;
+    const formatted = String(Math.floor(newAmount));
+    setAddMealAmount(formatted);
+    setAddMealUnit(newUnit);
+  }, [addMealAmount, addMealUnit, foodPortions, setAddMealAmount, setAddMealUnit]);
 
   // Scaling factor for the nutrition data table (raw per-100g values from selectedFood).
   const scalingFactor = (parseFloat(addMealAmount) || 1) * resolveGrams(addMealUnit, foodPortions) / 100;
@@ -710,7 +773,7 @@ export function AddMealSheet({
   const pillCarbsTarget = isClosingRing ? 0 : (hasAmt && carbs ? Math.round(parseFloat(carbs)) : 0);
   const pillFatTarget = isClosingRing ? 0 : (hasAmt && fat ? Math.round(parseFloat(fat)) : 0);
   const pillDuration = isClosingRing ? RING_OUT_DURATION_MS : 500;
-  const pillCalHapticOpts = { haptic: sheetOpenOrClosing ? 'sequence' as const : 'none' as const };
+  const pillCalHapticOpts = { haptic: ((isClosingRing && closeValuesWillChange) || (visible && hasUserInteractedWithQuantity)) ? 'sequence' as const : 'none' as const };
   const animatedPillCal = useAnimatedRingNumber(pillCalTarget, pillDuration, pillCalHapticOpts);
   const animatedPillProtein = useAnimatedRingNumber(pillProteinTarget, pillDuration, silentOpts);
   const animatedPillCarbs = useAnimatedRingNumber(pillCarbsTarget, pillDuration, silentOpts);
@@ -782,8 +845,12 @@ export function AddMealSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={closeWithAnimation}>
-      {/* Tap-to-close: full screen so tapping search bar area also closes */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={closeWithAnimation} />
+      {/* Tap-to-close: responder API (no Pressable) so no haptic when user dismisses */}
+      <View
+        style={StyleSheet.absoluteFill}
+        onStartShouldSetResponder={() => true}
+        onResponderRelease={closeWithAnimation}
+      />
 
       {/* Live-preview calorie ring — sits above backdrop in transparent modal space */}
       {dayLog && (
@@ -1056,7 +1123,6 @@ export function AddMealSheet({
                 <Pressable
                   style={styles.capsuleRight}
                   onPress={() => {
-                    Haptics.selectionAsync();
                     unitDropdownOpen ? closeDropdown() : openDropdown();
                   }}
                 >
@@ -1124,9 +1190,8 @@ export function AddMealSheet({
                         key={u}
                         style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
                         onPress={() => {
-                          setAddMealUnit(u);
+                          handleUnitChange(u);
                           closeDropdown();
-                          Haptics.selectionAsync();
                         }}
                       >
                         <Text

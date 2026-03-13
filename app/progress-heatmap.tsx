@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Spacing, Colors, Glass } from '../constants/theme';
-import { HomeGradientBackground } from '../components/HomeGradientBackground';
+import { FlatFitnessBackground } from '../components/FlatFitnessBackground';
 import TiltPressable from '../components/TiltPressable';
 import { GlassCard } from '../components/ui/GlassCard';
 import { GlassPill } from '../components/ui/GlassPill';
@@ -37,7 +37,7 @@ export default function ProgressHeatmapScreen() {
 
   return (
     <View style={styles.wrapper}>
-      <HomeGradientBackground />
+      <FlatFitnessBackground />
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <Pressable
           onPress={() => {
@@ -117,7 +117,7 @@ export default function ProgressHeatmapScreen() {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: '#1A1A1A',
   },
   header: {
     paddingHorizontal: Spacing.md,

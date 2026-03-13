@@ -3,7 +3,115 @@
 // 150+ exercises with full muscle activation percentages
 // ============================================================
 
-import { Exercise } from './types';
+import { Exercise, LoadEntryMode } from './types';
+import type { UserSettings } from '../../types';
+
+// ── Search helper ───────────────────────────────────────────
+
+/** Normalize common query variants for search (e.g. tricep→triceps, lat→lateral). */
+const QUERY_NORMALIZE: Record<string, string> = {
+  tricep: 'triceps', triceps: 'triceps',
+  bicep: 'biceps', biceps: 'biceps',
+  lat: 'lateral', lateral: 'lateral',
+  db: 'dumbbell', dumbbell: 'dumbbell',
+  bb: 'barbell', barbell: 'barbell',
+  one: 'single', single: 'single',
+  ohp: 'overhead', overhead: 'overhead',
+  sm: 'smith', smith: 'smith',
+  ext: 'extension', extension: 'extension', extensions: 'extension',
+};
+
+/** Tokenize query for search (lowercase, split on spaces, strip punctuation). */
+function tokenize(q: string): string[] {
+  return q.toLowerCase().trim().replace(/[^\w\s-]/g, ' ').split(/\s+/).filter(Boolean);
+}
+
+/** Get all variants of a token for matching (normalized form + singular if plural). */
+function getTokenVariants(tok: string): string[] {
+  const norm = QUERY_NORMALIZE[tok] ?? tok;
+  const variants = new Set<string>([tok, norm]);
+  if (norm.length > 3 && norm.endsWith('s') && !norm.endsWith('ss')) {
+    variants.add(norm.slice(0, -1));
+  }
+  if (tok.length > 3 && tok.endsWith('s') && !tok.endsWith('ss')) {
+    variants.add(tok.slice(0, -1));
+  }
+  return Array.from(variants);
+}
+
+/** Build searchable text from exercise (name, aliases, equipment with underscores as spaces). */
+function getSearchableStrings(ex: Exercise): string[] {
+  const nameLower = ex.name.toLowerCase();
+  const aliasLower = (ex.aliases ?? []).map((a) => a.toLowerCase());
+  const equipText = (ex.equipment ?? []).map((e) => e.replace(/_/g, ' ').toLowerCase());
+  return [nameLower, ...aliasLower, ...equipText];
+}
+
+/** Score exercise for relevance: 3=exact, 2=prefix, 1=contains, 0=no match. */
+function scoreExercise(ex: Exercise, tokens: string[]): number {
+  const searchable = getSearchableStrings(ex);
+  const catLower = (ex.category ?? '').toLowerCase();
+
+  let score = 0;
+  for (const tok of tokens) {
+    const variants = getTokenVariants(tok);
+    let best = 0;
+    for (const v of variants) {
+      for (const s of searchable) {
+        if (s === v) best = Math.max(best, 3);
+        else if (s.startsWith(v) || v.startsWith(s)) best = Math.max(best, 2);
+        else if (s.includes(v)) best = Math.max(best, 1);
+      }
+    }
+    if (catLower && (variants.some((v) => catLower.includes(v)) || variants.some((v) => v.includes(catLower)))) {
+      best = Math.max(best, 1);
+    }
+    if (best === 0) return 0;
+    score += best;
+  }
+  return score;
+}
+
+/**
+ * Search and merge built-in + user exercises. Tokenizes query, matches name + aliases + category + equipment.
+ * Sorts by relevance: exact match > prefix > contains.
+ */
+export function searchExercises(
+  query: string,
+  builtIn: Exercise[],
+  userExercises: Exercise[]
+): Exercise[] {
+  const merged = [...builtIn, ...userExercises];
+  const q = query.trim();
+  if (!q) return merged;
+
+  const tokens = tokenize(q);
+  const scored = merged
+    .map((ex) => ({ ex, score: scoreExercise(ex, tokens) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return scored.map(({ ex }) => ex);
+}
+
+/**
+ * Resolve loadEntryMode for an exercise. Used for weight column label in WorkoutSetTable.
+ * - If exercise has loadEntryMode, use it.
+ * - Else if equipment includes dumbbell and laterality === 'bilateral', use userSettings.dumbbellWeightPreference ?? 'per_hand'.
+ * - Else default 'total'.
+ */
+export function getLoadEntryModeForExercise(
+  exercise: Pick<Exercise, 'equipment' | 'laterality' | 'loadEntryMode'>,
+  userSettings?: Pick<UserSettings, 'dumbbellWeightPreference'> | null
+): LoadEntryMode {
+  if (exercise.loadEntryMode) return exercise.loadEntryMode;
+  const hasDumbbell = exercise.equipment?.includes('dumbbell') ?? false;
+  const isBilateral = exercise.laterality === 'bilateral' || !exercise.laterality;
+  if (hasDumbbell && isBilateral) {
+    return (userSettings?.dumbbellWeightPreference ?? 'per_hand') as LoadEntryMode;
+  }
+  return 'total';
+}
 
 // ── CHEST ────────────────────────────────────────────────────
 
@@ -11,6 +119,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'flat_barbell_bench',
     name: 'Flat Barbell Bench Press',
+    overloadCategory: 'compound_big',
     category: 'chest',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -30,6 +139,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'incline_barbell_bench',
     name: 'Incline Barbell Bench Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -48,6 +158,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'decline_barbell_bench',
     name: 'Decline Barbell Bench Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -64,6 +175,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'flat_dumbbell_bench',
     name: 'Flat Dumbbell Bench Press',
+    overloadCategory: 'compound_big',
     category: 'chest',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -82,6 +194,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'incline_dumbbell_bench',
     name: 'Incline Dumbbell Bench Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -98,6 +211,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'decline_dumbbell_bench',
     name: 'Decline Dumbbell Bench Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -113,6 +227,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'flat_dumbbell_fly',
     name: 'Flat Dumbbell Fly',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -129,6 +244,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'incline_dumbbell_fly',
     name: 'Incline Dumbbell Fly',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -144,6 +260,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'cable_crossover_high',
     name: 'Cable Crossover (High to Low)',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -159,6 +276,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'cable_crossover_low',
     name: 'Cable Crossover (Low to High)',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -174,6 +292,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'cable_crossover_mid',
     name: 'Cable Crossover (Mid Height)',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -189,6 +308,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'machine_chest_press',
     name: 'Machine Chest Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['machine'],
     movementType: 'compound',
@@ -204,6 +324,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'pec_deck',
     name: 'Pec Deck / Machine Fly',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -219,6 +340,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'push_up',
     name: 'Push-Up',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -237,6 +359,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'dips_chest',
     name: 'Dips (Chest Focused)',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -255,6 +378,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'smith_bench_press',
     name: 'Smith Machine Bench Press',
+    overloadCategory: 'compound_big',
     category: 'chest',
     equipment: ['smith_machine'],
     movementType: 'compound',
@@ -268,8 +392,25 @@ const chestExercises: Exercise[] = [
     description: 'Bench press on Smith machine. Fixed bar path, good for controlled overload.',
   },
   {
+    id: 'incline_smith_chest_press',
+    name: 'Incline Smith Machine Chest Press',
+    overloadCategory: 'compound_small',
+    category: 'chest',
+    equipment: ['smith_machine'],
+    movementType: 'compound',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'chest_upper', activationPercent: 85 },
+      { muscleId: 'chest_mid', activationPercent: 55 },
+      { muscleId: 'front_delts', activationPercent: 70 },
+      { muscleId: 'triceps_lateral', activationPercent: 50 },
+    ],
+    description: 'Incline bench on Smith machine, press bar from upper chest.',
+  },
+  {
     id: 'landmine_press',
     name: 'Landmine Press',
+    overloadCategory: 'compound_small',
     category: 'chest',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -286,6 +427,7 @@ const chestExercises: Exercise[] = [
   {
     id: 'svend_press',
     name: 'Svend Press',
+    overloadCategory: 'isolation',
     category: 'chest',
     equipment: ['plate'],
     movementType: 'isolation',
@@ -306,6 +448,7 @@ const backExercises: Exercise[] = [
   {
     id: 'barbell_row',
     name: 'Barbell Bent-Over Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -327,6 +470,7 @@ const backExercises: Exercise[] = [
   {
     id: 'pendlay_row',
     name: 'Pendlay Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -344,6 +488,7 @@ const backExercises: Exercise[] = [
   {
     id: 'dumbbell_row',
     name: 'Single-Arm Dumbbell Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -362,6 +507,7 @@ const backExercises: Exercise[] = [
   {
     id: 'pull_up',
     name: 'Pull-Up',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -382,6 +528,7 @@ const backExercises: Exercise[] = [
   {
     id: 'chin_up',
     name: 'Chin-Up',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -400,6 +547,7 @@ const backExercises: Exercise[] = [
   {
     id: 'neutral_grip_pull_up',
     name: 'Neutral Grip Pull-Up',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -417,6 +565,7 @@ const backExercises: Exercise[] = [
   {
     id: 'lat_pulldown',
     name: 'Lat Pulldown',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['cable'],
     movementType: 'compound',
@@ -434,6 +583,7 @@ const backExercises: Exercise[] = [
   {
     id: 'close_grip_pulldown',
     name: 'Close-Grip Lat Pulldown',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['cable'],
     movementType: 'compound',
@@ -450,6 +600,7 @@ const backExercises: Exercise[] = [
   {
     id: 'cable_row_seated',
     name: 'Seated Cable Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['cable'],
     movementType: 'compound',
@@ -468,6 +619,7 @@ const backExercises: Exercise[] = [
   {
     id: 'tbar_row',
     name: 'T-Bar Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -486,6 +638,7 @@ const backExercises: Exercise[] = [
   {
     id: 'deadlift_conventional',
     name: 'Conventional Deadlift',
+    overloadCategory: 'compound_big',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -510,6 +663,7 @@ const backExercises: Exercise[] = [
   {
     id: 'trap_bar_deadlift',
     name: 'Trap Bar Deadlift',
+    overloadCategory: 'compound_big',
     category: 'back',
     equipment: ['trap_bar'],
     movementType: 'compound',
@@ -528,6 +682,7 @@ const backExercises: Exercise[] = [
   {
     id: 'rack_pull',
     name: 'Rack Pull',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -545,6 +700,7 @@ const backExercises: Exercise[] = [
   {
     id: 'barbell_shrug',
     name: 'Barbell Shrug',
+    overloadCategory: 'isolation',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'isolation',
@@ -559,6 +715,7 @@ const backExercises: Exercise[] = [
   {
     id: 'dumbbell_shrug',
     name: 'Dumbbell Shrug',
+    overloadCategory: 'isolation',
     category: 'back',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -573,6 +730,7 @@ const backExercises: Exercise[] = [
   {
     id: 'face_pull',
     name: 'Face Pull',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['cable'],
     movementType: 'compound',
@@ -590,6 +748,7 @@ const backExercises: Exercise[] = [
   {
     id: 'straight_arm_pulldown',
     name: 'Straight-Arm Pulldown',
+    overloadCategory: 'isolation',
     category: 'back',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -606,6 +765,7 @@ const backExercises: Exercise[] = [
   {
     id: 'machine_row',
     name: 'Machine Row (Chest-Supported)',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['machine'],
     movementType: 'compound',
@@ -622,6 +782,7 @@ const backExercises: Exercise[] = [
   {
     id: 'chest_supported_dumbbell_row',
     name: 'Chest-Supported Dumbbell Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -638,6 +799,7 @@ const backExercises: Exercise[] = [
   {
     id: 'meadows_row',
     name: 'Meadows Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -655,6 +817,7 @@ const backExercises: Exercise[] = [
   {
     id: 'back_extension',
     name: 'Back Extension / Hyperextension',
+    overloadCategory: 'isolation',
     category: 'back',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -669,6 +832,7 @@ const backExercises: Exercise[] = [
   {
     id: 'inverted_row',
     name: 'Inverted Row',
+    overloadCategory: 'compound_small',
     category: 'back',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -691,6 +855,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'overhead_press',
     name: 'Barbell Overhead Press',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -711,6 +876,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'push_press',
     name: 'Push Press',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -729,6 +895,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'dumbbell_shoulder_press',
     name: 'Dumbbell Shoulder Press',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -745,6 +912,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'arnold_press',
     name: 'Arnold Press',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -762,6 +930,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'lateral_raise_dumbbell',
     name: 'Dumbbell Lateral Raise',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -773,10 +942,33 @@ const shoulderExercises: Exercise[] = [
     ],
     description: 'Arms at sides, raise dumbbells laterally to shoulder height.',
     tips: 'Slight lean forward, lead with elbows, pour the teacup at top.',
+    laterality: 'bilateral',
+    baseMovementId: 'lateral_raise',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_lateral_raise',
+    name: 'Single-Arm Lateral Raise',
+    overloadCategory: 'isolation',
+    category: 'shoulders',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'side_delts', activationPercent: 95 },
+      { muscleId: 'front_delts', activationPercent: 25 },
+      { muscleId: 'traps_upper', activationPercent: 35 },
+    ],
+    description: 'Raise one dumbbell laterally to shoulder height. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'lateral_raise',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm lateral raise', 'one-arm lateral raise'],
   },
   {
     id: 'lateral_raise_cable',
     name: 'Cable Lateral Raise',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -791,6 +983,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'machine_lateral_raise',
     name: 'Machine Lateral Raise',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -805,6 +998,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'front_raise_dumbbell',
     name: 'Dumbbell Front Raise',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -820,6 +1014,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'rear_delt_fly_dumbbell',
     name: 'Dumbbell Rear Delt Fly',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -835,6 +1030,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'rear_delt_fly_machine',
     name: 'Reverse Pec Deck / Rear Delt Machine',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -849,6 +1045,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'rear_delt_cable_fly',
     name: 'Cable Rear Delt Fly',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -864,6 +1061,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'upright_row',
     name: 'Upright Row',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -880,6 +1078,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'cable_upright_row',
     name: 'Cable Upright Row',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['cable'],
     movementType: 'compound',
@@ -895,6 +1094,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'machine_shoulder_press',
     name: 'Machine Shoulder Press',
+    overloadCategory: 'compound_small',
     category: 'shoulders',
     equipment: ['machine'],
     movementType: 'compound',
@@ -910,6 +1110,7 @@ const shoulderExercises: Exercise[] = [
   {
     id: 'lu_raise',
     name: 'Lu Raise',
+    overloadCategory: 'isolation',
     category: 'shoulders',
     equipment: ['plate'],
     movementType: 'compound',
@@ -930,6 +1131,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'barbell_curl',
     name: 'Barbell Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['barbell'],
     movementType: 'isolation',
@@ -946,6 +1148,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'ez_bar_curl',
     name: 'EZ Bar Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['ez_bar'],
     movementType: 'isolation',
@@ -961,6 +1164,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'dumbbell_curl',
     name: 'Dumbbell Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -972,10 +1176,34 @@ const bicepsExercises: Exercise[] = [
       { muscleId: 'forearm_flexors', activationPercent: 35 },
     ],
     description: 'Standing or seated, curl dumbbells alternating or together.',
+    laterality: 'bilateral',
+    baseMovementId: 'curl',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_curl',
+    name: 'Single-Arm Dumbbell Curl',
+    overloadCategory: 'isolation',
+    category: 'biceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'pull',
+    muscles: [
+      { muscleId: 'biceps_short', activationPercent: 85 },
+      { muscleId: 'biceps_long', activationPercent: 85 },
+      { muscleId: 'brachialis', activationPercent: 45 },
+      { muscleId: 'forearm_flexors', activationPercent: 35 },
+    ],
+    description: 'Curl one dumbbell at a time. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'curl',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm curl', 'one-arm curl'],
   },
   {
     id: 'hammer_curl',
     name: 'Hammer Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -988,10 +1216,34 @@ const bicepsExercises: Exercise[] = [
     ],
     description: 'Neutral grip (palms facing in), curl dumbbells. Great for arm thickness.',
     tips: 'Targets brachialis which pushes the bicep up — key for arm size.',
+    laterality: 'bilateral',
+    baseMovementId: 'hammer_curl',
+    loadEntryMode: 'per_hand',
+  },
+  {
+    id: 'single_arm_hammer_curl',
+    name: 'Single-Arm Hammer Curl',
+    overloadCategory: 'isolation',
+    category: 'biceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'pull',
+    muscles: [
+      { muscleId: 'brachialis', activationPercent: 85 },
+      { muscleId: 'brachioradialis', activationPercent: 80 },
+      { muscleId: 'biceps_long', activationPercent: 65 },
+      { muscleId: 'forearm_flexors', activationPercent: 45 },
+    ],
+    description: 'Neutral grip, curl one dumbbell at a time. Unilateral.',
+    laterality: 'unilateral',
+    baseMovementId: 'hammer_curl',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm hammer curl', 'one-arm hammer curl'],
   },
   {
     id: 'incline_dumbbell_curl',
     name: 'Incline Dumbbell Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1007,6 +1259,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'preacher_curl',
     name: 'Preacher Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['ez_bar'],
     movementType: 'isolation',
@@ -1021,6 +1274,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'concentration_curl',
     name: 'Concentration Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1035,6 +1289,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'cable_curl',
     name: 'Cable Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1050,6 +1305,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'bayesian_curl',
     name: 'Bayesian Cable Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1065,6 +1321,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'spider_curl',
     name: 'Spider Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1079,6 +1336,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'cross_body_hammer_curl',
     name: 'Cross-Body Hammer Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1094,6 +1352,7 @@ const bicepsExercises: Exercise[] = [
   {
     id: 'machine_curl',
     name: 'Machine Bicep Curl',
+    overloadCategory: 'isolation',
     category: 'biceps',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1113,6 +1372,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'close_grip_bench',
     name: 'Close-Grip Bench Press',
+    overloadCategory: 'compound_small',
     category: 'triceps',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1129,6 +1389,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'skull_crusher',
     name: 'Skull Crusher / Lying Tricep Extension',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['ez_bar'],
     movementType: 'isolation',
@@ -1142,8 +1403,25 @@ const tricepsExercises: Exercise[] = [
     tips: 'Lowering behind the head increases long head stretch.',
   },
   {
+    id: 'tricep_extension_cable',
+    name: 'Cable Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['cable'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_lateral', activationPercent: 90 },
+      { muscleId: 'triceps_medial', activationPercent: 75 },
+      { muscleId: 'triceps_long', activationPercent: 55 },
+    ],
+    description: 'Standing cable tricep extension. Single-arm or double rope.',
+    aliases: ['cable tricep extension', 'single arm cable tricep extension'],
+  },
+  {
     id: 'tricep_pushdown_rope',
     name: 'Tricep Pushdown (Rope)',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1158,6 +1436,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'tricep_pushdown_bar',
     name: 'Tricep Pushdown (Straight Bar)',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1172,6 +1451,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'overhead_tricep_extension_cable',
     name: 'Overhead Cable Tricep Extension',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1187,6 +1467,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'overhead_dumbbell_extension',
     name: 'Overhead Dumbbell Tricep Extension',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1197,10 +1478,48 @@ const tricepsExercises: Exercise[] = [
       { muscleId: 'triceps_medial', activationPercent: 45 },
     ],
     description: 'Hold dumbbell overhead with both hands, lower behind head, extend.',
+    laterality: 'bilateral',
+    loadEntryMode: 'total',
+  },
+  {
+    id: 'tricep_extension_dumbbell',
+    name: 'Dumbbell Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_long', activationPercent: 90 },
+      { muscleId: 'triceps_lateral', activationPercent: 50 },
+      { muscleId: 'triceps_medial', activationPercent: 45 },
+    ],
+    description: 'Overhead extension with both hands on one dumbbell. Total weight.',
+    laterality: 'bilateral',
+    loadEntryMode: 'total',
+  },
+  {
+    id: 'single_arm_tricep_extension',
+    name: 'Single-Arm Tricep Extension',
+    overloadCategory: 'isolation',
+    category: 'triceps',
+    equipment: ['cable', 'dumbbell'],
+    movementType: 'isolation',
+    forceType: 'push',
+    muscles: [
+      { muscleId: 'triceps_long', activationPercent: 90 },
+      { muscleId: 'triceps_lateral', activationPercent: 55 },
+      { muscleId: 'triceps_medial', activationPercent: 50 },
+    ],
+    description: 'Single-arm cable or dumbbell tricep extension. Unilateral.',
+    laterality: 'unilateral',
+    loadEntryMode: 'per_side',
+    aliases: ['one arm tricep extension', 'one-arm tricep extension'],
   },
   {
     id: 'dips_triceps',
     name: 'Dips (Triceps Focused)',
+    overloadCategory: 'compound_small',
     category: 'triceps',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -1218,6 +1537,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'kickback_dumbbell',
     name: 'Dumbbell Kickback',
+    overloadCategory: 'isolation',
     category: 'triceps',
     equipment: ['dumbbell'],
     movementType: 'isolation',
@@ -1232,6 +1552,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'diamond_push_up',
     name: 'Diamond Push-Up',
+    overloadCategory: 'compound_small',
     category: 'triceps',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -1248,6 +1569,7 @@ const tricepsExercises: Exercise[] = [
   {
     id: 'jm_press',
     name: 'JM Press',
+    overloadCategory: 'compound_small',
     category: 'triceps',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1268,6 +1590,7 @@ const forearmExercises: Exercise[] = [
   {
     id: 'wrist_curl_barbell',
     name: 'Barbell Wrist Curl',
+    overloadCategory: 'isolation',
     category: 'forearms',
     equipment: ['barbell'],
     movementType: 'isolation',
@@ -1280,6 +1603,7 @@ const forearmExercises: Exercise[] = [
   {
     id: 'reverse_wrist_curl',
     name: 'Reverse Wrist Curl',
+    overloadCategory: 'isolation',
     category: 'forearms',
     equipment: ['barbell'],
     movementType: 'isolation',
@@ -1292,6 +1616,7 @@ const forearmExercises: Exercise[] = [
   {
     id: 'reverse_curl',
     name: 'Reverse Curl',
+    overloadCategory: 'isolation',
     category: 'forearms',
     equipment: ['ez_bar'],
     movementType: 'isolation',
@@ -1307,6 +1632,7 @@ const forearmExercises: Exercise[] = [
   {
     id: 'farmer_walk',
     name: "Farmer's Walk",
+    overloadCategory: 'isolation',
     category: 'forearms',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -1324,6 +1650,7 @@ const forearmExercises: Exercise[] = [
   {
     id: 'dead_hang',
     name: 'Dead Hang',
+    overloadCategory: 'isolation',
     category: 'forearms',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1343,6 +1670,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'back_squat',
     name: 'Barbell Back Squat',
+    overloadCategory: 'compound_big',
     category: 'quads',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1364,6 +1692,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'front_squat',
     name: 'Front Squat',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1382,6 +1711,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'goblet_squat',
     name: 'Goblet Squat',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['dumbbell', 'kettlebell'],
     movementType: 'compound',
@@ -1398,6 +1728,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'leg_press',
     name: 'Leg Press',
+    overloadCategory: 'compound_big',
     category: 'quads',
     equipment: ['machine'],
     movementType: 'compound',
@@ -1416,6 +1747,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'hack_squat',
     name: 'Hack Squat',
+    overloadCategory: 'compound_big',
     category: 'quads',
     equipment: ['machine'],
     movementType: 'compound',
@@ -1431,6 +1763,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'leg_extension',
     name: 'Leg Extension',
+    overloadCategory: 'isolation',
     category: 'quads',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1446,6 +1779,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'walking_lunge',
     name: 'Walking Lunge',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['dumbbell', 'bodyweight'],
     movementType: 'compound',
@@ -1463,6 +1797,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'bulgarian_split_squat',
     name: 'Bulgarian Split Squat',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['dumbbell', 'bodyweight'],
     movementType: 'compound',
@@ -1482,6 +1817,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'sissy_squat',
     name: 'Sissy Squat',
+    overloadCategory: 'isolation',
     category: 'quads',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1497,6 +1833,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'smith_squat',
     name: 'Smith Machine Squat',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['smith_machine'],
     movementType: 'compound',
@@ -1512,6 +1849,7 @@ const quadExercises: Exercise[] = [
   {
     id: 'step_up',
     name: 'Step-Up',
+    overloadCategory: 'compound_small',
     category: 'quads',
     equipment: ['dumbbell', 'bodyweight'],
     movementType: 'compound',
@@ -1533,6 +1871,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'romanian_deadlift',
     name: 'Romanian Deadlift (RDL)',
+    overloadCategory: 'compound_big',
     category: 'hamstrings',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1551,6 +1890,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'dumbbell_rdl',
     name: 'Dumbbell RDL',
+    overloadCategory: 'compound_small',
     category: 'hamstrings',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -1566,6 +1906,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'single_leg_rdl',
     name: 'Single-Leg RDL',
+    overloadCategory: 'compound_small',
     category: 'hamstrings',
     equipment: ['dumbbell'],
     movementType: 'compound',
@@ -1583,6 +1924,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'lying_leg_curl',
     name: 'Lying Leg Curl',
+    overloadCategory: 'isolation',
     category: 'hamstrings',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1598,6 +1940,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'seated_leg_curl',
     name: 'Seated Leg Curl',
+    overloadCategory: 'isolation',
     category: 'hamstrings',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1614,6 +1957,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'nordic_curl',
     name: 'Nordic Hamstring Curl',
+    overloadCategory: 'isolation',
     category: 'hamstrings',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1630,6 +1974,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'good_morning',
     name: 'Good Morning',
+    overloadCategory: 'compound_big',
     category: 'hamstrings',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1645,6 +1990,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'stiff_leg_deadlift',
     name: 'Stiff-Leg Deadlift',
+    overloadCategory: 'compound_small',
     category: 'hamstrings',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1661,6 +2007,7 @@ const hamstringExercises: Exercise[] = [
   {
     id: 'cable_pull_through',
     name: 'Cable Pull-Through',
+    overloadCategory: 'compound_small',
     category: 'hamstrings',
     equipment: ['cable'],
     movementType: 'compound',
@@ -1680,6 +2027,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'hip_thrust_barbell',
     name: 'Barbell Hip Thrust',
+    overloadCategory: 'compound_big',
     category: 'glutes',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1697,6 +2045,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'glute_bridge',
     name: 'Glute Bridge',
+    overloadCategory: 'isolation',
     category: 'glutes',
     equipment: ['bodyweight', 'barbell'],
     movementType: 'isolation',
@@ -1711,6 +2060,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'cable_kickback',
     name: 'Cable Kickback',
+    overloadCategory: 'isolation',
     category: 'glutes',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1725,6 +2075,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'cable_hip_abduction',
     name: 'Cable Hip Abduction',
+    overloadCategory: 'isolation',
     category: 'glutes',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1739,6 +2090,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'hip_abduction_machine',
     name: 'Hip Abduction Machine',
+    overloadCategory: 'isolation',
     category: 'glutes',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1753,6 +2105,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'hip_adduction_machine',
     name: 'Hip Adduction Machine',
+    overloadCategory: 'isolation',
     category: 'glutes',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1766,6 +2119,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'sumo_deadlift',
     name: 'Sumo Deadlift',
+    overloadCategory: 'compound_big',
     category: 'glutes',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -1785,6 +2139,7 @@ const gluteExercises: Exercise[] = [
   {
     id: 'kettlebell_swing',
     name: 'Kettlebell Swing',
+    overloadCategory: 'compound_small',
     category: 'glutes',
     equipment: ['kettlebell'],
     movementType: 'compound',
@@ -1807,6 +2162,7 @@ const calfExercises: Exercise[] = [
   {
     id: 'standing_calf_raise',
     name: 'Standing Calf Raise',
+    overloadCategory: 'isolation',
     category: 'calves',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1821,6 +2177,7 @@ const calfExercises: Exercise[] = [
   {
     id: 'seated_calf_raise',
     name: 'Seated Calf Raise',
+    overloadCategory: 'isolation',
     category: 'calves',
     equipment: ['machine'],
     movementType: 'isolation',
@@ -1835,6 +2192,7 @@ const calfExercises: Exercise[] = [
   {
     id: 'donkey_calf_raise',
     name: 'Donkey Calf Raise',
+    overloadCategory: 'isolation',
     category: 'calves',
     equipment: ['machine', 'bodyweight'],
     movementType: 'isolation',
@@ -1848,6 +2206,7 @@ const calfExercises: Exercise[] = [
   {
     id: 'single_leg_calf_raise',
     name: 'Single-Leg Calf Raise',
+    overloadCategory: 'isolation',
     category: 'calves',
     equipment: ['bodyweight', 'dumbbell'],
     movementType: 'isolation',
@@ -1861,6 +2220,7 @@ const calfExercises: Exercise[] = [
   {
     id: 'tibialis_raise',
     name: 'Tibialis Raise',
+    overloadCategory: 'isolation',
     category: 'calves',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1879,6 +2239,7 @@ const absExercises: Exercise[] = [
   {
     id: 'hanging_leg_raise',
     name: 'Hanging Leg Raise',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1894,6 +2255,7 @@ const absExercises: Exercise[] = [
   {
     id: 'cable_crunch',
     name: 'Cable Crunch',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['cable'],
     movementType: 'isolation',
@@ -1908,6 +2270,7 @@ const absExercises: Exercise[] = [
   {
     id: 'ab_wheel_rollout',
     name: 'Ab Wheel Rollout',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -1925,6 +2288,7 @@ const absExercises: Exercise[] = [
   {
     id: 'plank',
     name: 'Plank',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1942,6 +2306,7 @@ const absExercises: Exercise[] = [
   {
     id: 'side_plank',
     name: 'Side Plank',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -1957,6 +2322,7 @@ const absExercises: Exercise[] = [
   {
     id: 'russian_twist',
     name: 'Russian Twist',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight', 'medicine_ball'],
     movementType: 'isolation',
@@ -1972,6 +2338,7 @@ const absExercises: Exercise[] = [
   {
     id: 'woodchopper',
     name: 'Cable Woodchopper',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['cable'],
     movementType: 'compound',
@@ -1987,6 +2354,7 @@ const absExercises: Exercise[] = [
   {
     id: 'pallof_press',
     name: 'Pallof Press',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['cable', 'resistance_band'],
     movementType: 'isolation',
@@ -2003,6 +2371,7 @@ const absExercises: Exercise[] = [
   {
     id: 'dead_bug',
     name: 'Dead Bug',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -2018,6 +2387,7 @@ const absExercises: Exercise[] = [
   {
     id: 'decline_crunch',
     name: 'Decline Crunch',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'isolation',
@@ -2032,6 +2402,7 @@ const absExercises: Exercise[] = [
   {
     id: 'bicycle_crunch',
     name: 'Bicycle Crunch',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -2047,6 +2418,7 @@ const absExercises: Exercise[] = [
   {
     id: 'dragon_flag',
     name: 'Dragon Flag',
+    overloadCategory: 'isolation',
     category: 'abs',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -2069,6 +2441,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'clean_and_press',
     name: 'Clean and Press',
+    overloadCategory: 'compound_small',
     category: 'olympic',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -2089,6 +2462,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'power_clean',
     name: 'Power Clean',
+    overloadCategory: 'compound_small',
     category: 'olympic',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -2108,6 +2482,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'snatch',
     name: 'Barbell Snatch',
+    overloadCategory: 'compound_small',
     category: 'olympic',
     equipment: ['barbell'],
     movementType: 'compound',
@@ -2128,6 +2503,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'thruster',
     name: 'Thruster',
+    overloadCategory: 'compound_small',
     category: 'full_body',
     equipment: ['barbell', 'dumbbell'],
     movementType: 'compound',
@@ -2146,6 +2522,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'burpee',
     name: 'Burpee',
+    overloadCategory: 'compound_small',
     category: 'full_body',
     equipment: ['bodyweight'],
     movementType: 'compound',
@@ -2164,6 +2541,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'turkish_getup',
     name: 'Turkish Get-Up',
+    overloadCategory: 'compound_small',
     category: 'full_body',
     equipment: ['kettlebell', 'dumbbell'],
     movementType: 'compound',
@@ -2184,6 +2562,7 @@ const fullBodyExercises: Exercise[] = [
   {
     id: 'man_maker',
     name: 'Man Maker',
+    overloadCategory: 'compound_small',
     category: 'full_body',
     equipment: ['dumbbell'],
     movementType: 'compound',

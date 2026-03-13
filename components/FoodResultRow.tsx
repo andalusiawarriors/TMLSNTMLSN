@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing } from '../constants/theme';
@@ -37,7 +37,11 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
   const showVerifiedStripe = !hasBrand && (top100 || isVerified);
 
   return (
-    <TouchableOpacity style={styles.historyCardBorderWrap} onPress={() => onPress(item)} activeOpacity={0.7}>
+    <View
+      style={styles.historyCardBorderWrap}
+      onStartShouldSetResponder={() => true}
+      onResponderRelease={() => onPress(item)}
+    >
       <LinearGradient
         colors={Colors.tabBarBorder}
         start={{ x: 0.5, y: 0 }}
@@ -128,7 +132,7 @@ export const FoodResultRow: React.FC<Props> = ({ item, onPress }) => {
           </View>
         </View>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 

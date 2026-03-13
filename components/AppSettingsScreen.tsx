@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, Font } from '../constants/theme';
+import { Colors, Typography, Spacing } from '../constants/theme';
+import { TmlsnText } from './ui/TmlsnText';
 import { getUserSettings, saveUserSettings } from '../utils/storage';
 import type { UserSettings } from '../types';
 import {
@@ -12,6 +13,7 @@ import {
   SettingsToggleRow,
   SETTINGS_ICON_COLOR,
 } from './SettingsShared';
+import { HomeGradientBackground } from './HomeGradientBackground';
 
 const REST_TIMER_OPTIONS = [60, 90, 120, 180];
 const REST_TIMER_LABELS: Record<number, string> = {
@@ -35,7 +37,7 @@ function SegmentPill({
         pressed && { opacity: 0.85 },
       ]}
     >
-      <Text style={[styles.pillText, selected && styles.pillTextActive]}>{label}</Text>
+      <TmlsnText style={[styles.pillText, selected && styles.pillTextActive]}>{label}</TmlsnText>
     </Pressable>
   );
 }
@@ -64,8 +66,9 @@ export default function AppSettingsScreen() {
 
   if (!settings) {
     return (
-      <View style={[styles.container, { backgroundColor: Colors.primaryDark }]}>
-        <Text style={styles.loadingText}>loading...</Text>
+      <View style={styles.container}>
+        <HomeGradientBackground />
+        <TmlsnText style={styles.loadingText}>loading...</TmlsnText>
       </View>
     );
   }
@@ -73,7 +76,8 @@ export default function AppSettingsScreen() {
   const contentBottom = insets.bottom + Spacing.xxl;
 
   return (
-    <View style={[styles.container, { backgroundColor: Colors.primaryDark }]}>
+    <View style={styles.container}>
+      <HomeGradientBackground />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingHorizontal: Spacing.md, paddingBottom: contentBottom }]}
@@ -123,6 +127,30 @@ export default function AppSettingsScreen() {
           />
         </SettingsCard>
 
+        <SettingsSectionHeader label="Training" />
+        <SettingsCard>
+          <SettingsRow
+            icon="fitness-outline"
+            label="Training focus"
+            subtitle="shapes your progressive overload targets"
+            last
+            right={
+              <View style={styles.pillRow}>
+                <SegmentPill
+                  label="Hypertrophy"
+                  selected={(settings.training?.trainingFocus ?? 'hypertrophy') === 'hypertrophy'}
+                  onPress={() => updateSettings({ training: { ...(settings.training as any), trainingFocus: 'hypertrophy' } })}
+                />
+                <SegmentPill
+                  label="Strength"
+                  selected={settings.training?.trainingFocus === 'strength'}
+                  onPress={() => updateSettings({ training: { ...(settings.training as any), trainingFocus: 'strength' } })}
+                />
+              </View>
+            }
+          />
+        </SettingsCard>
+
         <SettingsSectionHeader label="Workout" />
         <SettingsCard>
           <SettingsToggleRow
@@ -147,14 +175,14 @@ export default function AppSettingsScreen() {
                         pressed && { opacity: 0.85 },
                       ]}
                     >
-                      <Text
+                      <TmlsnText
                         style={[
                           styles.chipText,
                           (settings.defaultRestTimer ?? 120) === sec && styles.chipTextActive,
                         ]}
                       >
                         {REST_TIMER_LABELS[sec]}
-                      </Text>
+                      </TmlsnText>
                     </Pressable>
                   ))}
                 </View>
@@ -177,6 +205,30 @@ export default function AppSettingsScreen() {
               />
             </>
           )}
+        </SettingsCard>
+
+        <SettingsSectionHeader label="Workout" />
+        <SettingsCard>
+          <SettingsRow
+            icon="barbell-outline"
+            label="Dumbbell weight entry"
+            subtitle="for bilateral exercises (e.g. lateral raise)"
+            last={false}
+            right={
+              <View style={styles.pillRow}>
+                <SegmentPill
+                  label="Per hand"
+                  selected={(settings.dumbbellWeightPreference ?? 'per_hand') === 'per_hand'}
+                  onPress={() => updateSettings({ dumbbellWeightPreference: 'per_hand' })}
+                />
+                <SegmentPill
+                  label="Total"
+                  selected={(settings.dumbbellWeightPreference ?? 'per_hand') === 'total'}
+                  onPress={() => updateSettings({ dumbbellWeightPreference: 'total' })}
+                />
+              </View>
+            }
+          />
         </SettingsCard>
 
         <SettingsSectionHeader label="Display" />
@@ -220,7 +272,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   loadingText: {
-    fontFamily: Font.mono,
     fontSize: Typography.body,
     color: Colors.primaryLight,
     textAlign: 'center',

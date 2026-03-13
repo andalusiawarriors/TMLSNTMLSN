@@ -4,7 +4,7 @@
 // springs back to neutral on release. Clips to borderRadius.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { PropsWithChildren, useRef, useEffect } from 'react';
+import React, { PropsWithChildren, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -50,8 +50,12 @@ export default function TiltPressable({
     onLongPressRef.current = onLongPress;
   }, [onPress, onLongPress]);
 
-  const firePress = () => onPressRef.current?.();
-  const fireLongPress = () => onLongPressRef.current?.();
+  const firePress = useCallback(() => {
+    onPressRef.current?.();
+  }, []);
+  const fireLongPress = useCallback(() => {
+    onLongPressRef.current?.();
+  }, []);
 
   const setFromTouch = (x: number, y: number) => {
     'worklet';
@@ -78,7 +82,7 @@ export default function TiltPressable({
       scale.value = withSpring(scaleOnPress, { damping: 18, stiffness: 320, mass: 0.8 });
     })
     .onEnd((_e, success) => {
-      if (success && onPressRef.current) runOnJS(firePress)();
+      if (success) runOnJS(firePress)();
     })
     .onFinalize(() => {
       reset();
@@ -103,7 +107,7 @@ export default function TiltPressable({
   const longPress = Gesture.LongPress()
     .minDuration(longPressMs)
     .onStart(() => {
-      if (onLongPressRef.current) runOnJS(fireLongPress)();
+      runOnJS(fireLongPress)();
     });
 
   const gesture = Gesture.Simultaneous(pan, tap, longPress);
